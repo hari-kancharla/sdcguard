@@ -1,0 +1,85 @@
+{
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true
+ },
+ "preset": "ts-900m",
+ "cfg": {
+  "dataset": "tinystories",
+  "n_layer": 16,
+  "n_head": 16,
+  "n_embd": 2048,
+  "block": 512,
+  "batch": 16,
+  "steps": 4000,
+  "eval_every": 250,
+  "eval_batches": 20,
+  "lr": 0.0003,
+  "ts_train_mb": 300,
+  "name": "ts-900m"
+ },
+ "base_ms_per_step": 163.06,
+ "results": [
+  {
+   "every": 1,
+   "share": 1.0,
+   "coverage": 1.0,
+   "estimated_pct": 54.28,
+   "measured_pct": null,
+   "measured_rounds_pct": [],
+   "slowdown_pct": 54.28
+  },
+  {
+   "every": 10,
+   "share": 1.0,
+   "coverage": 0.1,
+   "estimated_pct": 5.43,
+   "measured_pct": 5.47,
+   "measured_rounds_pct": [
+    5.61,
+    5.34
+   ],
+   "slowdown_pct": 5.47
+  },
+  {
+   "every": 20,
+   "share": 1.0,
+   "coverage": 0.05,
+   "estimated_pct": 2.71,
+   "measured_pct": 2.6,
+   "measured_rounds_pct": [
+    2.61,
+    2.58
+   ],
+   "slowdown_pct": 2.6
+  },
+  {
+   "every": 50,
+   "share": 1.0,
+   "coverage": 0.02,
+   "estimated_pct": 1.09,
+   "measured_pct": 1.02,
+   "measured_rounds_pct": [
+    1.01,
+    1.03
+   ],
+   "slowdown_pct": 1.02
+  }
+ ],
+ "timing": {
+  "base_ms_per_step": 163.06,
+  "per_share": {
+   "1.0": {
+    "plain_ms": 163.06,
+    "checked_ms": 251.57,
+    "extra_ms_per_checked_step": 88.51
+   }
+  },
+  "false_alarms": 0,
+  "checks": 7857,
+  "worst_clean_z": 2.7235331535339355,
+  "alerts": []
+ }
+}

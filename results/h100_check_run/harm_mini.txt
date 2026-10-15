@@ -1,0 +1,52 @@
+TinyStories tokens: train 72,924,444  val 5,469,024
+[clean_s0] device=cuda dtype=torch.bfloat16 preset=ts-gpu cfg={'dataset': 'tinystories', 'n_layer': 8, 'n_head': 8, 'n_embd': 512, 'block': 256, 'batch': 64, 'steps': 300, 'eval_every': 250, 'eval_batches': 40, 'lr': 0.0006, 'ts_train_mb': 300}
+  [clean_s0] step   250  train 3.6306  val 3.5574  alerts 0  faults 0  (17s)
+  [clean_s0] step   300  train 3.4664  val 3.4844  alerts 0  faults 0  (20s)
+[clean_s0] saved -> /vol/runs/check/runs/ts-gpu/raw/clean_s0.json (29s, 61.43 ms/step)
+TinyStories tokens: train 72,924,444  val 5,469,024
+[clean_s1] device=cuda dtype=torch.bfloat16 preset=ts-gpu cfg={'dataset': 'tinystories', 'n_layer': 8, 'n_head': 8, 'n_embd': 512, 'block': 256, 'batch': 64, 'steps': 300, 'eval_every': 250, 'eval_batches': 40, 'lr': 0.0006, 'ts_train_mb': 300}
+  [clean_s1] step   250  train 3.7004  val 3.6843  alerts 0  faults 0  (16s)
+  [clean_s1] step   300  train 3.5706  val 3.6058  alerts 0  faults 0  (19s)
+[clean_s1] saved -> /vol/runs/check/runs/ts-gpu/raw/clean_s1.json (21s, 58.76 ms/step)
+TinyStories tokens: train 72,924,444  val 5,469,024
+[faulty_qk_nvidia_warp_r0.05_f1] device=cuda dtype=torch.bfloat16 preset=ts-gpu cfg={'dataset': 'tinystories', 'n_layer': 8, 'n_head': 8, 'n_embd': 512, 'block': 256, 'batch': 64, 'steps': 300, 'eval_every': 250, 'eval_batches': 40, 'lr': 0.0006, 'ts_train_mb': 300}
+  [faulty_qk_nvidia_warp_r0.05_f1] loss became nan at step 24: visible failure, stopping run
+[faulty_qk_nvidia_warp_r0.05_f1] saved -> /vol/runs/check/runs/ts-gpu/raw/faulty_qk_nvidia_warp_r0.05_f1.json (2s, 68.62 ms/step)
+TinyStories tokens: train 72,924,444  val 5,469,024
+[faulty_qk_nvidia_tile_r0.05_f1] device=cuda dtype=torch.bfloat16 preset=ts-gpu cfg={'dataset': 'tinystories', 'n_layer': 8, 'n_head': 8, 'n_embd': 512, 'block': 256, 'batch': 64, 'steps': 300, 'eval_every': 250, 'eval_batches': 40, 'lr': 0.0006, 'ts_train_mb': 300}
+  [faulty_qk_nvidia_tile_r0.05_f1] loss became nan at step 30: visible failure, stopping run
+[faulty_qk_nvidia_tile_r0.05_f1] saved -> /vol/runs/check/runs/ts-gpu/raw/faulty_qk_nvidia_tile_r0.05_f1.json (2s, 69.69 ms/step)
+
+=== faulty_qk_nvidia_tile_r0.05_f1 ===
+Faulty run CRASHED (NaN) at step 30. Counted as harmed (kill criterion 2).
+Before the crash the loss curve looked normal (inside the clean runs' range).
+sdcguard (checking every 10 steps) caught an injected fault at step 0: 30 steps before the crash.
+Detection if checking less often (same run, keeping only those checks): every 10: caught 4/4, first at step 0; every 20: caught 2/2, first at step 0; every 50: caught 2/2, first at step 0.
+Detector: caught 4 of 4 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 108 (108 had NaN/Inf/overflowing values, i.e. the corruption spreading into later layers; 0 unexplained, counted as false alarms). Clean runs: 0 false alarms in 8820 checks.
+Caught by fault size (change to the affected 128-value block): 10-100%: 3/3, NaN/Inf/huge: 1/1.
+
+=== faulty_qk_nvidia_warp_r0.05_f1 ===
+Faulty run CRASHED (NaN) at step 24. Counted as harmed (kill criterion 2).
+Before the crash the loss curve looked normal (inside the clean runs' range).
+sdcguard (checking every 10 steps) caught an injected fault at step 0: 24 steps before the crash.
+Detection if checking less often (same run, keeping only those checks): every 10: caught 4/4, first at step 0; every 20: caught 3/3, first at step 0; every 50: caught 2/2, first at step 0.
+Detector: caught 4 of 4 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 0 (0 had NaN/Inf/overflowing values, i.e. the corruption spreading into later layers; 0 unexplained, counted as false alarms). Clean runs: 0 false alarms in 8820 checks.
+Caught by fault size (change to the affected 128-value block): 1-10%: 1/1, 10-100%: 3/3.
+
+##### ts-gpu qk nvidia tile rate 0.05: 1 runs with different fault patterns (detector every 10 steps) #####
+Crashed: 1 of 1 (steps [30]); loss curve looked normal before 1 of them.
+Caught an injected fault before the crash: 1 of 1; lead [30] steps.
+Survived: 0; worse than every clean run AND beyond seed spread: 0.
+Harmed (crashed, or survived but worse beyond seed spread): 1 of 1. Of those, caught before the harm: every 10 steps 1/1, every 20 steps 1/1, every 50 steps 1/1.
+Detector caught 4 of 4 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 108 from the corruption spreading (NaN/Inf/overflow), 0 unexplained (false alarms); 0 false alarms on clean runs.
+By fault size: 10-100%: 3/3, NaN/Inf/huge: 1/1.
+
+##### ts-gpu qk nvidia warp rate 0.05: 1 runs with different fault patterns (detector every 10 steps) #####
+Crashed: 1 of 1 (steps [24]); loss curve looked normal before 1 of them.
+Caught an injected fault before the crash: 1 of 1; lead [24] steps.
+Survived: 0; worse than every clean run AND beyond seed spread: 0.
+Harmed (crashed, or survived but worse beyond seed spread): 1 of 1. Of those, caught before the harm: every 10 steps 1/1, every 20 steps 1/1, every 50 steps 1/1.
+Detector caught 4 of 4 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 0 from the corruption spreading (NaN/Inf/overflow), 0 unexplained (false alarms); 0 false alarms on clean runs.
+By fault size: 1-10%: 1/1, 10-100%: 3/3.
+
+report -> /vol/runs/check/runs/ts-gpu/REPORT.md

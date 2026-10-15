@@ -1,0 +1,20 @@
+===== clean_s0 (final val 3.4844) =====
+Once upon a time, there was a big rock and the park.<|endoftext|>Once upon a time, there was a small village. The dog lived in a big tree. One day, the big, he saw a small tree.
+As the tree. The tree. The bird said, "Tim was a big, "Let's find!" The tree and the cake. The bird wanted to eat the tree got to the tree was playing and said, "Come for this. The bird."
+Tom and the bird was happy. They played together. They all day on it the tree and the tree. The bird wanted to the tree was scared again. The bird wanted to eat their toys and they heard the tree.
+But, the bird became a shiny cat. They found the bird and played all day.
+-----
+Once upon a time, there was a little girl. Every sunny day, the big bird called the tree. The bird were so the bird looked at the bird was very small. The bird was very scared and wanted to get it. The bird was the tree, as the tree, so she saw and they were very happy.
+The bird went down and looked and he found the bird, and went to her. Amy and wanted to the bird flew away, it. The bird learned that the bird. The bird were very hungry and the bird was the bird was happy and they didn't want to play outside.<|endoftext|>Once upon a time, there was a little bird. The bird would feel the bird was sad and her friend. One day, the bird did not see a little bird tried in the bug.
+-----
+===== clean_s1 (final val 3.6058) =====
+Once upon a time, there was a big rock in the park.<|endoftext|>Once upon a time, there was a small cat named Tim loved to play with the tree. One day, in a big ball. The sun was a good toys who was a big tree. Tim loved to find a big tree.
+Later, Tim was very happy because his friend, Max had a big dog named Tim. He got to play with his friends and said, "Comeed and Tim!" Tom's friend with his friends.<|endoftext|>Once upon a time, there was a big house. He wanted to play with the park and wanted to play with his friend, there was a big tree. The wind in the bird came down.
+One day, "Wow, the cat." Tom found a big, but I can play
+-----
+Once upon a time, there was a little girl.
+One day, the big bird was very happy to be friends. The little bird found the small car was very small. The big tree and scared and Max and the bird. The bird wanted to play with me and wanted to be the little bird.
+So something unexpected happened. But then, something unexpected happened. They played together, the forest were happy. Amy loved to play with their friends were happy.
+The bird asked the ball were not see the bird did not be fun. The little bird was important to play with the big. They had a big puddle and Max were happy and not play together. They put the house.<|endoftext|>Once upon a time, there was a big cat named Tim. He was sad. One day, his friend
+-----
+===== faulty_qk_nvidia_tile_r0.05_f1 (final val nan) =====

@@ -1,0 +1,121 @@
+# Diagnosis: ts-gpt2 on NVIDIA H100 80GB HBM3
+
+Each mode: a fresh model (seed 0), 150 clean steps, every matmul checked on every step.
+
+## with LR warmup (like the harm study and the soak)
+
+- 32,850 checks, **0 false alarms**, worst clean z 2.63 (threshold 6), 179.28 ms per checked step
+- training loss every 25 steps: [11.0244, 8.3829, 5.9153, 4.7783, 4.2626, 3.927, 3.7797]
+- smallest block noise scale seen (at worst blocks): 1.14e-16
+
+Worst 10 matmul sites (pass, op, where, shapes): checks, alarms, worst z
+
+```
+forward  aten::mm     head                   A(16384, 768) B(768, 50257)     150      0       2.63
+backward aten::mm     AddmmBackward0         A(16384, 768) B(768, 3072)    1800      0       2.44
+backward aten::mm     MmBackward0            A(768, 16384) B(16384, 768)    7200      0       2.44
+forward  aten::addmm  blocks.2.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.44
+backward aten::mm     MmBackward0            A(50257, 16384) B(16384, 768)     150      0       2.43
+forward  aten::mm     blocks.11.attn.k       A(16384, 768) B(768, 768)     150      0       2.43
+forward  aten::mm     blocks.6.attn.q        A(16384, 768) B(768, 768)     150      0       2.40
+backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)    7200      0       2.40
+forward  aten::addmm  blocks.7.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.39
+forward  aten::addmm  blocks.6.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.35
+```
+
+## no LR warmup, OLD noise floor 1e-30 (reproduces check run #2's false alarms)
+
+- 32,850 checks, **366 false alarms**, worst clean z 5.79 (threshold 6), 172.35 ms per checked step
+- training loss every 25 steps: [11.0244, 6.48, 5.2806, 4.7495, 4.4637, 4.1993, 4.0939]
+- smallest block noise scale seen (at worst blocks): 1.00e-30
+- first alarms (site, z, block noise scale):
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=24.28  noise=1.42e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=20.3  noise=1.69e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=19.6  noise=1.66e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=36.45  noise=7.92e-27
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=9.4  noise=2.72e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=19.06  noise=5.68e-27
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=47.83  noise=1.24e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=54675.95  noise=1.00e-30
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=82280.56  noise=1.00e-30
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=11.14  noise=1.07e-26
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=60822.75  noise=1.00e-30
+    backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)  z=21086.84  noise=1.00e-30
+
+Worst 10 matmul sites (pass, op, where, shapes): checks, alarms, worst z
+
+```
+backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)    7200    366  166714.70
+forward  aten::mm     head                   A(16384, 768) B(768, 50257)     150      0       2.65
+forward  aten::mm     blocks.9.attn.proj     A(16384, 768) B(768, 768)     150      0       2.65
+forward  aten::mm     blocks.1.attn.q        A(16384, 768) B(768, 768)     150      0       2.59
+backward aten::mm     AddmmBackward0         A(16384, 3072) B(3072, 768)    1800      0       2.58
+forward  aten::addmm  blocks.10.mlp.0        A(16384, 768) B(768, 3072)     150      0       2.54
+forward  aten::mm     blocks.4.attn.k        A(16384, 768) B(768, 768)     150      0       2.48
+forward  aten::addmm  blocks.9.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.46
+forward  aten::mm     blocks.4.attn.proj     A(16384, 768) B(768, 768)     150      0       2.43
+forward  aten::addmm  blocks.5.mlp.2         A(16384, 3072) B(3072, 768)     150      0       2.43
+```
+
+## no LR warmup, NEW noise floor 1e-20 (the fix)
+
+- 32,850 checks, **0 false alarms**, worst clean z 2.67 (threshold 6), 172.43 ms per checked step
+- training loss every 25 steps: [11.0244, 6.4657, 5.3259, 4.8141, 4.4897, 4.2004, 4.0977]
+- smallest block noise scale seen (at worst blocks): 2.04e-17
+
+Worst 10 matmul sites (pass, op, where, shapes): checks, alarms, worst z
+
+```
+forward  aten::mm     head                   A(16384, 768) B(768, 50257)     150      0       2.67
+backward aten::mm     AddmmBackward0         A(16384, 768) B(768, 3072)    1800      0       2.51
+backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)    7200      0       2.50
+forward  aten::addmm  blocks.9.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.49
+forward  aten::mm     blocks.9.attn.proj     A(16384, 768) B(768, 768)     150      0       2.46
+forward  aten::addmm  blocks.2.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.46
+backward aten::mm     MmBackward0            A(50257, 16384) B(16384, 768)     150      0       2.43
+forward  aten::addmm  blocks.1.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.42
+forward  aten::addmm  blocks.7.mlp.0         A(16384, 768) B(768, 3072)     150      0       2.42
+forward  aten::mm     blocks.7.attn.proj     A(16384, 768) B(768, 768)     150      0       2.40
+```
+
+## CPU vs GPU (forward + backward only, median of 6)
+
+| step | CPU done queuing work (ms) | GPU done (ms) |
+|---|---|---|
+| plain | 15.0 | 78.4 |
+| checked | 163.7 | 165.8 |
+
+If the two columns are close, the step is limited by Python/kernel launches (CPU), not by the GPU's math.
+
+## Profile of one checked step (forward + backward), top 20 by GPU time
+
+```
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                               aten::mm         8.25%      20.826ms        76.68%     193.459ms     180.129us      56.605ms        46.00%     137.125ms     127.677us          1074  
+                               aten::linalg_vector_norm         3.43%       8.660ms         5.40%      13.616ms      20.662us      16.934ms        13.76%      16.934ms      25.697us           659  
+void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688...         0.00%       0.000us         0.00%       0.000us       0.000us      13.227ms        10.75%      13.227ms      13.227ms             1  
+                                            aten::copy_         1.93%       4.859ms         4.02%      10.151ms       9.594us      12.803ms        10.40%      12.803ms      12.101us          1058  
+void at::native::reduce_kernel<512, 1, at::native::R...         0.00%       0.000us         0.00%       0.000us       0.000us      12.392ms        10.07%      12.392ms      33.766us           367  
+void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688...         0.00%       0.000us         0.00%       0.000us       0.000us       8.932ms         7.26%       8.932ms       8.932ms             1  
+void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688...         0.00%       0.000us         0.00%       0.000us       0.000us       8.306ms         6.75%       8.306ms       8.306ms             1  
+void cutlass::Kernel2<cutlass_80_wmma_tensorop_s1616...         0.00%       0.000us         0.00%       0.000us       0.000us       7.364ms         5.98%       7.364ms      32.298us           228  
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us       5.009ms         4.07%       5.009ms      33.845us           148  
+void at::native::vectorized_elementwise_kernel<8, at...         0.00%       0.000us         0.00%       0.000us       0.000us       4.684ms         3.81%       4.684ms       5.629us           832  
+                       aten::_log_softmax_backward_data         0.01%      19.902us         0.03%      67.596us      33.798us       4.478ms         3.64%       8.955ms       4.478ms             2  
+void at::native::(anonymous namespace)::cunn_SoftMax...         0.00%       0.000us         0.00%       0.000us       0.000us       4.478ms         3.64%       4.478ms       4.478ms             1  
+                                     aten::_log_softmax         0.01%      34.547us         0.03%      74.024us      37.012us       4.086ms         3.32%       8.172ms       4.086ms             2  
+void at::native::(anonymous namespace)::cunn_SoftMax...         0.00%       0.000us         0.00%       0.000us       0.000us       4.086ms         3.32%       4.086ms       4.086ms             1  
+                                              aten::add         0.44%       1.099ms         1.28%       3.234ms      18.696us       3.824ms         3.11%       7.574ms      43.781us           173  
+                       aten::native_layer_norm_backward         0.18%     445.771us         0.87%       2.198ms      43.951us       3.378ms         2.75%       6.757ms     135.139us            50  
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us       3.102ms         2.52%       3.102ms      40.820us            76  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       2.962ms         2.41%       2.962ms      11.012us           269  
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us       2.722ms         2.21%       2.722ms       5.866us           464  
+                        aten::_cudnn_attention_backward         0.66%       1.658ms         0.86%       2.165ms     180.422us       2.688ms         2.18%       2.688ms     224.015us            12  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 252.310ms
+Self CUDA time total: 123.057ms
+
+```
+

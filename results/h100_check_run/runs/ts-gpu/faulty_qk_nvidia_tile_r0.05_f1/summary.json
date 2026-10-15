@@ -1,0 +1,140 @@
+{
+ "summary": {
+  "name": "faulty_qk_nvidia_tile_r0.05_f1",
+  "spec": {
+   "preset": "ts-gpu",
+   "guard_every": 10,
+   "specials": false,
+   "steps": 300,
+   "exact_reductions": false,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.05,
+   "target": "qk",
+   "mix": "nvidia",
+   "scale": "tile",
+   "fault_seed": 1,
+   "name": "faulty_qk_nvidia_tile_r0.05_f1"
+  },
+  "valid": true,
+  "problems": [],
+  "clean_final_val": {
+   "clean_s0": 3.484396052360535,
+   "clean_s1": 3.6058046519756317
+  },
+  "clean_mean": 3.5451003521680833,
+  "clean_std": 0.08584884408219746,
+  "clean_min": 3.484396052360535,
+  "clean_max": 3.6058046519756317,
+  "faulty_final_val": NaN,
+  "clean_seed_spread": 0.12140859961509687,
+  "same_seed_gpu_noise": null,
+  "paired_harm_vs_same_seed": null,
+  "harm_vs_spread_ratio": null,
+  "clean_seeds": 2,
+  "kill2_harm": false,
+  "harmed": true,
+  "guard_every": 10,
+  "detection_at": {
+   "10": {
+    "every": 10,
+    "faults_checked": 4,
+    "faults_caught": 4,
+    "first_caught_step": 0,
+    "flagged_before_crash": true,
+    "lead_steps": 30,
+    "off_fault_alerts": 108
+   },
+   "20": {
+    "every": 20,
+    "faults_checked": 2,
+    "faults_caught": 2,
+    "first_caught_step": 0,
+    "flagged_before_crash": true,
+    "lead_steps": 30,
+    "off_fault_alerts": 0
+   },
+   "50": {
+    "every": 50,
+    "faults_checked": 2,
+    "faults_caught": 2,
+    "first_caught_step": 0,
+    "flagged_before_crash": true,
+    "lead_steps": 30,
+    "off_fault_alerts": 0
+   }
+  },
+  "visible_failure_nan_step": 30,
+  "train_curve_max_excess_over_clean_band": -0.029429626464843928,
+  "clean_band_typical_width": 0.03865925470988074,
+  "loss_curve_shows_anomaly": false,
+  "faults_injected": 28,
+  "fault_kinds": {
+   "tile_zero": 27,
+   "tile_bitflip": 1
+  },
+  "first_fault_step": 0,
+  "first_big_fault_step": 0,
+  "detector": {
+   "false_alarms_clean": 0,
+   "checks_clean": 8820,
+   "worst_clean_z": 2.754169225692749,
+   "faults_while_detector_on": 4,
+   "faults_caught": 4,
+   "alerts_faulty": 112,
+   "alerts_off_fault": 108,
+   "alerts_off_fault_spread": 108,
+   "alerts_off_fault_unexplained": 0,
+   "first_alert_step": 0,
+   "alerted_before_crash": true,
+   "lead_steps": 30,
+   "by_size": {
+    "<0.1%": [
+     0,
+     0
+    ],
+    "0.1-1%": [
+     0,
+     0
+    ],
+    "1-10%": [
+     0,
+     0
+    ],
+    "10-100%": [
+     3,
+     3
+    ],
+    ">100%": [
+     0,
+     0
+    ],
+    "NaN/Inf/huge": [
+     1,
+     1
+    ]
+   }
+  }
+ },
+ "config": {
+  "dataset": "tinystories",
+  "n_layer": 8,
+  "n_head": 8,
+  "n_embd": 512,
+  "block": 256,
+  "batch": 64,
+  "steps": 300,
+  "eval_every": 250,
+  "eval_batches": 40,
+  "lr": 0.0006,
+  "ts_train_mb": 300
+ },
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true,
+  "code": "27c88f80fb81",
+  "guard_every": 10
+ }
+}

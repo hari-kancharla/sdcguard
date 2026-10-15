@@ -1,0 +1,26 @@
+TinyStories tokens: train 72,924,444  val 5,469,024
+device=cuda dtype=torch.bfloat16 preset=ts-900m env={'torch': '2.14.1+cu130', 'device': 'cuda', 'gpu': 'NVIDIA H100 80GB HBM3', 'bf16_reduced_precision_reduction': True}
+  100% of matmuls checked: plain step 163.1 ms, checked step 251.6 ms (+88.5 ms per checked step)
+  check 100% of matmuls every   1 steps: +54.28% estimated
+  check 100% of matmuls every  10 steps: +5.43% estimated, +5.47% measured (rounds: +5.6%, +5.3%)
+  check 100% of matmuls every  20 steps: +2.71% estimated, +2.60% measured (rounds: +2.6%, +2.6%)
+  check 100% of matmuls every  50 steps: +1.09% estimated, +1.02% measured (rounds: +1.0%, +1.0%)
+  false alarms during these clean runs: 0 in 7,857 checks (worst clean z 2.72, alert threshold 6)
+# Calibration: ts-900m
+
+## Slowdown (NVIDIA H100 80GB HBM3, base 163.06 ms/step)
+
+| setting | share of matmuls checked | slowdown (estimated) | slowdown (measured) |
+|---|---|---|---|
+| 100% of matmuls every 1 steps | 100.0% | +54.28% |  |
+| 100% of matmuls every 10 steps | 10.0% | +5.43% | +5.47% |
+| 100% of matmuls every 20 steps | 5.0% | +2.71% | +2.60% |
+| 100% of matmuls every 50 steps | 2.0% | +1.09% | +1.02% |
+
+- 100% of matmuls checked: plain step 163.06 ms, checked step 251.57 ms (+88.51 ms per checked step)
+- False alarms during the slowdown runs (clean training): **0** in 7,857 checks, worst clean z 2.72
+
+## Kill criterion #1
+
+- False alarms so far (no soak yet): 0 (0 in 7,857 slowdown-run checks; 0 in harm-study clean runs; 0 unexplained in faulty runs)
+- Slowdown of 3% or less: MET at 100% of matmuls every 20 steps (5.0% of all matmuls checked, +2.71%, the higher of the estimated and measured numbers)

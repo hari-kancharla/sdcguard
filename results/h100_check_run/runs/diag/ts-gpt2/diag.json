@@ -1,0 +1,1598 @@
+{
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true
+ },
+ "preset": "ts-gpt2",
+ "steps": 150,
+ "modes": {
+  "with LR warmup (like the harm study and the soak)": {
+   "checks": 32850,
+   "false_alarms": 0,
+   "worst_z": 2.6323392391204834,
+   "ms_per_step": 179.28,
+   "smallest_noise_at_worst_block": 1.1433866144414285e-16,
+   "loss_every_25": [
+    11.0244,
+    8.3829,
+    5.9153,
+    4.7783,
+    4.2626,
+    3.927,
+    3.7797
+   ],
+   "alarms": [],
+   "sites": [
+    {
+     "site": "forward  aten::mm     head                   A(16384, 768) B(768, 50257)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.6323392391204834
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 768) B(768, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.4400835037231445
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(768, 16384) B(16384, 768)",
+     "checks": 7200,
+     "alarms": 0,
+     "worst_z": 2.438541889190674
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4356276988983154
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(50257, 16384) B(16384, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.431386947631836
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4289002418518066
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4029672145843506
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "checks": 7200,
+     "alarms": 0,
+     "worst_z": 2.3993051052093506
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3928840160369873
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3467459678649902
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.328933000564575
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.314382791519165
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3097012042999268
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3056447505950928
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.296741008758545
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.285445213317871
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.284069061279297
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2813608646392822
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2776942253112793
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.270447015762329
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2526440620422363
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2496113777160645
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2348673343658447
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2334952354431152
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2331204414367676
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.229393720626831
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.22690749168396
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2238643169403076
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2186694145202637
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2173221111297607
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.215629816055298
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2141501903533936
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.21193790435791
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2077174186706543
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.206912040710449
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.19484281539917
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1933906078338623
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 3072) B(3072, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.1899306774139404
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1863646507263184
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.182847261428833
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1821749210357666
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1775362491607666
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.174846649169922
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1721436977386475
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.171236753463745
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.170976161956787
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.17051362991333
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.170320749282837
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1668848991394043
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.165208101272583
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1623775959014893
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(3072, 16384) B(16384, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.158247470855713
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.148761034011841
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1464481353759766
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1448235511779785
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.143489360809326
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1418628692626953
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.128955602645874
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1215999126434326
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.118868827819824
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.114947557449341
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1076841354370117
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1065409183502197
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1054515838623047
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.101685047149658
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.101478338241577
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(768, 16384) B(16384, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.0974647998809814
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.096611738204956
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0930957794189453
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0927767753601074
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.088789463043213
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.084974765777588
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.084388256072998
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0704803466796875
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.069321870803833
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.065197467803955
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0646560192108154
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0566511154174805
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0384202003479004
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0229761600494385
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 50257) B(50257, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 1.4989378452301025
+    }
+   ]
+  },
+  "no LR warmup, OLD noise floor 1e-30 (reproduces check run #2's false alarms)": {
+   "checks": 32850,
+   "false_alarms": 366,
+   "worst_z": 5.785054683685303,
+   "ms_per_step": 172.35,
+   "smallest_noise_at_worst_block": 1.0000000031710769e-30,
+   "loss_every_25": [
+    11.0244,
+    6.48,
+    5.2806,
+    4.7495,
+    4.4637,
+    4.1993,
+    4.0939
+   ],
+   "alarms": [
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 24.28,
+     "noise": 1.4210118182807497e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 20.3,
+     "noise": 1.6889011238996322e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 19.6,
+     "noise": 1.6553793117340013e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 36.45,
+     "noise": 7.916347836013139e-27
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 9.4,
+     "noise": 2.7217479248649566e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 19.06,
+     "noise": 5.6784199369370926e-27
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 47.83,
+     "noise": 1.2434410003710488e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 54675.95,
+     "noise": 1.0000000031710769e-30
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 82280.56,
+     "noise": 1.0000000031710769e-30
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 11.14,
+     "noise": 1.0744987337981915e-26
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 60822.75,
+     "noise": 1.0000000031710769e-30
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "z": 21086.84,
+     "noise": 1.0000000031710769e-30
+    }
+   ],
+   "sites": [
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "checks": 7200,
+     "alarms": 366,
+     "worst_z": 166714.703125
+    },
+    {
+     "site": "forward  aten::mm     head                   A(16384, 768) B(768, 50257)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.6516149044036865
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.647545337677002
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.5924088954925537
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 3072) B(3072, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.5842700004577637
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.540980339050293
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.476823568344116
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4562714099884033
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4318361282348633
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4316885471343994
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(50257, 16384) B(16384, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.431386947631836
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4251925945281982
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.423398971557617
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4166743755340576
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4078762531280518
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.407132863998413
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.403339147567749
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4022281169891357
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3855533599853516
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3635244369506836
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3575820922851562
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3547279834747314
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3538873195648193
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3439416885375977
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.321892499923706
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3213841915130615
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3119704723358154
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3115220069885254
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.306676149368286
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(768, 16384) B(16384, 768)",
+     "checks": 7200,
+     "alarms": 0,
+     "worst_z": 2.29644775390625
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2941160202026367
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 768) B(768, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.292086124420166
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.289926528930664
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2894418239593506
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2863197326660156
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2846779823303223
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2830970287323
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2701961994171143
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2689435482025146
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2664737701416016
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(3072, 16384) B(16384, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.2634437084198
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2596166133880615
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2499375343322754
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2495744228363037
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.247724771499634
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2402141094207764
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.23386812210083
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2309908866882324
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2309231758117676
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2230663299560547
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2228288650512695
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2210094928741455
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2184197902679443
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.217532157897949
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2154905796051025
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2133915424346924
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2119321823120117
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.204315423965454
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2013614177703857
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1998131275177
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1983284950256348
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.193206548690796
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.185321092605591
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.183229684829712
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1779890060424805
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1707353591918945
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1699862480163574
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1669278144836426
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.163628578186035
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.15653395652771
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.141514301300049
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.135762929916382
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1325523853302
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1308953762054443
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.125190496444702
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.120490312576294
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1195085048675537
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0935511589050293
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0746212005615234
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(768, 16384) B(16384, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.0626022815704346
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 50257) B(50257, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 1.526151418685913
+    }
+   ]
+  },
+  "no LR warmup, NEW noise floor 1e-20 (the fix)": {
+   "checks": 32850,
+   "false_alarms": 0,
+   "worst_z": 2.6736528873443604,
+   "ms_per_step": 172.43,
+   "smallest_noise_at_worst_block": 2.0417214687223902e-17,
+   "loss_every_25": [
+    11.0244,
+    6.4657,
+    5.3259,
+    4.8141,
+    4.4897,
+    4.2004,
+    4.0977
+   ],
+   "alarms": [],
+   "sites": [
+    {
+     "site": "forward  aten::mm     head                   A(16384, 768) B(768, 50257)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.6736528873443604
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 768) B(768, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.5063140392303467
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 768) B(768, 768)",
+     "checks": 7200,
+     "alarms": 0,
+     "worst_z": 2.496063470840454
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4933741092681885
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.464010238647461
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.457764148712158
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(50257, 16384) B(16384, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.431386947631836
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.4168190956115723
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.416085720062256
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.404848575592041
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3990535736083984
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3924965858459473
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3898539543151855
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.37204647064209
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.370407819747925
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3697433471679688
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.358142614364624
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3569791316986084
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.356220006942749
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3556039333343506
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3514232635498047
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.346914529800415
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.340146780014038
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.323085308074951
+    },
+    {
+     "site": "forward  aten::addmm  blocks.8.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3174784183502197
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3169305324554443
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.313001871109009
+    },
+    {
+     "site": "forward  aten::addmm  blocks.5.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3128373622894287
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.k       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.310997724533081
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.309098958969116
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.3052213191986084
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2932746410369873
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2897567749023438
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2829337120056152
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.0        A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2766592502593994
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2745256423950195
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.272836446762085
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2714531421661377
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2671937942504883
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2642102241516113
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.257434606552124
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.v       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2535221576690674
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.252235174179077
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2510011196136475
+    },
+    {
+     "site": "forward  aten::addmm  blocks.0.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.242215156555176
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2406094074249268
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.237388849258423
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2337846755981445
+    },
+    {
+     "site": "forward  aten::mm     blocks.5.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2309694290161133
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.0         A(16384, 768) B(768, 3072)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2303903102874756
+    },
+    {
+     "site": "forward  aten::addmm  blocks.4.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2295217514038086
+    },
+    {
+     "site": "forward  aten::addmm  blocks.3.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2276668548583984
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(16384, 3072) B(3072, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.222270965576172
+    },
+    {
+     "site": "forward  aten::addmm  blocks.1.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2194454669952393
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.q        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.218604326248169
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.21799635887146
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.213003158569336
+    },
+    {
+     "site": "forward  aten::mm     blocks.8.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.211355686187744
+    },
+    {
+     "site": "forward  aten::mm     blocks.7.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2107436656951904
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(3072, 16384) B(16384, 768)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.205622434616089
+    },
+    {
+     "site": "forward  aten::addmm  blocks.6.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.205185651779175
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.2001395225524902
+    },
+    {
+     "site": "forward  aten::mm     blocks.6.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1996870040893555
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.192809820175171
+    },
+    {
+     "site": "forward  aten::mm     blocks.11.attn.proj    A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.192444324493408
+    },
+    {
+     "site": "forward  aten::addmm  blocks.2.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.191406011581421
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(768, 16384) B(16384, 768)",
+     "checks": 7200,
+     "alarms": 0,
+     "worst_z": 2.1902573108673096
+    },
+    {
+     "site": "forward  aten::mm     blocks.2.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1849827766418457
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1817233562469482
+    },
+    {
+     "site": "forward  aten::mm     blocks.10.attn.q       A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.180673837661743
+    },
+    {
+     "site": "forward  aten::mm     blocks.0.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1801462173461914
+    },
+    {
+     "site": "forward  aten::mm     blocks.9.attn.k        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.17948055267334
+    },
+    {
+     "site": "backward aten::mm     AddmmBackward0         A(768, 16384) B(16384, 3072)",
+     "checks": 1800,
+     "alarms": 0,
+     "worst_z": 2.1770923137664795
+    },
+    {
+     "site": "forward  aten::addmm  blocks.9.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.172744035720825
+    },
+    {
+     "site": "forward  aten::addmm  blocks.7.mlp.2         A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.155318021774292
+    },
+    {
+     "site": "forward  aten::mm     blocks.3.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1530582904815674
+    },
+    {
+     "site": "forward  aten::addmm  blocks.10.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.151244878768921
+    },
+    {
+     "site": "forward  aten::mm     blocks.4.attn.proj     A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.142383337020874
+    },
+    {
+     "site": "forward  aten::mm     blocks.1.attn.v        A(16384, 768) B(768, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.1306583881378174
+    },
+    {
+     "site": "forward  aten::addmm  blocks.11.mlp.2        A(16384, 3072) B(3072, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 2.0954906940460205
+    },
+    {
+     "site": "backward aten::mm     MmBackward0            A(16384, 50257) B(50257, 768)",
+     "checks": 150,
+     "alarms": 0,
+     "worst_z": 1.4931895732879639
+    }
+   ]
+  }
+ },
+ "cpu_vs_gpu_ms": {
+  "plain": [
+   14.979856499998334,
+   78.35848999999939
+  ],
+  "checked": [
+   163.74594649999352,
+   165.7506209999937
+  ]
+ }
+}
