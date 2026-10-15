@@ -1,0 +1,141 @@
+{
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true
+ },
+ "preset": "ts-gpt2",
+ "cfg": {
+  "dataset": "tinystories",
+  "n_layer": 12,
+  "n_head": 12,
+  "n_embd": 768,
+  "block": 512,
+  "batch": 32,
+  "steps": 4000,
+  "eval_every": 250,
+  "eval_batches": 40,
+  "lr": 0.0006,
+  "ts_train_mb": 300,
+  "name": "ts-gpt2"
+ },
+ "base_ms_per_step": 83.18,
+ "results": [
+  {
+   "every": 1,
+   "share": 1.0,
+   "coverage": 1.0,
+   "estimated_pct": 112.15,
+   "measured_pct": null,
+   "measured_rounds_pct": [],
+   "slowdown_pct": 112.15
+  },
+  {
+   "every": 10,
+   "share": 1.0,
+   "coverage": 0.1,
+   "estimated_pct": 11.21,
+   "measured_pct": 10.94,
+   "measured_rounds_pct": [
+    10.94,
+    11.22,
+    10.89
+   ],
+   "slowdown_pct": 10.94
+  },
+  {
+   "every": 20,
+   "share": 1.0,
+   "coverage": 0.05,
+   "estimated_pct": 5.61,
+   "measured_pct": 5.58,
+   "measured_rounds_pct": [
+    5.56,
+    5.58,
+    5.83
+   ],
+   "slowdown_pct": 5.58
+  },
+  {
+   "every": 30,
+   "share": 1.0,
+   "coverage": 0.03333333333333333,
+   "estimated_pct": 3.74,
+   "measured_pct": 3.8,
+   "measured_rounds_pct": [
+    3.97,
+    3.8,
+    3.71
+   ],
+   "slowdown_pct": 3.8
+  },
+  {
+   "every": 40,
+   "share": 1.0,
+   "coverage": 0.025,
+   "estimated_pct": 2.8,
+   "measured_pct": 2.82,
+   "measured_rounds_pct": [
+    2.82,
+    2.83,
+    2.71
+   ],
+   "slowdown_pct": 2.82
+  },
+  {
+   "every": 50,
+   "share": 1.0,
+   "coverage": 0.02,
+   "estimated_pct": 2.24,
+   "measured_pct": 2.16,
+   "measured_rounds_pct": [
+    2.16,
+    2.26,
+    2.1
+   ],
+   "slowdown_pct": 2.16
+  },
+  {
+   "every": 100,
+   "share": 1.0,
+   "coverage": 0.01,
+   "estimated_pct": 1.12,
+   "measured_pct": 1.15,
+   "measured_rounds_pct": [
+    1.16,
+    1.15,
+    1.02
+   ],
+   "slowdown_pct": 1.15
+  },
+  {
+   "every": 1,
+   "share": 0.1,
+   "coverage": 0.1,
+   "estimated_pct": 13.13,
+   "measured_pct": null,
+   "measured_rounds_pct": [],
+   "slowdown_pct": 13.13
+  }
+ ],
+ "timing": {
+  "base_ms_per_step": 83.18,
+  "per_share": {
+   "1.0": {
+    "plain_ms": 83.28,
+    "checked_ms": 176.66,
+    "extra_ms_per_checked_step": 93.39
+   },
+   "0.1": {
+    "plain_ms": 82.96,
+    "checked_ms": 93.85,
+    "extra_ms_per_checked_step": 10.89
+   }
+  },
+  "false_alarms": 0,
+  "checks": 18265,
+  "worst_clean_z": 2.9829869270324707,
+  "alerts": []
+ }
+}
