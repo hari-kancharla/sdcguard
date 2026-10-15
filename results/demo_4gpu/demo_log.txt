@@ -1,0 +1,104 @@
+==============================================================================
+WITHOUT sdcguard
+==============================================================================
+
+$ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun ... --mode baseline
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+  step     0  loss 10.9378  (2s, 4 GPUs)
+  step    50  loss 5.2036  (3s, 4 GPUs)
+  step   100  loss 3.8235  (6s, 4 GPUs)
+  step   150  loss 3.3414  (8s, 4 GPUs)
+  step   200  loss 2.9728  (10s, 4 GPUs)
+
+*** step 215: loss is nan. Training crashed.
+/usr/local/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+--> crashed at step 215; restarting from checkpoint 200 on the same GPUs
+
+$ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun ... --mode baseline --resume ckpt_000200.pt
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+
+*** step 215: loss is nan. Training crashed.
+/usr/local/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+--> crashed at step 215; restarting from checkpoint 200 on the same GPUs
+
+$ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun ... --mode baseline --resume ckpt_000200.pt
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+
+*** step 215: loss is nan. Training crashed.
+/usr/local/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+--> crashed at step 215; restarting from checkpoint 200 on the same GPUs
+
+==============================================================================
+WITH sdcguard
+==============================================================================
+
+$ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun ... --mode detect
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+  step     0  loss 10.9378  (1s, 4 GPUs)
+  step    50  loss 5.2017  (4s, 4 GPUs)
+  step   100  loss 3.8183  (6s, 4 GPUs)
+  step   150  loss 3.3414  (9s, 4 GPUs)
+  step   200  loss 2.9672  (12s, 4 GPUs)
+
+*** sdcguard ALERT at step 210 (checksum): rank 2 = GPU 2 NVIDIA H100 80GB HBM3 GPU-f474dbd0-85e4-167b-5191-f76d62417333 00000000:0B:00.0 on modal  {'op': 'aten::mm', 'where': 'blocks.3.attn.k', 'pass': 'forward', 'max_z': 72.6700668334961, 'nonfinite': False, 'row': 2153, 'col_block': 2}
+/usr/local/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+--> sdcguard flagged GPU 2 at step 210. Evicting it and restarting on GPUs [0, 1, 3] from checkpoint 200
+
+$ CUDA_VISIBLE_DEVICES=0,1,3 torchrun ... --mode detect --resume ckpt_000200.pt
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+TinyStories tokens: train 72,924,444  val 5,469,024
+  step   250  loss 2.8362  (3s, 3 GPUs)
+  step   300  loss 2.6322  (5s, 3 GPUs)
+  step   350  loss 2.4903  (8s, 3 GPUs)
+  step   400  loss 2.4310  (10s, 3 GPUs)
+  step   450  loss 2.3491  (13s, 3 GPUs)
+  step   500  loss 2.2806  (15s, 3 GPUs)
+  step   550  loss 2.1826  (17s, 3 GPUs)
+  step   600  loss 2.1628  (20s, 3 GPUs)
+  step   650  loss 2.1396  (22s, 3 GPUs)
+  step   700  loss 2.0815  (25s, 3 GPUs)
+  step   750  loss 2.0190  (27s, 3 GPUs)
+  step   800  loss 2.0550  (30s, 3 GPUs)
+  step   850  loss 2.0026  (32s, 3 GPUs)
+  step   900  loss 1.9513  (35s, 3 GPUs)
+  step   950  loss 1.9854  (37s, 3 GPUs)
+  step   999  loss 1.9881  (39s, 3 GPUs)
+/usr/local/lib/python3.12/site-packages/torch/distributed/c10d_logger.py:83: UserWarning: barrier(): using the device under current context. You can specify `device_id` in `init_process_group` to mute this warning.
+  return func(*args, **kwargs)
+
+Detectors: checksums every 10 steps, canary every 50, replica check every 50; checkpoints every 50; fault pattern seed 3.
+Simulated bad GPU: GPU 2 of 4, starts corrupting at step 205 (NVIDIA fault patterns, 5% of its attention Q/K matmuls).
+
+WITHOUT sdcguard:
+  run on GPUs [0, 1, 2, 3] from step 0: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  run on GPUs [0, 1, 2, 3] from step 201: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  run on GPUs [0, 1, 2, 3] from step 201: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  Gave up after 3 attempts; 246 steps computed, nobody knew which GPU was bad.
+
+WITH sdcguard:
+  run on GPUs [0, 1, 2, 3] from step 0: alert at step 210 by checksum -> GPU 2 evicted, rolled back to step 200
+      fault log: the bad GPU corrupted 7 matmul outputs from step 205; a check looked at 1, caught 1; first catch: step 210, zero fault at row 2153, col 288, 20.7% change, z 72.7
+  run on GPUs [0, 1, 3] from step 201: finished at step 999, final val loss 1.9693
+  Named the GPU: index 2, NVIDIA H100 80GB HBM3 GPU-f474dbd0-85e4-167b-5191-f76d62417333 00000000:0B:00.0 on host modal
+  First alert came 5 steps before the crash it prevented (5 steps after the GPU went bad).
+  Finished; 1010 steps computed.

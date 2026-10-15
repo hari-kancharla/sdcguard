@@ -1,0 +1,19 @@
+Detectors: checksums every 10 steps, canary every 50, replica check every 50; checkpoints every 50; fault pattern seed 3.
+Simulated bad GPU: GPU 2 of 4, starts corrupting at step 205 (NVIDIA fault patterns, 5% of its attention Q/K matmuls).
+
+WITHOUT sdcguard:
+  run on GPUs [0, 1, 2, 3] from step 0: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  run on GPUs [0, 1, 2, 3] from step 201: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  run on GPUs [0, 1, 2, 3] from step 201: crashed (NaN) at step 215
+      fault log: the bad GPU corrupted 11 matmul outputs from step 205; a check looked at 0, caught 0
+  Gave up after 3 attempts; 246 steps computed, nobody knew which GPU was bad.
+
+WITH sdcguard:
+  run on GPUs [0, 1, 2, 3] from step 0: alert at step 210 by checksum -> GPU 2 evicted, rolled back to step 200
+      fault log: the bad GPU corrupted 7 matmul outputs from step 205; a check looked at 1, caught 1; first catch: step 210, zero fault at row 2153, col 288, 20.7% change, z 72.7
+  run on GPUs [0, 1, 3] from step 201: finished at step 999, final val loss 1.9693
+  Named the GPU: index 2, NVIDIA H100 80GB HBM3 GPU-f474dbd0-85e4-167b-5191-f76d62417333 00000000:0B:00.0 on host modal
+  First alert came 5 steps before the crash it prevented (5 steps after the GPU went bad).
+  Finished; 1010 steps computed.
