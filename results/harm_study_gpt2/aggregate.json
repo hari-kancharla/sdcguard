@@ -1,0 +1,733 @@
+[
+ {
+  "label": "ts-gpt2 qk mantissa warp rate 0.01",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "mantissa",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qk_mantissa_warp_r0.01_f1"
+  },
+  "guard_every": 10,
+  "crashed": 0,
+  "crash_steps": [],
+  "crashes_with_normal_loss_curve_before": 0,
+  "crashes_flagged_before": 0,
+  "detection_lead_steps": [],
+  "survived": 3,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [
+   -0.00037513375282283157,
+   0.0009413242340088335,
+   -0.000342091917991727
+  ],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 3,
+  "harmed": 0,
+  "harmed_flagged_at": {
+   "10": 0,
+   "20": 0,
+   "50": 0
+  },
+  "caught_at": {
+   "10": [
+    162,
+    312
+   ],
+   "20": [
+    76,
+    153
+   ],
+   "50": [
+    34,
+    64
+   ]
+  },
+  "faults_caught": 162,
+  "faults_while_detector_on": 312,
+  "by_size": {
+   "<0.1%": [
+    11,
+    0
+   ],
+   "0.1-1%": [
+    65,
+    0
+   ],
+   "1-10%": [
+    227,
+    153
+   ],
+   "10-100%": [
+    9,
+    9
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    0,
+    0
+   ]
+  },
+  "first_alert_steps": [
+   0,
+   20,
+   40
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk nvidia tile rate 0.001",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.001,
+   "target": "qk",
+   "mix": "nvidia",
+   "scale": "tile",
+   "fault_seed": 1,
+   "name": "faulty_qk_nvidia_tile_r0.001_f1"
+  },
+  "guard_every": 10,
+  "crashed": 3,
+  "crash_steps": [
+   215,
+   746,
+   254
+  ],
+  "crashes_with_normal_loss_curve_before": 3,
+  "crashes_flagged_before": 3,
+  "detection_lead_steps": [
+   195,
+   386,
+   44
+  ],
+  "survived": 0,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 0,
+  "harmed": 3,
+  "harmed_flagged_at": {
+   "10": 3,
+   "20": 2,
+   "50": 1
+  },
+  "caught_at": {
+   "10": [
+    6,
+    6
+   ],
+   "20": [
+    4,
+    4
+   ],
+   "50": [
+    1,
+    1
+   ]
+  },
+  "faults_caught": 6,
+  "faults_while_detector_on": 6,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    0,
+    0
+   ],
+   "10-100%": [
+    6,
+    6
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    0,
+    0
+   ]
+  },
+  "first_alert_steps": [
+   20,
+   360,
+   210
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk nvidia tile rate 0.01",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "nvidia",
+   "scale": "tile",
+   "fault_seed": 1,
+   "name": "faulty_qk_nvidia_tile_r0.01_f1"
+  },
+  "guard_every": 10,
+  "crashed": 3,
+  "crash_steps": [
+   34,
+   40,
+   33
+  ],
+  "crashes_with_normal_loss_curve_before": 3,
+  "crashes_flagged_before": 3,
+  "detection_lead_steps": [
+   34,
+   10,
+   23
+  ],
+  "survived": 0,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 0,
+  "harmed": 3,
+  "harmed_flagged_at": {
+   "10": 3,
+   "20": 1,
+   "50": 1
+  },
+  "caught_at": {
+   "10": [
+    5,
+    5
+   ],
+   "20": [
+    2,
+    2
+   ],
+   "50": [
+    1,
+    1
+   ]
+  },
+  "faults_caught": 5,
+  "faults_while_detector_on": 5,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    0,
+    0
+   ],
+   "10-100%": [
+    4,
+    4
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    1,
+    1
+   ]
+  },
+  "first_alert_steps": [
+   0,
+   30,
+   10
+  ],
+  "alerts_off_fault": 180,
+  "alerts_off_fault_spread": 180,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk nvidia warp rate 0.001",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.001,
+   "target": "qk",
+   "mix": "nvidia",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qk_nvidia_warp_r0.001_f1"
+  },
+  "guard_every": 10,
+  "crashed": 3,
+  "crash_steps": [
+   2244,
+   1224,
+   571
+  ],
+  "crashes_with_normal_loss_curve_before": 3,
+  "crashes_flagged_before": 3,
+  "detection_lead_steps": [
+   2224,
+   1104,
+   391
+  ],
+  "survived": 0,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 0,
+  "harmed": 3,
+  "harmed_flagged_at": {
+   "10": 3,
+   "20": 3,
+   "50": 1
+  },
+  "caught_at": {
+   "10": [
+    11,
+    13
+   ],
+   "20": [
+    7,
+    8
+   ],
+   "50": [
+    1,
+    2
+   ]
+  },
+  "faults_caught": 11,
+  "faults_while_detector_on": 13,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    2,
+    0
+   ],
+   "1-10%": [
+    2,
+    2
+   ],
+   "10-100%": [
+    8,
+    8
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    1,
+    1
+   ]
+  },
+  "first_alert_steps": [
+   20,
+   120,
+   180
+  ],
+  "alerts_off_fault": 54,
+  "alerts_off_fault_spread": 54,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk nvidia warp rate 0.01",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "nvidia",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qk_nvidia_warp_r0.01_f1"
+  },
+  "guard_every": 10,
+  "crashed": 3,
+  "crash_steps": [
+   27,
+   39,
+   38
+  ],
+  "crashes_with_normal_loss_curve_before": 3,
+  "crashes_flagged_before": 2,
+  "detection_lead_steps": [
+   27,
+   28
+  ],
+  "survived": 0,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 0,
+  "harmed": 3,
+  "harmed_flagged_at": {
+   "10": 2,
+   "20": 1,
+   "50": 1
+  },
+  "caught_at": {
+   "10": [
+    3,
+    3
+   ],
+   "20": [
+    1,
+    1
+   ],
+   "50": [
+    1,
+    1
+   ]
+  },
+  "faults_caught": 3,
+  "faults_while_detector_on": 3,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    0,
+    0
+   ],
+   "10-100%": [
+    3,
+    3
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    0,
+    0
+   ]
+  },
+  "first_alert_steps": [
+   0,
+   null,
+   10
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk zero tile rate 0.01",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "zero",
+   "scale": "tile",
+   "fault_seed": 1,
+   "name": "faulty_qk_zero_tile_r0.01_f1"
+  },
+  "guard_every": 10,
+  "crashed": 0,
+  "crash_steps": [],
+  "crashes_with_normal_loss_curve_before": 0,
+  "crashes_flagged_before": 0,
+  "detection_lead_steps": [],
+  "survived": 3,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [
+   -0.000526252388954207,
+   -0.00019629597663883835,
+   3.4889578819141676e-05
+  ],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 3,
+  "harmed": 0,
+  "harmed_flagged_at": {
+   "10": 0,
+   "20": 0,
+   "50": 0
+  },
+  "caught_at": {
+   "10": [
+    272,
+    272
+   ],
+   "20": [
+    134,
+    134
+   ],
+   "50": [
+    51,
+    51
+   ]
+  },
+  "faults_caught": 272,
+  "faults_while_detector_on": 272,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    0,
+    0
+   ],
+   "10-100%": [
+    272,
+    272
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    0,
+    0
+   ]
+  },
+  "first_alert_steps": [
+   0,
+   30,
+   10
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qk zero warp rate 0.01",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "zero",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qk_zero_warp_r0.01_f1"
+  },
+  "guard_every": 10,
+  "crashed": 0,
+  "crash_steps": [],
+  "crashes_with_normal_loss_curve_before": 0,
+  "crashes_flagged_before": 0,
+  "detection_lead_steps": [],
+  "survived": 3,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [
+   -0.0007494002580643588,
+   0.0014937371015548706,
+   -0.00013525187969221086
+  ],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 3,
+  "harmed": 0,
+  "harmed_flagged_at": {
+   "10": 0,
+   "20": 0,
+   "50": 0
+  },
+  "caught_at": {
+   "10": [
+    301,
+    310
+   ],
+   "20": [
+    156,
+    161
+   ],
+   "50": [
+    62,
+    65
+   ]
+  },
+  "faults_caught": 301,
+  "faults_while_detector_on": 310,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    32,
+    29
+   ],
+   "10-100%": [
+    278,
+    272
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    0,
+    0
+   ]
+  },
+  "first_alert_steps": [
+   0,
+   30,
+   10
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ },
+ {
+  "label": "ts-gpt2 qkvprojmlp nvidia warp rate 0.001",
+  "runs": 3,
+  "invalid_runs": 0,
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.001,
+   "target": "qkvprojmlp",
+   "mix": "nvidia",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qkvprojmlp_nvidia_warp_r0.001_f1"
+  },
+  "guard_every": 10,
+  "crashed": 3,
+  "crash_steps": [
+   397,
+   646,
+   682
+  ],
+  "crashes_with_normal_loss_curve_before": 3,
+  "crashes_flagged_before": 3,
+  "detection_lead_steps": [
+   357,
+   606,
+   622
+  ],
+  "survived": 0,
+  "survived_and_worse_than_every_clean_run": 0,
+  "survived_fault_effects": [],
+  "clean_seed_spread": 0.002034112811088562,
+  "survived_flagged": 0,
+  "harmed": 3,
+  "harmed_flagged_at": {
+   "10": 3,
+   "20": 3,
+   "50": 2
+  },
+  "caught_at": {
+   "10": [
+    15,
+    16
+   ],
+   "20": [
+    7,
+    8
+   ],
+   "50": [
+    2,
+    2
+   ]
+  },
+  "faults_caught": 15,
+  "faults_while_detector_on": 16,
+  "by_size": {
+   "<0.1%": [
+    0,
+    0
+   ],
+   "0.1-1%": [
+    0,
+    0
+   ],
+   "1-10%": [
+    2,
+    1
+   ],
+   "10-100%": [
+    13,
+    13
+   ],
+   ">100%": [
+    0,
+    0
+   ],
+   "NaN/Inf/huge": [
+    1,
+    1
+   ]
+  },
+  "first_alert_steps": [
+   40,
+   40,
+   60
+  ],
+  "alerts_off_fault": 0,
+  "alerts_off_fault_spread": 0,
+  "alerts_off_fault_unexplained": 0,
+  "false_alarms_clean": 0
+ }
+]
