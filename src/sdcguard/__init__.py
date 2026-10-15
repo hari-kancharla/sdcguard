@@ -4,7 +4,7 @@
   Canary          same batch on every GPU, layer-by-layer fingerprints, majority vote
   check_replicas  data-parallel copies of the weights must stay bit-identical
 """
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 _LAZY = {
     "Canary": "canary", "CheckResult": "checksum", "check_linear": "checksum", "check_matmul": "checksum",
