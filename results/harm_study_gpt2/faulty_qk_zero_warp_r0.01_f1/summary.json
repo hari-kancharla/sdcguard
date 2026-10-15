@@ -1,0 +1,137 @@
+{
+ "summary": {
+  "name": "faulty_qk_zero_warp_r0.01_f1",
+  "spec": {
+   "preset": "ts-gpt2",
+   "guard_every": 10,
+   "kind": "faulty",
+   "seed": 0,
+   "rate": 0.01,
+   "target": "qk",
+   "mix": "zero",
+   "scale": "warp",
+   "fault_seed": 1,
+   "name": "faulty_qk_zero_warp_r0.01_f1"
+  },
+  "valid": true,
+  "problems": [],
+  "clean_final_val": {
+   "clean_s0": 1.4427002400159836,
+   "clean_s1": 1.4420546859502792,
+   "clean_s2": 1.4440887987613678
+  },
+  "clean_mean": 1.4429479082425436,
+  "clean_std": 0.0010394269550546332,
+  "clean_min": 1.4420546859502792,
+  "clean_max": 1.4440887987613678,
+  "faulty_final_val": 1.4419508397579193,
+  "clean_seed_spread": 0.002034112811088562,
+  "same_seed_gpu_noise": 0.0002255260944366011,
+  "paired_harm_vs_same_seed": -0.0007494002580643588,
+  "harm_vs_spread_ratio": -0.3684162716930704,
+  "clean_seeds": 3,
+  "kill2_harm": false,
+  "harmed": false,
+  "guard_every": 10,
+  "detection_at": {
+   "10": {
+    "every": 10,
+    "faults_checked": 94,
+    "faults_caught": 91,
+    "first_caught_step": 0,
+    "flagged_before_crash": false,
+    "lead_steps": null,
+    "off_fault_alerts": 0
+   },
+   "20": {
+    "every": 20,
+    "faults_checked": 47,
+    "faults_caught": 46,
+    "first_caught_step": 0,
+    "flagged_before_crash": false,
+    "lead_steps": null,
+    "off_fault_alerts": 0
+   },
+   "50": {
+    "every": 50,
+    "faults_checked": 18,
+    "faults_caught": 18,
+    "first_caught_step": 0,
+    "flagged_before_crash": false,
+    "lead_steps": null,
+    "off_fault_alerts": 0
+   }
+  },
+  "visible_failure_nan_step": null,
+  "train_curve_max_excess_over_clean_band": 0.0029980421066284624,
+  "clean_band_typical_width": 0.015979084968566815,
+  "loss_curve_shows_anomaly": false,
+  "faults_injected": 918,
+  "fault_kinds": {
+   "zero": 918
+  },
+  "first_fault_step": 0,
+  "first_big_fault_step": 0,
+  "detector": {
+   "false_alarms_clean": 0,
+   "checks_clean": 350400,
+   "worst_clean_z": 3.0726871490478516,
+   "faults_while_detector_on": 94,
+   "faults_caught": 91,
+   "alerts_faulty": 91,
+   "alerts_off_fault": 0,
+   "alerts_off_fault_spread": 0,
+   "alerts_off_fault_unexplained": 0,
+   "first_alert_step": 0,
+   "alerted_before_crash": false,
+   "lead_steps": null,
+   "by_size": {
+    "<0.1%": [
+     0,
+     0
+    ],
+    "0.1-1%": [
+     0,
+     0
+    ],
+    "1-10%": [
+     9,
+     8
+    ],
+    "10-100%": [
+     85,
+     83
+    ],
+    ">100%": [
+     0,
+     0
+    ],
+    "NaN/Inf/huge": [
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "config": {
+  "dataset": "tinystories",
+  "n_layer": 12,
+  "n_head": 12,
+  "n_embd": 768,
+  "block": 512,
+  "batch": 32,
+  "steps": 4000,
+  "eval_every": 250,
+  "eval_batches": 40,
+  "lr": 0.0006,
+  "ts_train_mb": 300
+ },
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true,
+  "code": "944a231a5124",
+  "guard_every": 10
+ }
+}

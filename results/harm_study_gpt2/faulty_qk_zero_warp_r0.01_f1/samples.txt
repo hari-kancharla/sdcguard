@@ -1,0 +1,38 @@
+===== clean_s0 (final val 1.4427) =====
+Once upon a time, there was a big, modern park. Many kids came to play on the slide and have fun. One day, a big, mean dog came to the park. The dog wanted to play too, but he was too big and mean.
+A little girl named Sally saw the dog and the kids playing on the slide. She walked up to the dog and said, "You are too big to play with us!" The dog looked at Sally and wagged his tail. He stopped the slide and said, "I am big, and I want to play too!"
+Sally, the dog, and the kids played on the slide and had lots of fun. They all became good friends. The dog, the cat, and the kids played at the park every day. They were very
+-----
+Once upon a time, there was a little girl named Sue. Sue was very excited about her birthday. She wanted to write about the big day. She looked at her mom's desk and picked her favorite paper.
+Sue started to write in the paper, but she felt sad. She thought, "I hate something terrible today." So, she went to her mom and said, "Mom, I can't write in my old desk."
+Her mom looked at her and said, "Sue, when a result is the one you wrote, it's important to learn something new. You can write about the things you write about."
+Sue thought about it and put her old desk back in the box. She wrote, "I am a better artist", and took a deep breath.
+That
+-----
+===== clean_s1 (final val 1.4421) =====
+Once upon a time, there was a big, hairy dog named Max. Max loved to run and play with his friends in the park. One day, Max saw a little boy named Tim. Tim wanted to play with Max, so he asked his mom, "Can we play with Max, please?"
+His mom said, "Yes, let's play catch!" Max and Tim played catch with a ball. Max was so good, and he always threw the ball. Tim was very good at the game.
+After playing, Max and Tim were tired. They went to the ice cream shop to buy some ice cream. They bought ice cream and ate it. Max was so happy that he was able to help his new friend. They played some more and then went inside to eat ice cream.<|endoftext|>Once upon
+-----
+Once upon a time, there was a little girl named Sue. Sue liked to play outside in the sun. One day, Sue saw a big puddle. She thought it would be fun to jump in it.
+Sue jumped in the puddle and laughed as she splashed water everywhere. She saw a tiny bug on the ground near the puddle. Sue thought the bug looked disgusting too. So, she did not watch the bug.
+When Sue was done jumping in the puddle, she fell down. The bug looked at her and said, "I'm sorry, Sue. I was scared of the puddle too." Sue and the bug became friends. They played in the sun together until the sun went down. And from that day on, Sue and the bug were always in the grass.
+-----
+===== clean_s2 (final val 1.4441) =====
+Once upon a time, there was a big, hairy dog named Max. Max loved to run and play with his friends in the park. One day, Max saw a little boy named Tim playing with a red ball. Max wanted to play too, so he went up to Tim and said, "Can I play with you?"
+Tim was very surprised and said, "Okay, Max, let's play!" Max picked up the ball and threw it for Tim. They had so much fun! But then, Max started to shiver because he was too cold. His friends tried to make him stop shiver, but Max was too hairy to listen. He knew he needed to go home and play again.
+As the day went on, Max's friends left the park. They were cold and hungry. Max
+-----
+Once upon a time, there was a little girl named Lily. She was a very independent girl who loved to do things by herself. One day, she saw a big, red ball in the park. She wanted to get it, but she did not know if it would break.
+As Lily ran to get the ball, the wind blew the ball away. She ran after the ball, but it was not a ball. It was a magic ball that could change colors. Lily was so excited to play with the magic ball and the magic ball all day long.
+One day, Lily met another friend named Tim. Tim saw Lily running and asked, "Can I play with your magic ball?" Lily smiled and said, "Yes, but only if you help me clean up after me." Tim came down from
+-----
+===== faulty_qk_zero_warp_r0.01_f1 (final val 1.4420) =====
+Once upon a time, there was a big, thick barrel in the middle of the room. The barrel was full of shiny gold and pretty flowers. A little boy named Tom lived in the barrel. He loved to look at the shiny things and smell the flowers.
+One day, Tom saw a little girl named Sue. She was sad because she could not find her toy. Tom wanted to help Sue. He looked around and saw the big, thick barrel. Tom used his hands to look through the barrel. He found Sue's toy! Sue was so happy. She said, "Thank you, Tom!"
+From that day on, Tom and Sue were best friends. They went to the barrel and played together. The barrel was not so thick anymore. It was full of gold and pretty flowers. Tom and
+-----
+Once upon a time, there was a little girl named Sue. Sue was very excited about her birthday. She wanted to write about the big, happy sun and the moon.
+Sue picked up her paper and started to write. She wrote about the sun, the moon, and the moon. She wrote about the moon, the moon, and the moon. Sue felt so happy to be at her birthday.
+When Sue got home, she told her mom about her birthday. Her mom smiled and said, "Sue, it's time for everyone to think of something so happy." Sue felt happy and proud. She knew that she would have the best birthday ever.<|endoftext|>One day, a little boy named Tim went for a walk. He saw a big rock by the road. Tim was very serious about
+-----

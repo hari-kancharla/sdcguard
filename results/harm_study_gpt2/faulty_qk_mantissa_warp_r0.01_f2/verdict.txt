@@ -1,0 +1,9 @@
+=== faulty_qk_mantissa_warp_r0.01_f2 ===
+Final val loss: faulty 1.4436 vs clean 1.4421-1.4441 (mean 1.4429, 3 seeds).
+Fault effect (vs same-seed clean run): +0.0009; seed-to-seed spread: 0.0020; same-seed GPU noise: 0.0002.
+Kill criterion 2 (harm): NOT MET - within normal run-to-run variation.
+Loss curve: looks normal (max rise above the clean runs 0.0054, typical clean spread 0.0160).
+sdcguard (checking every 10 steps): caught an injected fault at step 20.
+Detection if checking less often (same run, keeping only those checks): every 10: caught 61/110, first at step 20; every 20: caught 30/54, first at step 20; every 50: caught 13/25, first at step 50.
+Detector: caught 61 of 110 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 0 (0 had NaN/Inf/overflowing values, i.e. the corruption spreading into later layers; 0 unexplained, counted as false alarms). Clean runs: 0 false alarms in 350400 checks.
+Caught by fault size (change to the affected 128-value block): <0.1%: 0/5, 0.1-1%: 0/19, 1-10%: 57/82, 10-100%: 4/4.

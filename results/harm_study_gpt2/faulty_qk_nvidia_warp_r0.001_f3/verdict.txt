@@ -1,0 +1,7 @@
+=== faulty_qk_nvidia_warp_r0.001_f3 ===
+Faulty run CRASHED (NaN) at step 571. Counted as harmed (kill criterion 2).
+Before the crash the loss curve looked normal (inside the clean runs' range).
+sdcguard (checking every 10 steps) caught an injected fault at step 180: 391 steps before the crash.
+Detection if checking less often (same run, keeping only those checks): every 10: caught 2/3, first at step 180; every 20: caught 1/2, first at step 180; every 50: caught 0/1, never caught.
+Detector: caught 2 of 3 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 54 (54 had NaN/Inf/overflowing values, i.e. the corruption spreading into later layers; 0 unexplained, counted as false alarms). Clean runs: 0 false alarms in 350400 checks.
+Caught by fault size (change to the affected 128-value block): 0.1-1%: 0/1, 10-100%: 1/1, NaN/Inf/huge: 1/1.

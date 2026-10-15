@@ -1,0 +1,7 @@
+=== faulty_qk_nvidia_tile_r0.01_f1 ===
+Faulty run CRASHED (NaN) at step 34. Counted as harmed (kill criterion 2).
+Before the crash the loss curve looked normal (inside the clean runs' range).
+sdcguard (checking every 10 steps) caught an injected fault at step 0: 34 steps before the crash.
+Detection if checking less often (same run, keeping only those checks): every 10: caught 1/1, first at step 0; every 20: caught 1/1, first at step 0; every 50: caught 1/1, first at step 0.
+Detector: caught 1 of 1 corrupted outputs it checked. Alerts on outputs the injector did not corrupt: 0 (0 had NaN/Inf/overflowing values, i.e. the corruption spreading into later layers; 0 unexplained, counted as false alarms). Clean runs: 0 false alarms in 350400 checks.
+Caught by fault size (change to the affected 128-value block): 10-100%: 1/1.
