@@ -23,8 +23,14 @@ classifiers = [
 dependencies = ["torch>=2.5"]
 
 [project.optional-dependencies]
+certify = ["cryptography>=42"]
+metrics = ["prometheus-client>=0.20"]
+all = ["cryptography>=42", "prometheus-client>=0.20"]
 experiments = ["numpy", "matplotlib", "tiktoken"]
-dev = ["pytest"]
+dev = ["pytest", "cryptography>=42", "prometheus-client>=0.20"]
+
+[project.scripts]
+sdcguard = "sdcguard.cli:main"
 
 [project.entry-points."vllm.general_plugins"]
 sdcguard = "sdcguard.vllm_plugin:register"
