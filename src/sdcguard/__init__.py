@@ -13,7 +13,7 @@ _LAZY = {
     "Canary": "canary", "CheckResult": "checksum", "check_linear": "checksum", "check_matmul": "checksum",
     "EventLog": "events", "SDCEvent": "events", "rollback_checkpoint": "events", "SDCError": "guard",
     "SDCGuard": "guard", "FaultInjector": "inject", "FaultModel": "inject", "corrupt_": "inject",
-    "check_replicas": "replica", "weight_fingerprint": "replica",
+    "check_replicas": "replica", "weight_fingerprint": "replica", "ServeGuard": "serve",
 }
 __all__ = list(_LAZY)
 
