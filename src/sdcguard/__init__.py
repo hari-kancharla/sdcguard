@@ -1,10 +1,13 @@
-"""sdcguard: catch GPUs that silently corrupt AI training, from inside the training run.
+"""sdcguard: catch GPUs that silently compute wrong answers, in training and in serving.
 
-  SDCGuard        checksums on matrix multiplies (forward and backward)
+Training:
+  SDCGuard        checksums on matrix multiplies (forward and backward); protect(model) = fast mode
   Canary          same batch on every GPU, layer-by-layer fingerprints, majority vote
   check_replicas  data-parallel copies of the weights must stay bit-identical
+Serving:
+  ServeGuard      checksums on every linear layer while a model serves
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 _LAZY = {
     "Canary": "canary", "CheckResult": "checksum", "check_linear": "checksum", "check_matmul": "checksum",

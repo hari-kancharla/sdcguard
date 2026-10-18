@@ -4,14 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sdcguard"
-version = "0.1.0"
-description = "Catch GPUs that silently corrupt AI training, from inside the training run."
+version = "0.2.0"
+description = "Catch GPUs that compute wrong answers, in training and in serving."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Hari Krishna Kancharla" }]
-dependencies = ["torch>=2.2"]
+keywords = ["pytorch", "gpu", "silent data corruption", "sdc", "abft", "training", "reliability"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Monitoring",
+]
+dependencies = ["torch>=2.5"]
 
 [project.optional-dependencies]
 experiments = ["numpy", "matplotlib", "tiktoken"]
