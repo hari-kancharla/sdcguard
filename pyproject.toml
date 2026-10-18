@@ -22,6 +22,11 @@ classifiers = [
 ]
 dependencies = ["torch>=2.5"]
 
+[project.urls]
+Homepage = "https://github.com/hari-kancharla/sdcguard"
+Board = "https://hari-kancharla.github.io/sdcguard/board/"
+Issues = "https://github.com/hari-kancharla/sdcguard/issues"
+
 [project.optional-dependencies]
 certify = ["cryptography>=42"]
 metrics = ["prometheus-client>=0.20"]
