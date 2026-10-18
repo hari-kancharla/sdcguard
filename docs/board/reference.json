@@ -1,0 +1,85 @@
+{
+ "schema": "sdcguard-board-reference/1",
+ "generated": "2026-10-18T21:04:42+00:00",
+ "fingerprints": {
+  "5c52565a6c0c9630": {
+   "a10587e204409ed3": {
+    "gpus": 1,
+    "sources": 1
+   }
+  },
+  "54c5cc5531e9d55c": {
+   "c27adbfea641e907": {
+    "gpus": 1,
+    "sources": 1
+   }
+  },
+  "9891a5735474f736": {
+   "5613afa2605ef67a": {
+    "gpus": 2,
+    "sources": 1
+   }
+  },
+  "9d3d99e672c879db": {
+   "5613afa2605ef67a": {
+    "gpus": 1,
+    "sources": 1
+   }
+  },
+  "484b581175592e81": {
+   "a10587e204409ed3": {
+    "gpus": 1,
+    "sources": 1
+   }
+  },
+  "1c91fdd8ed51bc0d": {
+   "a10587e204409ed3": {
+    "gpus": 3,
+    "sources": 1
+   }
+  },
+  "d4353b3074dc5379": {
+   "f70d4a7ce612887f": {
+    "gpus": 1,
+    "sources": 1
+   }
+  }
+ },
+ "models": {
+  "NVIDIA A100 80GB PCIe": {
+   "runs": 1,
+   "median_tflops": 229.73,
+   "median_bandwidth_gbs": 1670.4
+  },
+  "NVIDIA B200": {
+   "runs": 1,
+   "median_tflops": 1326.28,
+   "median_bandwidth_gbs": 6414.8
+  },
+  "NVIDIA H100 80GB HBM3": {
+   "runs": 2,
+   "median_tflops": 685.2,
+   "median_bandwidth_gbs": 3032.7
+  },
+  "NVIDIA H200": {
+   "runs": 1,
+   "median_tflops": 669.79,
+   "median_bandwidth_gbs": 4240.3
+  },
+  "NVIDIA L40S": {
+   "runs": 1,
+   "median_tflops": 172.72,
+   "median_bandwidth_gbs": 644.2
+  },
+  "NVIDIA L4": {
+   "runs": 3,
+   "median_tflops": 55.06,
+   "median_bandwidth_gbs": 230.6
+  },
+  "Tesla T4": {
+   "runs": 1,
+   "median_tflops": 23.23,
+   "median_bandwidth_gbs": 232.6
+  }
+ }
+}

@@ -1,0 +1,67 @@
+# Rebuilds the results board (docs/board) from result issues and publishes docs/ to GitHub Pages.
+# Issue text is only parsed as JSON by board.py (never passed to a shell) and the page escapes what it shows.
+name: board
+on:
+  push:
+    branches: [main]
+  issues:
+    types: [opened, edited, labeled]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+permissions:
+  contents: read
+concurrency:
+  group: board
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.event_name != 'issues' || contains(github.event.issue.labels.*.name, 'result')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create result --color 0E8A16 --description "a sdcguard check result card" --force
+          gh label create on-board --color 1D76DB --description "counted on the public board" --force
+          gh label create needs-fix --color D93F0B --description "result card can't be counted yet" --force
+      - name: Build the board
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python src/sdcguard/board.py --issues "$GITHUB_REPOSITORY" --dir docs/board/seed --out docs/board --ack
+      - name: Commit
+        run: |
+          git config user.name "sdcguard board"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/board
+          if git diff --cached --quiet -- docs/board/results.json docs/board/seed; then
+            echo "no new results"
+            exit 0
+          fi
+          git commit -m "board: update"
+          git pull --rebase origin "$GITHUB_REF_NAME"
+          git push
+      # Pages has to be deployed from here: commits pushed with the workflow token don't trigger a Pages build.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

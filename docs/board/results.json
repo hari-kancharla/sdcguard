@@ -1,0 +1,795 @@
+[
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.59,
+  "gpu": {
+   "name": "NVIDIA A100 80GB PCIe",
+   "memory_gib": 80.0,
+   "compute_cap": "8.0",
+   "driver": "610.57.04",
+   "id_hash": "9a0f21b8a3ab"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "Azure",
+   "region": "eu-west"
+  },
+  "checked": {
+   "results": 101834,
+   "workload_tflop": 15865.9,
+   "memory_gib": 62.12,
+   "memory_passes": 16
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.125,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "5c52565a6c0c9630",
+   "output": "a10587e204409ed3"
+  },
+  "speed": {
+   "matmul_tflops": 229.73,
+   "dtype": "bf16",
+   "pct_of_datasheet": 73.6,
+   "drop_pct": 1.5,
+   "bandwidth_gbs": 1670.4,
+   "bandwidth_pct_of_datasheet": 86.3
+  },
+  "health": {
+   "max_temp_c": 77.0,
+   "max_power_w": 353.61,
+   "power_limit_w": 300.0,
+   "sm_clock_mhz": 1260.0,
+   "max_sm_clock_mhz": 1410.0,
+   "throttle": {
+    "sw_power_cap": 0.908
+   },
+   "pcie": "Gen4 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "ffff8fd44dfe3f16",
+  "_source": {
+   "label": "modal_a100_80gb_c770d238.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.11,
+  "gpu": {
+   "name": "NVIDIA B200",
+   "memory_gib": 179.1,
+   "compute_cap": "10.0",
+   "driver": "610.57.04",
+   "id_hash": "aa46eef2b432"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "AWS",
+   "region": "us-east"
+  },
+  "checked": {
+   "results": 192805,
+   "workload_tflop": 29448.9,
+   "memory_gib": 141.25,
+   "memory_passes": 26
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.294,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "54c5cc5531e9d55c",
+   "output": "c27adbfea641e907"
+  },
+  "speed": {
+   "matmul_tflops": 1326.28,
+   "dtype": "bf16",
+   "pct_of_datasheet": 58.9,
+   "drop_pct": 0.0,
+   "bandwidth_gbs": 6414.8,
+   "bandwidth_pct_of_datasheet": 80.2
+  },
+  "health": {
+   "max_temp_c": 57.0,
+   "max_power_w": 1011.23,
+   "power_limit_w": 1000.0,
+   "sm_clock_mhz": 1965.0,
+   "max_sm_clock_mhz": 1965.0,
+   "throttle": {
+    "sw_power_cap": 0.085
+   },
+   "pcie": "Gen5 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "26917a0b00885cb0",
+  "_source": {
+   "label": "modal_b200_a203014e.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.39,
+  "gpu": {
+   "name": "NVIDIA H100 80GB HBM3",
+   "memory_gib": 79.6,
+   "compute_cap": "9.0",
+   "driver": "610.57.04",
+   "id_hash": "c69fdde7c1dc"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": null,
+   "region": "eu-south"
+  },
+  "checked": {
+   "results": 241583,
+   "workload_tflop": 37610.1,
+   "memory_gib": 62.0,
+   "memory_passes": 29
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.413,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "9891a5735474f736",
+   "output": "5613afa2605ef67a"
+  },
+  "speed": {
+   "matmul_tflops": 685.2,
+   "dtype": "bf16",
+   "pct_of_datasheet": 69.2,
+   "drop_pct": 3.6,
+   "bandwidth_gbs": 3031.7,
+   "bandwidth_pct_of_datasheet": 90.5
+  },
+  "health": {
+   "max_temp_c": 64.0,
+   "max_power_w": 701.6,
+   "power_limit_w": 700.0,
+   "sm_clock_mhz": 1980.0,
+   "max_sm_clock_mhz": 1980.0,
+   "throttle": {
+    "sw_power_cap": 0.173
+   },
+   "pcie": "Gen5 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "607461508b5602c3",
+  "_source": {
+   "label": "modal_h100_a_45b2fbe6.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.35,
+  "gpu": {
+   "name": "NVIDIA H100 80GB HBM3",
+   "memory_gib": 79.6,
+   "compute_cap": "9.0",
+   "driver": "610.57.04",
+   "id_hash": "a99bdddf91c8"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": null,
+   "region": "eu-south"
+  },
+  "checked": {
+   "results": 243711,
+   "workload_tflop": 37952.6,
+   "memory_gib": 62.0,
+   "memory_passes": 29
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.413,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "9891a5735474f736",
+   "output": "5613afa2605ef67a"
+  },
+  "speed": {
+   "matmul_tflops": 683.13,
+   "dtype": "bf16",
+   "pct_of_datasheet": 69.0,
+   "drop_pct": 3.8,
+   "bandwidth_gbs": 3032.7,
+   "bandwidth_pct_of_datasheet": 90.5
+  },
+  "health": {
+   "max_temp_c": 69.0,
+   "max_power_w": 701.79,
+   "power_limit_w": 700.0,
+   "sm_clock_mhz": 1980.0,
+   "max_sm_clock_mhz": 1980.0,
+   "throttle": {
+    "sw_power_cap": 0.191
+   },
+   "pcie": "Gen5 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "af4bceb7b7f6904c",
+  "_source": {
+   "label": "modal_h100_b_9e83ee71.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.42,
+  "gpu": {
+   "name": "NVIDIA H200",
+   "memory_gib": 140.4,
+   "compute_cap": "9.0",
+   "driver": "610.57.04",
+   "id_hash": "95c394b0a523"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "Azure",
+   "region": "mx"
+  },
+  "checked": {
+   "results": 268032,
+   "workload_tflop": 41833.4,
+   "memory_gib": 110.44,
+   "memory_passes": 21
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.413,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "9d3d99e672c879db",
+   "output": "5613afa2605ef67a"
+  },
+  "speed": {
+   "matmul_tflops": 669.79,
+   "dtype": "bf16",
+   "pct_of_datasheet": 67.7,
+   "drop_pct": 2.1,
+   "bandwidth_gbs": 4240.3,
+   "bandwidth_pct_of_datasheet": 88.3
+  },
+  "health": {
+   "max_temp_c": 66.0,
+   "max_power_w": 696.3,
+   "power_limit_w": 700.0,
+   "sm_clock_mhz": 1965.0,
+   "max_sm_clock_mhz": 1980.0,
+   "throttle": {
+    "sw_power_cap": 0.51
+   },
+   "pcie": "Gen5 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "e9a171f007dfcba4",
+  "_source": {
+   "label": "modal_h200_5c7bd569.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.5,
+  "gpu": {
+   "name": "NVIDIA L40S",
+   "memory_gib": 45.0,
+   "compute_cap": "8.9",
+   "driver": "610.57.04",
+   "id_hash": "8d617a797f11"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "OCI",
+   "region": "us-east"
+  },
+  "checked": {
+   "results": 302747,
+   "workload_tflop": 7297.3,
+   "memory_gib": 34.25,
+   "memory_passes": 22
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.095,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "484b581175592e81",
+   "output": "a10587e204409ed3"
+  },
+  "speed": {
+   "matmul_tflops": 172.72,
+   "dtype": "bf16",
+   "pct_of_datasheet": 47.7,
+   "drop_pct": 5.1,
+   "bandwidth_gbs": 644.2,
+   "bandwidth_pct_of_datasheet": 74.6
+  },
+  "health": {
+   "max_temp_c": 72.0,
+   "max_power_w": 351.72,
+   "power_limit_w": 350.0,
+   "sm_clock_mhz": 2505.0,
+   "max_sm_clock_mhz": 2520.0,
+   "throttle": {
+    "sw_power_cap": 0.823
+   },
+   "pcie": "Gen4 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "0ebadb4215968811",
+  "_source": {
+   "label": "modal_l40s_713a5503.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.43,
+  "gpu": {
+   "name": "NVIDIA L4",
+   "memory_gib": 22.5,
+   "compute_cap": "8.9",
+   "driver": "610.57.04",
+   "id_hash": "9e45e13c5aa6"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "AWS",
+   "region": "eu-north"
+  },
+  "checked": {
+   "results": 97573,
+   "workload_tflop": 2352.3,
+   "memory_gib": 16.62,
+   "memory_passes": 10
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 2.97,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "1c91fdd8ed51bc0d",
+   "output": "a10587e204409ed3"
+  },
+  "speed": {
+   "matmul_tflops": 56.93,
+   "dtype": "bf16",
+   "pct_of_datasheet": 47.0,
+   "drop_pct": 0.7,
+   "bandwidth_gbs": 230.6,
+   "bandwidth_pct_of_datasheet": 76.9
+  },
+  "health": {
+   "max_temp_c": 85.0,
+   "max_power_w": 74.2,
+   "power_limit_w": 72.0,
+   "sm_clock_mhz": 1200.0,
+   "max_sm_clock_mhz": 2040.0,
+   "throttle": {
+    "sw_power_cap": 0.972
+   },
+   "pcie": "Gen4 x8 (card supports Gen4 x16)",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ],
+   [
+    "warn",
+    "PCIe link running at x8 under load; the card supports x16"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "8447c10b81a3b024",
+  "_source": {
+   "label": "modal_l4_a_c97e475e.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.74,
+  "gpu": {
+   "name": "NVIDIA L4",
+   "memory_gib": 22.5,
+   "compute_cap": "8.9",
+   "driver": "610.57.04",
+   "id_hash": "8ca4363b6f0b"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "GCP",
+   "region": "us-east"
+  },
+  "checked": {
+   "results": 84917,
+   "workload_tflop": 2046.2,
+   "memory_gib": 16.62,
+   "memory_passes": 10
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 2.97,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "1c91fdd8ed51bc0d",
+   "output": "a10587e204409ed3"
+  },
+  "speed": {
+   "matmul_tflops": 55.06,
+   "dtype": "bf16",
+   "pct_of_datasheet": 45.5,
+   "drop_pct": 5.1,
+   "bandwidth_gbs": 230.4,
+   "bandwidth_pct_of_datasheet": 76.8
+  },
+  "health": {
+   "max_temp_c": 76.0,
+   "max_power_w": 74.2,
+   "power_limit_w": 72.0,
+   "sm_clock_mhz": 1290.0,
+   "max_sm_clock_mhz": 2040.0,
+   "throttle": {
+    "sw_power_cap": 0.931
+   },
+   "pcie": "Gen3 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "669d4db8f7b1c70f",
+  "_source": {
+   "label": "modal_l4_pair_d9cc6760.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.74,
+  "gpu": {
+   "name": "NVIDIA L4",
+   "memory_gib": 22.5,
+   "compute_cap": "8.9",
+   "driver": "610.57.04",
+   "id_hash": "c76ddc41709b"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "GCP",
+   "region": "us-east"
+  },
+  "checked": {
+   "results": 84531,
+   "workload_tflop": 2037.5,
+   "memory_gib": 16.62,
+   "memory_passes": 10
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 2.97,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "1c91fdd8ed51bc0d",
+   "output": "a10587e204409ed3"
+  },
+  "speed": {
+   "matmul_tflops": 53.67,
+   "dtype": "bf16",
+   "pct_of_datasheet": 44.4,
+   "drop_pct": 6.1,
+   "bandwidth_gbs": 230.9,
+   "bandwidth_pct_of_datasheet": 77.0
+  },
+  "health": {
+   "max_temp_c": 83.0,
+   "max_power_w": 73.76,
+   "power_limit_w": 72.0,
+   "sm_clock_mhz": 1290.0,
+   "max_sm_clock_mhz": 2040.0,
+   "throttle": {
+    "sw_power_cap": 0.968
+   },
+   "pcie": "Gen3 x16",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "7440858161081604",
+  "_source": {
+   "label": "modal_l4_pair_e1bca08b.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ },
+ {
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.64,
+  "gpu": {
+   "name": "Tesla T4",
+   "memory_gib": 15.0,
+   "compute_cap": "7.5",
+   "driver": "610.57.04",
+   "id_hash": "2cd6940fc85a"
+  },
+  "software": {
+   "sdcguard": "0.3.0",
+   "torch": "2.14.1+cu130",
+   "cuda": "13.0",
+   "cublas": "13.1.1.3"
+  },
+  "provider": {
+   "name": "Modal",
+   "detected_from": "MODAL_TASK_ID",
+   "underlying_cloud": "AWS",
+   "region": "us-west"
+  },
+  "checked": {
+   "results": 65630,
+   "workload_tflop": 1587.1,
+   "memory_gib": 10.69,
+   "memory_passes": 15
+  },
+  "wrong": {
+   "workload_training": 0,
+   "workload_serving": 0,
+   "stress": 0,
+   "memory_words": 0
+  },
+  "headroom": {
+   "worst_clean_score": 3.674,
+   "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+   "key": "d4353b3074dc5379",
+   "output": "f70d4a7ce612887f"
+  },
+  "speed": {
+   "matmul_tflops": 23.23,
+   "dtype": "fp16",
+   "pct_of_datasheet": 35.7,
+   "drop_pct": 0.3,
+   "bandwidth_gbs": 232.6,
+   "bandwidth_pct_of_datasheet": 72.7
+  },
+  "health": {
+   "max_temp_c": 50.0,
+   "max_power_w": 94.72,
+   "power_limit_w": 70.0,
+   "sm_clock_mhz": 1080.0,
+   "max_sm_clock_mhz": 1590.0,
+   "throttle": {
+    "sw_power_cap": 0.974
+   },
+   "pcie": "Gen3 x8 (card supports Gen3 x16)",
+   "ecc": "Enabled"
+  },
+  "notes": [
+   [
+    "info",
+    "clocks held back by the power limit at full load (normal for big matmuls)"
+   ],
+   [
+    "warn",
+    "PCIe link running at x8 under load; the card supports x16"
+   ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "f3c4b8d8cf641e2c",
+  "_source": {
+   "label": "modal_t4_933c7202.json",
+   "root": "seed",
+   "time": "2026-10-18"
+  }
+ }
+]

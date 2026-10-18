@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>GPU Correctness Board</title>
+<meta name="description" content="Do GPUs compute correctly? Shared sdcguard check results by GPU model and provider.">
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#57534e;--line:#e7e5e4;--card:#fff;--ok:#15803d;--bad:#b91c1c;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0c0a09;--fg:#f5f5f4;--muted:#a8a29e;
+--line:#292524;--card:#1c1917;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 48px}h1{font-size:26px;margin:0 0 6px}
+h2{font-size:18px;margin:32px 0 10px}p{margin:0 0 12px}.sub{color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:13px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{padding:9px 11px;border-bottom:1px solid var(--line);
+text-align:left;white-space:nowrap}th{color:var(--muted);font-weight:600}tr:last-child td{border-bottom:0}
+.PASS{color:var(--ok);font-weight:700}.FAIL{color:var(--bad);font-weight:700}.SUSPECT{color:var(--warn);font-weight:700}
+code{font-size:13px;background:var(--line);padding:1px 6px;border-radius:6px}a{color:inherit}
+.how{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:20px}
+</style></head><body><main>
+<h1>GPU correctness board</h1>
+<p class="sub">Every GPU here ran <code>sdcguard check</code>: a real transformer workload with every matrix multiply
+checked against checksums, a memory pattern test, speed tests, and the same fixed model run three times to see if its
+output stays bit-identical. Updated 2026-10-18 21:04 UTC.</p>
+<div class="stats">
+<div class="stat"><b>10</b><span>GPUs checked</span></div>
+<div class="stat"><b>7</b><span>GPU models</span></div>
+<div class="stat"><b>1,683,363</b><span>results checked</span></div>
+<div class="stat"><b>178,031</b><span>TFLOP of checked work</span></div>
+<div class="stat"><b class="FAIL">0</b><span>FAIL (wrong results)</span></div>
+<div class="stat"><b class="SUSPECT">0</b><span>SUSPECT (not repeatable)</span></div>
+</div>
+<h2>By GPU model</h2>
+<div class='wrap'><table><thead><tr><th>GPU</th><th>runs</th><th>distinct GPUs</th><th>PASS</th><th>FAIL</th><th>SUSPECT</th><th>median matmul TFLOPS</th><th>of datasheet peak</th><th>median GB/s</th><th>slowed down</th><th>same fingerprint</th></tr></thead><tbody><tr><td>NVIDIA L4</td><td>3</td><td>3</td><td><span class='PASS'>3</span></td><td>0</td><td>0</td><td>55</td><td>46%</td><td>231</td><td>0 of 3</td><td>3 of 3</td></tr><tr><td>NVIDIA H100 80GB HBM3</td><td>2</td><td>2</td><td><span class='PASS'>2</span></td><td>0</td><td>0</td><td>685</td><td>69%</td><td>3,033</td><td>0 of 2</td><td>2 of 2</td></tr><tr><td>NVIDIA A100 80GB PCIe</td><td>1</td><td>1</td><td><span class='PASS'>1</span></td><td>0</td><td>0</td><td>230</td><td>74%</td><td>1,670</td><td>0 of 1</td><td>1 of 1</td></tr><tr><td>NVIDIA B200</td><td>1</td><td>1</td><td><span class='PASS'>1</span></td><td>0</td><td>0</td><td>1,326</td><td>59%</td><td>6,415</td><td>0 of 1</td><td>1 of 1</td></tr><tr><td>NVIDIA H200</td><td>1</td><td>1</td><td><span class='PASS'>1</span></td><td>0</td><td>0</td><td>670</td><td>68%</td><td>4,240</td><td>0 of 1</td><td>1 of 1</td></tr><tr><td>NVIDIA L40S</td><td>1</td><td>1</td><td><span class='PASS'>1</span></td><td>0</td><td>0</td><td>173</td><td>48%</td><td>644</td><td>0 of 1</td><td>1 of 1</td></tr><tr><td>Tesla T4</td><td>1</td><td>1</td><td><span class='PASS'>1</span></td><td>0</td><td>0</td><td>23</td><td>36%</td><td>233</td><td>0 of 1</td><td>1 of 1</td></tr></tbody></table></div>
+<p class="sub" style="margin-top:8px">"Same fingerprint": runs of the identical setup (GPU model, software versions) whose
+fixed-model output matched the most common one. A healthy GPU should always match.</p>
+<h2>By provider (as reported)</h2>
+<div class='wrap'><table><thead><tr><th>provider</th><th>runs</th><th>GPU models</th><th>PASS</th><th>FAIL</th><th>SUSPECT</th><th>median of datasheet peak</th><th>slowed down</th></tr></thead><tbody><tr><td>Modal</td><td>10</td><td>NVIDIA A100 80GB PCIe, NVIDIA B200, NVIDIA H100 80GB HBM3, NVIDIA H200, NVIDIA L4, NVIDIA L40S, Tesla T4</td><td><span class='PASS'>10</span></td><td>0</td><td>0</td><td>59%</td><td>0 of 10</td></tr></tbody></table></div>
+<h2>Recent results</h2>
+<div class='wrap'><table><thead><tr><th>date</th><th>result</th><th>GPU</th><th>provider</th><th>TFLOPS</th><th>results checked</th><th>fingerprint</th><th>source</th></tr></thead><tbody><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA A100 80GB PCIe</td><td>Modal</td><td>230</td><td>101,834</td><td>a10587e20440</td><td>modal_a100_80gb_c770d238.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA B200</td><td>Modal</td><td>1,326</td><td>192,805</td><td>c27adbfea641</td><td>modal_b200_a203014e.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA H100 80GB HBM3</td><td>Modal</td><td>685</td><td>241,583</td><td>5613afa2605e</td><td>modal_h100_a_45b2fbe6.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA H100 80GB HBM3</td><td>Modal</td><td>683</td><td>243,711</td><td>5613afa2605e</td><td>modal_h100_b_9e83ee71.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA H200</td><td>Modal</td><td>670</td><td>268,032</td><td>5613afa2605e</td><td>modal_h200_5c7bd569.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA L40S</td><td>Modal</td><td>173</td><td>302,747</td><td>a10587e20440</td><td>modal_l40s_713a5503.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA L4</td><td>Modal</td><td>57</td><td>97,573</td><td>a10587e20440</td><td>modal_l4_a_c97e475e.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA L4</td><td>Modal</td><td>55</td><td>84,917</td><td>a10587e20440</td><td>modal_l4_pair_d9cc6760.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>NVIDIA L4</td><td>Modal</td><td>54</td><td>84,531</td><td>a10587e20440</td><td>modal_l4_pair_e1bca08b.json</td></tr><tr><td>2026-10-18</td><td><span class='PASS'>PASS</span></td><td>Tesla T4</td><td>Modal</td><td>23</td><td>65,630</td><td>f70d4a7ce612</td><td>modal_t4_933c7202.json</td></tr></tbody></table></div>
+<div class="how"><p><b>Add your GPU:</b> <code>pip install sdcguard &amp;&amp; sdcguard check --share</code>, then press
+Submit on the issue it opens. Results are self-reported and come from <a href='https://github.com/hari-kancharla/sdcguard/issues?q=label%3Aresult'>GitHub issues</a>; each card carries a digest of its contents,
+hardware IDs are hashed, and every FAIL or SUSPECT links to its issue. Simulated-fault demos, CPU runs and runs under a
+minute are left out. Raw data: <a href="results.json">results.json</a>, <a href="reference.json">reference.json</a>. <a href='https://github.com/hari-kancharla/sdcguard'>Code and docs on GitHub</a>.</p></div>
+</main></body></html>

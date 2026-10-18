@@ -1,0 +1,24 @@
+name: Share a sdcguard check result
+description: Put your GPU on the public correctness board. `sdcguard check --share` fills this in for you.
+title: "[result] "
+labels: ["result"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Paste the card exactly as `sdcguard check --share` filled it in. It holds the GPU model, software
+        versions, what was checked and found, and speeds. No serial number, hostname or full GPU UUID.
+        The board picks it up automatically within a few minutes.
+  - type: textarea
+    id: result
+    attributes:
+      label: Result card (JSON)
+      description: Filled in by `sdcguard check --share`. Edits make the digest check fail.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (optional)
+      description: Overclock or undervolt settings, cooling, where you got the GPU, what you saw before running the check.
