@@ -1,0 +1,55 @@
+# Builds sdcguard and uploads it to PyPI when a version tag (like v0.3.0) is pushed.
+# Uses PyPI trusted publishing, so no API token is stored anywhere.
+name: publish
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Tag must match the version in pyproject.toml
+        run: |
+          v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "v$v" != "$GITHUB_REF_NAME" ]; then echo "tag is $GITHUB_REF_NAME but pyproject.toml says $v"; exit 1; fi
+      # PyPI can't resolve the README's relative links, so point them at this tag on GitHub.
+      - name: Full links in the README for PyPI
+        run: |
+          python - <<'EOF'
+          import os, re
+          tag = os.environ["GITHUB_REF_NAME"]
+          repo = "https://github.com/hari-kancharla/sdcguard"
+          raw = f"https://raw.githubusercontent.com/hari-kancharla/sdcguard/{tag}/"
+          s = open("README.md").read()
+          s = re.sub(r'(src|srcset)="(?!https?:)([^"]+)"', lambda m: f'{m[1]}="{raw}{m[2]}"', s)
+          s = re.sub(r'\]\((?!https?:|#)([^)]+)\)', lambda m: f"]({repo}/blob/{tag}/{m[1]})", s)
+          open("README.md", "w").write(s)
+          EOF
+      - run: python -m pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+  pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/sdcguard
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
