@@ -1,0 +1,28 @@
+{
+  "plugin": "custom",
+  "pluginConfig": {
+    "invoke_interval": "6h",
+    "timeout": "10m",
+    "max_output_length": 200,
+    "concurrency": 1,
+    "enable_message_change_based_condition_update": false
+  },
+  "source": "sdcguard",
+  "metricsReporting": true,
+  "conditions": [
+    {
+      "type": "GPUComputeIncorrect",
+      "reason": "GPUsComputeCorrectly",
+      "message": "every GPU passed its last sdcguard screen"
+    }
+  ],
+  "rules": [
+    {
+      "type": "permanent",
+      "condition": "GPUComputeIncorrect",
+      "reason": "GPUComputedWrongResults",
+      "path": "/opt/sdcguard/sdcguard-check.sh",
+      "timeout": "10m"
+    }
+  ]
+}

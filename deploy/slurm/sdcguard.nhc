@@ -1,0 +1,18 @@
+# LBNL NHC check: copy to /etc/nhc/scripts/sdcguard.nhc and add to /etc/nhc/nhc.conf:
+#   * || check_sdcguard
+# It reads the result of the last screen (instant, so it fits NHC's time limit); the screen itself runs on
+# its own schedule (sdcguard-screen.sbatch). On a failure NHC marks the node offline (Slurm: drained).
+
+function check_sdcguard() {
+    local OUT="${1:-/var/lib/sdcguard/nhc}"
+    local MSG RC
+    MSG=$("${SDCGUARD_BIN:-sdcguard}" nhc --cached --out "$OUT" 2>/dev/null)
+    RC=$?
+    if [[ $RC -eq 1 ]]; then
+        die 1 "$FUNCNAME:  $MSG"
+        return 1
+    elif [[ $RC -ne 0 ]]; then
+        log "$FUNCNAME:  $MSG"
+    fi
+    return 0
+}

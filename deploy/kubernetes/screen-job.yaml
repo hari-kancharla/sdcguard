@@ -1,0 +1,88 @@
+# Screen one node's GPUs; if any GPU computes wrong results, taint the node so nothing new is scheduled
+# on it, and keep the evidence on the node in /var/lib/sdcguard.
+#   NODE=gpu-node-17 envsubst '${NODE}' < screen-job.yaml | kubectl apply -f -
+# (the quoted '${NODE}' matters: envsubst would otherwise blank the script's own $variables)
+# Build the image from the repo root: docker build -f deploy/Dockerfile -t <registry>/sdcguard:0.2.0 .
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdcguard
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sdcguard-taint-nodes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sdcguard-taint-nodes
+subjects:
+  - kind: ServiceAccount
+    name: sdcguard
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: sdcguard-taint-nodes
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sdcguard-screen-${NODE}
+  namespace: kube-system
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: sdcguard
+      nodeName: ${NODE}
+      restartPolicy: Never
+      containers:
+        - name: screen
+          image: <registry>/sdcguard:0.2.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sdcguard nhc --minutes "${SDCGUARD_MINUTES:-10}" --out /var/lib/sdcguard/screen; code=$?
+              if [ "$code" = "1" ]; then
+                python - <<'PY'
+              import json, os, ssl, urllib.request
+              tok = open("/var/run/secrets/kubernetes.io/serviceaccount/token").read()
+              ca = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+              node = os.environ["NODE_NAME"]
+              url = f"https://{os.environ['KUBERNETES_SERVICE_HOST']}:{os.environ['KUBERNETES_SERVICE_PORT']}/api/v1/nodes/{node}"
+              ctx = ssl.create_default_context(cafile=ca)
+              get = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"})
+              taints = json.load(urllib.request.urlopen(get, context=ctx)).get("spec", {}).get("taints") or []
+              taints = [t for t in taints if t.get("key") != "sdcguard.io/gpu-compute"]
+              taints.append({"key": "sdcguard.io/gpu-compute", "value": "incorrect", "effect": "NoSchedule"})
+              body = json.dumps({"spec": {"taints": taints}}).encode()
+              req = urllib.request.Request(url, data=body, method="PATCH", headers={
+                  "Authorization": f"Bearer {tok}", "Content-Type": "application/strategic-merge-patch+json"})
+              urllib.request.urlopen(req, context=ctx)
+              print(f"tainted {node}: sdcguard.io/gpu-compute=incorrect:NoSchedule")
+              PY
+              fi
+              exit $code
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              nvidia.com/gpu: 8          # all of the node's GPUs
+          volumeMounts:
+            - name: evidence
+              mountPath: /var/lib/sdcguard
+      volumes:
+        - name: evidence
+          hostPath:
+            path: /var/lib/sdcguard
+            type: DirectoryOrCreate
