@@ -26,6 +26,9 @@ dependencies = ["torch>=2.5"]
 experiments = ["numpy", "matplotlib", "tiktoken"]
 dev = ["pytest"]
 
+[project.entry-points."vllm.general_plugins"]
+sdcguard = "sdcguard.vllm_plugin:register"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
