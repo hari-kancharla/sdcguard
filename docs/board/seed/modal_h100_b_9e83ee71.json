@@ -1,0 +1,70 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.35,
+  "gpu": {
+    "name": "NVIDIA H100 80GB HBM3",
+    "memory_gib": 79.6,
+    "compute_cap": "9.0",
+    "driver": "610.57.04",
+    "id_hash": "a99bdddf91c8"
+  },
+  "software": {
+    "sdcguard": "0.3.0",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cublas": "13.1.1.3"
+  },
+  "provider": {
+    "name": "Modal",
+    "detected_from": "MODAL_TASK_ID",
+    "underlying_cloud": null,
+    "region": "eu-south"
+  },
+  "checked": {
+    "results": 243711,
+    "workload_tflop": 37952.6,
+    "memory_gib": 62.0,
+    "memory_passes": 29
+  },
+  "wrong": {
+    "workload_training": 0,
+    "workload_serving": 0,
+    "stress": 0,
+    "memory_words": 0
+  },
+  "headroom": {
+    "worst_clean_score": 3.413,
+    "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+    "key": "9891a5735474f736",
+    "output": "5613afa2605ef67a"
+  },
+  "speed": {
+    "matmul_tflops": 683.13,
+    "dtype": "bf16",
+    "pct_of_datasheet": 69.0,
+    "drop_pct": 3.8,
+    "bandwidth_gbs": 3032.7,
+    "bandwidth_pct_of_datasheet": 90.5
+  },
+  "health": {
+    "max_temp_c": 69.0,
+    "max_power_w": 701.79,
+    "power_limit_w": 700.0,
+    "sm_clock_mhz": 1980.0,
+    "max_sm_clock_mhz": 1980.0,
+    "throttle": {
+      "sw_power_cap": 0.191
+    },
+    "pcie": "Gen5 x16",
+    "ecc": "Enabled"
+  },
+  "notes": [],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "af4bceb7b7f6904c"
+}

@@ -1,0 +1,70 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.11,
+  "gpu": {
+    "name": "NVIDIA B200",
+    "memory_gib": 179.1,
+    "compute_cap": "10.0",
+    "driver": "610.57.04",
+    "id_hash": "aa46eef2b432"
+  },
+  "software": {
+    "sdcguard": "0.3.0",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cublas": "13.1.1.3"
+  },
+  "provider": {
+    "name": "Modal",
+    "detected_from": "MODAL_TASK_ID",
+    "underlying_cloud": "AWS",
+    "region": "us-east"
+  },
+  "checked": {
+    "results": 192805,
+    "workload_tflop": 29448.9,
+    "memory_gib": 141.25,
+    "memory_passes": 26
+  },
+  "wrong": {
+    "workload_training": 0,
+    "workload_serving": 0,
+    "stress": 0,
+    "memory_words": 0
+  },
+  "headroom": {
+    "worst_clean_score": 3.294,
+    "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+    "key": "54c5cc5531e9d55c",
+    "output": "c27adbfea641e907"
+  },
+  "speed": {
+    "matmul_tflops": 1326.28,
+    "dtype": "bf16",
+    "pct_of_datasheet": 58.9,
+    "drop_pct": 0.0,
+    "bandwidth_gbs": 6414.8,
+    "bandwidth_pct_of_datasheet": 80.2
+  },
+  "health": {
+    "max_temp_c": 57.0,
+    "max_power_w": 1011.23,
+    "power_limit_w": 1000.0,
+    "sm_clock_mhz": 1965.0,
+    "max_sm_clock_mhz": 1965.0,
+    "throttle": {
+      "sw_power_cap": 0.085
+    },
+    "pcie": "Gen5 x16",
+    "ecc": "Enabled"
+  },
+  "notes": [],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "26917a0b00885cb0"
+}

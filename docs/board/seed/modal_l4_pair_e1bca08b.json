@@ -1,0 +1,75 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.74,
+  "gpu": {
+    "name": "NVIDIA L4",
+    "memory_gib": 22.5,
+    "compute_cap": "8.9",
+    "driver": "610.57.04",
+    "id_hash": "c76ddc41709b"
+  },
+  "software": {
+    "sdcguard": "0.3.0",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cublas": "13.1.1.3"
+  },
+  "provider": {
+    "name": "Modal",
+    "detected_from": "MODAL_TASK_ID",
+    "underlying_cloud": "GCP",
+    "region": "us-east"
+  },
+  "checked": {
+    "results": 84531,
+    "workload_tflop": 2037.5,
+    "memory_gib": 16.62,
+    "memory_passes": 10
+  },
+  "wrong": {
+    "workload_training": 0,
+    "workload_serving": 0,
+    "stress": 0,
+    "memory_words": 0
+  },
+  "headroom": {
+    "worst_clean_score": 2.97,
+    "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+    "key": "1c91fdd8ed51bc0d",
+    "output": "a10587e204409ed3"
+  },
+  "speed": {
+    "matmul_tflops": 53.67,
+    "dtype": "bf16",
+    "pct_of_datasheet": 44.4,
+    "drop_pct": 6.1,
+    "bandwidth_gbs": 230.9,
+    "bandwidth_pct_of_datasheet": 77.0
+  },
+  "health": {
+    "max_temp_c": 83.0,
+    "max_power_w": 73.76,
+    "power_limit_w": 72.0,
+    "sm_clock_mhz": 1290.0,
+    "max_sm_clock_mhz": 2040.0,
+    "throttle": {
+      "sw_power_cap": 0.968
+    },
+    "pcie": "Gen3 x16",
+    "ecc": "Enabled"
+  },
+  "notes": [
+    [
+      "info",
+      "clocks held back by the power limit at full load (normal for big matmuls)"
+    ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "7440858161081604"
+}

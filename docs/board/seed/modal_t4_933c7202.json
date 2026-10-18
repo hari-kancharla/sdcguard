@@ -1,0 +1,79 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.64,
+  "gpu": {
+    "name": "Tesla T4",
+    "memory_gib": 15.0,
+    "compute_cap": "7.5",
+    "driver": "610.57.04",
+    "id_hash": "2cd6940fc85a"
+  },
+  "software": {
+    "sdcguard": "0.3.0",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cublas": "13.1.1.3"
+  },
+  "provider": {
+    "name": "Modal",
+    "detected_from": "MODAL_TASK_ID",
+    "underlying_cloud": "AWS",
+    "region": "us-west"
+  },
+  "checked": {
+    "results": 65630,
+    "workload_tflop": 1587.1,
+    "memory_gib": 10.69,
+    "memory_passes": 15
+  },
+  "wrong": {
+    "workload_training": 0,
+    "workload_serving": 0,
+    "stress": 0,
+    "memory_words": 0
+  },
+  "headroom": {
+    "worst_clean_score": 3.674,
+    "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+    "key": "d4353b3074dc5379",
+    "output": "f70d4a7ce612887f"
+  },
+  "speed": {
+    "matmul_tflops": 23.23,
+    "dtype": "fp16",
+    "pct_of_datasheet": 35.7,
+    "drop_pct": 0.3,
+    "bandwidth_gbs": 232.6,
+    "bandwidth_pct_of_datasheet": 72.7
+  },
+  "health": {
+    "max_temp_c": 50.0,
+    "max_power_w": 94.72,
+    "power_limit_w": 70.0,
+    "sm_clock_mhz": 1080.0,
+    "max_sm_clock_mhz": 1590.0,
+    "throttle": {
+      "sw_power_cap": 0.974
+    },
+    "pcie": "Gen3 x8 (card supports Gen3 x16)",
+    "ecc": "Enabled"
+  },
+  "notes": [
+    [
+      "info",
+      "clocks held back by the power limit at full load (normal for big matmuls)"
+    ],
+    [
+      "warn",
+      "PCIe link running at x8 under load; the card supports x16"
+    ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "f3c4b8d8cf641e2c"
+}

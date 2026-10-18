@@ -1,0 +1,75 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-18",
+  "minutes": 5.5,
+  "gpu": {
+    "name": "NVIDIA L40S",
+    "memory_gib": 45.0,
+    "compute_cap": "8.9",
+    "driver": "610.57.04",
+    "id_hash": "8d617a797f11"
+  },
+  "software": {
+    "sdcguard": "0.3.0",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cublas": "13.1.1.3"
+  },
+  "provider": {
+    "name": "Modal",
+    "detected_from": "MODAL_TASK_ID",
+    "underlying_cloud": "OCI",
+    "region": "us-east"
+  },
+  "checked": {
+    "results": 302747,
+    "workload_tflop": 7297.3,
+    "memory_gib": 34.25,
+    "memory_passes": 22
+  },
+  "wrong": {
+    "workload_training": 0,
+    "workload_serving": 0,
+    "stress": 0,
+    "memory_words": 0
+  },
+  "headroom": {
+    "worst_clean_score": 3.095,
+    "alarm_line": 6.0
+  },
+  "repeatable": true,
+  "fingerprint": {
+    "key": "484b581175592e81",
+    "output": "a10587e204409ed3"
+  },
+  "speed": {
+    "matmul_tflops": 172.72,
+    "dtype": "bf16",
+    "pct_of_datasheet": 47.7,
+    "drop_pct": 5.1,
+    "bandwidth_gbs": 644.2,
+    "bandwidth_pct_of_datasheet": 74.6
+  },
+  "health": {
+    "max_temp_c": 72.0,
+    "max_power_w": 351.72,
+    "power_limit_w": 350.0,
+    "sm_clock_mhz": 2505.0,
+    "max_sm_clock_mhz": 2520.0,
+    "throttle": {
+      "sw_power_cap": 0.823
+    },
+    "pcie": "Gen4 x16",
+    "ecc": "Enabled"
+  },
+  "notes": [
+    [
+      "info",
+      "clocks held back by the power limit at full load (normal for big matmuls)"
+    ]
+  ],
+  "board": null,
+  "simulated_faults": false,
+  "digest": "0ebadb4215968811"
+}
