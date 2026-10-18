@@ -1,0 +1,5 @@
+sdcguard screen: PASS  NVIDIA H100 80GB HBM3 GPU-21f358bd-430d-db03-f296-1fe4d88634b3 PCI 00000000:B8:00.0 serial 1655023028788
+  3.0 min, 489 training steps, 489 serving passes, 142,299 matmuls checked in training, 31,785 layer checks while serving, about 27,908.0 TFLOP of matmul work
+  corrupted results: 0 in training, 0 while serving; worst clean score 3.413 (alarm line 6)
+
+[exit code 0]

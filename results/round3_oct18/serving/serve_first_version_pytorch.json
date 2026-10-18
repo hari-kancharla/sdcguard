@@ -1,0 +1,93 @@
+{
+ "gpu": "NVIDIA H100 80GB HBM3",
+ "torch": "2.14.1+cu130",
+ "agreement": {
+  "error": "KeyError: device(type='cuda')"
+ },
+ "model": {
+  "params": 1100048384,
+  "layers_checked": 155
+ },
+ "cost": {
+  "decode-like (64 x 1 token) | eager": {
+   "off": 10.521775722503662,
+   "seconds_incl_compile_off": 0.4,
+   "on": 152.2638397216797,
+   "seconds_incl_compile_on": 3.9,
+   "overhead_pct": 1347.13,
+   "on_quarter_of_layers": 49.03335952758789,
+   "overhead_quarter_pct": 366.02
+  },
+  "decode-like (64 x 1 token) | compiled + CUDA graphs": {
+   "off": 2.8769760131835938,
+   "seconds_incl_compile_off": 24.6,
+   "on": 7.4596638679504395,
+   "seconds_incl_compile_on": 183.9,
+   "overhead_pct": 159.29
+  },
+  "prefill (4 x 1024 tokens) | eager": {
+   "off": 26.03211212158203,
+   "seconds_incl_compile_off": 1.2,
+   "on": 158.5863494873047,
+   "seconds_incl_compile_on": 4.1,
+   "overhead_pct": 509.2,
+   "on_quarter_of_layers": 51.24518394470215,
+   "overhead_quarter_pct": 96.85
+  },
+  "prefill (4 x 1024 tokens) | compiled + CUDA graphs": {
+   "off": 19.989391326904297,
+   "seconds_incl_compile_off": 22.8,
+   "on": 44.454368591308594,
+   "seconds_incl_compile_on": 190.6,
+   "overhead_pct": 122.39
+  }
+ },
+ "quiet": {
+  "alerts": [],
+  "passes": 300,
+  "layer_checks": 46500,
+  "layers_with_nonzero_scores": 155,
+  "layers": 155,
+  "worst_clean_z": 2.225849151611328
+ },
+ "catches": {
+  "weight_flip_eager": {
+   "flagged": [
+    "model.layers.11.mlp.down_proj"
+   ],
+   "first": {
+    "where": "model.layers.11.mlp.down_proj",
+    "max_z": Infinity,
+    "nonfinite": true,
+    "row": 0,
+    "col_block": 5,
+    "noise": Infinity,
+    "checksum": "plain",
+    "weights_changed_since_load": true,
+    "reading": "the layer's weights changed in GPU memory (or were updated without calling refresh())"
+   },
+   "verify_weights": [
+    "model.layers.11.mlp.down_proj"
+   ]
+  },
+  "weight_flip_compiled": {
+   "flagged": [
+    "model.layers.11.mlp.down_proj"
+   ]
+  },
+  "injected_compute_faults": {
+   "injected": 2,
+   "faulty_mlps": [
+    3,
+    14
+   ],
+   "layers_flagged": [
+    "model.layers.3.mlp.gate_proj",
+    "model.layers.3.mlp.up_proj"
+   ],
+   "only_faulty_layers": true
+  }
+ },
+ "quarter_alerts": 0,
+ "seconds": 483.2
+}

@@ -1,0 +1,27 @@
+agreement: 70/70 cases agree (serving Triton, serving PyTorch, training); Triton kernel used in 70/70; worst relative difference of clean scores 1.83e-03
+cost: 1.1B, compiled + CUDA graphs, decode-like (64 x 1 token), exact only: 2.204 ms -> 2.345 ms (+6.37%)
+cost: 1.1B, compiled + CUDA graphs, decode-like (64 x 1 token), every layer: 2.204 ms -> 4.142 ms (+87.88%)
+cost: 1.1B, compiled + CUDA graphs, decode-like (64 x 1 token), 1/8 of layers: 2.204 ms -> 2.592 ms (+17.56%)
+cost: 1.1B, compiled + CUDA graphs, prefill (4 x 1024 tokens), exact only: 19.503 ms -> 19.555 ms (+0.27%)
+cost: 1.1B, compiled + CUDA graphs, prefill (4 x 1024 tokens), every layer: 19.503 ms -> 27.897 ms (+43.04%)
+cost: 1.1B, compiled + CUDA graphs, prefill (4 x 1024 tokens), 1/8 of layers: 19.503 ms -> 21.006 ms (+7.71%)
+cost: 1.1B, eager, decode-like (64 x 1 token), exact only: 8.682 ms -> 8.486 ms (-2.26%)
+cost: 1.1B, eager, decode-like (64 x 1 token), every layer: 8.682 ms -> 28.082 ms (+223.44%)
+cost: 1.1B, eager, decode-like (64 x 1 token), 1/8 of layers: 8.682 ms -> 12.950 ms (+49.16%)
+cost: 1.1B, eager, prefill (4 x 1024 tokens), exact only: 25.631 ms -> 25.687 ms (+0.22%)
+cost: 1.1B, eager, prefill (4 x 1024 tokens), every layer: 25.631 ms -> 35.515 ms (+38.56%)
+cost: 1.1B, eager, prefill (4 x 1024 tokens), 1/8 of layers: 25.631 ms -> 27.105 ms (+5.75%)
+quiet: 0 alerts in 720 guarded passes (76,500 layer checks); random-shape passes: 155/155 layers showed nonzero scores, worst clean z 2.36
+catches: weight_flip_eager: {'flagged': ['model.layers.11.mlp.down_proj'], 'first': {'where': 'model.layers.11.mlp.down_proj', 'max_z': inf, 'nonfinite': True, 'row': 63, 'col_block': 5, 'noise': inf, 'checksum': 'plain', 'weights_changed_since_load': True, 'reading': "the layer's weights changed in GPU memory (or were updated without calling refresh())"}, 'verify_weights': ['model.layers.11.mlp.down_proj']}
+catches: weight_flip_compiled: {'flagged': ['model.layers.11.mlp.down_proj']}
+catches: injected_compute_faults: {'injected': 2, 'faulty_mlps': [3, 14], 'layers_flagged': ['model.layers.3.mlp.gate_proj', 'model.layers.3.mlp.up_proj'], 'only_faulty_layers': True}
+catches: bad_gpu_one_eighth_of_layers: {'layers_checked': 20, 'faults_injected_in_the_pass': 154, 'layers_flagged_in_first_pass': ['model.layers.0.mlp.up_proj', 'model.layers.0.self_attn.q_proj', 'model.layers.1.mlp.down_proj', 'model.layers.10.self_attn.o_proj', 'model.layers.11.mlp.gate_proj', 'model.layers.14.mlp.gate_proj', 'model.layers.16.self_attn.o_proj', 'model.layers.2.mlp.gate_proj', 'model.layers.3.mlp.up_proj', 'model.layers.4.mlp.down_proj', 'model.layers.5.mlp.gate_proj', 'model.layers.6.mlp.up_proj', 'model.layers.8.mlp.gate_proj']}
+cost: 7B, compiled + CUDA graphs, decode-like (64 x 1 token), exact only: 7.960 ms -> 7.911 ms (-0.61%)
+cost: 7B, compiled + CUDA graphs, decode-like (64 x 1 token), every layer: 7.960 ms -> 11.455 ms (+43.91%)
+cost: 7B, compiled + CUDA graphs, decode-like (64 x 1 token), 1/8 of layers: 7.960 ms -> 8.485 ms (+6.60%)
+cost: 7B, compiled + CUDA graphs, prefill (4 x 1024 tokens), exact only: 97.832 ms -> 98.008 ms (+0.18%)
+cost: 7B, compiled + CUDA graphs, prefill (4 x 1024 tokens), every layer: 97.832 ms -> 125.130 ms (+27.90%)
+cost: 7B, compiled + CUDA graphs, prefill (4 x 1024 tokens), 1/8 of layers: 97.832 ms -> 102.111 ms (+4.37%)
+wrote /vol/runs_r3/serve/serve.json (471.9 s)
+
+[exit code 0]

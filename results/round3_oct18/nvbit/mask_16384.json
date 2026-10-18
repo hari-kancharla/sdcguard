@@ -1,0 +1,1136 @@
+{
+ "gpu": "NVIDIA L4",
+ "bitmask": "16384",
+ "smid": "0",
+ "laneid": "0",
+ "injector_loaded": true,
+ "probe_clean": 0,
+ "probe_fault on": 1024,
+ "probe_fault off": 0,
+ "clean": {
+  "steps": 30,
+  "steps_with_alerts": 0,
+  "first_alert_after_steps": null,
+  "layers_flagged": [],
+  "loss_first_last": [
+   9.181600570678711,
+   9.185976028442383
+  ]
+ },
+ "fault on": {
+  "steps": 30,
+  "steps_with_alerts": 30,
+  "first_alert_after_steps": 0,
+  "layers_flagged": [
+   "blocks.0.down",
+   "blocks.0.down (backward dX)",
+   "blocks.0.proj",
+   "blocks.0.qkv",
+   "blocks.0.up",
+   "blocks.1.down (backward dX)",
+   "blocks.1.up",
+   "blocks.2.down (backward dX)",
+   "blocks.2.up",
+   "blocks.3.down (backward dX)",
+   "blocks.3.up",
+   "head"
+  ],
+  "loss_first_last": [
+   NaN,
+   NaN
+  ]
+ },
+ "fault off": {
+  "steps": 30,
+  "steps_with_alerts": 0,
+  "first_alert_after_steps": null,
+  "layers_flagged": [],
+  "loss_first_last": [
+   9.160360336303711,
+   9.084709167480469
+  ]
+ },
+ "injector_active": true,
+ "checks": {
+  "matmuls_seen": 4590,
+  "checked": 4590,
+  "skipped_dtype": 0,
+  "skipped_oom": 0,
+  "alerts": 219
+ },
+ "rows": [
+  {
+   "step": 0,
+   "phase": "clean",
+   "loss": 9.181600570678711,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 1,
+   "phase": "clean",
+   "loss": 9.182842254638672,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 2,
+   "phase": "clean",
+   "loss": 9.180787086486816,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 3,
+   "phase": "clean",
+   "loss": 9.191636085510254,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 4,
+   "phase": "clean",
+   "loss": 9.175365447998047,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 5,
+   "phase": "clean",
+   "loss": 9.190446853637695,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 6,
+   "phase": "clean",
+   "loss": 9.170570373535156,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 7,
+   "phase": "clean",
+   "loss": 9.148672103881836,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 8,
+   "phase": "clean",
+   "loss": 9.173896789550781,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 9,
+   "phase": "clean",
+   "loss": 9.180004119873047,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 10,
+   "phase": "clean",
+   "loss": 9.169618606567383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 11,
+   "phase": "clean",
+   "loss": 9.169254302978516,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 12,
+   "phase": "clean",
+   "loss": 9.16665267944336,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 13,
+   "phase": "clean",
+   "loss": 9.1754150390625,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 14,
+   "phase": "clean",
+   "loss": 9.195363998413086,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 15,
+   "phase": "clean",
+   "loss": 9.173245429992676,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 16,
+   "phase": "clean",
+   "loss": 9.17189884185791,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 17,
+   "phase": "clean",
+   "loss": 9.165966033935547,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 18,
+   "phase": "clean",
+   "loss": 9.172304153442383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 19,
+   "phase": "clean",
+   "loss": 9.183456420898438,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 20,
+   "phase": "clean",
+   "loss": 9.170778274536133,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 21,
+   "phase": "clean",
+   "loss": 9.164369583129883,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 22,
+   "phase": "clean",
+   "loss": 9.17013931274414,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 23,
+   "phase": "clean",
+   "loss": 9.182247161865234,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 24,
+   "phase": "clean",
+   "loss": 9.185022354125977,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 25,
+   "phase": "clean",
+   "loss": 9.1615629196167,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 26,
+   "phase": "clean",
+   "loss": 9.162345886230469,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 27,
+   "phase": "clean",
+   "loss": 9.166585922241211,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 28,
+   "phase": "clean",
+   "loss": 9.191287994384766,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 29,
+   "phase": "clean",
+   "loss": 9.185976028442383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 30,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 31,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 32,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 33,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 34,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 35,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 36,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.down (backward dX)",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 37,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 38,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down (backward dX)",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 39,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.down (backward dX)",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 40,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 41,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 42,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down (backward dX)",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 43,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 44,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 45,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 46,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.down (backward dX)",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 47,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.down (backward dX)",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 48,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 49,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 50,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.down (backward dX)",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 51,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.down (backward dX)",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 52,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.down (backward dX)",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 53,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.down (backward dX)",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "head"
+   ]
+  },
+  {
+   "step": 54,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 55,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ]
+  },
+  {
+   "step": 56,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.3.up",
+    "head"
+   ]
+  },
+  {
+   "step": 57,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 58,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "head"
+   ]
+  },
+  {
+   "step": 59,
+   "phase": "fault on",
+   "loss": NaN,
+   "train_alerts": [
+    "blocks.0.down (backward dX)",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "blocks.2.up",
+    "blocks.3.up",
+    "head"
+   ],
+   "serve_alerts": [
+    "blocks.0.down",
+    "blocks.0.proj",
+    "blocks.0.qkv",
+    "blocks.0.up",
+    "blocks.1.up",
+    "head"
+   ]
+  },
+  {
+   "step": 60,
+   "phase": "fault off",
+   "loss": 9.160360336303711,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 61,
+   "phase": "fault off",
+   "loss": 9.176518440246582,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 62,
+   "phase": "fault off",
+   "loss": 9.17269515991211,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 63,
+   "phase": "fault off",
+   "loss": 9.159478187561035,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 64,
+   "phase": "fault off",
+   "loss": 9.161190032958984,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 65,
+   "phase": "fault off",
+   "loss": 9.178040504455566,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 66,
+   "phase": "fault off",
+   "loss": 9.156296730041504,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 67,
+   "phase": "fault off",
+   "loss": 9.179882049560547,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 68,
+   "phase": "fault off",
+   "loss": 9.141350746154785,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 69,
+   "phase": "fault off",
+   "loss": 9.156844139099121,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 70,
+   "phase": "fault off",
+   "loss": 9.17300033569336,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 71,
+   "phase": "fault off",
+   "loss": 9.15456485748291,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 72,
+   "phase": "fault off",
+   "loss": 9.155136108398438,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 73,
+   "phase": "fault off",
+   "loss": 9.14842414855957,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 74,
+   "phase": "fault off",
+   "loss": 9.153919219970703,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 75,
+   "phase": "fault off",
+   "loss": 9.133871078491211,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 76,
+   "phase": "fault off",
+   "loss": 9.143965721130371,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 77,
+   "phase": "fault off",
+   "loss": 9.136147499084473,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 78,
+   "phase": "fault off",
+   "loss": 9.120948791503906,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 79,
+   "phase": "fault off",
+   "loss": 9.127252578735352,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 80,
+   "phase": "fault off",
+   "loss": 9.113164901733398,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 81,
+   "phase": "fault off",
+   "loss": 9.131046295166016,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 82,
+   "phase": "fault off",
+   "loss": 9.13071346282959,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 83,
+   "phase": "fault off",
+   "loss": 9.129087448120117,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 84,
+   "phase": "fault off",
+   "loss": 9.129980087280273,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 85,
+   "phase": "fault off",
+   "loss": 9.108146667480469,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 86,
+   "phase": "fault off",
+   "loss": 9.115079879760742,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 87,
+   "phase": "fault off",
+   "loss": 9.099609375,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 88,
+   "phase": "fault off",
+   "loss": 9.104053497314453,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 89,
+   "phase": "fault off",
+   "loss": 9.084709167480469,
+   "train_alerts": [],
+   "serve_alerts": []
+  }
+ ]
+}

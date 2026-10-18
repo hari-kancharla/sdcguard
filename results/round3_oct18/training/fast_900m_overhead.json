@@ -1,0 +1,98 @@
+{
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true
+ },
+ "preset": "ts-900m",
+ "cfg": {
+  "dataset": "tinystories",
+  "n_layer": 16,
+  "n_head": 16,
+  "n_embd": 2048,
+  "block": 512,
+  "batch": 16,
+  "steps": 4000,
+  "eval_every": 250,
+  "eval_batches": 20,
+  "lr": 0.0003,
+  "ts_train_mb": 300,
+  "name": "ts-900m"
+ },
+ "base_ms_per_step": 163.73,
+ "results": [
+  {
+   "every": 1,
+   "share": 1.0,
+   "coverage": 1.0,
+   "estimated_pct": 25.77,
+   "measured_pct": null,
+   "measured_rounds_pct": [],
+   "slowdown_pct": 25.77
+  },
+  {
+   "every": 2,
+   "share": 1.0,
+   "coverage": 0.5,
+   "estimated_pct": 12.88,
+   "measured_pct": 12.54,
+   "measured_rounds_pct": [
+    12.49,
+    12.59
+   ],
+   "slowdown_pct": 12.54
+  },
+  {
+   "every": 5,
+   "share": 1.0,
+   "coverage": 0.2,
+   "estimated_pct": 5.15,
+   "measured_pct": 5.01,
+   "measured_rounds_pct": [
+    5.02,
+    4.99
+   ],
+   "slowdown_pct": 5.01
+  },
+  {
+   "every": 10,
+   "share": 1.0,
+   "coverage": 0.1,
+   "estimated_pct": 2.58,
+   "measured_pct": 2.64,
+   "measured_rounds_pct": [
+    2.54,
+    2.73
+   ],
+   "slowdown_pct": 2.64
+  },
+  {
+   "every": 20,
+   "share": 1.0,
+   "coverage": 0.05,
+   "estimated_pct": 1.29,
+   "measured_pct": 1.26,
+   "measured_rounds_pct": [
+    1.27,
+    1.25
+   ],
+   "slowdown_pct": 1.26
+  }
+ ],
+ "timing": {
+  "base_ms_per_step": 163.73,
+  "per_share": {
+   "1.0": {
+    "plain_ms": 163.73,
+    "checked_ms": 205.92,
+    "extra_ms_per_checked_step": 42.19
+   }
+  },
+  "false_alarms": 0,
+  "checks": 17169,
+  "worst_clean_z": 2.673891544342041,
+  "alerts": [],
+  "hook": "fast (protect: linear layers only)"
+ }
+}

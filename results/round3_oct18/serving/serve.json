@@ -1,0 +1,399 @@
+{
+ "gpu": "NVIDIA H100 80GB HBM3",
+ "torch": "2.14.1+cu130",
+ "agreement": {
+  "cases": 70,
+  "agree": 70,
+  "disagree": [],
+  "triton_used": 70,
+  "worst_rel_clean": 0.001826795617932405,
+  "first_use_comparison": {
+   "('cuda:0', torch.bfloat16)": [
+    true,
+    "agrees with the plain serving check"
+   ],
+   "('cuda:0', torch.float16)": [
+    true,
+    "agrees with the plain serving check"
+   ]
+  }
+ },
+ "cost": {
+  "1.1B": {
+   "params": 1100048384,
+   "compiled + CUDA graphs": {
+    "off": {
+     "decode-like (64 x 1 token)": {
+      "ms": 2.2044704437255858,
+      "rounds_ms": [
+       2.2207,
+       2.2045,
+       2.2031
+      ],
+      "seconds_incl_compile": 18.0
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 19.502517700195312,
+      "rounds_ms": [
+       19.5022,
+       19.5025,
+       20.1236
+      ],
+      "seconds_incl_compile": 17.7
+     },
+     "cudagraph_skips": 0
+    },
+    "exact only": {
+     "decode-like (64 x 1 token)": {
+      "ms": 2.3450016021728515,
+      "rounds_ms": [
+       2.3515,
+       2.345,
+       2.3284
+      ],
+      "seconds_incl_compile": 15.7,
+      "overhead_pct": 6.37
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 19.554829406738282,
+      "rounds_ms": [
+       19.3302,
+       19.5548,
+       20.1879
+      ],
+      "seconds_incl_compile": 17.5,
+      "overhead_pct": 0.27
+     },
+     "cudagraph_skips": 0
+    },
+    "every layer": {
+     "decode-like (64 x 1 token)": {
+      "ms": 4.141843032836914,
+      "rounds_ms": [
+       4.1449,
+       4.1418,
+       4.0936
+      ],
+      "seconds_incl_compile": 26.9,
+      "overhead_pct": 87.88
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 27.89708251953125,
+      "rounds_ms": [
+       27.8737,
+       28.0917,
+       27.8971
+      ],
+      "seconds_incl_compile": 30.0,
+      "overhead_pct": 43.04
+     },
+     "layers_checked": 155,
+     "layers_with_nonzero_scores": 155,
+     "triton_layers": 155,
+     "worst_clean_z": 2.0760769844055176,
+     "cudagraph_skips": 0
+    },
+    "1/8 of layers": {
+     "decode-like (64 x 1 token)": {
+      "ms": 2.5915184020996094,
+      "rounds_ms": [
+       2.5977,
+       2.5915,
+       2.5636
+      ],
+      "seconds_incl_compile": 15.2,
+      "overhead_pct": 17.56
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 21.006138610839844,
+      "rounds_ms": [
+       20.5906,
+       21.0061,
+       21.0913
+      ],
+      "seconds_incl_compile": 17.6,
+      "overhead_pct": 7.71
+     },
+     "layers_checked": 20,
+     "layers_with_nonzero_scores": 20,
+     "triton_layers": 20,
+     "worst_clean_z": 1.8723695278167725,
+     "cudagraph_skips": 0
+    }
+   },
+   "eager": {
+    "off": {
+     "decode-like (64 x 1 token)": {
+      "ms": 8.682138824462891,
+      "rounds_ms": [
+       9.1823,
+       8.4989,
+       8.6821
+      ],
+      "seconds_incl_compile": 0.6
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 25.630532836914064,
+      "rounds_ms": [
+       25.5614,
+       25.6873,
+       25.6305
+      ],
+      "seconds_incl_compile": 2.0
+     },
+     "cudagraph_skips": null
+    },
+    "exact only": {
+     "decode-like (64 x 1 token)": {
+      "ms": 8.485646057128907,
+      "rounds_ms": [
+       8.4856,
+       8.4508,
+       8.5517
+      ],
+      "seconds_incl_compile": 0.6,
+      "overhead_pct": -2.26
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 25.68746337890625,
+      "rounds_ms": [
+       25.5226,
+       25.7395,
+       25.6875
+      ],
+      "seconds_incl_compile": 1.7,
+      "overhead_pct": 0.22
+     },
+     "cudagraph_skips": null
+    },
+    "every layer": {
+     "decode-like (64 x 1 token)": {
+      "ms": 28.081814575195313,
+      "rounds_ms": [
+       28.0412,
+       28.0818,
+       28.85
+      ],
+      "seconds_incl_compile": 1.9,
+      "overhead_pct": 223.44
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 35.514730834960936,
+      "rounds_ms": [
+       35.5147,
+       35.5212,
+       35.5072
+      ],
+      "seconds_incl_compile": 2.3,
+      "overhead_pct": 38.56
+     },
+     "layers_checked": 155,
+     "layers_with_nonzero_scores": 155,
+     "triton_layers": 155,
+     "worst_clean_z": 1.9835089445114136,
+     "cudagraph_skips": null
+    },
+    "1/8 of layers": {
+     "decode-like (64 x 1 token)": {
+      "ms": 12.950201416015625,
+      "rounds_ms": [
+       12.9502,
+       13.0058,
+       12.8793
+      ],
+      "seconds_incl_compile": 0.8,
+      "overhead_pct": 49.16
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 27.104953002929687,
+      "rounds_ms": [
+       27.0949,
+       27.105,
+       27.1094
+      ],
+      "seconds_incl_compile": 1.8,
+      "overhead_pct": 5.75
+     },
+     "layers_checked": 20,
+     "layers_with_nonzero_scores": 20,
+     "triton_layers": 20,
+     "worst_clean_z": 1.8696659803390503,
+     "cudagraph_skips": null
+    }
+   }
+  },
+  "7B": {
+   "params": 6738415616,
+   "compiled + CUDA graphs": {
+    "off": {
+     "decode-like (64 x 1 token)": {
+      "ms": 7.959500885009765,
+      "rounds_ms": [
+       7.9121,
+       7.9624,
+       7.9595
+      ],
+      "seconds_incl_compile": 20.1
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 97.83193969726562,
+      "rounds_ms": [
+       97.8319,
+       98.3034,
+       97.6893
+      ],
+      "seconds_incl_compile": 26.7
+     },
+     "cudagraph_skips": 0
+    },
+    "exact only": {
+     "decode-like (64 x 1 token)": {
+      "ms": 7.911192321777344,
+      "rounds_ms": [
+       7.8498,
+       7.9112,
+       7.9193
+      ],
+      "seconds_incl_compile": 21.2,
+      "overhead_pct": -0.61
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 98.00791015625,
+      "rounds_ms": [
+       97.5013,
+       98.0079,
+       98.3462
+      ],
+      "seconds_incl_compile": 30.3,
+      "overhead_pct": 0.18
+     },
+     "cudagraph_skips": 0
+    },
+    "every layer": {
+     "decode-like (64 x 1 token)": {
+      "ms": 11.45456314086914,
+      "rounds_ms": [
+       11.4546,
+       11.4685,
+       11.4472
+      ],
+      "seconds_incl_compile": 41.1,
+      "overhead_pct": 43.91
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 125.1299072265625,
+      "rounds_ms": [
+       125.1299,
+       125.0147,
+       125.1863
+      ],
+      "seconds_incl_compile": 47.8,
+      "overhead_pct": 27.9
+     },
+     "layers_checked": 225,
+     "layers_with_nonzero_scores": 225,
+     "triton_layers": 225,
+     "worst_clean_z": 2.0170786380767822,
+     "cudagraph_skips": 0
+    },
+    "1/8 of layers": {
+     "decode-like (64 x 1 token)": {
+      "ms": 8.484986877441406,
+      "rounds_ms": [
+       8.4239,
+       8.4959,
+       8.485
+      ],
+      "seconds_incl_compile": 23.7,
+      "overhead_pct": 6.6
+     },
+     "prefill (4 x 1024 tokens)": {
+      "ms": 102.11088256835937,
+      "rounds_ms": [
+       102.5164,
+       102.1109,
+       102.0153
+      ],
+      "seconds_incl_compile": 33.1,
+      "overhead_pct": 4.37
+     },
+     "layers_checked": 29,
+     "layers_with_nonzero_scores": 29,
+     "triton_layers": 29,
+     "worst_clean_z": 1.7940706014633179,
+     "cudagraph_skips": 0
+    }
+   }
+  }
+ },
+ "quiet": {
+  "alerts": [],
+  "passes": 720,
+  "layer_checks": 76500,
+  "worst_clean_z_random_shapes": 2.3572583198547363,
+  "layers_with_nonzero_scores": 155,
+  "layers": 155
+ },
+ "catches": {
+  "weight_flip_eager": {
+   "flagged": [
+    "model.layers.11.mlp.down_proj"
+   ],
+   "first": {
+    "where": "model.layers.11.mlp.down_proj",
+    "max_z": Infinity,
+    "nonfinite": true,
+    "row": 63,
+    "col_block": 5,
+    "noise": Infinity,
+    "checksum": "plain",
+    "weights_changed_since_load": true,
+    "reading": "the layer's weights changed in GPU memory (or were updated without calling refresh())"
+   },
+   "verify_weights": [
+    "model.layers.11.mlp.down_proj"
+   ]
+  },
+  "weight_flip_compiled": {
+   "flagged": [
+    "model.layers.11.mlp.down_proj"
+   ]
+  },
+  "injected_compute_faults": {
+   "injected": 2,
+   "faulty_mlps": [
+    3,
+    14
+   ],
+   "layers_flagged": [
+    "model.layers.3.mlp.gate_proj",
+    "model.layers.3.mlp.up_proj"
+   ],
+   "only_faulty_layers": true
+  },
+  "bad_gpu_one_eighth_of_layers": {
+   "layers_checked": 20,
+   "faults_injected_in_the_pass": 154,
+   "layers_flagged_in_first_pass": [
+    "model.layers.0.mlp.up_proj",
+    "model.layers.0.self_attn.q_proj",
+    "model.layers.1.mlp.down_proj",
+    "model.layers.10.self_attn.o_proj",
+    "model.layers.11.mlp.gate_proj",
+    "model.layers.14.mlp.gate_proj",
+    "model.layers.16.self_attn.o_proj",
+    "model.layers.2.mlp.gate_proj",
+    "model.layers.3.mlp.up_proj",
+    "model.layers.4.mlp.down_proj",
+    "model.layers.5.mlp.gate_proj",
+    "model.layers.6.mlp.up_proj",
+    "model.layers.8.mlp.gate_proj"
+   ]
+  }
+ },
+ "seconds": 471.9,
+ "serving_triton_fallbacks": {
+  "count": 0,
+  "why": []
+ }
+}

@@ -1,0 +1,26 @@
+/usr/local/lib/python3.12/site-packages/torch/cuda/__init__.py:1395: UserWarning: Synchronization debug mode is a prototype feature and does not yet detect all synchronizing operations (Triggered internally at /__w/pytorch/pytorch/torch/csrc/cuda/Module.cpp:1080.)
+  torch._C._cuda_set_sync_debug_mode(debug_mode)
+sdcguard self-test on cuda (torch.bfloat16), torch 2.14.1+cu130
+  GPU: NVIDIA H100 80GB HBM3
+  matmul ops seen: {'aten::addmm': 10, 'aten::mm': 15}
+  all matmul-like ops in one step: {'aten::addmm': 2, 'aten::mm': 3}
+  clean: 25 checks, 0 alerts, worst clean z 1.57 (alert threshold 6.0)
+  faulty: 5 faults injected, 5 alerts
+  plain-check fast GEMM (fp32 output): in use; Triton GPU check: in use (clean z 1.410 vs 1.410; corrupted at row/block 100/2 vs 100/2)
+  [PASS] detector sees matmuls in the forward pass
+  [PASS] detector sees extra matmuls in the backward pass
+  [PASS] detector actually checks them (dtype supported)
+  [PASS] zero false alarms on clean steps
+  [PASS] faults were injected
+  [PASS] injected faults were caught
+  [PASS] no false alarms on tiny values (1e-18 to 1e-26, like collapsed attention gradients)
+  [PASS] no false alarm when fp16 loss scaling overflows (Inf the inputs explain)
+  [PASS] zero false alarms with TF32 turned on
+  [PASS] Triton GPU check passed its first-use comparison with the plain check
+  [PASS] Triton GPU check gives the same answers as the plain check
+  [PASS] Triton GPU check ran with no fallbacks
+  [PASS] checked step never makes the CPU wait for the GPU
+  [PASS] matmul partial sums kept in fp32 while checking, setting restored after
+ALL PASS
+
+[exit code 0]

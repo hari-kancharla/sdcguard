@@ -1,0 +1,679 @@
+{
+ "gpu": "NVIDIA L4",
+ "bitmask": "4096",
+ "smid": "0",
+ "laneid": "0",
+ "injector_loaded": true,
+ "probe_clean": 0,
+ "probe_fault on": 0,
+ "probe_fault off": 0,
+ "clean": {
+  "steps": 30,
+  "steps_with_alerts": 0,
+  "first_alert_after_steps": null,
+  "layers_flagged": [],
+  "loss_first_last": [
+   9.181600570678711,
+   9.185976028442383
+  ]
+ },
+ "fault on": {
+  "steps": 30,
+  "steps_with_alerts": 0,
+  "first_alert_after_steps": null,
+  "layers_flagged": [],
+  "loss_first_last": [
+   9.174137115478516,
+   9.088241577148438
+  ]
+ },
+ "fault off": {
+  "steps": 30,
+  "steps_with_alerts": 0,
+  "first_alert_after_steps": null,
+  "layers_flagged": [],
+  "loss_first_last": [
+   9.10051155090332,
+   9.074214935302734
+  ]
+ },
+ "checks": {
+  "matmuls_seen": 4590,
+  "checked": 4590,
+  "skipped_dtype": 0,
+  "skipped_oom": 0,
+  "alerts": 0
+ },
+ "rows": [
+  {
+   "step": 0,
+   "phase": "clean",
+   "loss": 9.181600570678711,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 1,
+   "phase": "clean",
+   "loss": 9.182842254638672,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 2,
+   "phase": "clean",
+   "loss": 9.180787086486816,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 3,
+   "phase": "clean",
+   "loss": 9.191636085510254,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 4,
+   "phase": "clean",
+   "loss": 9.175365447998047,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 5,
+   "phase": "clean",
+   "loss": 9.190446853637695,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 6,
+   "phase": "clean",
+   "loss": 9.170570373535156,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 7,
+   "phase": "clean",
+   "loss": 9.148672103881836,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 8,
+   "phase": "clean",
+   "loss": 9.173896789550781,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 9,
+   "phase": "clean",
+   "loss": 9.180004119873047,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 10,
+   "phase": "clean",
+   "loss": 9.169618606567383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 11,
+   "phase": "clean",
+   "loss": 9.169254302978516,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 12,
+   "phase": "clean",
+   "loss": 9.16665267944336,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 13,
+   "phase": "clean",
+   "loss": 9.1754150390625,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 14,
+   "phase": "clean",
+   "loss": 9.195363998413086,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 15,
+   "phase": "clean",
+   "loss": 9.173245429992676,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 16,
+   "phase": "clean",
+   "loss": 9.17189884185791,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 17,
+   "phase": "clean",
+   "loss": 9.165966033935547,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 18,
+   "phase": "clean",
+   "loss": 9.172304153442383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 19,
+   "phase": "clean",
+   "loss": 9.183456420898438,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 20,
+   "phase": "clean",
+   "loss": 9.170778274536133,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 21,
+   "phase": "clean",
+   "loss": 9.164369583129883,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 22,
+   "phase": "clean",
+   "loss": 9.17013931274414,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 23,
+   "phase": "clean",
+   "loss": 9.182247161865234,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 24,
+   "phase": "clean",
+   "loss": 9.185022354125977,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 25,
+   "phase": "clean",
+   "loss": 9.1615629196167,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 26,
+   "phase": "clean",
+   "loss": 9.162345886230469,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 27,
+   "phase": "clean",
+   "loss": 9.166585922241211,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 28,
+   "phase": "clean",
+   "loss": 9.191287994384766,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 29,
+   "phase": "clean",
+   "loss": 9.185976028442383,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 30,
+   "phase": "fault on",
+   "loss": 9.174137115478516,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 31,
+   "phase": "fault on",
+   "loss": 9.180274963378906,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 32,
+   "phase": "fault on",
+   "loss": 9.160260200500488,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 33,
+   "phase": "fault on",
+   "loss": 9.170693397521973,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 34,
+   "phase": "fault on",
+   "loss": 9.163581848144531,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 35,
+   "phase": "fault on",
+   "loss": 9.179216384887695,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 36,
+   "phase": "fault on",
+   "loss": 9.164094924926758,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 37,
+   "phase": "fault on",
+   "loss": 9.168825149536133,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 38,
+   "phase": "fault on",
+   "loss": 9.162651062011719,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 39,
+   "phase": "fault on",
+   "loss": 9.137445449829102,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 40,
+   "phase": "fault on",
+   "loss": 9.150365829467773,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 41,
+   "phase": "fault on",
+   "loss": 9.140094757080078,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 42,
+   "phase": "fault on",
+   "loss": 9.157594680786133,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 43,
+   "phase": "fault on",
+   "loss": 9.136236190795898,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 44,
+   "phase": "fault on",
+   "loss": 9.127958297729492,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 45,
+   "phase": "fault on",
+   "loss": 9.136215209960938,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 46,
+   "phase": "fault on",
+   "loss": 9.141575813293457,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 47,
+   "phase": "fault on",
+   "loss": 9.135560989379883,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 48,
+   "phase": "fault on",
+   "loss": 9.12900447845459,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 49,
+   "phase": "fault on",
+   "loss": 9.12217903137207,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 50,
+   "phase": "fault on",
+   "loss": 9.116690635681152,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 51,
+   "phase": "fault on",
+   "loss": 9.112000465393066,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 52,
+   "phase": "fault on",
+   "loss": 9.124536514282227,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 53,
+   "phase": "fault on",
+   "loss": 9.114917755126953,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 54,
+   "phase": "fault on",
+   "loss": 9.120170593261719,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 55,
+   "phase": "fault on",
+   "loss": 9.111349105834961,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 56,
+   "phase": "fault on",
+   "loss": 9.103930473327637,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 57,
+   "phase": "fault on",
+   "loss": 9.100563049316406,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 58,
+   "phase": "fault on",
+   "loss": 9.102038383483887,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 59,
+   "phase": "fault on",
+   "loss": 9.088241577148438,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 60,
+   "phase": "fault off",
+   "loss": 9.10051155090332,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 61,
+   "phase": "fault off",
+   "loss": 9.094366073608398,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 62,
+   "phase": "fault off",
+   "loss": 9.083175659179688,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 63,
+   "phase": "fault off",
+   "loss": 9.100973129272461,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 64,
+   "phase": "fault off",
+   "loss": 9.091135025024414,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 65,
+   "phase": "fault off",
+   "loss": 9.09231185913086,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 66,
+   "phase": "fault off",
+   "loss": 9.083001136779785,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 67,
+   "phase": "fault off",
+   "loss": 9.087851524353027,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 68,
+   "phase": "fault off",
+   "loss": 9.083990097045898,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 69,
+   "phase": "fault off",
+   "loss": 9.083307266235352,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 70,
+   "phase": "fault off",
+   "loss": 9.09871768951416,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 71,
+   "phase": "fault off",
+   "loss": 9.08961296081543,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 72,
+   "phase": "fault off",
+   "loss": 9.094860076904297,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 73,
+   "phase": "fault off",
+   "loss": 9.081571578979492,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 74,
+   "phase": "fault off",
+   "loss": 9.092239379882812,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 75,
+   "phase": "fault off",
+   "loss": 9.083002090454102,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 76,
+   "phase": "fault off",
+   "loss": 9.081873893737793,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 77,
+   "phase": "fault off",
+   "loss": 9.069076538085938,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 78,
+   "phase": "fault off",
+   "loss": 9.068965911865234,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 79,
+   "phase": "fault off",
+   "loss": 9.074166297912598,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 80,
+   "phase": "fault off",
+   "loss": 9.06259822845459,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 81,
+   "phase": "fault off",
+   "loss": 9.090097427368164,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 82,
+   "phase": "fault off",
+   "loss": 9.071064949035645,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 83,
+   "phase": "fault off",
+   "loss": 9.082284927368164,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 84,
+   "phase": "fault off",
+   "loss": 9.087645530700684,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 85,
+   "phase": "fault off",
+   "loss": 9.074312210083008,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 86,
+   "phase": "fault off",
+   "loss": 9.091495513916016,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 87,
+   "phase": "fault off",
+   "loss": 9.071758270263672,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 88,
+   "phase": "fault off",
+   "loss": 9.087713241577148,
+   "train_alerts": [],
+   "serve_alerts": []
+  },
+  {
+   "step": 89,
+   "phase": "fault off",
+   "loss": 9.074214935302734,
+   "train_alerts": [],
+   "serve_alerts": []
+  }
+ ]
+}

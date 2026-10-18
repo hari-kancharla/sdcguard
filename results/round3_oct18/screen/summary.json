@@ -1,0 +1,33 @@
+{
+  "device": "cuda",
+  "gpu": {
+    "host": "modal",
+    "rank": null,
+    "device": "cuda",
+    "gpu_uuid": "GPU-21f358bd-430d-db03-f296-1fe4d88634b3",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "pci_bus_id": "00000000:B8:00.0",
+    "gpu_index": "0",
+    "serial": "1655023028788",
+    "vbios": "96.00.D0.00.02",
+    "driver": "610.57.04",
+    "smi_uuid": "GPU-21f358bd-430d-db03-f296-1fe4d88634b3"
+  },
+  "result": "PASS",
+  "minutes": 3.0,
+  "training_steps": 489,
+  "serving_passes": 489,
+  "matmuls_checked": 142299,
+  "linear_layer_checks_while_serving": 31785,
+  "approx_matmul_tflop": 27908.0,
+  "corrupted_results_training": 0,
+  "corrupted_results_serving": 0,
+  "serving_alerts": [],
+  "worst_clean_z": 3.413,
+  "alarm_line": 6.0,
+  "evidence": [],
+  "sdcguard": "0.2.0",
+  "torch": "2.14.1+cu130",
+  "seed": 0,
+  "size": "1b"
+}

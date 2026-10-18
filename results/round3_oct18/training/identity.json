@@ -1,0 +1,15 @@
+{
+ "no guard vs fast mode (exact_reductions=False)": {
+  "bit_identical": true,
+  "differing": [],
+  "checks": 657,
+  "alerts": 0
+ },
+ "operator-level guard vs fast mode": {
+  "bit_identical": true,
+  "differing": [],
+  "checks_operator_level": 657,
+  "checks_fast": 657,
+  "alerts": 0
+ }
+}

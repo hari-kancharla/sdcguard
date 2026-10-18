@@ -1,0 +1,27 @@
+------------- NVBit (NVidia Binary Instrumentation Tool v1.8) Loaded --------------
+NVBit core environment variables (mostly for nvbit-devs):
+ACK_CTX_INIT_LIMITATION = 0 - if set, no warning will be printed for nvbit_at_ctx_init()
+            NVDISASM = nvdisasm - override default nvdisasm found in PATH
+            NOBANNER = 0 - if set, does not print this banner
+       NO_EAGER_LOAD = 1 - lazy module loading is now turned on by default. If you see deadlocks in your tool, set NO_EAGER_LOAD to 0
+---------------------------------------------------------------------------------
+         TARGET_FUNC = -1 - Function ID to instrument (-1 = all)
+        TARGET_INSTR = -1 - Instruction index to instrument (-1 = all matching)
+         TARGET_SMID = 0 - SM ID for fault injection (-1 = all)
+       TARGET_LANEID = 0 - Lane ID for fault injection (-1 = all)
+     TARGET_REGISTER = 1 - Operand register index to corrupt
+      TARGET_BITMASK = 2 - Bitmask used to flip register bits
+           TARGET_OP = HMMA - SASS opcode substring to match
+TARGET_FUNC_CONTAINS = gemm - Instrument functions containing this substring
+         INSTR_BEGIN = 0 - Inclusive lower bound for instruction index instrumentation
+           INSTR_END = 4294967295 - Exclusive upper bound for instruction index instrumentation
+        TOOL_VERBOSE = 0 - Enable verbose NVBit logging
+WARNING: Do not call CUDA memory allocation in nvbit_at_ctx_init(). It will cause deadlocks. Do them in nvbit_tool_init(). If you encounter deadlocks, remove CUDA API calls to debug.
+clean: 11.7 s
+fault on: 181.4 s
+fault off: 8.8 s
+clean: 0/30 steps with alerts, first after None steps, 0 layers flagged; positive control: 0 elements of a fixed matmul changed
+fault on: 0/30 steps with alerts, first after None steps, 0 layers flagged; positive control: 592 elements of a fixed matmul changed
+fault off: 0/30 steps with alerts, first after None steps, 0 layers flagged; positive control: 0 elements of a fixed matmul changed
+
+[exit code 0]

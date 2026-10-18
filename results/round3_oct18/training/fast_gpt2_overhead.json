@@ -1,0 +1,115 @@
+{
+ "env": {
+  "torch": "2.14.1+cu130",
+  "device": "cuda",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "bf16_reduced_precision_reduction": true
+ },
+ "preset": "ts-gpt2",
+ "cfg": {
+  "dataset": "tinystories",
+  "n_layer": 12,
+  "n_head": 12,
+  "n_embd": 768,
+  "block": 512,
+  "batch": 32,
+  "steps": 4000,
+  "eval_every": 250,
+  "eval_batches": 40,
+  "lr": 0.0006,
+  "ts_train_mb": 300,
+  "name": "ts-gpt2"
+ },
+ "base_ms_per_step": 83.24,
+ "results": [
+  {
+   "every": 1,
+   "share": 1.0,
+   "coverage": 1.0,
+   "estimated_pct": 37.84,
+   "measured_pct": null,
+   "measured_rounds_pct": [],
+   "slowdown_pct": 37.84
+  },
+  {
+   "every": 2,
+   "share": 1.0,
+   "coverage": 0.5,
+   "estimated_pct": 18.92,
+   "measured_pct": 19.48,
+   "measured_rounds_pct": [
+    19.45,
+    19.68,
+    19.48
+   ],
+   "slowdown_pct": 19.48
+  },
+  {
+   "every": 5,
+   "share": 1.0,
+   "coverage": 0.2,
+   "estimated_pct": 7.57,
+   "measured_pct": 7.64,
+   "measured_rounds_pct": [
+    8.22,
+    7.64,
+    7.4
+   ],
+   "slowdown_pct": 7.64
+  },
+  {
+   "every": 10,
+   "share": 1.0,
+   "coverage": 0.1,
+   "estimated_pct": 3.78,
+   "measured_pct": 3.87,
+   "measured_rounds_pct": [
+    3.87,
+    3.86,
+    4.18
+   ],
+   "slowdown_pct": 3.87
+  },
+  {
+   "every": 20,
+   "share": 1.0,
+   "coverage": 0.05,
+   "estimated_pct": 1.89,
+   "measured_pct": 1.74,
+   "measured_rounds_pct": [
+    1.82,
+    1.74,
+    1.65
+   ],
+   "slowdown_pct": 1.74
+  },
+  {
+   "every": 50,
+   "share": 1.0,
+   "coverage": 0.02,
+   "estimated_pct": 0.76,
+   "measured_pct": 0.89,
+   "measured_rounds_pct": [
+    1.0,
+    0.89,
+    0.65
+   ],
+   "slowdown_pct": 0.89
+  }
+ ],
+ "timing": {
+  "base_ms_per_step": 83.24,
+  "per_share": {
+   "1.0": {
+    "plain_ms": 83.24,
+    "checked_ms": 114.75,
+    "extra_ms_per_checked_step": 31.5
+   }
+  },
+  "false_alarms": 0,
+  "checks": 20367,
+  "worst_clean_z": 2.8603200912475586,
+  "alerts": [],
+  "hook": "fast (protect: linear layers only)"
+ }
+}

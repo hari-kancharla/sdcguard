@@ -1,0 +1,29 @@
+{
+  "evidence": "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_0.pt",
+  "replayed_on": {
+    "host": "modal",
+    "rank": null,
+    "device": "cuda",
+    "gpu_uuid": "GPU-21f358bd-430d-db03-f296-1fe4d88634b3",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "pci_bus_id": "00000000:B8:00.0",
+    "gpu_index": "0"
+  },
+  "recorded_output_check": {
+    "max_z": 108.26078796386719,
+    "ok": false,
+    "row": 898,
+    "col_block": 16
+  },
+  "recomputations": 200,
+  "recomputations_that_failed_the_check": 0,
+  "worst_z_of_recomputations": 1.7919336557388306,
+  "this_device_vs_recorded_output": {
+    "elements_that_differ_from_recorded_output": 32,
+    "elements_off_by_more_than_1_percent": 32,
+    "largest_difference": 6.221234798431396e-07
+  },
+  "reading": "every recomputation on this device was correct"
+}
+
+[exit code 0]

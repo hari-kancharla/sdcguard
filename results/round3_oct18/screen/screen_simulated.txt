@@ -1,0 +1,11 @@
+  (SIMULATED faults were injected in software for this run: a demo, not a real GPU fault)
+sdcguard screen: FAIL  NVIDIA H100 80GB HBM3 GPU-21f358bd-430d-db03-f296-1fe4d88634b3 PCI 00000000:B8:00.0 serial 1655023028788
+  0.5 min, 72 training steps, 72 serving passes, 20,952 matmuls checked in training, 4,680 layer checks while serving, about 4,109.1 TFLOP of matmul work
+  corrupted results: 45 in training, 0 while serving; worst clean score 2.842 (alarm line 6)
+  evidence: /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_0.json   replay: python -m sdcguard.screen --replay /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_0.pt
+  evidence: /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_1.json   replay: python -m sdcguard.screen --replay /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_1.pt
+  evidence: /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_2.json   replay: python -m sdcguard.screen --replay /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_2.pt
+  evidence: /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_3.json   replay: python -m sdcguard.screen --replay /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_3.pt
+  evidence: /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_4.json   replay: python -m sdcguard.screen --replay /vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_4.pt
+
+[exit code 1]

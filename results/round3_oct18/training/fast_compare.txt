@@ -1,0 +1,57 @@
+{"case": "mm torch.bfloat16 n=300 (partial last block)", "fast_z": 1.1003707647323608, "plain_z": 1.1003586053848267, "both_clean": true, "agree": true}
+{"case": "mm torch.bfloat16 n=40 (< one block)", "fast_z": 1.094788670539856, "plain_z": 1.0947445631027222, "both_clean": true, "agree": true}
+{"case": "mm torch.float16 n=300 (partial last block)", "fast_z": 1.168255090713501, "plain_z": 1.1682552099227905, "both_clean": true, "agree": true}
+{"case": "mm torch.float16 n=40 (< one block)", "fast_z": 1.1452347040176392, "plain_z": 1.1452347040176392, "both_clean": true, "agree": true}
+{"case": "addmm with bias", "fast_z": 1.1618174314498901, "plain_z": 1.1617839336395264, "both_clean": true, "agree": true}
+{"case": "addmm alpha=0.5 beta=2", "fast_z": 1.3173238039016724, "plain_z": 1.3173530101776123, "both_clean": true, "agree": true}
+{"case": "linear forward: B = W^T (strided view)", "fast_z": 1.1031161546707153, "plain_z": 1.1032172441482544, "both_clean": true, "agree": true}
+{"case": "dW = dY^T X (strided A)", "fast_z": 1.0829107761383057, "plain_z": 1.082930326461792, "both_clean": true, "agree": true}
+{"case": "bmm batch 3", "fast_z": 1.0901908874511719, "plain_z": 1.0901907682418823, "both_clean": true, "agree": true}
+{"case": "batched A, shared B", "fast_z": 1.0672262907028198, "plain_z": 1.0671601295471191, "both_clean": true, "agree": true}
+{"case": "long sum over k=3000 (split across programs)", "fast_z": 0.6175205707550049, "plain_z": 0.6175622940063477, "both_clean": true, "agree": true}
+{"case": "tiny values (1e-24 products)", "fast_z": 5.439979213406332e-05, "plain_z": 5.440278255264275e-05, "both_clean": true, "agree": true}
+{"case": "n=1500 (24 checksum columns per tile)", "fast_z": 1.274436116218567, "plain_z": 1.2743889093399048, "both_clean": true, "agree": true}
+{"case": "n=2600 (64 checksum columns per tile)", "fast_z": 1.3612240552902222, "plain_z": 1.3613343238830566, "both_clean": true, "agree": true}
+{"case": "n=9000 with bias (128 per tile, 2 tiles across)", "fast_z": 1.545149803161621, "plain_z": 1.5450818538665771, "both_clean": true, "agree": true}
+{"case": "torch.bfloat16 one output row (m=1)", "fast_z": 0.37115615606307983, "plain_z": 0.3711317479610443, "both_clean": true, "agree": true}
+{"case": "torch.bfloat16 one output column (n=1)", "fast_z": 0.8222323656082153, "plain_z": 0.8222323656082153, "both_clean": true, "agree": true}
+{"case": "torch.bfloat16 inner size 1 with a bias (k=1)", "fast_z": 1.1875944137573242, "plain_z": 1.1875942945480347, "both_clean": true, "agree": true}
+{"case": "torch.bfloat16 1 x 1 x 1", "fast_z": 0.68068528175354, "plain_z": 0.68068528175354, "both_clean": true, "agree": true}
+{"case": "torch.float16 one output row (m=1)", "fast_z": 0.23979569971561432, "plain_z": 0.23968550562858582, "both_clean": true, "agree": true}
+{"case": "torch.float16 one output column (n=1)", "fast_z": 0.8320216536521912, "plain_z": 0.8320215940475464, "both_clean": true, "agree": true}
+{"case": "torch.float16 inner size 1 with a bias (k=1)", "fast_z": 1.140106439590454, "plain_z": 1.140106439590454, "both_clean": true, "agree": true}
+{"case": "torch.float16 1 x 1 x 1", "fast_z": 0.1951921284198761, "plain_z": 0.1951921135187149, "both_clean": true, "agree": true}
+{"case": "bmm, one row per batch", "fast_z": 0.4329153299331665, "plain_z": 0.43314027786254883, "both_clean": true, "agree": true}
+{"case": "fp16 overflow from large inputs (not corruption)", "fast_z": 0.8876175284385681, "plain_z": 0.8876175284385681, "both_clean": true, "agree": true}
+{"case": "NaN in an input (not corruption)", "fast_z": 1.0796229839324951, "plain_z": 1.0796226263046265, "both_clean": true, "agree": true}
+{"case": "bf16 outputs ~1e21 from large inputs (too big to square, not corruption)", "fast_z": 0.0, "plain_z": 0.0, "both_clean": true, "agree": true}
+{"case": "torch.bfloat16 B = ones (identical columns)", "fast_z": 3.8732519149780273, "plain_z": 3.8732519149780273, "both_clean": true, "agree": true}
+{"case": "torch.float16 B = ones (identical columns)", "fast_z": 1.9050939083099365, "plain_z": 1.905093789100647, "both_clean": true, "agree": true}
+{"case": "B = an expanded vector (identical columns, stride 0)", "fast_z": 3.7758188247680664, "plain_z": 3.7764625549316406, "both_clean": true, "agree": true}
+{"case": "bf16 outputs 1e37 (block sums overflow fp32)", "fast_z": 0.0, "plain_z": 0.0, "both_clean": true, "agree": true}
+{"case": "bf16 B's block sums overflow fp32, outputs ~0", "fast_z": 0.0, "plain_z": 0.0, "both_clean": true, "agree": true}
+{"case": "bf16 |a_row|^2 overflows fp32", "fast_z": 0.0998038798570633, "plain_z": 0.09984210133552551, "both_clean": true, "agree": true}
+{"case": "bf16 checksum column^2 overflows fp32", "fast_z": 0.5991214513778687, "plain_z": 0.5991213917732239, "both_clean": true, "agree": true}
+{"case": "bf16 huge A and a zero block of B", "fast_z": 0.0, "plain_z": 0.0, "both_clean": true, "agree": true}
+{"case": "fp16 tiny outputs (inputs ~0.001)", "fast_z": 1.287022590637207, "plain_z": 1.2870224714279175, "both_clean": true, "agree": true}
+{"case": "fp16 tiny outputs (inputs ~0.0003)", "fast_z": 1.8071298599243164, "plain_z": 1.8071142435073853, "both_clean": true, "agree": true}
+{"case": "zeroed chunk", "fast": [false, null, 17, 1, false, 38.32516098022461], "plain": [false, null, 17, 1, false, 38.32533264160156], "agree": true}
+{"case": "NaN", "fast": [false, null, 5, 2, true, Infinity], "plain": [false, null, 5, 2, true, Infinity], "agree": true}
+{"case": "one value off by 40", "fast": [false, null, 40, 0, false, 94.00186157226562], "plain": [false, null, 40, 0, false, 94.0018539428711], "agree": true}
+{"case": "small change (should pass in both)", "fast": [true, null, 40, 0, false, 4.93482780456543], "plain": [true, null, 40, 0, false, 4.93482780456543], "agree": true}
+{"case": "wide output, error far from the start", "fast": [false, null, 66, 66, false, 26.935867309570312], "plain": [false, null, 66, 66, false, 26.935869216918945], "agree": true}
+{"case": "bmm, error in batch 2", "fast": [false, 2, 11, 1, false, 261.0482482910156], "plain": [false, 2, 11, 1, false, 261.0482482910156], "agree": true}
+{"case": "fp16 Inf from small inputs", "fast": [false, null, 9, 1, true, Infinity], "plain": [false, null, 9, 1, true, Infinity], "agree": true}
+{"case": "fp16 real overflow in one row, NaN corruption in another", "fast": [false, null, 30, 2, true, Infinity], "plain": [false, null, 30, 2, true, Infinity], "agree": true}
+{"case": "bf16 value 1e30 from small inputs", "fast": [false, null, 9, 0, true, Infinity], "plain": [false, null, 9, 0, true, Infinity], "agree": true}
+{"case": "fp16 tiny outputs, one changed by 0.01", "fast": [false, null, 17, 0, false, 1904.7991943359375], "plain": [false, null, 17, 0, false, 1904.799072265625], "agree": true}
+{"case": "guard end to end (mixed widths, one faulty layer)", "fast": [11, [["forward", 17, 0]]], "plain": [11, [["forward", 17, 0]]], "agree": true}
+{"case": "in-place changes and freed inputs after the matmul", "stats": {"matmuls_seen": 3, "checked": 3, "skipped_dtype": 0, "skipped_oom": 0, "alerts": 0}, "agree": true}
+{"case": "matmuls on a side CUDA stream", "stats": {"matmuls_seen": 8, "checked": 8, "skipped_dtype": 0, "skipped_oom": 0, "alerts": 0}, "agree": true}
+{"case": "out of memory during a check", "stats": {"matmuls_seen": 1, "checked": 0, "skipped_dtype": 0, "skipped_oom": 1, "alerts": 0}, "agree": true}
+{"case": "first-use comparison inside a guard wrapped by a fault injector", "status": [true, "agrees with the plain check"], "injected": 1, "agree": true}
+{"fast_fallbacks": 0, "why": []}
+{"case": "first-use comparison switches off a kernel that disagrees", "why": "(96, 300) corrupted: Triton z 104.84239959716797 at 0/71/1, plain z 104.84249114990234 at None/70/1", "agree": true}
+ALL AGREE
+
+[exit code 0]

@@ -1,0 +1,40 @@
+{
+  "device": "cuda",
+  "gpu": {
+    "host": "modal",
+    "rank": null,
+    "device": "cuda",
+    "gpu_uuid": "GPU-21f358bd-430d-db03-f296-1fe4d88634b3",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "pci_bus_id": "00000000:B8:00.0",
+    "gpu_index": "0",
+    "serial": "1655023028788",
+    "vbios": "96.00.D0.00.02",
+    "driver": "610.57.04",
+    "smi_uuid": "GPU-21f358bd-430d-db03-f296-1fe4d88634b3"
+  },
+  "result": "FAIL",
+  "minutes": 0.5,
+  "training_steps": 72,
+  "serving_passes": 72,
+  "matmuls_checked": 20952,
+  "linear_layer_checks_while_serving": 4680,
+  "approx_matmul_tflop": 4109.1,
+  "corrupted_results_training": 45,
+  "corrupted_results_serving": 0,
+  "serving_alerts": [],
+  "worst_clean_z": 2.842,
+  "alarm_line": 6.0,
+  "evidence": [
+    "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_0",
+    "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_1",
+    "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_2",
+    "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_3",
+    "/vol/runs_r3/check/screen_simulated/GPU-21f358bd-430d-db03-f296-1fe4d88634b3/evidence_4"
+  ],
+  "sdcguard": "0.2.0",
+  "torch": "2.14.1+cu130",
+  "seed": 0,
+  "size": "1b",
+  "SIMULATED_FAULTS": "yes: 0.002 of matmul outputs corrupted in software (a demo, not a GPU fault)"
+}
