@@ -44,6 +44,26 @@ def test_int8_has_to_be_exact():
     assert modes.check_once("int8", CPU, SHAPE, "normal", 1.0, _gen(), fault=1)["wrong_blocks"] == 1
 
 
+def test_int8_sums_stay_exact_at_the_largest_values_and_use_no_integer_matmul(monkeypatch):
+    """The GPU shape (k = 1024) with every input at +-127: off by 1 in one output must still show. And the
+    checksums mustn't use an integer matmul, which CUDA doesn't have for int64 (it failed on every GPU on
+    Oct 19, 2026)."""
+    real = torch.einsum
+
+    def einsum(eq, *ops):
+        assert all(not (o.dtype in (torch.int32, torch.int64)) for o in ops), "integer einsum"
+        return real(eq, *ops)
+    monkeypatch.setattr(torch, "einsum", einsum)
+    a = torch.full((64, 1024), 127, dtype=torch.int8)
+    b = torch.full((1024, 256), 127, dtype=torch.int8)
+    b[:, ::3] = -127                                # outputs of +-16,516,096; block sums near 2^31
+    c = modes.gemm("int8", a, b)
+    assert int(c.abs().min()) == 127 * 127 * 1024
+    assert modes.judge("int8", a.double(), b.double(), c)["wrong_blocks"] == 0
+    c[5, 200] += 1
+    assert modes.judge("int8", a.double(), b.double(), c)["wrong_blocks"] == 1
+
+
 def test_a_non_finite_result_is_wrong():
     def run(mode, a, b):
         c = modes.gemm(mode, a, b)

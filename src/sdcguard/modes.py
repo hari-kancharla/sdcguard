@@ -217,8 +217,10 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
     w = torch.cat([torch.ones(1, BLOCK, dtype=torch.float64), signs.double()], dim=0)      # (P+1, BLOCK)
     wd = w.to(c.device)
     if mode == "int8":
-        cb = c.long().view(m, nblk, BLOCK)
-        actual = torch.einsum("mbw,pw->mbp", cb, wd.long()).cpu()
+        # integer sums in float64: exact here (every sum stays far below 2^53), and float64 matmuls run on every
+        # device, while CUDA has no int64 one ("baddbmm_cuda not implemented for 'Long'")
+        cb = c.double().view(m, nblk, BLOCK)
+        actual = torch.einsum("mbw,pw->mbp", cb, wd).cpu()
     else:
         cb = c.double().view(m, nblk, BLOCK)
         actual = torch.einsum("mbw,pw->mbp", cb, wd).cpu()                       # (m, nblk, P+1)
@@ -228,7 +230,7 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
     expected = a64 @ torch.einsum("kbw,pw->kbp", bb, w).reshape(k, nblk * w.shape[0])
     expected = expected.view(m, nblk, w.shape[0])
     if mode == "int8":
-        bad = (actual != expected.round().long()).any(dim=-1)
+        bad = (actual != expected).any(dim=-1)
         return {"wrong_blocks": int(bad.sum()), "blocks": m * nblk, "worst_z": None, "typical_caught": None,
                 "z": torch.where(bad, float("inf"), 0.0)}
     diff = (expected - actual.double()).abs()
