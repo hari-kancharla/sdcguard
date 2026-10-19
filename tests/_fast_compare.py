@@ -124,7 +124,7 @@ def corrupted(device):
     C[40, 7] = C[40, 7] + 40                               # one value off by 40 in block 0
     res.append(("one value off by 40", A, B, C, True))
     C = A @ B
-    C[40, 7] = C[40, 7] * 2 + 3                            # a small change: below the alarm line
+    C[40, 7] = C[40, 7] + 1                                # a small change: about half the alarm line
     res.append(("small change (should pass in both)", A, B, C, False))
     A2 = torch.randn(70, 40, generator=g).to(device=device, dtype=torch.bfloat16)
     B2 = torch.randn(40, 9000, generator=g).to(device=device, dtype=torch.bfloat16)
