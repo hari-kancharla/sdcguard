@@ -340,6 +340,26 @@ Code fingerprint 1265b3e0a385 ([results](../results/precise_validate/SUMMARY.md)
 As written above: precise mode stays experimental, off by default and out of the README. These workloads have
 now been seen, so a revised model would need new held-out workloads and criteria written before its run.
 
+## The default check and precise mode on the same matmuls (written October 19, 2026, before any GPU run)
+
+The numbers above come from different runs: the default check's sensitivity from random matrices of inner
+size 256 (math modes), precise mode's from its noise model (6 x noise over a typical output, not injected
+errors), and the costs from the held-out run. The October 19 outside review asked for both, measured on one
+revision. [experiments/mode_compare.py](../experiments/mode_compare.py) does that on the calibration-shape
+model: every linear-layer matmul (forward, dX, dW) of two training steps, three random outputs each, an error
+of 0.0001% to 100% of a typical output of the block added before rounding, then the default check on the
+bf16 result and precise mode's check on the fp32 result of the same corrupted matmul; then seconds per step
+unchecked, with the default check and with precise mode. Runner: `scripts/modal_mode_compare.py` (H100, A100,
+L4).
+
+What gets reported, fixed now: every error size, both checks, all trials, per GPU, with 95% intervals; the
+size at which each check flags half and 90% of the errors, overall and among errors that changed the bf16
+output; clean false alarms and worst scores; step times. There is no pass line, and the sizes won't be changed
+after the run. Precise mode stays experimental whatever this shows: this says what its sensitivity buys for
+its cost. Limits: injected errors in one output of a matmul's result, not hardware faults; the default check
+here is the PyTorch version (the Triton version gives the same scores, tests/_fast_compare.py). A CPU smoke
+run (no tensor cores, so not a result) flagged half the errors from 19% (default) and 0.068% (precise).
+
 ## Attention checks: calibration criteria (written October 19, 2026, before any GPU run)
 
 The matmul checksums can't see inside fused attention (`scaled_dot_product_attention`), and AEGIS found 3 of
