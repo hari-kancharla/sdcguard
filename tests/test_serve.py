@@ -187,6 +187,7 @@ def _plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("SDCGUARD", "1")
     monkeypatch.setenv("SDCGUARD_ALLOW_CPU", "1")
     monkeypatch.setenv("SDCGUARD_POLL_EVERY", "100000")       # these tests read the results themselves
+    monkeypatch.setenv("SDCGUARD_POLL_SECONDS", "1e9")
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k, v in extra.items():
         monkeypatch.setenv(k, v)

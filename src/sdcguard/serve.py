@@ -13,7 +13,14 @@ GPU memory since they were loaded (a bit flip in HBM or GDDR that ECC missed, or
 ECC). verify_weights() tells the two apart.
 
 Same math and noise model as the training check (checksum.py): two checksums per 128-output
-block (plain and fixed random +-1 signs), alarm at z > 6.
+block (plain and fixed random +-1 signs), alarm at z > 6. One difference: a block the check can't judge
+(inputs that aren't finite, or a legitimate overflow) scores 0 here, because the per-layer state only holds
+non-negative scores; serving doesn't count such blocks separately (sdcguard screen and check count passes
+whose output isn't finite instead).
+
+Layers whose own code computes something other than x @ W^T + b are left alone: a subclass with its own
+forward at attach(), and a forward set on the instance (an offload hook, say) the first time it runs, when
+its output is compared once with the plain linear's.
 
 Built for serving engines:
   - Nothing ever waits for the GPU. Results go into a small state tensor on the GPU (worst z per
@@ -249,9 +256,11 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     zs = torch.where(e_bad, zero, zs)
     zs = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dt], BIG), inf, zero), zs)
     zs = torch.where(big, torch.where(lim < BIG, inf, zero), zs)
-    flat = zs.reshape(-1)
+    # one extra 0 at the end: an empty batch (m = 0) then scores 0 instead of failing the reduction, with no
+    # data-dependent branch (this also runs traced into vLLM's compiled graph)
+    flat = torch.cat([zs.reshape(-1), zs.new_zeros(1)])
     mz, arg = torch.max(flat, 0)
-    nz = den.expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0)
+    nz = torch.cat([den.expand_as(zs).reshape(-1), den.new_ones(1)]).gather(0, arg.view(1)).squeeze(0)
     zb = mz.float().clamp_min(0).view(torch.int32).to(torch.int64) << 32
     keys = torch.stack([zb | arg.to(torch.int64), zb | (nz.float().view(torch.int32).to(torch.int64) & 0xFFFFFFFF)])
     state[slot] = torch.maximum(state[slot], keys)
@@ -479,9 +488,19 @@ class ServeGuard:
         k, n, z, floor = cs.k, cs.n, float(self.z), float(self.abs_floor)
 
         trace = guard.inline and not guard.uses_fast(slot)
+        own = lay.get("own_forward") is not None
 
         def forward(x):
             y = plain(x)
+            if own and lay.get("own_ok") is not True:
+                # a forward set on the instance: check it computes the plain linear before checking its output
+                if lay.get("own_ok") is None and not torch.compiler.is_compiling():
+                    lay["own_ok"] = guard._same_as_linear(mod, x, y)
+                    if not lay["own_ok"]:
+                        guard.unsupported[lay["name"]] = ("forward set on the instance changes the output; "
+                                                          "not checked")
+                if lay.get("own_ok") is not True:
+                    return y
             if guard.enabled and x.numel() > 0:
                 # torch.compile: the custom op (or the PyTorch check traced into the graph); eager: a plain call,
                 # without the custom-op dispatch (that cost ~100 us per layer in eager decoding on the H100)
@@ -493,6 +512,20 @@ class ServeGuard:
             return y
 
         return forward
+
+    @staticmethod
+    def _same_as_linear(mod: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> bool:
+        """Does y (from the layer's own forward) equal x @ W^T + b, up to one rounding? Runs once per layer."""
+        try:
+            with torch.no_grad():
+                ref = torch.nn.functional.linear(x, mod.weight, mod.bias)
+                if ref.shape != y.shape:
+                    return False
+                rf, yf = ref.float(), y.float()
+                tol = 2.0 ** -7 * rf.abs() + 1e-6
+                return bool(((yf - rf).abs() <= tol).all())
+        except Exception:  # noqa: BLE001  (weights not where F.linear can reach them: don't check this layer)
+            return False
 
     def detach(self) -> None:
         if self._restore:

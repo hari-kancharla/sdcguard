@@ -33,6 +33,7 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+import time
 
 import torch
 
@@ -193,6 +194,8 @@ def register() -> None:
     _STATE["patched"] = True
 
     poll_every = max(1, int(os.environ.get("SDCGUARD_POLL_EVERY", "16")))
+    poll_seconds = float(os.environ.get("SDCGUARD_POLL_SECONDS", "2"))
+    last_poll = [time.monotonic()]
 
     def hook(module_name: str) -> bool:
         try:
@@ -207,7 +210,11 @@ def register() -> None:
         def execute_model(self, *args, **kwargs):
             out = orig_exec(self, *args, **kwargs)
             _STATE["steps"] += 1
-            if _STATE["steps"] % poll_every == 0 and _STATE["guard"] is not None:
+            now = time.monotonic()
+            # read results every poll_every model steps, or after poll_seconds, whichever comes first (a poll
+            # reports the previous read, so an alert shows up one poll later; at exit everything is read)
+            if (_STATE["steps"] % poll_every == 0 or now - last_poll[0] >= poll_seconds) and _STATE["guard"] is not None:
+                last_poll[0] = now
                 try:
                     _STATE["guard"].poll()
                 except Exception as e:  # noqa: BLE001  (never break serving)
