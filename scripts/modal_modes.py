@@ -90,17 +90,24 @@ def _work(label: str) -> dict:
     out["calibration"] = {"shape": list(shape), "rounds": rounds, "modes": cal}
     print(label, "calibration done:", rounds, "rounds", flush=True)
 
-    # 2. the bf16 check vs the fp32 check on the same matmuls
-    t0 = time.time()
-    sens = sensitivity.run(dev, shape, trials=8, say=lambda s: None)
-    sens.update(device="cuda", gpu=out["gpu"], torch=out["torch"], shape=list(shape), seconds=round(time.time() - t0, 1),
-                date=time.strftime("%Y-%m-%d"))
-    out["sensitivity"] = sens
-    out["sensitivity_md"] = sensitivity.markdown(sens)
+    # 2. the bf16 check vs the fp32 check on the same matmuls (fp16 on GPUs without bf16)
+    try:
+        t0 = time.time()
+        low = "bf16" if out["cc"][0] >= 8 else "fp16"
+        sens = sensitivity.run(dev, shape, trials=8, say=lambda s: None, low=low)
+        sens.update(device="cuda", gpu=out["gpu"], torch=out["torch"], shape=list(shape),
+                    seconds=round(time.time() - t0, 1), date=time.strftime("%Y-%m-%d"))
+        out["sensitivity"] = sens
+        out["sensitivity_md"] = sensitivity.markdown(sens)
+    except Exception as e:  # noqa: BLE001
+        out["sensitivity_error"] = f"{type(e).__name__}: {str(e)[:300]}"
     print(label, "sensitivity done", flush=True)
 
     # 3. the screen as `sdcguard check` runs it
-    out["screen"] = modes.screen(dev, 20.0)
+    try:
+        out["screen"] = modes.screen(dev, 20.0)
+    except Exception as e:  # noqa: BLE001
+        out["screen_error"] = f"{type(e).__name__}: {str(e)[:300]}"
     print(label, "screen done", flush=True)
     return out
 
@@ -156,6 +163,9 @@ def _summary(results: list) -> str:
     for r in results:
         if "sensitivity_md" in r:
             lines += ["", r["sensitivity_md"]]
+        for k in ("sensitivity_error", "screen_error"):
+            if k in r:
+                lines += ["", f"{r['label']}: {k.replace('_', ' ')}: {r[k]}"]
     return "\n".join(lines) + "\n"
 
 

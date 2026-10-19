@@ -39,29 +39,34 @@ def _fp32_result(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     return a.float() @ b.float()
 
 
-def run(dev: torch.device, shape: tuple, trials: int, seed: int = 0, say=print) -> dict:
+def run(dev: torch.device, shape: tuple, trials: int, seed: int = 0, say=print, low: str = "bf16") -> dict:
+    """low: the result type of the ordinary check, bf16 (fp16 on GPUs without bf16)."""
     m, k, n = shape
     gen = torch.Generator().manual_seed(seed)
-    nfma = modes.n_fma("bf16", torch.cuda.get_device_capability(dev)) if dev.type == "cuda" else None
-    hits = {"bf16": [0] * len(SIZES), "fp32": [0] * len(SIZES)}
+    ldt = {"bf16": torch.bfloat16, "fp16": torch.float16}[low]
+    nfma = modes.n_fma(low, torch.cuda.get_device_capability(dev)) if dev.type == "cuda" else None
+    hits = {"low": [0] * len(SIZES), "fp32": [0] * len(SIZES)}
     changed = [0] * len(SIZES)
-    clean = {"bf16": {"false_alarms": 0, "worst_z": 0.0}, "fp32": {"false_alarms": 0, "worst_z": 0.0}}
+    clean = {"low": {"false_alarms": 0, "worst_z": 0.0}, "fp32": {"false_alarms": 0, "worst_z": 0.0}}
     per_variant = {}
-    done = 0
+    done = skipped = 0
     for dist, scale in modes.VARIANTS:
         vname = f"{dist} x{scale:g}"
-        per_variant[vname] = {"bf16": [0] * len(SIZES), "fp32": [0] * len(SIZES), "trials": 0}
+        per_variant[vname] = {"low": [0] * len(SIZES), "fp32": [0] * len(SIZES), "trials": 0}
         for _ in range(trials):
-            a, b, a64, b64 = modes._inputs("bf16", shape, dist, scale, gen)
+            a, b, a64, b64 = modes._inputs(low, shape, dist, scale, gen)
             a, b = a.to(dev), b.to(dev)
             c32 = _fp32_result(a, b)
-            c16 = c32.to(torch.bfloat16)
+            c16 = c32.to(ldt)
+            if not bool(torch.isfinite(c16).all()):       # fp16 results can overflow: nothing to compare
+                skipped += 1
+                continue
             r_old = checksum.check_matmul(a, b, c16)
-            r_new = modes.judge("bf16", a64, b64, c32, nfma)
-            clean["bf16"]["false_alarms"] += not r_old.ok
+            r_new = modes.judge(low, a64, b64, c32, nfma)
+            clean["low"]["false_alarms"] += not r_old.ok
             clean["fp32"]["false_alarms"] += r_new["wrong_blocks"] > 0
             if math.isfinite(r_old.max_z):
-                clean["bf16"]["worst_z"] = max(clean["bf16"]["worst_z"], float(r_old.max_z))
+                clean["low"]["worst_z"] = max(clean["low"]["worst_z"], float(r_old.max_z))
             clean["fp32"]["worst_z"] = max(clean["fp32"]["worst_z"], r_new["worst_z"])
             i = int(torch.randint(0, m, (1,), generator=gen))
             j = int(torch.randint(0, n, (1,), generator=gen))
@@ -71,20 +76,20 @@ def run(dev: torch.device, shape: tuple, trials: int, seed: int = 0, say=print) 
             for s_i, e in enumerate(SIZES):
                 c = c32.clone()
                 c[i, j] += sign * e * typical
-                c16f = c.to(torch.bfloat16)
+                c16f = c.to(ldt)
                 changed[s_i] += bool(c16f[i, j] != c16[i, j])
                 old = not checksum.check_matmul(a, b, c16f).ok
-                new = modes.judge("bf16", a64, b64, c, nfma)["wrong_blocks"] > 0
-                hits["bf16"][s_i] += old
+                new = modes.judge(low, a64, b64, c, nfma)["wrong_blocks"] > 0
+                hits["low"][s_i] += old
                 hits["fp32"][s_i] += new
-                per_variant[vname]["bf16"][s_i] += old
+                per_variant[vname]["low"][s_i] += old
                 per_variant[vname]["fp32"][s_i] += new
             per_variant[vname]["trials"] += 1
             done += 1
         say(f"  {vname}: {trials} trials")
     rate = {key: [h / done for h in v] for key, v in hits.items()}
-    return {"sizes": list(SIZES), "trials_per_size": done, "flagged": rate,
-            "changed_bf16_output": [c / done for c in changed], "clean": clean,
+    return {"sizes": list(SIZES), "trials_per_size": done, "skipped_overflow": skipped, "flagged": rate,
+            "changed_low_output": [c / done for c in changed], "clean": clean, "low_dtype": low,
             "half_caught_at": {key: _half(SIZES, v) for key, v in rate.items()},
             "per_variant": per_variant, "tensor_core_steps": nfma}
 
@@ -104,19 +109,22 @@ def markdown(res: dict) -> str:
 
     def size(e):
         return f"{100 * e:.4g}%"
-    out = [f"# Sensitivity: bf16 result vs fp32 accumulator ({res['device']})", "",
+    lo = res.get("low_dtype", "bf16")
+    out = [f"# Sensitivity: {lo} result vs fp32 accumulator ({res['device']})", "",
            f"{res['gpu']}, torch {res['torch']}, matmuls of {res['shape'][0]} x {res['shape'][1]} by "
            f"{res['shape'][1]} x {res['shape'][2]}, {res['trials_per_size']} trials per error size "
-           f"({len(modes.VARIANTS)} input distributions). An error is relative to a typical output of its block.", "",
-           "| error size | bf16 check flags | fp32 check flags | changed the bf16 output |", "|---|---|---|---|"]
+           f"({len(modes.VARIANTS)} input distributions"
+           + (f"; {res['skipped_overflow']} skipped because the {lo} result overflowed" if res.get("skipped_overflow") else "")
+           + "). An error is relative to a typical output of its block.", "",
+           f"| error size | {lo} check flags | fp32 check flags | changed the {lo} output |", "|---|---|---|---|"]
     for i, e in enumerate(res["sizes"]):
-        out.append(f"| {size(e)} | {pct(res['flagged']['bf16'][i])} | {pct(res['flagged']['fp32'][i])} | "
-                   f"{pct(res['changed_bf16_output'][i])} |")
+        out.append(f"| {size(e)} | {pct(res['flagged']['low'][i])} | {pct(res['flagged']['fp32'][i])} | "
+                   f"{pct(res['changed_low_output'][i])} |")
     h = res["half_caught_at"]
-    out += ["", f"Half the errors are caught from about {size(h['bf16']) if h['bf16'] else '?'} (bf16 check) and "
+    out += ["", f"Half the errors are caught from about {size(h['low']) if h['low'] else '?'} ({lo} check) and "
                 f"{size(h['fp32']) if h['fp32'] else '?'} (fp32 check).",
-            f"Clean trials: bf16 check {res['clean']['bf16']['false_alarms']} false alarms (worst score "
-            f"{res['clean']['bf16']['worst_z']:.2f}), fp32 check {res['clean']['fp32']['false_alarms']} "
+            f"Clean trials: {lo} check {res['clean']['low']['false_alarms']} false alarms (worst score "
+            f"{res['clean']['low']['worst_z']:.2f}), fp32 check {res['clean']['fp32']['false_alarms']} "
             f"(worst score {res['clean']['fp32']['worst_z']:.2f}); the alarm is at 6.", ""]
     return "\n".join(out)
 
@@ -132,8 +140,9 @@ def main(argv=None) -> int:
     gpu = torch.cuda.get_device_name(dev) if dev.type == "cuda" else platform.processor() or "CPU"
     shape = tuple(int(x) for x in a.shape.split(",")) if a.shape else modes.SHAPE["cuda" if dev.type == "cuda" else "cpu"]
     trials = a.trials or (10 if dev.type == "cuda" else 2)
+    low = "fp16" if dev.type == "cuda" and torch.cuda.get_device_capability(dev)[0] < 8 else "bf16"
     t0 = time.time()
-    res = run(dev, shape, trials)
+    res = run(dev, shape, trials, low=low)
     res.update(device=str(dev), gpu=gpu, torch=torch.__version__, shape=list(shape), seconds=round(time.time() - t0, 1),
                date=time.strftime("%Y-%m-%d"))
     md = markdown(res)
