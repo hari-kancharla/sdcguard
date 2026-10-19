@@ -42,7 +42,7 @@ CHUNK = 1024                # tile results reduced per iteration in _worst
 PART_FLOATS = 1 << 20       # size of each tile-result buffer (floats); more are added as needed
 
 _BROKEN: dict = {}          # (device type, dtype) -> True after a compile/launch error
-_SIGNS: dict = {}           # device -> (sign table on the device, pinned host copy)
+_SIGNS: dict = {}           # (device, epoch) -> (sign table on the device, pinned host copy)
 _PREC: dict = {}
 FALLBACKS = [0]             # compile/launch problems (the plain check took over)
 WHY: list = []              # what went wrong, for each of those (the last 10)
@@ -190,15 +190,22 @@ def _sign_offset(width: int) -> int:
     return (width - 1) * 128                 # widths 1..128, one row of 128 each (aligned loads)
 
 
-def _sign_table(device: torch.device) -> torch.Tensor:
+def _sign_table(device: torch.device, epoch: int = 0) -> torch.Tensor:
     """The plain check's +-1 pattern for every block width 1..128 (checksum._signs), on the device.
-    Built once per device and copied without making the CPU wait for the GPU."""
-    key = str(device)
+    Built once per device and epoch, and copied without making the CPU wait for the GPU. Serving uses
+    epoch 0; training checks move to a new epoch every checked step (see checksum._signs)."""
+    key = (str(device), epoch)
     if key not in _SIGNS:
         from .checksum import _signs
-        host = torch.zeros(128, 128, dtype=torch.float32)   # (explicit: vLLM loads under bf16 default)
-        for w in range(1, 129):
-            host[w - 1, :w] = _signs(w, "cpu")
+        if epoch:                                           # keep epoch 0 (serving) and this one
+            for k in [k for k in _SIGNS if k[1] not in (0, epoch)]:
+                del _SIGNS[k]
+        if epoch:                                           # every width starts the same 128-wide pattern
+            host = torch.tril(_signs(128, "cpu", epoch).view(1, 128).expand(128, 128)).contiguous()
+        else:
+            host = torch.zeros(128, 128, dtype=torch.float32)   # (explicit: vLLM loads under bf16 default)
+            for w in range(1, 129):
+                host[w - 1, :w] = _signs(w, "cpu")
         host = host.reshape(-1)
         if device.type == "cuda":
             host = host.pin_memory()
@@ -635,9 +642,11 @@ class Group:
     """Checks of one step on one device in one dtype. add() does the work of a check right away;
     launch() queues the search for each check's worst z; row() decodes the read-back."""
 
-    def __init__(self, device: torch.device, dtype: torch.dtype, block: int, abs_floor: float, z: float = 6.0):
+    def __init__(self, device: torch.device, dtype: torch.dtype, block: int, abs_floor: float, z: float = 6.0,
+                 epoch: int = 0):
         from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF
         self.device, self.dtype, self.block, self.abs_floor, self.z = device, dtype, block, abs_floor, z
+        self.epoch = epoch            # which +-1 pattern the signed checksums use (see _sign_table)
         self.u = float(UNIT_ROUNDOFF[dtype])
         self.half_tiny = float(HALF_TINY_STEP[dtype])
         self.out_max = float(min(DTYPE_MAX[dtype], BIG))   # Inf/NaN outputs: see checksum.py
@@ -651,6 +660,10 @@ class Group:
 
     def __len__(self) -> int:
         return len(self.meta)
+
+    def _signs(self) -> torch.Tensor:
+        self._sign_ref = _sign_table(self.device, self.epoch)   # alive as long as this group, whatever the cache does
+        return self._sign_ref
 
     def _space(self, n: int) -> int:
         if self._buf is None or self._used + n > self._buf.numel():
@@ -703,7 +716,7 @@ class Group:
         mx_step = (nkb + 1) * nblk if bB > 1 else 0
         with _on(self.device):
             _stage[(n_c + n_b,)](
-                C, B, bias if hb else B, _sign_table(self.device), W, P16, m, n, k, kb, bs, nblk, rem,
+                C, B, bias if hb else B, self._signs(), W, P16, m, n, k, kb, bs, nblk, rem,
                 _sign_offset(bs), _sign_offset(rem) if rem else 0, c[1], c[4], c[5], b[1], b[4], b[5],
                 bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, mx_off, JS, pst, BR=BR,
                 BW=128 if bs > 64 else 64, NATIVE=native)
@@ -775,9 +788,9 @@ class Group:
         return z, bi, tm * BM + li // bj, (tj * bj + li % bj) // 2, den
 
 
-def check_now(A, B, C, bias=None, alpha=1.0, beta=1.0, block=128, abs_floor=1e-20, z=6.0):
+def check_now(A, B, C, bias=None, alpha=1.0, beta=1.0, block=128, abs_floor=1e-20, z=6.0, epoch=0):
     """One check answered right away: (max_z, batch, row, col_block, noise)."""
-    g = Group(C.device, C.dtype, block, abs_floor, z)
+    g = Group(C.device, C.dtype, block, abs_floor, z, epoch=epoch)
     g.add(A, B, C, bias, alpha, beta)
     g.launch()
     return g.row(0, g.result[0].tolist())

@@ -302,6 +302,31 @@ def probe_rejects_a_wrong_kernel(device):
     return ok
 
 
+def fresh_patterns(device):
+    """Two outputs swapped where the sign pattern agrees cancel in both checksums. Training checks take a
+    new pattern every checked step: the Triton and plain checks must use the same pattern for each epoch,
+    miss the swap on epoch 0, and catch it on the epochs whose pattern tells the two outputs apart."""
+    from sdcguard import _group
+    g = torch.Generator().manual_seed(4)
+    A = torch.randn(64, 96, generator=g).to(device=device, dtype=torch.bfloat16)
+    B = torch.randn(96, 256, generator=g).to(device=device, dtype=torch.bfloat16)
+    s0 = cs._signs(128, "cpu", 0)
+    j = next(j for j in range(1, 128) if s0[j] == s0[0])
+    C = A @ B
+    C[:, [0, j]] = C[:, [j, 0]]                     # every row: outputs 0 and j trade places
+    ok, seen = True, []
+    for e in range(6):
+        f = _group.check_now(A, B, C, epoch=e)[0]
+        p = cs.resolve([cs.matmul_zscores(A, B, C, epoch=e)], 6.0)[0].max_z
+        differ = bool(cs._signs(128, "cpu", e)[j] != cs._signs(128, "cpu", e)[0])
+        same = (f > 6.0) == (p > 6.0) == differ and abs(f - p) <= 0.02 + 0.01 * p
+        seen.append([e, differ, round(f, 2), round(p, 2), same])
+        ok &= same
+    ok &= not seen[0][1] and any(r[1] for r in seen)
+    print(json.dumps({"case": "two outputs swapped, a new sign pattern per epoch", "epochs": seen, "agree": ok}))
+    return ok
+
+
 def main(device="cpu"):
     from sdcguard import _group
     ok = True
@@ -324,6 +349,7 @@ def main(device="cpu"):
         print(json.dumps({"case": name, "fast": [f.ok, f.batch, f.row, f.col_block, f.nonfinite, f.max_z],
                           "plain": [p.ok, p.batch, p.row, p.col_block, p.nonfinite, p.max_z], "agree": same}))
     ok &= guard_end_to_end(device)
+    ok &= fresh_patterns(device)
     ok &= inplace_safety(device)
     ok &= side_stream(device)
     ok &= out_of_memory(device)

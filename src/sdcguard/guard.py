@@ -267,6 +267,10 @@ class SDCGuard(TorchDispatchMode):
     precise: with protect(), check each linear layer's fp32 accumulator before it's rounded (much smaller
         errors show; see the module docstring). on_accumulator(layer, pass, C32): optional, called with each
         fp32 result before its check (fault-injection experiments corrupt it there).
+    fresh_signs: give every checked step a new +-1 pattern for the signed checksums (default True). Two
+        wrong outputs in a block can cancel in both sums for one pattern (two values swapped where the
+        pattern has the same sign); a fault that repeats that way on every step then still shows on a
+        later step, instead of hiding for the whole run.
     """
 
     def __init__(
@@ -288,9 +292,12 @@ class SDCGuard(TorchDispatchMode):
         every: int = 10,
         precise: bool = False,
         on_accumulator: Optional[Callable] = None,
+        fresh_signs: bool = True,
     ):
         super().__init__()
         self.every = every
+        self.fresh_signs = fresh_signs        # a new signed-checksum pattern every checked step
+        self._epoch = 0
         self.precise = precise                # check fp32 accumulators (protect() only; see the module docstring)
         self.on_accumulator = on_accumulator  # experiments: on_accumulator(layer, pass, C32) before each check
         self._nfma: dict = {}
@@ -534,6 +541,7 @@ class SDCGuard(TorchDispatchMode):
         if self._active:                     # nested: the outer step does the bookkeeping
             yield
             return
+        self._new_epoch()
         restore = _exact_reductions_on() if self.exact_reductions else None
         self._active = True
         self._casts.clear()
@@ -552,7 +560,16 @@ class SDCGuard(TorchDispatchMode):
                     self._streams.clear()
         self.flush()
 
+    def _new_epoch(self) -> None:
+        """Start a checked step: with fresh_signs, its signed checksums use a pattern no earlier step used,
+        so a fault that keeps changing the same outputs in a way one pattern can't see shows on a later step."""
+        if self.fresh_signs:
+            with self._lock:
+                self._epoch += 1
+
     def __enter__(self):
+        if self._depth == 0:
+            self._new_epoch()
         if self.exact_reductions and self._depth == 0:
             self._restore_flags = _exact_reductions_on()
         self._depth += 1
@@ -620,15 +637,15 @@ class SDCGuard(TorchDispatchMode):
             if acc:
                 st = matmul_zscores_acc(A, B, C, bias, alpha=alpha, beta=beta, block=self.block,
                                         abs_floor=self.abs_floor, z=self.z,
-                                        nfma=self._tensor_core_steps(C, A.dtype))
+                                        nfma=self._tensor_core_steps(C, A.dtype), epoch=self._epoch)
                 entry = ("s", st, None, token, detail)
             elif _cs.USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, self.block):
-                key = (C.device, C.dtype)
+                key = (C.device, C.dtype, self._epoch)
                 try:
                     g = self._groups.get(key)
                     if g is None:
                         g = self._groups[key] = _group.Group(C.device, C.dtype, self.block, self.abs_floor,
-                                                             self.z)
+                                                             self.z, epoch=self._epoch)
                     entry = ("g", g, g.add(A, B, C, bias, alpha, beta), token, detail)
                 except _OOM:
                     raise
@@ -638,7 +655,7 @@ class SDCGuard(TorchDispatchMode):
                     entry = None
             if entry is None:
                 st = matmul_zscores(A, B, C, bias, alpha=alpha, beta=beta, block=self.block,
-                                    abs_floor=self.abs_floor, z=self.z)
+                                    abs_floor=self.abs_floor, z=self.z, epoch=self._epoch)
                 if st is None:
                     self.stats["skipped_dtype"] += 1
                     return

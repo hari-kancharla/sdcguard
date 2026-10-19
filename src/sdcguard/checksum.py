@@ -172,12 +172,37 @@ _SIGNS: dict = {}
 _SIGN_SEED = int(os.environ.get("SDCGUARD_SIGN_SEED") or int.from_bytes(os.urandom(4), "little"))
 
 
-def _signs(width: int, device) -> torch.Tensor:
-    """A pseudo-random +-1 pattern (fp32) for the second checksum, drawn once per process."""
-    key = (width, str(device))
+# Training checks can also take a new pattern on every checked step (SDCGuard(fresh_signs=True), the default):
+# epoch e > 0 is a different pattern. A fault that keeps hitting the same outputs can then hide from the signed
+# checksum on one step at most (two outputs of a block swapped where the pattern has the same sign cancel in
+# both sums). Serving computes its checksums once at load, so it stays on epoch 0.
+
+
+def _drop_old(cache: dict, epoch: int) -> None:
+    """Keep epoch 0 and the current epoch only (the caches would grow by one pattern per step otherwise)."""
+    if epoch:
+        for k in [k for k in cache if k[-1] not in (0, epoch)]:
+            del cache[k]
+
+
+def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
+    """A pseudo-random +-1 pattern (fp32) for the second checksum: one per process and epoch.
+    Epoch 0 draws each width on its own; a later epoch draws one pattern and narrower blocks use its start
+    (one draw per checked step instead of one per block width)."""
+    key = (width, str(device), epoch)
     if key not in _SIGNS:
-        g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
-        _SIGNS[key] = (torch.randint(0, 2, (width,), generator=g) * 2 - 1).float().to(device)
+        _drop_old(_SIGNS, epoch)
+        if epoch == 0:
+            g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
+            s = (torch.randint(0, 2, (width,), generator=g) * 2 - 1).float()
+        else:
+            n = max(128, width)
+            base = _SIGNS.get(("base", n, epoch))
+            if base is None:
+                g = torch.Generator().manual_seed((_SIGN_SEED + n + 7919 * epoch) % (2 ** 63))
+                base = _SIGNS[("base", n, epoch)] = (torch.randint(0, 2, (n,), generator=g) * 2 - 1).float()
+            s = base[:width]
+        _SIGNS[key] = s.to(device)
     return _SIGNS[key]
 
 
@@ -188,18 +213,19 @@ def _c_gemm(flat: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
 _PAIR_W: dict = {}
 
 
-def _pair_weights(width: int, dtype: torch.dtype, device) -> torch.Tensor:
+def _pair_weights(width: int, dtype: torch.dtype, device, epoch: int = 0) -> torch.Tensor:
     """[1, s] as a (width, 2) matrix in `dtype` (exact: every entry is +-1). Cached."""
-    key = (width, dtype, str(device))
+    key = (width, dtype, str(device), epoch)
     w = _PAIR_W.get(key)
     if w is None:
-        s = _signs(width, device)
+        _drop_old(_PAIR_W, epoch)
+        s = _signs(width, device, epoch)
         w = torch.stack([torch.ones_like(s), s], dim=1).to(dtype)
         _PAIR_W[key] = w
     return w
 
 
-def _pair_sums(Xb: torch.Tensor) -> torch.Tensor:
+def _pair_sums(Xb: torch.Tensor, epoch: int = 0) -> torch.Tensor:
     """Plain and signed sums of every block, in fp32: (..., nblk, width) -> (..., nblk, 2).
 
     On NVIDIA GPUs both come from one pass (a skinny GEMM against [1, s] with fp32 output);
@@ -209,11 +235,11 @@ def _pair_sums(Xb: torch.Tensor) -> torch.Tensor:
     if Xb.dtype in UNIT_ROUNDOFF and _use_lowp_gemm(Xb):
         try:
             Xc = Xb if Xb.is_contiguous() else Xb.contiguous()
-            out = _c_gemm(Xc.view(-1, width), _pair_weights(width, Xb.dtype, Xb.device))
+            out = _c_gemm(Xc.view(-1, width), _pair_weights(width, Xb.dtype, Xb.device, epoch))
             return out.view(*Xb.shape[:-1], 2)
         except (RuntimeError, NotImplementedError, AttributeError):
             pass
-    s = _pair_weights(width, Xb.dtype, Xb.device)[:, 1]
+    s = _pair_weights(width, Xb.dtype, Xb.device, epoch)[:, 1]
     return torch.stack([_sum_fp32(Xb), _sum_fp32(Xb * s)], dim=-1)
 
 
@@ -279,6 +305,7 @@ def matmul_zscores(
     block: int = 128,
     abs_floor: float = ABS_FLOOR,
     z: float = 6.0,
+    epoch: int = 0,
 ) -> Optional[CheckStat]:
     """Queue the check of C = beta*bias + alpha*(A @ B) without waiting for the GPU.
 
@@ -296,10 +323,10 @@ def matmul_zscores(
     # backward passes often run under autocast, which would round this fp32 math to bf16/fp16 on CPUs
     # and Apple GPUs
     with torch.autocast(device_type=C.device.type, enabled=False):
-        return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u)
+        return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch)
 
 
-def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u) -> CheckStat:
+def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> CheckStat:
     A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
     nb_batch, m, n = C3.shape
     k = A3.shape[-1]
@@ -326,7 +353,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u) -> CheckStat:
         Bblk = B3[..., start:end].reshape(B3.shape[0], k, nblk, width)
         # Two checksums per block: the plain sum, and a sum with fixed random +-1 signs. A fault
         # whose changes happen to cancel in one sum (e.g. zeroing a +3 and a -3) shows in the other.
-        B2 = _pair_sums(Bblk)                                                # (bB, k, nblk, 2) fp32
+        B2 = _pair_sums(Bblk, epoch)                                         # (bB, k, nblk, 2) fp32
         expected = _matmul_fp32(A3, B2.view(B3.shape[0], k, 2 * nblk))
         expected = expected.view(expected.shape[0], m, nblk, 2)
         # largest output these inputs allow, per row and block (for judging Inf/NaN outputs):
@@ -340,10 +367,10 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u) -> CheckStat:
                 bb = bias[start:end].reshape(nblk, width)
             else:                                                            # (m, n) or (1, n)
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
-            expected = expected.add(_pair_sums(bb), alpha=beta)
+            expected = expected.add(_pair_sums(bb, epoch), alpha=beta)
             bound = bound + abs(beta) * bb.abs().amax(-1).float()             # (nblk,) or (m, nblk)
 
-        actual = _pair_sums(Cb)                                              # (batch, m, nblk, 2)
+        actual = _pair_sums(Cb, epoch)                                       # (batch, m, nblk, 2)
         # Rounding noise of a block sum ~ unit roundoff x L2 norm of the outputs (same for +-1
         # signs), plus a floor for the fp32 rounding of `expected` itself (matters only when the
         # outputs nearly cancel): 1e-5 x |alpha| x |a_row| x |checksum column of B|.
@@ -406,10 +433,10 @@ def acc_supported(A: torch.Tensor, C: torch.Tensor) -> bool:
     return C.dtype == torch.float32 and A.dtype in UNIT_ROUNDOFF
 
 
-def _pair_sums64(Xb: torch.Tensor) -> torch.Tensor:
+def _pair_sums64(Xb: torch.Tensor, epoch: int = 0) -> torch.Tensor:
     """Plain and signed block sums in float64: (..., nblk, width) -> (..., nblk, 2), in chunks."""
     width = Xb.shape[-1]
-    w = _pair_weights(width, torch.float64, Xb.device)
+    w = _pair_weights(width, torch.float64, Xb.device, epoch)
     flat = Xb.reshape(-1, width)
     out = torch.empty(flat.shape[0], 2, dtype=torch.float64, device=Xb.device)
     rows = max(1, _F64_CHUNK // max(1, width))
@@ -439,6 +466,7 @@ def matmul_zscores_acc(
     abs_floor: float = ABS_FLOOR,
     z: float = 6.0,
     nfma: Optional[int] = None,
+    epoch: int = 0,
 ) -> Optional[CheckStat]:
     """Queue the check of C = beta*bias + alpha*(A @ B) where A and B are bf16/fp16 and C is the fp32
     result (not rounded). Same layout and read-back as matmul_zscores (resolve() decodes both). None if
@@ -446,10 +474,10 @@ def matmul_zscores_acc(
     if not acc_supported(A, C):
         return None
     with torch.autocast(device_type=C.device.type, enabled=False):     # its fp32/fp64 math stays as written
-        return _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma)
+        return _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch)
 
 
-def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma) -> CheckStat:
+def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0) -> CheckStat:
     A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
     nb_batch, m, n = C3.shape
     k = A3.shape[-1]
@@ -472,7 +500,7 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma) -> Check
         end = start + width * nblk
         Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)
         Bblk = B3[..., start:end].reshape(B3.shape[0], k, nblk, width)
-        B2 = _pair_sums64(Bblk)                                              # (bB, k, nblk, 2) float64
+        B2 = _pair_sums64(Bblk, epoch)                                       # (bB, k, nblk, 2) float64
         expected = _matmul64(A3, B2.view(B3.shape[0], k, 2 * nblk)).view(-1, m, nblk, 2)
         bound = A_l1 * Bblk.abs().amax(dim=(-3, -1)).float().unsqueeze(-2)  # (b, m, nblk)
         if alpha != 1.0:
@@ -483,10 +511,10 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma) -> Check
                 bb = bias[start:end].reshape(nblk, width)
             else:
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
-            expected = expected + beta * _pair_sums64(bb)
+            expected = expected + beta * _pair_sums64(bb, epoch)
             bound = bound + abs(beta) * bb.abs().amax(-1).float()
 
-        actual = _pair_sums64(Cb)                                            # (b, m, nblk, 2) float64
+        actual = _pair_sums64(Cb, epoch)                                     # (b, m, nblk, 2) float64
         cnorm = _norm_fp32(Cb)                                               # (b, m, nblk)
         b_frob = torch.linalg.vector_norm(Bblk.float(), dim=(-3, -1)).unsqueeze(-2)   # (bB, 1, nblk)
         per_out = ACC_C2 * math.sqrt(k) + ACC_C3 * steps + math.sqrt(width)
