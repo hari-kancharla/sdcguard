@@ -162,3 +162,24 @@ def test_board_rejects_cards_whose_verdict_contradicts_their_counts():
     assert "FAIL" in board.validate(_card(result="FAIL"))
     assert board.validate(_card(result="FAIL", wrong={"stress": 2})) is None
     assert "negative" in board.validate(_card(wrong={"stress": -1}))
+
+
+def test_a_check_that_cant_judge_anything_says_so(plain_check):
+    """NaN inputs make every block unjudgeable: that's "no evidence", not a clean result."""
+    a = torch.full((4, 8), float("nan"), dtype=torch.bfloat16)
+    b = torch.randn(8, 128).bfloat16()
+    r = cs.check_matmul(a, b, (a.float() @ b.float()).bfloat16())
+    assert r.ok and not r.judged and r.max_z < 0
+    good = cs.check_matmul(torch.randn(4, 8).bfloat16(), b, (torch.randn(4, 8).bfloat16().float() @ b.float()).bfloat16())
+    assert good.judged
+
+
+def test_training_guard_counts_unjudged_checks_apart_from_clean_ones():
+    model = nn.Sequential(nn.Linear(8, 128)).to(torch.bfloat16)
+    g = SDCGuard(every=1).protect(model)
+    with g.on_step(0):
+        model(torch.full((4, 8), float("nan"), dtype=torch.bfloat16))
+    with g.on_step(1):
+        model(torch.randn(4, 8).bfloat16())
+    assert g.stats["unjudged"] == 1 and not g.log.events
+    assert g.max_z_seen >= 0

@@ -219,6 +219,7 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
                "corrupted_results_serving": len(serve_alerts),
                "serving_alerts": [e.detail for e in serve_alerts[:20]],
                "worst_clean_z": round(tguard.max_z_seen, 3), "alarm_line": 6.0, "evidence": evidence,
+               "unjudged_training_checks": tguard.stats.get("unjudged", 0),
                "out_dir": out_dir, **meta}
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2, default=str)

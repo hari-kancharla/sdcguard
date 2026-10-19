@@ -237,7 +237,8 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     zs = diff / den
     worst = (l1 * (1.25 * u) + 1.25 * h * width).unsqueeze(-1) + floor[..., :1] + abs_floor
     zs = torch.cat([torch.minimum(zs[..., :1], diff[..., :1] / worst * z), zs[..., 1:]], dim=-1)
-    # Inf/NaN, judged against what the inputs allow (see checksum.py)
+    # Inf/NaN, judged against what the inputs allow (see checksum.py). Blocks that can't be judged score 0
+    # here, not -1 as in training: the per-layer state only holds non-negative scores.
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad

@@ -92,12 +92,19 @@ _FP32_CHUNK_ELEMS = 1 << 26
 @dataclass
 class CheckResult:
     ok: bool                 # False means "looks corrupted"
-    max_z: float             # worst residual, in units of rounding noise (inf/nan: non-finite output)
+    max_z: float             # worst residual, in units of rounding noise (inf/nan: non-finite output;
+                             # -1: no block could be judged)
     nonfinite: bool          # NaN or Inf in the output (or values too large to square in fp32)
     batch: Optional[int] = None      # where the worst block is (for bmm)
     row: Optional[int] = None
     col_block: Optional[int] = None
     noise: Optional[float] = None    # estimated rounding noise of that block (its scale)
+
+    @property
+    def judged(self) -> bool:
+        """False when nothing in the output could be judged (non-finite inputs, legitimate overflow):
+        ok then means "no evidence either way", not "clean"."""
+        return not (math.isfinite(self.max_z) and self.max_z < 0)
 
 
 @dataclass
@@ -242,18 +249,22 @@ def _matmul_fp32(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
     return torch.cat([torch.matmul(A3[:, i:i + rows].float(), Bb) for i in range(0, m, rows)], dim=-2)
 
 
+UNJUDGED = -1.0     # z of a block that can't be judged; a check whose every block is unjudged reports it
+
+
 def _judge_nonfinite(z, expected, actual, noise, bound, dtype):
     """Judging Inf/NaN (see the module docstring). An expected side that isn't finite can't be
-    judged (non-finite inputs, or values too large for fp32 sums): z = 0. An Inf/NaN output, or
-    one too large to square in fp32, is corruption (z = inf) only if the inputs can't produce it."""
+    judged (non-finite inputs, or values too large for fp32 sums): z = UNJUDGED. An Inf/NaN output, or
+    one too large to square in fp32, is corruption (z = inf) only if the inputs can't produce it; if they
+    can (fp16 loss-scaling overflow, say), it can't be judged either."""
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad
     lim = bound * 1.01
-    z = torch.where(z == z, z, 0.0)                     # inf/inf (both sides huge): nothing to judge
-    z = torch.where(e_bad, 0.0, z)
-    z = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dtype], BIG), float("inf"), 0.0), z)
-    return torch.where(big, torch.where(lim < BIG, float("inf"), 0.0), z)
+    z = torch.where(z == z, z, UNJUDGED)                # inf/inf (both sides huge): nothing to judge
+    z = torch.where(e_bad, UNJUDGED, z)
+    z = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dtype], BIG), float("inf"), UNJUDGED), z)
+    return torch.where(big, torch.where(lim < BIG, float("inf"), UNJUDGED), z)
 
 
 def matmul_zscores(

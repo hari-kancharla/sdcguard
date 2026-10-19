@@ -514,10 +514,10 @@ if HAVE_TRITON:
         e_bad = ~(tl.abs(expected) < float("inf"))
         a_bad = (~e_bad) & ~(tl.abs(actual) < float("inf"))
         big = (~e_bad) & (~a_bad) & ~(sq < float("inf"))
-        z = tl.where(z == z, z, 0.0)              # inf/inf (both sides huge): nothing to judge
-        z = tl.where(e_bad, 0.0, z)
-        z = tl.where(a_bad, tl.where(lim < out_max, float("inf"), 0.0), z)
-        z = tl.where(big, tl.where(lim < 1e18, float("inf"), 0.0), z)
+        z = tl.where(z == z, z, -1.0)             # inf/inf (both sides huge): nothing to judge (-1, as in checksum.py)
+        z = tl.where(e_bad, -1.0, z)
+        z = tl.where(a_bad, tl.where(lim < out_max, float("inf"), -1.0), z)
+        z = tl.where(big, tl.where(lim < 1e18, float("inf"), -1.0), z)
         z = tl.where(both, z, -1.0)
         # Worst element of the tile, first in row-major order on ties. No tl.reshape here: Triton
         # lets a reshape that feeds a reduction reorder elements, which scrambles the index that

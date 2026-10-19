@@ -255,7 +255,8 @@ class SDCGuard(TorchDispatchMode):
         self.log = EventLog(log_path)
         self.step: Optional[int] = None
         # skipped_oom: checks skipped because the GPU ran out of memory for them (training goes on)
-        self.stats = {"matmuls_seen": 0, "checked": 0, "skipped_dtype": 0, "skipped_oom": 0, "alerts": 0}
+        self.stats = {"matmuls_seen": 0, "checked": 0, "unjudged": 0, "skipped_dtype": 0, "skipped_oom": 0,
+                      "alerts": 0}
         self._lock = threading.RLock()        # autograd runs one thread per GPU when a process has several
         self._streams: dict = {}              # CUDA streams the checks ran on (the flush waits for them)
         # Fast checks on NVIDIA GPUs (see _group.py), per (device, dtype): each check's GPU work is
@@ -633,7 +634,9 @@ class SDCGuard(TorchDispatchMode):
             kept.append(p)
         first_error = None
         for (_kind, _st, _idx, token, detail), res in zip(kept, results):
-            if res.ok:
+            if res.ok and not res.judged:
+                self.stats["unjudged"] += 1          # e.g. NaN inputs: no evidence either way
+            elif res.ok:
                 self.max_z_seen = max(self.max_z_seen, res.max_z)
                 if len(self.z_values) < self._z_cap:
                     self.z_values.append(res.max_z)

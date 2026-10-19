@@ -214,11 +214,11 @@ def stress_check(dev, dtype, seconds: float) -> dict:
     g = torch.Generator(device="cpu").manual_seed(12)
     B = torch.randn(n, n, generator=g).to(dev, dtype)
     restore = _exact_reductions_on()
-    checked = wrong = 0
+    checked = wrong = unjudged = 0
     worst = 0.0
 
     def one():
-        nonlocal checked, wrong, worst
+        nonlocal checked, wrong, unjudged, worst
         A = torch.randn(n, n, device=dev, dtype=torch.float32).to(dtype)    # new data every time
         C = A @ B
         r = check_matmul(A, B, C)
@@ -226,6 +226,8 @@ def stress_check(dev, dtype, seconds: float) -> dict:
         if r is not None:
             if not r.ok:
                 wrong += 1
+            elif not r.judged:
+                unjudged += 1
             elif math.isfinite(r.max_z):
                 worst = max(worst, r.max_z)
 
@@ -237,7 +239,8 @@ def stress_check(dev, dtype, seconds: float) -> dict:
             one()
     finally:
         _exact_reductions_off(restore)
-    return {"matmuls_checked": checked, "wrong": wrong, "worst_clean_score": round(worst, 3), "size": n}
+    return {"matmuls_checked": checked, "wrong": wrong, "unjudged": unjudged, "worst_clean_score": round(worst, 3),
+            "size": n}
 
 
 def software() -> dict:
