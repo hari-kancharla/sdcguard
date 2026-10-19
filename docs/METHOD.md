@@ -237,6 +237,64 @@ alarm line). The run also reports the typical error caught (median and 90th perc
 of precise mode and of the default check, with no pass line. If the criteria fail, precise mode stays
 experimental and undocumented in the README, and the failure is written up here.
 
+### What the held-out run found (October 19, 2026, evening): criteria not met
+
+Code fingerprint 1265b3e0a385 ([results](../results/precise_validate/SUMMARY.md)).
+
+| GPU | held-out checks | alarms | worst score | criteria |
+|---|---|---|---|---|
+| H100 | 4,356 | 0 | 3.48 | met |
+| B200 | 4,356 | 0 | 3.46 | met |
+| A100 80GB | 4,356 | 0 | 4.27 | not met (over 4) |
+| L4 | 4,356 | 0 | 4.26 | not met (over 4) |
+| T4 | not run | | | not met (incomplete) |
+
+- No false alarm in 17,424 held-out checks: the model from the rounding argument removed every alarm the
+  earlier model raised on the same data (5 to 88 per workload, worst 9.6 to 40.7). But the margin the
+  criteria asked for wasn't there on the A100 and the L4: both peaked at 4.27 and 4.26 on the same layer and
+  pass (the MLP down projection's weight gradient in the wide model, 8,192 tokens). H100 and B200 peaked at
+  3.48 and 3.46 there.
+- The T4 didn't run: the wide workload needs more than its 16 GB, and the runner lost the other two
+  workloads with it. Fixed: a workload that doesn't fit is now recorded and the others still run; a run with
+  a skipped workload can't meet the criteria. The runner also exits with 1 when the criteria aren't met on
+  every GPU (it exited 0 here).
+- Sensitivity: the median injected error caught was 0.32% to 0.64% of a typical output, the 90th percentile
+  1.1% to 2.7%.
+- Cost, checking every step of the calibration-shape model (median seconds per step): precise mode +261%
+  (L4), +306% (H100), +416% (A100), +790% (B200); the default check +8.7%, +23%, +40%, and +774% on the B200,
+  which ran the plain PyTorch checks then (see the Blackwell section below). Precise mode computes every
+  checked matmul with an fp32 output and checks that, which is where its cost goes. AEGIS reports 1.61% to
+  2.35% on average (row, and row-and-column checksums; at most 2.6%) and 0.86% in production with sampling
+  ([OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf), section 7.4); its paper doesn't describe
+  the kernel implementation. Getting near those numbers needs the checksum computed inside the matmul
+  kernel, not a different noise model.
+
+As written above: precise mode stays experimental, off by default and out of the README. These workloads have
+now been seen, so a revised model would need new held-out workloads and criteria written before its run.
+
+## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
+
+On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use
+comparison (Oct 18), so Blackwell ran the plain PyTorch checks, which cost far more (the +774% above). The
+bisect ran the comparison of tests/_fast_compare.py once per change, each in its own process
+([results](../results/blackwell_triton/b200_20261019_125534.json); Triton 3.8.0, PyTorch 2.14.1+cu130):
+
+| change | launches run | Triton and plain checks agree |
+|---|---|---|
+| none (control) | faulted on launch 2 | no |
+| no software pipelining (num_stages=1) | 364 of 364 | yes |
+| 4 warps (no change for that launch, which already had 4) | faulted on launch 2 | no |
+| fp32 block sums of B with TF32x3 dots instead of three bf16 parts | 364 of 364 | yes |
+| plain fp32 dots, no tensor cores | 364 of 364 | yes |
+| A's rows padded to 16 elements | faulted on launch 2 | no |
+
+The fault needs software pipelining and the three-part bf16 path together; its root cause is not known (the
+pointers were 64-byte aligned). sdcguard now launches the comparison kernels without pipelining on compute
+capability 10 (data-center Blackwell), keeping the bf16 tensor-core path, and turns the Triton kernels on
+there (SDCGUARD_TRITON_NEW_ARCH=0 turns them off). Capability 11 and up, including consumer Blackwell
+(12), keeps the plain checks until tested. Pending: the full test suite, the serving kernel's comparison and
+the kernel timings on a B200 with this change.
+
 ## sdcguard check
 
 What it runs: the same checksum checks as training and the screen (alarm at 6); a memory test that writes a
