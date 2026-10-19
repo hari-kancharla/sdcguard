@@ -272,6 +272,29 @@ Code fingerprint 1265b3e0a385 ([results](../results/precise_validate/SUMMARY.md)
 As written above: precise mode stays experimental, off by default and out of the README. These workloads have
 now been seen, so a revised model would need new held-out workloads and criteria written before its run.
 
+## Attention checks: calibration criteria (written October 19, 2026, before any GPU run)
+
+The matmul checksums can't see inside fused attention (`scaled_dot_product_attention`), and AEGIS found 3 of
+its 8 faulty machines through FlashAttention faults ([OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf),
+Table 2). `SDCGuard(attention=True)` adds two checks (`attention.py`): in the backward pass, the sum of dV over
+the keys must equal the sum of dO over the queries (every row of the attention probabilities sums to 1; the
+invariant AEGIS uses, section 5.1.1, here on the bf16/fp16 tensors the kernel wrote rather than inside the
+kernel), and in the forward pass every output must lie within the range of its head's values. The backward
+noise model is u x (|dV column|_2 + |dO column|_2), capped by the worst case u x (|dV column|_1 +
+|dO column|_1) as in the matmul checks (near-uniform attention makes all of a column's roundings line up).
+
+On the CPU (bf16 and fp16, 4 shapes, causal and not, GQA): worst clean score 1.5. A single dV value off by
+10 times the typical size was caught in 3 to 12 of 12 cases depending on sequence length, by 100 times in 10
+to 12 of 12; one output multiplied by 256 in 10 to 12 of 12. It is a coarse check: it catches large errors,
+like exponent-bit changes, and it doesn't cover dQ and dK.
+
+`experiments/attention_calib.py` trains three models (2,048 and 4,096 tokens, GQA 16:4, head sizes 32 to 128)
+with every step checked, on each fused kernel the GPU offers (flash, memory-efficient, cuDNN), then injects
+one error per attention call. Criteria: on every GPU and kernel, 0 alarms on clean steps and a worst clean
+backward score of at most 4. Detection rates are reported with no pass line. Until the criteria are met,
+attention checking stays off by default and out of the README. For now it works in the default mode only,
+not with `protect()`.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use

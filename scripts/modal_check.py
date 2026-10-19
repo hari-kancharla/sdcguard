@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 15 min, about $3
+    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 20 min, about $3
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -160,8 +160,9 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     plain ones on this GPU (tests/_fast_compare.py and tests/_serve_fast_compare.py, which test_fast.py and
     test_serve.py run in Triton's CPU interpreter); the package built as a wheel, installed in a fresh virtual
     environment and run from outside the source tree (what `pip install sdcguard` gets); then the `sdcguard
-    check` command itself for 1.5 minutes, exactly as a user would run it. Returns the output and each part's
-    exit code: a finished run isn't a passed one."""
+    check` command itself for 1.5 minutes, exactly as a user would run it; with_bench, per-shape kernel timings;
+    last, the attention check's calibration (an experiment with its own criteria, reported separately).
+    Returns the output and each part's exit code: a finished run isn't a passed one."""
     os.makedirs(OUT, exist_ok=True)
     p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-rs", "tests", "--ignore", "tests/test_fast.py"],
                        cwd=R, capture_output=True, text=True)
@@ -206,6 +207,21 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     with open(f"{OUT}/tests_cli_output_{label}.txt", "w") as f:
         f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
+    # Last, with its own time limit so the rest is never lost to it: the attention check's calibration
+    # (experiments/attention_calib.py; its criteria are in its docstring).
+    try:
+        ac = subprocess.run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
+                             f"{OUT}/attention_{label}"], cwd=R, capture_output=True, text=True, env=env,
+                            timeout=9 * 60)
+    except subprocess.TimeoutExpired as e:
+        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        ac = subprocess.CompletedProcess(e.cmd, 124, out, "stopped after 9 minutes")
+    try:
+        with open(f"{OUT}/attention_{label}/attention_calib.json") as f:
+            att_json = f.read()
+    except OSError:
+        att_json = None
+    vol.commit()
     mismatches = [ln for ln in fc.stdout.splitlines() if '"agree": false' in ln]
     text = (f"===== {label}\n" + p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n"
             + "Triton vs plain checks on this GPU: " + (fc.stdout.strip().splitlines() or ["(no output)"])[-1]
@@ -219,9 +235,13 @@ def _tests(label: str, with_bench: bool = False) -> dict:
                + bench.stderr[-800:] + f"\n[bench exit code {bench.returncode}]\n\n")
             + "Installed wheel (fresh venv, outside the source tree):\n" + whl.stdout[-2500:] + whl.stderr[-1500:]
             + f"\n[wheel exit code {whl.returncode}]\n\n"
-            + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]")
+            + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]\n\n"
+            + "Attention check calibration (experiments/attention_calib.py):\n" + ac.stdout[-4000:]
+            + (ac.stderr[-1500:] if ac.returncode not in (0, 1) else "")
+            + f"\n[attention calibration exit code {ac.returncode}: 0 criteria met, 1 not met, other: error]")
     return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "serve_compare": sc.returncode,
-            "wheel": whl.returncode, "check": c.returncode, **({} if bench is None else {"bench": bench.returncode})}
+            "wheel": whl.returncode, "check": c.returncode, **({} if bench is None else {"bench": bench.returncode}),
+            "attention_calibration": ac.returncode, "attention_json": att_json}
 
 
 @app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
@@ -362,14 +382,14 @@ def _download() -> None:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on an L4, an H100 and a B200 at once: about 15 minutes, about $3 (hard limit 30 minutes "
-              "each, about $6.60).", flush=True)
+        print("Tests on an L4, an H100 and a B200 at once: about 20 minutes, about $3 (hard limit 30 minutes "
+              "each, about $6.10).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)
-        failed = {}
+        failed, att = {}, {}
         for label, call in calls:
             try:
                 r = call.get(timeout=35 * 60)
@@ -377,10 +397,20 @@ def main(phase: str = "sweep", force: bool = False):
                 r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}", "run": 2}
             r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
             print(r["text"], flush=True)
-            path = dest / f"{label}_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+            stamp = time.strftime('%Y%m%d_%H%M%S')
+            path = dest / f"{label}_{stamp}.txt"
             path.write_text(r["text"])
             print(f"\nSaved {path}.", flush=True)
-            failed.update({f"{label} {k}": v for k, v in r.items() if k != "text" and v != 0})
+            if r.get("attention_json"):
+                adir = LOCAL / "results" / "attention_calib"
+                adir.mkdir(parents=True, exist_ok=True)
+                (adir / f"{label}_{stamp}.json").write_text(r["attention_json"])
+            # the attention calibration is an experiment with its own criteria: reported, not a test failure
+            att[label] = r.get("attention_calibration")
+            failed.update({f"{label} {k}": v for k, v in r.items()
+                           if k not in ("text", "attention_json", "attention_calibration") and v != 0})
+        print("Attention check criteria (0 clean alarms, worst at most 4): " + ", ".join(
+            f"{k} {'MET' if v == 0 else 'NOT MET' if v == 1 else f'error ({v})'}" for k, v in att.items()), flush=True)
         if failed:
             print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE)", flush=True)
             raise SystemExit(1)
