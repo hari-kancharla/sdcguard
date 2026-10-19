@@ -139,15 +139,21 @@ SWEEP = [("b200", b200), ("h200", h200), ("h100_a", h100_a), ("h100_b", h100_b),
 
 
 @app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
-def tests() -> str:
-    """The test suite on a GPU (includes a 30-second `check` on the GPU), then the `sdcguard check` command
-    itself for 1.5 minutes, exactly as a user would run it."""
+def tests() -> dict:
+    """The test suite on a GPU (includes a 30-second `check` on the GPU); the Triton checks compared with the
+    plain ones on this GPU (tests/_fast_compare.py, the comparison test_fast.py runs in Triton's CPU
+    interpreter); then the `sdcguard check` command itself for 1.5 minutes, exactly as a user would run it.
+    Returns the output and each part's exit code: a finished run isn't a passed one."""
     os.makedirs(OUT, exist_ok=True)
     p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-rs", "tests", "--ignore", "tests/test_fast.py"],
                        cwd=R, capture_output=True, text=True)
     with open(f"{OUT}/pytest_l4.txt", "w") as f:
         f.write(p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n")
     vol.commit()
+    fc = subprocess.run([sys.executable, "tests/_fast_compare.py", "cuda"], cwd=R, capture_output=True, text=True,
+                        env={**os.environ, "PYTHONPATH": f"{R}/src"})
+    with open(f"{OUT}/fast_compare_l4.txt", "w") as f:
+        f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
     if os.path.isdir(f"{OUT}/tests_cli"):
         shutil.rmtree(f"{OUT}/tests_cli")
     c = subprocess.run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
@@ -155,8 +161,13 @@ def tests() -> str:
     with open(f"{OUT}/tests_cli_output.txt", "w") as f:
         f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
-    return (p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n" + c.stdout[-2500:] + c.stderr[-1500:]
-            + f"\n[sdcguard check exit code {c.returncode}]")
+    mismatches = [ln for ln in fc.stdout.splitlines() if '"agree": false' in ln]
+    text = (p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n"
+            + "Triton vs plain checks on this GPU: " + (fc.stdout.strip().splitlines() or ["(no output)"])[-1]
+            + "".join("\n  " + ln[:300] for ln in mismatches) + (fc.stderr[-1500:] if fc.returncode else "")
+            + f"\n[fast compare exit code {fc.returncode}]\n\n"
+            + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]")
+    return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "check": c.returncode}
 
 
 DIAG = r"""
@@ -283,13 +294,18 @@ def _download() -> None:
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
         print("Tests on 1 L4: about 13 minutes, about $0.25 (hard limit 30 minutes, about $0.60).", flush=True)
-        text = tests.remote()
-        print(text, flush=True)
+        r = tests.remote()
+        print(r["text"], flush=True)
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)
         path = dest / f"l4_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-        path.write_text(text)
-        print(f"\nSaved {path}. Done.", flush=True)
+        path.write_text(r["text"])
+        failed = {k: v for k, v in r.items() if k != "text" and v != 0}
+        print(f"\nSaved {path}.", flush=True)
+        if failed:
+            print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE)", flush=True)
+            raise SystemExit(1)
+        print("All passed. Done.", flush=True)
         return
     if phase == "fetch":
         _download()

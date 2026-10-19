@@ -114,6 +114,8 @@ def _row(r: dict) -> str:
             continue
         bw = (f"; backward dX {d['backward_dX_wrong_outputs']:,} wrong, dW {d['backward_dW_wrong_outputs']:,} wrong"
               if "backward_dX_wrong_outputs" in d else "")
+        if "checked_outputs_wrong" in d:
+            bw += f"; outputs the training check judged, wrong: {d['checked_outputs_wrong']}"
         cells.append(f"{dt}: {d['wrong_outputs']:,}/{d['outputs']:,} wrong (NaN-filled buffer: "
                      f"{d['wrong_outputs_nan_prefilled']:,}){bw}; training check {d['training_check']['alerts']} "
                      f"alert(s) {d['training_check'].get('worst_score_by_matmul', '')}, "

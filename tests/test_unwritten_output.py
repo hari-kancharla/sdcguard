@@ -104,4 +104,5 @@ def test_the_gpu_experiment_measures_it(monkeypatch):
     monkeypatch.setattr(torch.nn.functional, "linear", _unwritten_linear("stale"))
     bad = mu.one_dtype(torch.float16, torch.device("cpu"))
     assert bad["wrong_outputs"] > 10000 and bad["training_check"]["alerts"] >= 1
+    assert bad["checked_outputs_wrong"]["forward"] > 10000 and clean["checked_outputs_wrong"]["forward"] == 0
     assert bad["serving_check"]["alerts"] == 1 and bad["serving_check"]["first"]["col_block"] >= 2

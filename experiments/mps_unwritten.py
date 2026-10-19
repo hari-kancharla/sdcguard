@@ -9,7 +9,10 @@ This runs the reported layer, 16x2048x1000 (ResNet-50's last layer at batch 16),
 to be an MPS client with a share set, and prints one JSON line:
   - how many outputs differ from a float64 answer on the CPU (a plain call, and one whose output buffer is
     filled with NaN first, so unwritten outputs can't look right by accident)
-  - the same for the layer's two backward matmuls (dX and dW), called the way training calls them
+  - the same for the layer's two backward matmuls (dX and dW), called the way training calls them, with
+    PyTorch's default reduction settings and with the ones the training check runs under
+  - for the training check's own step: how many of the outputs it judged were wrong (forward, dX, dW), so
+    every alert, and every silence, can be matched to the actual results
   - what sdcguard's training check and serving check said about the same layer
   - what `sdcguard check`'s math-mode screen said in 10 seconds
 
@@ -73,13 +76,38 @@ def one_dtype(dt, dev) -> dict:
     r["backward_dX_wrong_outputs"] = wrong_outputs(gx, gy.double().cpu() @ w64)
     r["backward_dW_wrong_outputs"] = wrong_outputs(gw, gy.double().cpu().t() @ x.double().cpu())
     r["backward_outputs"] = {"dX": M * K, "dW": N * K}
+    # the same two calls with the reduction settings the training check runs under (cuBLAS may pick other
+    # kernels with them)
+    from sdcguard.guard import _exact_reductions_off, _exact_reductions_on
+    restore = _exact_reductions_on()
+    try:
+        with torch.no_grad():
+            gx_e, gw_e = gy.mm(lin.weight), gy.t().mm(x)
+        if dev.type == "cuda":
+            torch.cuda.synchronize()
+    finally:
+        _exact_reductions_off(restore)
+    r["exact_reductions_dX_wrong_outputs"] = wrong_outputs(gx_e, gy.double().cpu() @ w64)
+    r["exact_reductions_dW_wrong_outputs"] = wrong_outputs(gw_e, gy.double().cpu().t() @ x.double().cpu())
 
     # the training check: forward, dX and dW of this layer
     events = []
     g = SDCGuard(every=1, on_alert=events.append).protect(nn.Sequential(lin))
+    xr = x.clone().requires_grad_(True)
     with g.on_step(0):
-        lin(x.clone().requires_grad_(True)).float().pow(2).mean().backward()
+        y_prot = lin(xr)
+        y_prot.float().pow(2).mean().backward()
     g.unprotect()
+    # were the outputs the check judged actually wrong? The loss gradient is 2 y / count, rounded to the
+    # layer's dtype the way autograd rounds it, so the exact dX and dW follow from the protected forward output
+    if dev.type == "cuda":
+        torch.cuda.synchronize()
+    gy_p = (2 * y_prot.detach().float() / y_prot.numel()).to(dt).double().cpu()
+    r["checked_outputs_wrong"] = {
+        "forward": wrong_outputs(y_prot.detach(), ref),
+        "dX": wrong_outputs(xr.grad, gy_p @ w64),
+        "dW": wrong_outputs(lin.weight.grad, gy_p.t() @ x.double().cpu()),
+        "non_finite_in_forward": int((~torch.isfinite(y_prot.detach())).sum())}
     lin.zero_grad(set_to_none=True)
     worst: dict = {}
     for e in events:
