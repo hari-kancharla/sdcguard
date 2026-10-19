@@ -45,6 +45,7 @@ import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
 from . import _group
+from . import attention as _att
 from . import checksum as _cs
 from .checksum import ABS_FLOOR, UNIT_ROUNDOFF, CheckResult, matmul_zscores, matmul_zscores_acc, resolve
 from .events import EventLog, SDCEvent, device_identity
@@ -375,6 +376,11 @@ class SDCGuard(TorchDispatchMode):
         wrong outputs in a block can cancel in both sums for one pattern (two values swapped where the
         pattern has the same sign); a fault that repeats that way on every step then still shows on a
         later step, instead of hiding for the whole run.
+    attention: also check fused attention (scaled_dot_product_attention) in the default mode (not with
+        protect()): in the backward pass, the sum of dV over the keys must equal the sum of dO over the
+        queries; in the forward pass, every output must lie within the range of its head's values (see
+        attention.py). Experimental and off by default until calibrated on GPUs. Calls with dropout, a mask
+        or bias tensor, or variable-length batches are counted in stats["attention_skipped"].
     """
 
     def __init__(
@@ -397,8 +403,10 @@ class SDCGuard(TorchDispatchMode):
         precise: bool = False,
         on_accumulator: Optional[Callable] = None,
         fresh_signs: bool = True,
+        attention: bool = False,
     ):
         super().__init__()
+        self.attention = attention
         self.every = every
         self.fresh_signs = fresh_signs        # a new signed-checksum pattern every checked step
         self._epoch = 0
@@ -425,7 +433,8 @@ class SDCGuard(TorchDispatchMode):
         self.step: Optional[int] = None
         # skipped_oom: checks skipped because the GPU ran out of memory for them (training goes on)
         self.stats = {"matmuls_seen": 0, "checked": 0, "checked_fp32": 0, "unjudged": 0, "skipped_dtype": 0,
-                      "skipped_oom": 0, "alerts": 0}
+                      "skipped_oom": 0, "alerts": 0, "attention_checked": 0, "attention_skipped": 0}
+        self.attention_skipped: dict[str, int] = {}     # why attention calls weren't checked
         self._lock = threading.RLock()        # autograd runs one thread per GPU when a process has several
         self._streams: dict = {}              # CUDA streams the checks ran on (the flush waits for them)
         # Fast checks on NVIDIA GPUs (see _group.py), per (device, dtype): each check's GPU work is
@@ -734,12 +743,18 @@ class SDCGuard(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs or {}
         out = func(*args, **kwargs)      # this mode is paused here, so no recursion
-        is_mm = self._is_matmul.get(func)
-        if is_mm is None:
-            is_mm = self._is_matmul[func] = op_name(func) in MATMUL_OPS
-        if not is_mm:
+        kind = self._is_matmul.get(func)
+        if kind is None:
+            n = op_name(func)
+            kind = self._is_matmul[func] = ("mm" if n in MATMUL_OPS else "attn" if n in _att.BACKWARD_OPS or
+                                            n in _att.FORWARD_OPS else "")
+        if not kind:
             return out
         name = op_name(func)
+        if kind == "attn":
+            if self.attention:
+                self._attention_op(name, args, kwargs, out)
+            return out
         node = _autograd_node()
         where = node if node is not None else (self._module or "forward")
         with self._lock:
@@ -752,6 +767,48 @@ class SDCGuard(TorchDispatchMode):
             if self.immediate or len(self._pending) >= self.max_pending:
                 self.flush()
         return out
+
+    def _attention_op(self, name, args, kwargs, out) -> None:
+        """Queue the attention checks of one fused attention call (attention.py)."""
+        node = _autograd_node()
+        where = node if node is not None else (self._module or "forward")
+        with self._lock:
+            if self.sample_rate < 1.0 and self._rng.random() >= self.sample_rate:
+                return
+            why = _att.why_not(name, args, kwargs)
+            backward = name in _att.BACKWARD_OPS
+            try:
+                if why is None:
+                    if backward:
+                        dO, dV = args[0], out[2]
+                        st = _att.backward_stat(dO, dV, z=self.z, abs_floor=self.abs_floor)
+                        shapes = (tuple(dO.shape), tuple(dV.shape))
+                    else:
+                        O, V = out[0], args[2]
+                        st = _att.forward_stat(O, V, abs_floor=self.abs_floor)
+                        shapes = (tuple(O.shape), tuple(V.shape))
+                    why = None if st is not None else "dtype or layout"
+            except _OOM:
+                self.stats["skipped_oom"] += 1
+                return
+            if why is not None:
+                self.stats["attention_skipped"] += 1
+                self.attention_skipped[why] = self.attention_skipped.get(why, 0) + 1
+                return
+            dev = st.max_z.device
+            detail = {"op": name, "where": where, "pass": "backward" if backward else "forward",
+                      "kind": "attention_backward" if backward else "attention_forward",
+                      "check": "attention: sum of dV over keys vs sum of dO over queries" if backward else
+                      "attention: outputs within the range of the values",
+                      "shape_A": shapes[0], "shape_B": shapes[1], "dtype": str((dV if backward else O).dtype),
+                      "device": dev}
+            if dev.type == "cuda":
+                s = torch.cuda.current_stream(dev)
+                self._streams[(dev.index, s.cuda_stream)] = s
+            self.stats["attention_checked"] += 1
+            self._pending.append(("s", st, None, None, detail))
+            if self.immediate or len(self._pending) >= self.max_pending:
+                self.flush()
 
     def _queue(self, name, where, node, A, B, C, bias, alpha, beta) -> None:
         """Queue one check (its GPU work starts now; results are read at the flush)."""
@@ -870,7 +927,7 @@ class SDCGuard(TorchDispatchMode):
         for (_kind, _st, _idx, token, detail), res in zip(kept, results):
             if res.ok and not res.judged:
                 self.stats["unjudged"] += 1          # e.g. NaN inputs: no evidence either way
-            elif res.ok:
+            elif res.ok and detail.get("kind") != "attention_forward":     # (that one is 0 or inf: no scale)
                 self.max_z_seen = max(self.max_z_seen, res.max_z)
                 if len(self.z_values) < self._z_cap:
                     self.z_values.append(res.max_z)
