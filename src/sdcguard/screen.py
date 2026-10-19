@@ -165,9 +165,16 @@ def _block_slices(A, B, C, bias, row, col_block, batch, block):
 
 def exact_block(a, b_blk, c, bias, alpha, beta) -> dict:
     """One row of one block against a float64 recomputation. An output counts as definitely wrong when it is
-    outside the worst-case rounding envelope of any fp32-accumulating GPU (its own rounding, plus k x 2^-23 x
-    sum|a_t b_t|, the classic bound for k additions, plus a 2x margin): a confirmation that needs no noise model.
-    Smaller errors (which the checksums' statistical test can still flag) aren't confirmed this way."""
+    outside the worst-case rounding envelope of an fp32-accumulating GPU, with a 2x margin: a confirmation that
+    needs no noise model. Smaller errors (which the checksums' statistical test can still flag) aren't
+    confirmed this way.
+
+    Arithmetic assumed (what NVIDIA GPUs do for bf16/fp16 matmuls through cuBLAS): products exact in fp32 and
+    at most k fp32 additions (the classic bound k x 2^-23 x sum|a_t b_t|); fp32 values below its normal range
+    may be flushed to zero (up to 2^-126 per addition); one round-to-nearest conversion to the output dtype,
+    which can round a tiny result to a subnormal or to zero (up to half the smallest subnormal step) and a
+    result beyond the dtype's largest value to infinity; alpha, and beta x bias added in fp32. A kernel that
+    accumulates in lower precision, or rounds more than once, can exceed this envelope without being wrong."""
     from .checksum import UNIT_ROUNDOFF
     k = a.shape[-1]
     ref = alpha * (a.double() @ b_blk.double())
@@ -176,11 +183,19 @@ def exact_block(a, b_blk, c, bias, alpha, beta) -> dict:
         ref = ref + beta * bias.double()
         env = env + abs(beta) * bias.double().abs() * 2.0 ** -23
     u = UNIT_ROUNDOFF.get(c.dtype, 2.0 ** -24)
-    tol = 2 * (u * ref.abs() + env) + 1e-300
+    fi = torch.finfo(c.dtype) if c.dtype.is_floating_point else torch.finfo(torch.float32)
+    # underflow: half the smallest subnormal step of the output, plus fp32 flush-to-zero on each addition
+    # (an fp16 output of 1e-4 x 1e-4 is a correct 0; Oct 19 outside review)
+    tiny = 0.5 * fi.tiny * fi.eps + (k + 1) * torch.finfo(torch.float32).tiny
+    tol = 2 * (u * ref.abs() + env + tiny) + 1e-300
     cd = c.double()
     diff = (cd - ref).abs()
-    bad = ~torch.isfinite(cd) & torch.isfinite(ref) | (torch.isfinite(cd) & (diff > tol))
+    # overflow: an infinite output of the right sign is correct when the exact result is at or beyond the
+    # dtype's largest value, within the envelope
+    overflow_ok = torch.isinf(cd) & (torch.sign(cd) == torch.sign(ref)) & (ref.abs() + tol >= fi.max)
+    bad = (~torch.isfinite(cd) & torch.isfinite(ref) & ~overflow_ok) | (torch.isfinite(cd) & (diff > tol))
     ratio = torch.where(torch.isfinite(diff), diff / tol, torch.full_like(diff, float("inf")))
+    ratio = torch.where(overflow_ok, torch.zeros_like(ratio), ratio)
     return {"outputs_outside_rounding_envelope": int(bad.sum()), "outputs_in_block": int(c.numel()),
             "worst_error_over_envelope": float(ratio.max()) if ratio.numel() else 0.0}
 
@@ -188,10 +203,12 @@ def exact_block(a, b_blk, c, bias, alpha, beta) -> dict:
 def cpu_recheck(A, B, C, bias, alpha, beta, row, col_block, batch=None, epoch: int = 0, block: int = 128,
                 seed: Optional[int] = None) -> dict:
     """The flagged block judged again on the CPU from the saved operands, with the same checksums (same sign
-    patterns, same noise model) as the GPU check: was the GPU's output wrong, or did the check's own GPU
-    arithmetic go wrong? On a faulty GPU either can happen: on Oct 19, 2026 an H200 with the cuBLASLt MPS bug
-    corrupted the checksum matmul itself while the output it checked was correct. seed: the sign patterns of
-    the process that ran the check (default: this process's)."""
+    patterns, same noise model) as the GPU check, plus exact_block's rounding envelope. It separates an output
+    outside the envelope, a statistical mismatch, and a mismatch the CPU doesn't reproduce; the last one can
+    come from the check's own GPU arithmetic (on Oct 19, 2026 an H200 with the cuBLASLt MPS bug alerted while
+    the outputs it checked matched the CPU, consistent with the checksum matmul itself being hit), from
+    numerical differences, or from a checker error. seed: the sign patterns of the process that ran the check
+    (default: this process's)."""
     if row is None or col_block is None:
         return {"done": False, "why": "the check didn't record which block failed"}
     try:
