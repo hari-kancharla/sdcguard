@@ -25,6 +25,21 @@ from pathlib import Path
 import modal
 
 LOCAL = Path(__file__).resolve().parent.parent
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+    import hashlib
+    h, n = hashlib.sha256(), 0
+    for d in ("src", "experiments", "tests", "scripts"):
+        for p in sorted((LOCAL / d).rglob("*.py")):
+            if "__pycache__" in p.parts or p.name.startswith("._"):
+                continue
+            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            n += 1
+    return {"sha256": h.hexdigest(), "files": n}
+
+
 R = "/root/sdcguard"
 LIMIT = 15 * 60
 CALIBRATE_SECONDS = 120
@@ -191,6 +206,8 @@ def _summary(results: list) -> str:
 
 @app.local_entrypoint()
 def main() -> None:
+    src = _source()
+    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
     jobs = [("t4", t4), ("l4", l4), ("a100_80gb", a100), ("h100", h100), ("b200", b200)]
     started = [(name, fn.spawn()) for name, fn in jobs]
     print(f"Started {len(started)} GPUs. Keep this terminal open until it prints Done.", flush=True)
@@ -205,6 +222,7 @@ def main() -> None:
     dest = LOCAL / "results" / "math_modes"
     dest.mkdir(parents=True, exist_ok=True)
     for r in results:
+        r["source"] = src
         (dest / f"{r['label']}.json").write_text(json.dumps(r, indent=2, default=str))
     (dest / "SUMMARY.md").write_text(_summary(results))
     print(_summary(results))

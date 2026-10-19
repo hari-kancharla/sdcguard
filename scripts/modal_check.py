@@ -32,6 +32,21 @@ from pathlib import Path
 import modal
 
 LOCAL = Path(__file__).resolve().parent.parent
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+    import hashlib
+    h, n = hashlib.sha256(), 0
+    for d in ("src", "experiments", "tests", "scripts"):
+        for p in sorted((LOCAL / d).rglob("*.py")):
+            if "__pycache__" in p.parts or p.name.startswith("._"):
+                continue
+            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            n += 1
+    return {"sha256": h.hexdigest(), "files": n}
+
+
 R = "/root/sdcguard"
 V = "/vol"
 OUT = f"{V}/check_sweep"
@@ -294,7 +309,10 @@ def _download() -> None:
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
         print("Tests on 1 L4: about 13 minutes, about $0.25 (hard limit 30 minutes, about $0.60).", flush=True)
+        src = _source()
+        print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         r = tests.remote()
+        r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
         print(r["text"], flush=True)
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)

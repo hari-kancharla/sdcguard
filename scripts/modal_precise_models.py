@@ -16,6 +16,21 @@ from pathlib import Path
 import modal
 
 LOCAL = Path(__file__).resolve().parent.parent
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+    import hashlib
+    h, n = hashlib.sha256(), 0
+    for d in ("src", "experiments", "tests", "scripts"):
+        for p in sorted((LOCAL / d).rglob("*.py")):
+            if "__pycache__" in p.parts or p.name.startswith("._"):
+                continue
+            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            n += 1
+    return {"sha256": h.hexdigest(), "files": n}
+
+
 R = "/root/sdcguard"
 LIMIT = 20 * 60
 
@@ -79,6 +94,8 @@ def t4() -> dict:
 @app.local_entrypoint()
 def main() -> None:
     jobs = [("h100", h100), ("b200", b200), ("a100_80gb", a100), ("l4", l4), ("t4", t4)]
+    src = _source()
+    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
     started = [(name, fn.spawn()) for name, fn in jobs]
     print(f"Started {len(started)} GPUs (at most 20 minutes each). Keep this terminal open until it prints Done.",
           flush=True)
@@ -90,6 +107,7 @@ def main() -> None:
             r = call.get(timeout=LIMIT + 300)
         except Exception as e:  # noqa: BLE001
             r = {"label": name, "error": f"{type(e).__name__}: {str(e)[:300]}"}
+        r["source"] = src
         (dest / f"{name}.json").write_text(json.dumps(r, indent=2, default=str))
         text.append(r.get("markdown") or f"## {name}: could not run: {r.get('error')}\n")
         print(f"{name}: finished", flush=True)

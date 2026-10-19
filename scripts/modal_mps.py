@@ -25,6 +25,21 @@ from pathlib import Path
 import modal
 
 LOCAL = Path(__file__).resolve().parent.parent
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+    import hashlib
+    h, n = hashlib.sha256(), 0
+    for d in ("src", "experiments", "tests", "scripts"):
+        for p in sorted((LOCAL / d).rglob("*.py")):
+            if "__pycache__" in p.parts or p.name.startswith("._"):
+                continue
+            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            n += 1
+    return {"sha256": h.hexdigest(), "files": n}
+
+
 R = "/root/sdcguard"
 LIMIT = 10 * 60
 SHARES = (100, 14, 20, 40, 50, 75)
@@ -128,7 +143,10 @@ def _row(r: dict) -> str:
 @app.local_entrypoint()
 def main() -> None:
     print("Starting one H200 (at most 10 minutes). Keep this terminal open until it prints Done.", flush=True)
+    src = _source()
+    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
     res = h200.remote()
+    res["source"] = src
     d = LOCAL / "results" / "mps_bug"
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"h200_{time.strftime('%Y%m%d_%H%M%S')}.json"
