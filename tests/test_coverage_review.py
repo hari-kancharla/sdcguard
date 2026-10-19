@@ -305,6 +305,30 @@ def test_overlapping_guards_restore_the_cublas_settings_once(monkeypatch):
         m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction = saved
 
 
+def test_a_serving_guard_dropped_without_detach_lets_go_of_the_cublas_settings(monkeypatch):
+    # On a GPU every ServeGuard holds the settings while attached. One that's simply dropped (with its model)
+    # used to keep them changed for the rest of the process: the GPU test run on Oct 19 failed this way.
+    import gc
+    from sdcguard import guard as guard_mod
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    m = torch.backends.cuda.matmul
+    saved = (m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction)
+    try:
+        gc.collect()
+        holds = guard_mod._FLAGS["holds"]
+        m.allow_bf16_reduced_precision_reduction = True
+        model = _mlp(torch.bfloat16)
+        g = ServeGuard().attach(model)
+        assert not m.allow_bf16_reduced_precision_reduction and guard_mod._FLAGS["holds"] == holds + 1
+        del g, model
+        gc.collect()
+        assert guard_mod._FLAGS["holds"] == holds
+        if holds == 0:
+            assert m.allow_bf16_reduced_precision_reduction
+    finally:
+        m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction = saved
+
+
 # --- serving lifecycle (M6, L2-L5) ------------------------------------------------------------------------
 
 def test_a_device_hook_added_while_attached_survives_detach():

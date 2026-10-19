@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import math
 import threading
+import weakref
 from typing import Callable, Optional
 
 import torch
@@ -402,9 +403,13 @@ class ServeGuard:
         from . import _swap
         took_flags = False
         if self.exact_reductions and self._restore is None:
-            from .guard import _exact_reductions_on
+            from .guard import _exact_reductions_off, _exact_reductions_on
             self._restore = _exact_reductions_on() or ()
             took_flags = True
+            if self._restore:
+                # a guard dropped without detach() lets go of the settings when it's collected, so they don't
+                # stay changed for the rest of the process (letting go twice is a no-op)
+                weakref.finalize(self, _exact_reductions_off, self._restore)
         first = len(self.layers)
         try:
             self._attach(model, share, offset)

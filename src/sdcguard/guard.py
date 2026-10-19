@@ -79,7 +79,7 @@ def _reduced_precision_flags():
 
 # The reduced-precision settings are process-wide, and guards (training steps, ServeGuards, the screen) can
 # overlap in any order: the first holder saves and changes them, the last one to let go puts them back.
-_FLAGS_LOCK = threading.Lock()
+_FLAGS_LOCK = threading.RLock()      # (re-entrant: a collected ServeGuard can let go from inside a garbage collection)
 _FLAGS = {"holds": 0, "changed": None}
 
 
