@@ -55,6 +55,7 @@ model whose last layer has a remainder block (1000 outputs) so the multi-span pa
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -156,13 +157,18 @@ def _lowp_gemm(A3: torch.Tensor, Bs: torch.Tensor) -> torch.Tensor:
 
 
 _SIGNS: dict = {}
+# The noise model treats each output's rounding as independent of the signs. With one fixed pattern,
+# outputs that happen to line up with it (B's columns proportional to the signs, say) round together
+# and can cross the alarm line on a correct result. A fresh pattern in every process makes that
+# alignment chance instead of a property of the data. SDCGUARD_SIGN_SEED pins it (tests, replays).
+_SIGN_SEED = int(os.environ.get("SDCGUARD_SIGN_SEED") or int.from_bytes(os.urandom(4), "little"))
 
 
 def _signs(width: int, device) -> torch.Tensor:
-    """A fixed pseudo-random +-1 pattern (fp32) for the second checksum."""
+    """A pseudo-random +-1 pattern (fp32) for the second checksum, drawn once per process."""
     key = (width, str(device))
     if key not in _SIGNS:
-        g = torch.Generator().manual_seed(20261014 + width)
+        g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
         _SIGNS[key] = (torch.randint(0, 2, (width,), generator=g) * 2 - 1).float().to(device)
     return _SIGNS[key]
 
