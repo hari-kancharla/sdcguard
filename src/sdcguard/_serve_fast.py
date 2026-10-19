@@ -236,13 +236,15 @@ def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: to
         E = x2.float() @ parts.float()
         nparts = 1
     BM, BKX, CB, BW, jbp, rows_p, col_p, warps = config(m, k, nb, bs, y2.device, _bm)
+    st = _group.pipeline_stages(y2.device, None)          # 1 on Blackwell (_group.pipeline_stages explains)
+    stages = {} if st is None else {"num_stages": st}
     with _group._on(y2.device):
         _check[(rows_p, col_p)](
             x2, y2, E, _group._sign_table(y2.device), scale, b2n, bmax, bmax_bias, bsum, state, slot, m, k, n, nb,
             bs, rem, _group._sign_offset(bs), _group._sign_offset(rem) if rem else 0, x2.stride(0), x2.stride(1),
             y2.stride(0), y2.stride(1), E.stride(0), 2 * nb, jbp, float(UNIT_ROUNDOFF[dt]), float(HALF_TINY_STEP[dt]),
             float(abs_floor), float(z), float(min(DTYPE_MAX[dt], BIG)), float(BIG),
-            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, num_warps=warps)
+            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, num_warps=warps, **stages)
 
 
 def verified(device: torch.device, dtype: torch.dtype) -> bool:

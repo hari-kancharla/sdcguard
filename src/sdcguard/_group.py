@@ -63,20 +63,42 @@ def enabled() -> bool:
     return HAVE_TRITON and os.environ.get("SDCGUARD_FAST", "1") != "0"
 
 
+def _major(device: torch.device) -> int:
+    idx = device.index if device.index is not None else torch.cuda.current_device()
+    return torch.cuda.get_device_capability(idx)[0]
+
+
 def arch_ok(device: torch.device) -> bool:
-    """The Triton kernels run on GPU generations they were validated on (Turing through Hopper: T4, A100,
-    L4, L40S, H100, H200 on Oct 18, 2026). On newer ones (compute capability 10 and up, Blackwell) the
-    plain PyTorch checks run instead: a B200 hit a "misaligned address" fault in the first-use comparison,
-    and a fault like that ends the process instead of falling back. SDCGUARD_TRITON_NEW_ARCH=1 opts in."""
+    """The Triton kernels run on GPU generations they were validated on: Turing through Hopper (T4, A100, L4,
+    L40S, H100, H200 on Oct 18, 2026) and data-center Blackwell (compute capability 10, B200) without software
+    pipelining (see pipeline_stages). Newer generations (capability 11 and up, including the consumer
+    Blackwell cards at 12) run the plain PyTorch checks: a fault in an unvalidated kernel ends the process
+    instead of falling back. SDCGUARD_TRITON_NEW_ARCH=1 opts in on any GPU, =0 keeps Blackwell on the plain
+    checks."""
     if device.type != "cuda":
         return True
-    if os.environ.get("SDCGUARD_TRITON_NEW_ARCH") == "1":
+    flag = os.environ.get("SDCGUARD_TRITON_NEW_ARCH")
+    if flag == "1":
         return True
     try:
-        idx = device.index if device.index is not None else torch.cuda.current_device()
-        return torch.cuda.get_device_capability(idx)[0] < 10
+        major = _major(device)
     except Exception:  # noqa: BLE001
         return False
+    return major < 10 or (major == 10 and flag != "0")
+
+
+def pipeline_stages(device, default: int):
+    """Software-pipeline depth for a kernel launch. On Blackwell (capability 10 and up) 1: with Triton 3.8's
+    pipelining (num_stages 2 or 3) the comparison kernel's bf16 three-part path hit "misaligned address" on
+    a B200; without it, all 364 launches of the Triton-vs-plain comparison ran and agreed, as did the fp32
+    and plain-fp32 variants (results/blackwell_triton/b200_20261019_125534.json). The root cause is not
+    known; this avoids it. Elsewhere `default` (None: Triton's own default)."""
+    if device is None or getattr(device, "type", None) != "cuda":
+        return default
+    try:
+        return 1 if _major(device) >= 10 else default
+    except Exception:  # noqa: BLE001
+        return default
 
 
 def available(C: torch.Tensor) -> bool:
@@ -257,14 +279,16 @@ def _bj(J: int) -> int:
     return 16 if J <= 16 else 32 if J <= 32 else 64 if J <= 64 else 128
 
 
-def _cfg(bj: int):
+def _cfg(bj: int, device=None):
     """(depth per step, pipeline stages, warps) of a comparison tile. Wider tiles take smaller
     steps so the tile fits in the shared memory of every NVIDIA GPU from T4 (64 KB) on."""
     if bj <= 32:
-        return 64, 3, 4
-    if bj == 64:
-        return 32, 3, 4
-    return 32, 2, 8
+        bk, stages, warps = 64, 3, 4
+    elif bj == 64:
+        bk, stages, warps = 32, 3, 4
+    else:
+        bk, stages, warps = 32, 2, 8
+    return bk, pipeline_stages(device, stages), warps
 
 
 _SMS: dict = {}
@@ -732,7 +756,7 @@ class Group:
                 bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, mx_off, JS, pst, BR=BR,
                 BW=128 if bs > 64 else 64, NATIVE=native)
             off = self._space(3 * n2)
-            bk, stages, warps = _cfg(bj)
+            bk, stages, warps = _cfg(bj, self.device)
             s_ab = a[1] if a[0] > 1 else 0
             splits, steps = _splits(n2, k, bk, self.device)
             judge = (hb, float(alpha), float(beta), self.u, float(self.abs_floor), self.half_tiny, self.out_max,

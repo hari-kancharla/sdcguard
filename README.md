@@ -155,8 +155,10 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 | Not supported on checked steps | `torch.func` transforms (vmap, grad) and `torch.compile(fullgraph=True)`: fast mode runs checked steps' linear layers eagerly |
 | Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD, Apple GPUs (only the operator mapping is unit-tested) |
 
-On Blackwell (B200) sdcguard uses the plain PyTorch checks; the faster Triton kernels cover Turing through
-Hopper for now.
+On Blackwell (B200) the Triton kernels run without software pipelining: with it, they hit a "misaligned
+address" fault whose cause isn't known yet ([METHOD.md](docs/METHOD.md#blackwell-the-triton-kernel-fault-bisected-october-19-2026)).
+The full test suite on a B200 with this change is pending; `SDCGUARD_TRITON_NEW_ARCH=0` switches back to the
+plain PyTorch checks.
 
 ## More
 

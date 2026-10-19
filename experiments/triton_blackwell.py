@@ -17,6 +17,13 @@ tile offsets up to 64 bytes changed nothing. This run tries one change at a time
 
 For the as_is run it also saves the compiled _compare kernel (Triton IR and PTX), to read offline.
 
+Result (Oct 19, B200, Triton 3.8.0, torch 2.14.1+cu130; results/blackwell_triton/b200_20261019_125534.json):
+as_is, warps4 and pad_a faulted on the same launch (warps4 changed nothing there: that launch already used
+4 warps); stages1, fp32_b2 and ieee ran all 364 launches and agreed with the plain check. So the fault needs
+the bf16 three-part path and software pipelining together; the root cause is not known. Since then sdcguard
+launches the comparison kernels with num_stages=1 on Blackwell (_group.pipeline_stages), keeping the bf16
+tensor-core path. The variants here still start from the earlier configuration.
+
     python experiments/triton_blackwell.py                  # on a Blackwell GPU
 """
 from __future__ import annotations
@@ -66,12 +73,14 @@ def child(variant: str, dump: str) -> int:
     for name in ("_stage", "_compare", "_compare_part", "_finish", "_worst"):
         if hasattr(_group, name):
             setattr(_group, name, logged(name, getattr(_group, name)))
+    # Every variant starts from the configuration before Oct 19's fix (num_stages 2 or 3 on Blackwell too):
+    # _cfg(bj) without a device skips _group.pipeline_stages.
+    real = _group._cfg
+    _group._cfg = lambda bj, device=None: real(bj)
     if variant == "stages1":
-        real = _group._cfg
-        _group._cfg = lambda bj: (real(bj)[0], 1, real(bj)[2])
-    elif variant == "warps4":
-        real = _group._cfg
-        _group._cfg = lambda bj: (real(bj)[0], real(bj)[1], 4)
+        _group._cfg = lambda bj, device=None: (real(bj)[0], 1, real(bj)[2])
+    elif variant == "warps4":         # (a no-op for the faulting launch, which already had 4 warps)
+        _group._cfg = lambda bj, device=None: (real(bj)[0], real(bj)[1], 4)
     elif variant == "ieee":
         _group._precision = lambda dev: "ieee"
     elif variant == "pad_a":
