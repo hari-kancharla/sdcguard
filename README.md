@@ -23,15 +23,15 @@ sdcguard check --share    # same, plus a link that posts your result to the publ
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
 
-It trains and serves a small GPT-style model with every matmul checked, runs big matmuls at full power,
-checks matmuls in BF16, FP16, TF32, FP32, FP64 and INT8 (whichever the GPU supports) against a float64
-answer from the CPU, pattern-tests most of the free memory, measures speed against the datasheet, and runs one fixed
-model three times to see if the output stays bit-identical. The math modes matter because a bad GPU can get
-one wrong and the rest right: in ByteDance's study, four GPUs with broken matrix units all passed BF16 and
-FP16 ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)). The verdict is PASS, FAIL (wrong results; inputs and outputs
-are saved so `sdcguard replay` can recompute them on another GPU) or SUSPECT (no checksum failed, but output
-that should repeat exactly didn't). Handy before a long run on a rented GPU, before buying a used one, or
-after overclocking.
+It trains and serves a small GPT-style model with every matmul checked, runs big matmuls at full power, checks
+matmuls in BF16, FP16, TF32, FP32, FP64 and INT8 (whichever the GPU supports) against a float64 answer from
+the CPU, pattern-tests most of the free memory, measures speed against the datasheet, and runs one fixed model
+three times to see if the output stays bit-identical. The math modes matter because a bad GPU can get one
+wrong and the rest right: in ByteDance's study, four GPUs that got matrix multiplies wrong all passed BF16 and
+FP16 ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)). The verdict is
+PASS, FAIL (wrong results; inputs and outputs are saved so `sdcguard replay` can recompute them on another
+GPU) or SUSPECT (no checksum failed, but output that should repeat exactly didn't). Handy before a long run on
+a rented GPU, before buying a used one, or after overclocking.
 
 Shared results go on the [board](https://hari-kancharla.github.io/sdcguard/board/), by GPU model and
 provider. It starts with 10 cloud GPUs (B200, H200, two H100s, A100, L40S, three L4s, T4 on AWS, Google

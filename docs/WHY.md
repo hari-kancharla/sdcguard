@@ -13,8 +13,8 @@ Sources checked October 19, 2026.
   several hours a run). ByteDance's companion study found synthetic tests "miss over 60% of defective
   devices", only 25% of defects showed up in burn-in, and 40% appeared around a year after deployment
   ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)).
-- **Which math mode breaks depends on the GPU.** In the same study, four GPUs with defective matrix units
-  all computed BF16 and FP16 correctly; each failed in a different mix of FP32, FP64, TF32 and INT8.
+- **Which math mode breaks depends on the GPU.** In the same study, four GPUs that got matrix multiplies
+  wrong all computed BF16 and FP16 correctly, and failed in FP32, FP64, TF32 or INT8 depending on the GPU.
 - **In training it hides, in inference it ships.** 15 of the 18 AEGIS incidents caused no visible training
   failure. Meta: in inference, SDCs "affect thousands of inference consumers" (same Meta post).
 
