@@ -30,6 +30,7 @@ patches and turns itself off (with a log line) if something is missing.
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
 
@@ -67,7 +68,17 @@ def _guard():
         if port is not None and g.metrics is not None:
             log.info("sdcguard: Prometheus metrics on port %s", port)
         _STATE["guard"] = g
+        atexit.register(_flush_at_exit)
     return _STATE["guard"]
+
+
+def _flush_at_exit() -> None:
+    """Results are read every SDCGUARD_POLL_EVERY steps; read whatever the last steps left when the
+    worker shuts down, so an alert from the final requests isn't lost."""
+    try:
+        poll(wait=True)
+    except Exception:  # noqa: BLE001  (shutting down: the CUDA context may already be gone)
+        pass
 
 
 def _on_alert(ev) -> None:

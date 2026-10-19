@@ -237,14 +237,15 @@ def _loop(model, opt, serve_model, sguard, tguard, inj, gen, device, dtype, voca
                 with torch.autocast(device.type, dtype=dtype):
                     loss = F.cross_entropy(model(x).float().view(-1, vocab), y.view(-1))
                 loss.backward()
+        # evidence first: the failed matmuls' operands are saved before the optimizer step runs
+        for res, ops in tguard.failed:
+            if len(evidence) < max_evidence:
+                evidence.append(_save_evidence(out_dir, len(evidence), res, ops, ident, {**meta, "step": steps,
+                                                                                         "phase": "training"}))
+        tguard.failed.clear()
         opt.step()
         opt.zero_grad(set_to_none=True)
         steps += 1
-        for res, ops in tguard.failed:
-            if len(evidence) < max_evidence:
-                evidence.append(_save_evidence(out_dir, len(evidence), res, ops, ident, {**meta, "step": steps - 1,
-                                                                                         "phase": "training"}))
-        tguard.failed.clear()
         with torch.no_grad():
             serve_model(x)
         passes += 1
