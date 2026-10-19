@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 20 min, about $3
+    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 25 min, about $3.20
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -157,6 +157,9 @@ SWEEP = [("b200", b200), ("h200", h200), ("h100_a", h100_a), ("h100_b", h100_b),
          ("l40s", l40s), ("l4_a", l4_a), ("l4_pair", l4_pair), ("t4", t4)]
 
 
+TESTS_LIMIT = {"l4": 45 * 60, "h100": 30 * 60, "b200": 30 * 60}     # each tests function's hard limit (seconds)
+
+
 def _tests(label: str, with_bench: bool = False) -> dict:
     """The test suite on a GPU (includes a 30-second `check` on the GPU); the Triton checks compared with the
     plain ones on this GPU (tests/_fast_compare.py and tests/_serve_fast_compare.py, which test_fast.py and
@@ -164,7 +167,14 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     environment and run from outside the source tree (what `pip install sdcguard` gets); then the `sdcguard
     check` command itself for 1.5 minutes, exactly as a user would run it; with_bench, per-shape kernel timings;
     last, the attention check's calibration (an experiment with its own criteria, reported separately).
-    Returns the output and each part's exit code: a finished run isn't a passed one."""
+    Returns the output and each part's exit code: a finished run isn't a passed one. The optional steps at the
+    end only start when there's time left before the function's hard limit (on Oct 19 the L4 hit it and its
+    whole result was lost)."""
+    t0 = time.time()
+
+    def left() -> float:                     # seconds before the hard limit, keeping 2 minutes to save and return
+        return TESTS_LIMIT[label] - (time.time() - t0) - 120
+
     os.makedirs(OUT, exist_ok=True)
     p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-rs", "tests", "--ignore", "tests/test_fast.py"],
                        cwd=R, capture_output=True, text=True)
@@ -176,12 +186,14 @@ def _tests(label: str, with_bench: bool = False) -> dict:
                         env=env)
     with open(f"{OUT}/fast_compare_{label}.txt", "w") as f:
         f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
+    vol.commit()
     sc = subprocess.run([sys.executable, "tests/_serve_fast_compare.py", "cuda"], cwd=R, capture_output=True,
                         text=True, env=env)
     with open(f"{OUT}/serve_compare_{label}.txt", "w") as f:
         f.write(sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n")
+    vol.commit()
     bench = None
-    if with_bench:      # per-shape time of the Triton check next to the matmul and the plain check
+    if with_bench and left() > 15 * 60:      # per-shape time of the Triton check next to the matmul and the plain check
         bench = subprocess.run([sys.executable, "experiments/bench_kernels.py"], cwd=R, capture_output=True,
                                text=True, env=env)
     # The wheel, in a clean environment that sees torch but not the source tree. Every step runs without
@@ -211,15 +223,19 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     with open(f"{OUT}/tests_cli_output_{label}.txt", "w") as f:
         f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
-    # Last, with its own time limit so the rest is never lost to it: the attention check's calibration
-    # (experiments/attention_calib.py; its criteria are in its docstring).
-    try:
-        ac = subprocess.run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
-                             f"{OUT}/attention_{label}"], cwd=R, capture_output=True, text=True, env=env,
-                            timeout=9 * 60)
-    except subprocess.TimeoutExpired as e:
-        out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-        ac = subprocess.CompletedProcess(e.cmd, 124, out, "stopped after 9 minutes")
+    # Last, within the time left (so the rest is never lost to it): the attention check's calibration
+    # (experiments/attention_calib.py; its criteria are in its docstring). Exit 3: not enough time to start.
+    budget = min(9 * 60, left())
+    if budget < 4 * 60:
+        ac = subprocess.CompletedProcess([], 3, "", f"not started: {max(0, budget) / 60:.1f} minutes left")
+    else:
+        try:
+            ac = subprocess.run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
+                                 f"{OUT}/attention_{label}"], cwd=R, capture_output=True, text=True, env=env,
+                                timeout=budget)
+        except subprocess.TimeoutExpired as e:
+            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            ac = subprocess.CompletedProcess(e.cmd, 124, out, f"stopped after {budget / 60:.1f} minutes")
     try:
         with open(f"{OUT}/attention_{label}/attention_calib.json") as f:
             att_json = f.read()
@@ -248,17 +264,17 @@ def _tests(label: str, with_bench: bool = False) -> dict:
             "attention_calibration": ac.returncode, "attention_json": att_json}
 
 
-@app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
+@app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=TESTS_LIMIT["l4"])
 def tests() -> dict:
     return _tests("l4")
 
 
-@app.function(gpu="H100!", volumes=VOLS, cpu=4, memory=32768, timeout=30 * 60)
+@app.function(gpu="H100!", volumes=VOLS, cpu=4, memory=32768, timeout=TESTS_LIMIT["h100"])
 def tests_h100() -> dict:
     return _tests("h100")
 
 
-@app.function(gpu="B200", volumes=VOLS, cpu=4, memory=32768, timeout=30 * 60)
+@app.function(gpu="B200", volumes=VOLS, cpu=4, memory=32768, timeout=TESTS_LIMIT["b200"])
 def tests_b200() -> dict:
     return _tests("b200", with_bench=True)
 
@@ -394,8 +410,8 @@ def _passed(result: dict) -> bool:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on an L4, an H100 and a B200 at once: about 20 minutes, about $3 (hard limit 30 minutes "
-              "each, about $6.10).", flush=True)
+        print("Tests on an L4, an H100 and a B200 at once: about 25 minutes, about $3.20 (hard limits 45 minutes "
+              "for the L4 and 30 for the others, about $6.40 in all).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
@@ -404,9 +420,12 @@ def main(phase: str = "sweep", force: bool = False):
         failed, att = {}, {}
         for label, call in calls:
             try:
-                r = call.get(timeout=35 * 60)
+                r = call.get(timeout=TESTS_LIMIT[label] + 15 * 60)       # (+ time waiting for a GPU)
             except Exception as e:  # noqa: BLE001
-                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}", "run": 2}
+                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}\nLogs written before it "
+                             f"stopped: modal volume get sdcguard-runs /check_sweep/pytest_{label}.txt "
+                             f"results/gpu_tests/ (also fast_compare_, serve_compare_, wheel_, tests_cli_output_)",
+                     "run": 2}
             r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
             print(r["text"], flush=True)
             stamp = time.strftime('%Y%m%d_%H%M%S')
