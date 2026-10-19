@@ -64,7 +64,11 @@ def _work(label: str) -> dict:
     gen = torch.Generator().manual_seed(7)
     cal = {}
     for m in modes.MODES:
-        why = modes.available(m, dev)
+        try:
+            why = modes.available(m, dev)
+        except modes.ProbeError as e:
+            cal[m] = {"error": str(e)[:200]}
+            continue
         cal[m] = {"skipped": why} if why else {"matmuls": 0, "wrong": 0, "worst_z": {}, "typical_caught": {},
                                                 "tensor_core_steps": modes.n_fma(m, tuple(out["cc"]))}
     t_end = time.time() + CALIBRATE_SECONDS

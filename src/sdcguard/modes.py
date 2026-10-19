@@ -36,6 +36,7 @@ and not with ones over bf16 outputs.
 from __future__ import annotations
 
 import math
+import re
 import time
 from typing import Callable, Optional
 
@@ -168,8 +169,26 @@ def gemm(mode: str, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         torch.set_float32_matmul_precision(prev)
 
 
+# Error messages that mean "this GPU or this PyTorch build doesn't offer that", as opposed to a failure.
+_UNSUPPORTED = re.compile(r"not supported|NOT_SUPPORTED|not implemented for|only supported|is not available|"
+                          r"isn't supported|requires .*(?:compute capability|sm_?\d+|SM ?\d+)", re.IGNORECASE)
+
+
+def expected(mode: str, cc: tuple) -> bool:
+    """Does every GPU of compute capability cc run this mode (with the PyTorch sdcguard supports)? A mode the GPU
+    should run that fails its probe is an error, never "unsupported"."""
+    need = {"bf16": (8, 0), "tf32": (8, 0), "fp8": (8, 9), "int8": (7, 5)}.get(mode, (0, 0))
+    return tuple(cc) >= need
+
+
+class ProbeError(RuntimeError):
+    """A mode's capability probe failed in a way that isn't a missing feature."""
+
+
 def available(mode: str, dev: torch.device) -> Optional[str]:
-    """None if the mode can run on dev, else why not (shown on the card as not checked)."""
+    """None if the mode can run on dev, else why not (shown on the card as unsupported). Raises ProbeError when
+    the probe fails for another reason, or when a mode this GPU should support fails at all: the caller counts
+    that as an error (an incomplete check), not as a missing feature."""
     if dev.type != "cuda":
         return None
     major, minor = torch.cuda.get_device_capability(dev)
@@ -183,8 +202,12 @@ def available(mode: str, dev: torch.device) -> Optional[str]:
         x = torch.ones(32, 32, device=dev).to(dt)
         gemm(mode, x, x)
         torch.cuda.synchronize(dev)
-    except (RuntimeError, NotImplementedError, AttributeError, TypeError) as e:
-        return f"not supported by this GPU or PyTorch ({type(e).__name__})"
+    except Exception as e:  # noqa: BLE001
+        msg = f"{type(e).__name__}: {str(e)[:160]}"
+        if not expected(mode, (major, minor)) and isinstance(e, (RuntimeError, NotImplementedError, AttributeError,
+                                                                 TypeError)) and _UNSUPPORTED.search(str(e)):
+            return f"not supported by this GPU or PyTorch ({msg[:100]})"
+        raise ProbeError(f"capability probe failed: {msg}") from e
     return None
 
 
@@ -194,7 +217,8 @@ PROJECTIONS = 3        # signed checksums per block, on top of the plain sum
 def draw_signs(gen: torch.Generator, n: int = PROJECTIONS) -> torch.Tensor:
     """n fresh random +-1 patterns (float64, CPU) for one matmul's signed checksums. Fresh for every matmul:
     an error that one pattern can't see (two outputs of a block swapped where the pattern has the same sign,
-    say) is very unlikely to hide from all of them, and a persistent one can't hide matmul after matmul."""
+    say) usually shows in another: each pattern misses a given swapped pair with probability 1/2, all three
+    together with 1/8, drawn anew for every matmul, so a persistent fault shows on most matmuls."""
     return (torch.randint(0, 2, (n, BLOCK), generator=gen) * 2 - 1).double()
 
 
@@ -224,7 +248,15 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
     else:
         cb = c.double().view(m, nblk, BLOCK)
         actual = torch.einsum("mbw,pw->mbp", cb, wd).cpu()                       # (m, nblk, P+1)
-        c_norm = cb.norm(dim=-1).cpu()                                           # (m, nblk)
+        # block norms scaled by the block's largest value, so one huge wrong output can't overflow them (an
+        # FP64 exponent flip gives values near 1e155, whose square overflows float64)
+        mx = cb.abs().amax(dim=-1)
+        c_norm = (mx * (cb / mx.clamp_min(1e-300).unsqueeze(-1)).norm(dim=-1)).cpu()   # (m, nblk)
+        # and an output larger than |a_row| |b_col| can't come from these inputs at all (Cauchy-Schwarz; the
+        # factor 2 leaves room for rounding)
+        a_rows = a64.norm(dim=1).to(c.device)
+        b_cols = b64.norm(dim=0).to(c.device).view(nblk, BLOCK)
+        impossible = (cb.abs() > 2 * a_rows.view(m, 1, 1) * b_cols.unsqueeze(0) + 1e-300).any(dim=-1).cpu()
     del cb
     bb = b64.view(k, nblk, BLOCK)
     expected = a64 @ torch.einsum("kbw,pw->kbp", bb, w).reshape(k, nblk * w.shape[0])
@@ -243,9 +275,12 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
         noise = noise * 2                     # the reference's own float64 rounding is of the same size
     noise = noise + 1e-300
     z = (diff / noise.unsqueeze(-1)).amax(dim=-1)
-    z = torch.where(torch.isfinite(actual).all(dim=-1), z, torch.full_like(z, float("inf")))
+    # wrong, not merely unjudged: non-finite results, outputs these inputs can't produce, and blocks whose
+    # tolerance itself overflowed (only an absurdly large output does that)
+    bad = ~torch.isfinite(actual).all(dim=-1) | impossible | ~torch.isfinite(noise) | torch.isnan(z)
+    z = torch.where(bad, torch.full_like(z, float("inf")), z)
     typical = c_norm / math.sqrt(BLOCK)
-    caught = (ALARM * noise / typical.clamp_min(1e-300))[typical > 0]
+    caught = (ALARM * noise / typical.clamp_min(1e-300))[(typical > 0) & ~bad]
     return {"wrong_blocks": int((z > ALARM).sum()), "blocks": m * nblk, "worst_z": float(z.max()),
             "typical_caught": float(caught.median()) if caught.numel() else None, "z": z}
 
@@ -340,7 +375,12 @@ def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, see
     out = {"shape": list(shape), "modes": {}}
     runnable = []
     for m in MODES:
-        why = available(m, dev)
+        try:
+            why = available(m, dev)
+        except ProbeError as e:
+            say(f"math mode {m}: {e}")
+            out["modes"][m] = {"matmuls": 0, "wrong": 0, "error": str(e)[:160]}
+            continue
         if why:
             out["modes"][m] = {"skipped": why}
         else:

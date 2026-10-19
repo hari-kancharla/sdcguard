@@ -159,3 +159,60 @@ def test_the_card_shows_fp8_sensitivity_on_its_own():
     mm.update(ran=list(modes.MODES[:-1]), not_checked={"fp8": "needs compute capability 8.9 or newer"},
               typical_error_caught={"bf16": 2e-4})
     assert check._modes_row(mm).endswith("typical sensitivity 0.02%; unsupported: fp8")
+
+
+@pytest.mark.parametrize("mode,bits,itype", [("fp64", range(52, 63), torch.int64), ("fp32", range(23, 31), torch.int32)])
+def test_every_exponent_bit_flip_in_one_output_is_caught(mode, bits, itype):
+    """One flipped exponent bit can give a value near 1e155 in FP64, whose square overflows float64: the block's
+    tolerance used to overflow with it and score the block 0 (found by an outside review, Oct 19, 2026)."""
+    gen = torch.Generator().manual_seed(927)
+    a, b, a64, b64 = modes._inputs(mode, (64, 256, 128), "normal", 1.0, gen)
+    signs = modes.draw_signs(gen)
+    c = modes.gemm(mode, a, b)
+    assert modes.judge(mode, a64, b64, c, signs=signs)["wrong_blocks"] == 0
+    for bit in bits:
+        cc = c.clone()
+        cc.view(itype)[0, 0] ^= 1 << bit
+        assert torch.isfinite(cc).all() or bit == bits[-1]
+        r = modes.judge(mode, a64, b64, cc, signs=signs)
+        assert r["wrong_blocks"] == 1 and r["z"][0, 0] > modes.ALARM, (bit, float(cc[0, 0]))
+
+
+def _fake_cuda(monkeypatch, cc, fail):
+    """available() on a pretend GPU of compute capability cc whose probe GEMM raises `fail` (or works if None)."""
+    real_ones = torch.ones
+    monkeypatch.setattr(modes.torch.cuda, "get_device_capability", lambda dev=None: cc)
+    monkeypatch.setattr(modes.torch.cuda, "synchronize", lambda dev=None: None)
+    monkeypatch.setattr(modes.torch, "ones", lambda *a, **k: real_ones(*a, **{x: v for x, v in k.items() if x != "device"}))
+
+    def gemm(mode, a, b):
+        if fail is not None:
+            raise fail
+        return a.float() @ b.float()
+    monkeypatch.setattr(modes, "gemm", gemm)
+
+
+def test_a_probe_that_crashes_is_an_error_not_unsupported(monkeypatch):
+    """An illegal memory access during a capability probe used to read as "not supported" and let the run PASS
+    with no math modes checked (outside review, Oct 19, 2026)."""
+    _fake_cuda(monkeypatch, (9, 0), RuntimeError("CUDA error: an illegal memory access was encountered"))
+    for m in modes.MODES:
+        with pytest.raises(modes.ProbeError):
+            modes.available(m, torch.device("cuda"))
+    r = modes.screen(torch.device("cuda"), 0)
+    assert r["ran"] == [] and r["unsupported"] == {} and set(r["errors"]) == set(modes.MODES)
+
+
+def test_a_mode_this_gpu_should_run_is_never_unsupported(monkeypatch):
+    _fake_cuda(monkeypatch, (9, 0), RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED"))
+    with pytest.raises(modes.ProbeError):
+        modes.available("int8", torch.device("cuda"))          # Hopper runs INT8: a failure is an error
+
+
+def test_a_missing_feature_on_an_older_gpu_is_unsupported(monkeypatch):
+    _fake_cuda(monkeypatch, (7, 0), RuntimeError("CUBLAS_STATUS_NOT_SUPPORTED"))
+    assert "not supported" in modes.available("int8", torch.device("cuda"))
+    assert modes.available("bf16", torch.device("cuda")) == "needs compute capability 8.0 or newer"
+    _fake_cuda(monkeypatch, (7, 0), RuntimeError("CUDA error: unspecified launch failure"))
+    with pytest.raises(modes.ProbeError):
+        modes.available("int8", torch.device("cuda"))          # not a missing feature: an error
