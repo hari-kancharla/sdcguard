@@ -424,8 +424,8 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     bw = bandwidth(dev, secs["bandwidth"])
     say(f"{name}: checked matmuls at full power ({secs['stress']:.0f} s)")
     stress = stress_check(dev, dtype, secs["stress"])
-    say(f"{name}: six matmul modes against a float64 reference ({secs['modes']:.0f} s)")
-    from .modes import screen as modes_screen
+    from .modes import MODES, screen as modes_screen
+    say(f"{name}: matmuls in {len(MODES)} math modes against a float64 reference ({secs['modes']:.0f} s)")
     math_modes = modes_screen(dev, secs["modes"], seed=seed)
     prints.append(fp.run())
     left = max(0.05, (total - (time.time() - t_start) - 3) / 60)

@@ -54,6 +54,9 @@ image = (
     .add_local_dir(LOCAL / "tests", f"{R}/tests", ignore=_skip)
     .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip)
     .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml")
+    # two board tests read the seed cards
+    .add_local_dir(LOCAL / "docs" / "board" / "seed", f"{R}/docs/board/seed",
+                   ignore=lambda p: p.name.startswith("._"))
 )
 
 app = modal.App("sdcguard-check", image=image)
