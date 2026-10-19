@@ -490,15 +490,24 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
 # checksums over fp32 accumulators, not over bf16 outputs).
 #
 # Both sides of the identity are added up in float64 (the inputs are bf16/fp16, so A @ (block sums of B)
-# in float64 is all but exact), and the noise is the fp32 accumulation error of the result alone, as in
-# modes.py:
-#     u * (C1 |alpha| |a_row| |B_block| + (C2 sqrt(k) + C3 k / N + sqrt(width)) |C_block|),  u = 2^-24
-# N: products the tensor cores add per truncation step (modes.n_fma); sqrt(width): rounding of the fp32
-# outputs themselves. The plain sum also has to beat the same bound with |C_block| summed instead of
-# squared (outputs whose errors line up), as in matmul_zscores. float64 is fast on data-center GPUs
-# (A100, H100, B200) and slow on most others, which is why precise mode is opt-in.
+# in float64 is all but exact), and the noise is the fp32 accumulation error of the result alone:
+#     u * (C1 sqrt(k) |alpha| |a_row| |B_block| + (C2 sqrt(k) + C3 k / N + sqrt(width)) |C_block|),  u = 2^-24
+# The first term is the random part of the accumulation's rounding: every one of the k products is aligned
+# and truncated (tensor cores) or rounded (FMA) against the running sum, an error of up to one fp32 ulp of
+# the running sum with a standard deviation of ulp / sqrt(12) ~ 0.58 u |running sum|, and no running sum can
+# exceed |a_row| |b_column| (Cauchy-Schwarz). C1 = 0.6. The k / N term is the bias of truncating once per
+# tensor-core step (N products, modes.n_fma); sqrt(width): rounding of the fp32 outputs themselves.
+#
+# Until Oct 19, 2026 the first term had no sqrt(k): it assumed the running sums stay near the final output.
+# On real training (backward dW of the attention input and output layers, 4,096 tokens) they don't, and the
+# check raised 72 to 84 false alarms in 2,970 clean checks on an A100, H100 and B200
+# (results/precise_models). The term above was chosen from those measurements and the rounding argument,
+# then frozen before the held-out run (experiments/precise_models.py --validate). Precise mode stays opt-in
+# and experimental until that run passes. The plain sum also has to beat the same bound with |C_block|
+# summed instead of squared (outputs whose errors line up), as in matmul_zscores. float64 is fast on
+# data-center GPUs (A100, H100, B200) and slow on most others, another reason precise mode is opt-in.
 ACC_UNIT = 2.0 ** -24
-ACC_C1, ACC_C2, ACC_C3 = 1.0, 1.0, 1.0
+ACC_C1, ACC_C2, ACC_C3 = 0.6, 1.0, 1.0
 _F64_CHUNK = 1 << 24          # elements converted to float64 at a time
 
 
@@ -596,7 +605,7 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
         cnorm = _norm_fp32(Cb)                                               # (b, m, nblk)
         b_frob = torch.linalg.vector_norm(Bblk.float(), dim=(-3, -1)).unsqueeze(-2)   # (bB, 1, nblk)
         per_out = ACC_C2 * math.sqrt(k) + ACC_C3 * steps + math.sqrt(width)
-        prod = (A_norm * b_frob).mul_(ACC_C1 * abs(alpha) * u)               # (b, m, nblk)
+        prod = (A_norm * b_frob).mul_(ACC_C1 * math.sqrt(k) * abs(alpha) * u)  # (b, m, nblk)
         prod = torch.where(torch.isfinite(prod), prod, bound * (u * 128))
         noise = (cnorm * (per_out * u) + prod).unsqueeze(-1)                 # (b, m, nblk, 1)
         den = (noise + abs_floor).double()

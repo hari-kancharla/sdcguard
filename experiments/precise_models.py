@@ -72,7 +72,7 @@ def running_scale(A, B, C):
     return {s: torch.maximum(c, acc[s] / s) for s in acc}
 
 
-def score(A, B, C, bias, nfma, epoch):
+def score(A, B, C, bias, nfma, epoch, running: bool = True):
     """Per (row, block): the checksums' distance from float64, and each model's noise."""
     u = cs.ACC_UNIT
     m, k = A.shape
@@ -95,10 +95,13 @@ def score(A, B, C, bias, nfma, epoch):
     b_frob = Bb.double().pow(2).sum(dim=(0, 2)).sqrt()[None, :]
     prod = u * a_norm * b_frob
     cnorm = Cb.double().norm(dim=-1)
-    noise = {"current": prod + u * per_out * cnorm,
-             "sqrt_steps": prod * math.sqrt(max(1.0, steps or k)) + u * per_out * cnorm}
-    for s, P in running_scale(A, B, C).items():
-        noise[f"running_S{s}"] = prod + u * per_out * P[:, :w].reshape(m, nblk, BLOCK).double().norm(dim=-1)
+    noise = {"current": prod + u * per_out * cnorm,                              # before Oct 19 (no sqrt(k))
+             "sqrt_steps": prod * math.sqrt(max(1.0, steps or k)) + u * per_out * cnorm,
+             # what checksum._acc_zscores computes since Oct 19 (frozen; see its comment)
+             "shipped": prod * (cs.ACC_C1 * math.sqrt(k)) + u * per_out * cnorm}
+    if running:
+        for s, P in running_scale(A, B, C).items():
+            noise[f"running_S{s}"] = prod + u * per_out * P[:, :w].reshape(m, nblk, BLOCK).double().norm(dim=-1)
     typical = (cnorm / math.sqrt(BLOCK)).clamp_min(1e-30)
     out = {}
     for name, nz in noise.items():
@@ -108,12 +111,36 @@ def score(A, B, C, bias, nfma, epoch):
     return out
 
 
-def run(dev: torch.device, steps: int, seed: int = 0, say=print) -> dict:
-    cfg = CONFIG["cuda" if dev.type == "cuda" else "cpu"]
+# Held-out workloads for validating the model frozen on Oct 19, 2026 (checksum.py: C1 sqrt(k) |a| |B|). None of
+# them was used to choose it: other shapes, seeds, learning rates, and token streams with a word-like (Zipf)
+# frequency, which makes the output layer's gradients far more lopsided than uniform random tokens.
+# Pre-registered criteria (METHOD.md): 0 alarms in every check on every GPU, worst score at most 4.
+VALIDATE = {
+    "cuda": [dict(name="wide, 8,192 tokens, Zipf tokens", vocab=50257, layers=4, width=2048, heads=16, seq=1024,
+                  batch=8, seed=7, lr=1e-3, zipf=True, steps=12),
+             dict(name="calibration shape, new seed, Zipf tokens", vocab=32000, layers=8, width=1024, heads=16,
+                  seq=512, batch=8, seed=11, lr=3e-4, zipf=True, steps=20),
+             dict(name="narrow and deep, 8,192 tokens", vocab=8192, layers=12, width=512, heads=8, seq=256,
+                  batch=32, seed=23, lr=2e-3, zipf=False, steps=12)],
+    "cpu": [dict(name="tiny, Zipf tokens", vocab=512, layers=2, width=128, heads=4, seq=64, batch=4, seed=7,
+                 lr=1e-3, zipf=True, steps=2)],
+}
+
+
+def _tokens(cfg: dict, gen: torch.Generator, shape) -> torch.Tensor:
+    if not cfg.get("zipf"):
+        return torch.randint(0, cfg["vocab"], shape, generator=gen)
+    w = 1.0 / torch.arange(1, cfg["vocab"] + 1, dtype=torch.float64)          # Zipf, exponent 1
+    return torch.multinomial(w, int(torch.tensor(shape).prod()), replacement=True, generator=gen).view(*shape)
+
+
+def run(dev: torch.device, steps: int, seed: int = 0, say=print, cfg: dict = None, models: tuple = None) -> dict:
+    cfg = dict(cfg or CONFIG["cuda" if dev.type == "cuda" else "cpu"])
+    seed = cfg.get("seed", seed)
     low = torch.bfloat16 if dev.type != "cuda" or torch.cuda.get_device_capability(dev)[0] >= 8 else torch.float16
     torch.manual_seed(seed)
     model = ScreenModel(cfg["vocab"], cfg["layers"], cfg["width"], cfg["heads"], cfg["seq"]).to(dev)
-    opt = torch.optim.AdamW(model.parameters(), lr=3e-4)
+    opt = torch.optim.AdamW(model.parameters(), lr=cfg.get("lr", 3e-4))
     gen = torch.Generator().manual_seed(seed + 1)
     g = SDCGuard(every=1, precise=True)
     worst: dict = {}
@@ -125,10 +152,12 @@ def run(dev: torch.device, steps: int, seed: int = 0, say=print) -> dict:
     def grab(self, name, pass_, A, B, C32, bias):
         nfma = self._tensor_core_steps(C32, A.dtype)
         with torch.no_grad(), torch.autocast(dev.type, enabled=False):
-            r = score(A, B, C32, bias, nfma, self._epoch)
+            r = score(A, B, C32, bias, nfma, self._epoch, running=models is None or any("running" in x for x in models))
             st = cs.matmul_zscores_acc(A, B, C32, bias, nfma=nfma, epoch=self._epoch)
         if r is not None and st is not None:     # the check exactly as precise mode runs it today
-            r = {"current_as_shipped": (float(cs.resolve([st])[0].max_z), r["current"][1]), **r}
+            r = {"current_as_shipped": (float(cs.resolve([st])[0].max_z), r["shipped"][1]), **r}
+        if r is not None and models is not None:
+            r = {k: v for k, v in r.items() if k in models}
         if r is not None:
             key = f"{name.split('.')[-1]} {pass_}"
             for model_name, (z, cau) in r.items():
@@ -147,7 +176,7 @@ def run(dev: torch.device, steps: int, seed: int = 0, say=print) -> dict:
         g.protect(model)
         for n in range(steps):
             state["step"] = n
-            idx = torch.randint(0, cfg["vocab"], (cfg["batch"], cfg["seq"] + 1), generator=gen).to(dev)
+            idx = _tokens(cfg, gen, (cfg["batch"], cfg["seq"] + 1)).to(dev)
             with g.on_step(n):
                 with torch.autocast(dev.type, dtype=low):
                     logits = model(idx[:, :-1])
@@ -170,11 +199,87 @@ def run(dev: torch.device, steps: int, seed: int = 0, say=print) -> dict:
                          "typical_error_caught_median": float(f"{float(ct.median()):.3g}"),
                          "typical_error_caught_p90": float(f"{float(ct.kthvalue(max(1, int(0.9 * ct.numel()))).values):.3g}")}
     out = {"config": cfg, "dtype": str(low).replace("torch.", ""), "steps": steps, "models": summary,
+           "lr": cfg.get("lr", 3e-4),
            "worst_by_layer_and_pass": dict(sorted(by_pass.items(), key=lambda kv: -kv[1]["current"]))}
     if dev.type == "cuda":
         out.update(gpu=torch.cuda.get_device_name(dev), cc=list(torch.cuda.get_device_capability(dev)),
                    torch=torch.__version__)
     return out
+
+
+def overhead(dev: torch.device, cfg: dict, steps: int = 6) -> dict:
+    """Seconds per training step of one model: unchecked, with every matmul of every step checked by the
+    default check, and by precise mode (both through protect(), the fast mode). Warm-up steps not timed."""
+    import time as _t
+    low = torch.bfloat16 if dev.type != "cuda" or torch.cuda.get_device_capability(dev)[0] >= 8 else torch.float16
+    out = {}
+    for label, make in (("unchecked", lambda: None), ("default check, every step", lambda: SDCGuard(every=1)),
+                        ("precise mode, every step", lambda: SDCGuard(every=1, precise=True))):
+        torch.manual_seed(0)
+        model = ScreenModel(cfg["vocab"], cfg["layers"], cfg["width"], cfg["heads"], cfg["seq"]).to(dev)
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        g = make()
+        if g is not None:
+            g.protect(model)
+        gen = torch.Generator().manual_seed(1)
+        times = []
+        for n in range(steps + 2):
+            idx = torch.randint(0, cfg["vocab"], (cfg["batch"], cfg["seq"] + 1), generator=gen).to(dev)
+            if dev.type == "cuda":
+                torch.cuda.synchronize()
+            t0 = _t.perf_counter()
+            with (g.on_step(n) if g is not None else torch.autograd.set_grad_enabled(True)):
+                with torch.autocast(dev.type, dtype=low):
+                    logits = model(idx[:, :-1])
+                    loss = F.cross_entropy(logits.float().view(-1, logits.shape[-1]), idx[:, 1:].reshape(-1))
+                loss.backward()
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+            if dev.type == "cuda":
+                torch.cuda.synchronize()
+            if n >= 2:
+                times.append(_t.perf_counter() - t0)
+        times.sort()
+        out[label] = round(times[len(times) // 2], 4)
+    base = out["unchecked"]
+    return {"seconds_per_step": out, "overhead_pct": {k: round(100 * (v / base - 1), 1) for k, v in out.items()
+                                                      if k != "unchecked"}}
+
+
+def validate(dev: torch.device, say=print) -> dict:
+    """The held-out run: the frozen model (as shipped) and the earlier candidates on workloads none of them was
+    chosen on, plus what precise mode costs."""
+    res = []
+    for cfg in VALIDATE["cuda" if dev.type == "cuda" else "cpu"]:
+        say(f"validate: {cfg['name']}")
+        r = run(dev, cfg["steps"], say=lambda s, n=cfg["name"]: say(f"{n}: {s}"), cfg=cfg,
+                models=("current_as_shipped", "shipped", "current", "sqrt_steps"))
+        r["name"] = cfg["name"]
+        res.append(r)
+    worst = max(r["models"]["current_as_shipped"]["worst"] for r in res)
+    alarms = sum(r["models"]["current_as_shipped"]["alarms"] for r in res)
+    out = {"workloads": res, "as_shipped": {"alarms": alarms, "worst": worst,
+                                            "checks": sum(r["models"]["current_as_shipped"]["checks"] for r in res),
+                                            "criteria_met": alarms == 0 and worst <= 4.0}}
+    try:
+        out["overhead"] = overhead(dev, VALIDATE["cuda" if dev.type == "cuda" else "cpu"][-1 if dev.type != "cuda" else 1])
+    except Exception as e:  # noqa: BLE001
+        out["overhead"] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+    if dev.type == "cuda":
+        out.update(gpu=torch.cuda.get_device_name(dev), cc=list(torch.cuda.get_device_capability(dev)),
+                   torch=torch.__version__)
+    return out
+
+
+def validate_markdown(v: dict) -> str:
+    a = v["as_shipped"]
+    lines = [f"## {v.get('gpu', 'CPU')}: {a['checks']} held-out checks, {a['alarms']} alarms, worst {a['worst']} "
+             f"(criteria {'MET' if a['criteria_met'] else 'NOT MET'}: 0 alarms, worst at most 4)", ""]
+    for r in v["workloads"]:
+        lines.append(markdown(r).replace("## ", "### " + r["name"] + ": ", 1))
+    if v.get("overhead"):
+        lines.append(f"Overhead (median seconds per step, same model): {json.dumps(v['overhead'])}\n")
+    return "\n".join(lines)
 
 
 def markdown(r: dict) -> str:
@@ -196,8 +301,13 @@ def main(argv=None) -> int:
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--steps", type=int, default=3)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--validate", action="store_true", help="the held-out run of the frozen model, and its cost")
     a = ap.parse_args(argv)
     t0 = time.time()
+    if a.validate:
+        v = validate(torch.device(a.device))
+        print(validate_markdown(v))
+        return 0 if v["as_shipped"]["criteria_met"] else 1
     res = run(torch.device(a.device), a.steps)
     res["seconds"] = round(time.time() - t0, 1)
     print(markdown(res))

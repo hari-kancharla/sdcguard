@@ -70,7 +70,7 @@ def model_terms(A, B, C, nfma):
     b_frob = Bb.pow(2).sum(dim=(0, 2)).sqrt()[None, :]                   # (1, nblk)
     steps = k / nfma if nfma else 0.0
     per_out = cs.ACC_C2 * math.sqrt(k) + cs.ACC_C3 * steps + math.sqrt(BLOCK)
-    return {"output_terms": cnorm * per_out * u, "product_term": a_norm * b_frob * cs.ACC_C1 * u,
+    return {"output_terms": cnorm * per_out * u, "product_term": a_norm * b_frob * cs.ACC_C1 * math.sqrt(k) * u,
             "cnorm": cnorm, "per_out": per_out, "nblk": nblk}
 
 
