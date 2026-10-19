@@ -103,23 +103,122 @@ def test_serving_skips_layers_with_their_own_forward():
     sg.detach()
 
 
-def test_serving_keeps_a_forward_set_on_the_instance_and_restores_it():
-    lin = nn.Linear(256, 256).to(torch.bfloat16)
+def _accelerate_style_hook(lin, calls):
+    """What accelerate's add_hook_to_module does: keep the real forward as _old_forward, set a wrapper on the
+    instance that calls the hook's pre_forward, _old_forward and post_forward."""
+    import functools
+
+    class Hook:
+        no_grad = False
+
+        def pre_forward(self, module, *args, **kwargs):
+            calls.append("pre")
+            return args, kwargs
+
+        def post_forward(self, module, output):
+            calls.append("post")
+            return output
+
+    lin._hf_hook = Hook()
+    lin._old_forward = lin.forward
+
+    def new_forward(module, *args, **kwargs):
+        args, kwargs = module._hf_hook.pre_forward(module, *args, **kwargs)
+        return module._hf_hook.post_forward(module, module._old_forward(*args, **kwargs))
+    lin.forward = functools.partial(new_forward, lin)
+    return lin
+
+
+def test_serving_checks_underneath_an_accelerate_device_hook_and_restores_it():
+    torch.manual_seed(0)
     calls = []
-    orig = lin.forward
-
-    def hooked(inp):                     # like accelerate's offload hook: same math, extra bookkeeping
-        calls.append(1)
-        return orig(inp)
-
-    lin.forward = hooked
+    lin = _accelerate_style_hook(nn.Linear(256, 256).to(torch.bfloat16), calls)
+    hooked, old = lin.forward, lin._old_forward
     model = nn.Sequential(lin)
     x = torch.randn(4, 256).to(torch.bfloat16)
+    before = model(x)
     sg = ServeGuard().attach(model)
-    model(x)
-    assert calls and sg.poll(wait=True) == []
+    assert sg.stats["layers"] == 1 and sg.unsupported == {}
+    calls.clear()
+    with torch.no_grad():
+        assert torch.equal(model(x), before)
+    assert calls == ["pre", "post"] and sg.worst_z()["0"] > 0 and sg.poll(wait=True) == []
+    with torch.no_grad():
+        lin.weight.view(torch.int16)[5, 9] ^= 1 << 14          # a bit flip in the weights after attach
+        model(x)
+    assert len(sg.poll(wait=True)) == 1
     sg.detach()
-    assert lin.forward is hooked
+    assert lin.forward is hooked and lin._old_forward == old
+
+
+def test_serving_compiled_right_after_attach_still_checks_a_hooked_layer():
+    """No first-call probe to miss under torch.compile (outside review, Oct 19, 2026)."""
+    torch.manual_seed(0)
+    lin = _accelerate_style_hook(nn.Linear(128, 128, bias=False).to(torch.bfloat16), [])
+    sg = ServeGuard().attach(lin)
+    compiled = torch.compile(lin, backend="eager")
+    x = torch.randn(2, 128).to(torch.bfloat16)
+    with torch.no_grad():
+        compiled(x)
+        assert sg.worst_z()["Linear"] > 0 and sg.poll(wait=True) == []
+        lin.weight[0, 0] = 1000
+        compiled(x)
+    assert len(sg.poll(wait=True)) == 1
+    sg.detach()
+
+
+@pytest.mark.parametrize("case", ["plain wrapper", "batch dependent", "fp16 scale"])
+def test_serving_lists_any_other_instance_forward_and_never_alarms_on_it(case):
+    """A check of one sample can't prove an instance forward is a plain linear layer for every input (an outside
+    review found a wrapper that was linear for one row and doubled larger batches, and an fp16 scale of 1.0059
+    inside bf16's tolerance): such layers are left alone and listed."""
+    dt = torch.float16 if case == "fp16 scale" else torch.bfloat16
+    lin = nn.Linear(128, 128, bias=False).to(dt)
+    with torch.no_grad():
+        lin.weight.copy_(torch.eye(128).to(dt))
+    plain = lin.forward
+    lin.forward = {"plain wrapper": lambda x: plain(x),
+                   "batch dependent": lambda x: plain(x) if x.shape[0] == 1 else plain(x) * 2,
+                   "fp16 scale": lambda x: plain(x) * 1.005859375}[case]
+    own = lin.forward
+    sg = ServeGuard().attach(lin)
+    assert sg.stats["layers"] == 0 and "not checked" in sg.unsupported["Linear"]
+    with torch.no_grad():
+        for rows in (1, 2, 5):
+            lin(torch.ones(rows, 128).to(dt))
+    assert sg.poll(wait=True) == []
+    sg.detach()
+    assert lin.forward is own
+
+
+def test_serving_with_the_real_accelerate_hook():
+    accelerate = pytest.importorskip("accelerate")
+    from accelerate.hooks import AlignDevicesHook, add_hook_to_module, remove_hook_from_module
+    torch.manual_seed(0)
+    lin = nn.Linear(256, 256).to(torch.bfloat16)
+    add_hook_to_module(lin, AlignDevicesHook(execution_device="cpu", io_same_device=True))
+    model = nn.Sequential(lin)
+    x = torch.randn(4, 256).to(torch.bfloat16)
+    before = model(x)
+    sg = ServeGuard().attach(model)
+    assert sg.stats["layers"] == 1 and sg.unsupported == {}, accelerate.__version__
+    with torch.no_grad():
+        assert torch.equal(model(x), before)
+        assert sg.worst_z()["0"] > 0 and sg.poll(wait=True) == []
+        lin.weight.view(torch.int16)[5, 9] ^= 1 << 14
+        model(x)
+    assert len(sg.poll(wait=True)) == 1
+    sg.detach()
+    remove_hook_from_module(lin)                     # leaves the bound nn.Linear.forward on the instance
+    sg = ServeGuard().attach(model)
+    assert sg.stats["layers"] == 1 and sg.unsupported == {}
+    sg.detach()
+
+
+def test_serving_lists_offloaded_layers():
+    lin = nn.Linear(64, 64, device="meta", dtype=torch.bfloat16)
+    sg = ServeGuard().attach(nn.Sequential(lin))
+    assert sg.stats["layers"] == 0 and "offloaded" in sg.unsupported["0"]
 
 
 def test_serving_handles_an_empty_batch():

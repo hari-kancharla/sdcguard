@@ -18,9 +18,11 @@ block (plain and fixed random +-1 signs), alarm at z > 6. One difference: a bloc
 non-negative scores; serving doesn't count such blocks separately (sdcguard screen and check count passes
 whose output isn't finite instead).
 
-Layers whose own code computes something other than x @ W^T + b are left alone: a subclass with its own
-forward at attach(), and a forward set on the instance (an offload hook, say) the first time it runs, when
-its output is compared once with the plain linear's.
+Layers whose code might compute something other than x @ W^T + b are left alone and listed in
+guard.unsupported: a subclass with its own forward, and a forward set on the instance. The one exception is
+accelerate's device hook (dispatch_model, from_pretrained(device_map=...)), which keeps nn.Linear.forward as
+_old_forward and calls it after moving the inputs to the weights' device: the check runs there, underneath the
+hook. Layers whose weights are offloaded (on the meta device when attached) are listed too.
 
 Built for serving engines:
   - Nothing ever waits for the GPU. Results go into a small state tensor on the GPU (worst z per
@@ -332,6 +334,17 @@ def _op():
         return _OP[0]
 
 
+def _is_linear_forward(f, mod: torch.nn.Module) -> bool:
+    """f is mod's own nn.Linear.forward, bound to mod (what accelerate leaves on the instance after removing a hook)."""
+    return getattr(f, "__func__", None) is torch.nn.Linear.forward and getattr(f, "__self__", None) is mod
+
+
+def _accelerate_hooked(mod: torch.nn.Module) -> bool:
+    """Is mod's instance forward accelerate's hook wrapper (add_hook_to_module), with nn.Linear.forward kept as
+    mod._old_forward? Only then does the hook call the plain linear underneath."""
+    return getattr(mod, "_hf_hook", None) is not None and _is_linear_forward(mod.__dict__.get("_old_forward"), mod)
+
+
 class ServeGuard:
     """Always-on checks for inference. See the module docstring.
 
@@ -392,15 +405,31 @@ class ServeGuard:
                     self.unsupported[name or type(mod).__name__] = f"{type(mod).__name__} has its own forward"
                     self.stats["skipped_layers"] += 1
                     continue
+                label = name or type(mod).__name__
+                if mod.weight.device.type == "meta":
+                    self.unsupported[label] = "weights not on a device when attached (offloaded); not checked"
+                    self.stats["skipped_layers"] += 1
+                    continue
+                # A forward set on the instance runs instead of nn.Linear.forward. accelerate's device hooks
+                # (dispatch_model, device_map=...) keep the real forward as _old_forward and call it after moving
+                # the inputs to the weights' device: the check goes there, underneath the hook. Any other
+                # instance forward could compute something else, so it's left alone and listed (a check of one
+                # sample can't prove it's a plain linear layer for every input).
+                target = "forward"
+                if "forward" in mod.__dict__ and not _is_linear_forward(mod.__dict__["forward"], mod):
+                    if not _accelerate_hooked(mod):
+                        self.unsupported[label] = "forward replaced on the instance (not an accelerate device hook); not checked"
+                        self.stats["skipped_layers"] += 1
+                        continue
+                    target = "_old_forward"
                 take = select_layer(i, share, offset)
                 i += 1
                 if not take:
                     self.stats["skipped_layers"] += 1
                     continue
-                slot = self.add_layer(mod, name or type(mod).__name__)
-                # a forward set on the instance (accelerate's offload hooks, say) keeps running underneath
-                self.layers[slot]["own_forward"] = mod.__dict__.get("forward")
-                mod.forward = self._make_forward(mod)
+                slot = self.add_layer(mod, label)
+                self.layers[slot]["wraps"] = (target, mod.__dict__.get(target))
+                setattr(mod, target, self._make_forward(mod))
         return self
 
     def add_layer(self, mod: torch.nn.Module, name: str, weight: Optional[torch.Tensor] = None,
@@ -439,8 +468,8 @@ class ServeGuard:
                 mod = lay["module"]
                 if lay["device"] != device:
                     continue
-                if "forward" in mod.__dict__:
-                    mod.forward = self._make_forward(mod)
+                if "wraps" in lay:
+                    setattr(mod, lay["wraps"][0], self._make_forward(mod))
                 if hasattr(mod, "_sdcguard_args"):         # registered by an engine plugin (vLLM)
                     mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
         self._state[device] = new
@@ -483,24 +512,14 @@ class ServeGuard:
         that torch.compile can't trace (no locks, no data-dependent branches)."""
         guard, slot = self, mod._sdcguard_slot - 1
         lay = self.layers[slot]
-        plain = lay.get("own_forward") or type(mod).forward.__get__(mod)
+        plain = type(mod).forward.__get__(mod)              # nn.Linear.forward (attach() makes sure)
         cs, state, op = lay["cs"], self._state[lay["device"]], _op()
         k, n, z, floor = cs.k, cs.n, float(self.z), float(self.abs_floor)
 
         trace = guard.inline and not guard.uses_fast(slot)
-        own = lay.get("own_forward") is not None
 
         def forward(x):
             y = plain(x)
-            if own and lay.get("own_ok") is not True:
-                # a forward set on the instance: check it computes the plain linear before checking its output
-                if lay.get("own_ok") is None and not torch.compiler.is_compiling():
-                    lay["own_ok"] = guard._same_as_linear(mod, x, y)
-                    if not lay["own_ok"]:
-                        guard.unsupported[lay["name"]] = ("forward set on the instance changes the output; "
-                                                          "not checked")
-                if lay.get("own_ok") is not True:
-                    return y
             if guard.enabled and x.numel() > 0:
                 # torch.compile: the custom op (or the PyTorch check traced into the graph); eager: a plain call,
                 # without the custom-op dispatch (that cost ~100 us per layer in eager decoding on the H100)
@@ -513,20 +532,6 @@ class ServeGuard:
 
         return forward
 
-    @staticmethod
-    def _same_as_linear(mod: torch.nn.Module, x: torch.Tensor, y: torch.Tensor) -> bool:
-        """Does y (from the layer's own forward) equal x @ W^T + b, up to one rounding? Runs once per layer."""
-        try:
-            with torch.no_grad():
-                ref = torch.nn.functional.linear(x, mod.weight, mod.bias)
-                if ref.shape != y.shape:
-                    return False
-                rf, yf = ref.float(), y.float()
-                tol = 2.0 ** -7 * rf.abs() + 1e-6
-                return bool(((yf - rf).abs() <= tol).all())
-        except Exception:  # noqa: BLE001  (weights not where F.linear can reach them: don't check this layer)
-            return False
-
     def detach(self) -> None:
         if self._restore:
             from .guard import _exact_reductions_off
@@ -534,10 +539,12 @@ class ServeGuard:
         self._restore = None
         for lay in self.layers:
             mod = lay["module"]
-            if "forward" in mod.__dict__:
-                del mod.forward
-            if lay.get("own_forward") is not None:
-                mod.forward = lay["own_forward"]
+            if "wraps" in lay:
+                attr, saved = lay["wraps"]
+                if saved is None:
+                    mod.__dict__.pop(attr, None)
+                else:
+                    setattr(mod, attr, saved)
             mod._sdcguard_slot = 0
         self.layers.clear()
         self._state.clear()
