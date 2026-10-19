@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -173,16 +174,21 @@ _SIGN_SEED = int(os.environ.get("SDCGUARD_SIGN_SEED") or int.from_bytes(os.urand
 
 
 # Training checks can also take a new pattern on every checked step (SDCGuard(fresh_signs=True), the default):
-# epoch e > 0 is a different pattern. A fault that keeps hitting the same outputs can then hide from the signed
-# checksum on one step at most (two outputs of a block swapped where the pattern has the same sign cancel in
-# both sums). Serving computes its checksums once at load, so it stays on epoch 0.
+# epoch e > 0 is a different pattern. Two outputs of a block swapped where the pattern has the same sign cancel
+# in both sums; with a new pattern each checked step, a fault that keeps doing that is seen on about half the
+# checked steps (each pattern separates a given pair with probability 1/2) instead of never. It can still go
+# unseen for several steps in a row. Serving computes its checksums once at load, so it stays on epoch 0.
+
+
+_CACHE_LOCK = threading.RLock()     # the pattern caches are shared by every thread (one per GPU in autograd)
 
 
 def _drop_old(cache: dict, epoch: int) -> None:
-    """Keep epoch 0 and the current epoch only (the caches would grow by one pattern per step otherwise)."""
+    """Keep epoch 0 and the current epoch only (the caches would grow by one pattern per step otherwise).
+    Call with _CACHE_LOCK held."""
     if epoch:
-        for k in [k for k in cache if k[-1] not in (0, epoch)]:
-            cache.pop(k, None)              # (pop: another thread may have dropped it first)
+        for k in [k for k in list(cache) if k[-1] not in (0, epoch)]:
+            cache.pop(k, None)
 
 
 def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
@@ -191,7 +197,12 @@ def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
     (one draw per checked step instead of one per block width)."""
     key = (width, str(device), epoch)
     out = _SIGNS.get(key)
-    if out is None:
+    if out is not None:
+        return out
+    with _CACHE_LOCK:
+        out = _SIGNS.get(key)
+        if out is not None:
+            return out
         _drop_old(_SIGNS, epoch)
         if epoch == 0:
             g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
@@ -219,10 +230,13 @@ def _pair_weights(width: int, dtype: torch.dtype, device, epoch: int = 0) -> tor
     key = (width, dtype, str(device), epoch)
     w = _PAIR_W.get(key)
     if w is None:
-        _drop_old(_PAIR_W, epoch)
-        s = _signs(width, device, epoch)
-        w = torch.stack([torch.ones_like(s), s], dim=1).to(dtype)
-        _PAIR_W[key] = w
+        with _CACHE_LOCK:
+            w = _PAIR_W.get(key)
+            if w is None:
+                _drop_old(_PAIR_W, epoch)
+                s = _signs(width, device, epoch)
+                w = torch.stack([torch.ones_like(s), s], dim=1).to(dtype)
+                _PAIR_W[key] = w
     return w
 
 

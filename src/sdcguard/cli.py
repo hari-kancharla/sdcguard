@@ -122,9 +122,8 @@ def cmd_replay(a) -> int:
     from .screen import replay
     r = replay(a.evidence, a.times, a.device)
     print(json.dumps(r, indent=2, default=str))
-    if r["recomputations_that_failed_the_check"]:
-        return 1
-    return 2 if r.get("recomputations_that_couldnt_be_judged") == r.get("recomputations") else 0
+    from .verdict import replay_exit
+    return replay_exit(r)
 
 
 def _nhc_status(out: str, line: str, code: int) -> None:

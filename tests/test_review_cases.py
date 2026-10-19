@@ -128,7 +128,7 @@ def test_serving_leaves_a_math_changing_instance_forward_alone():
         after = lin(x)
         lin(x)
     assert torch.equal(before, after) and g.poll(wait=True) == []
-    assert "changes the output" in list(g.unsupported.values())[0]
+    assert "forward replaced on the instance" in list(g.unsupported.values())[0]
     g.detach()
     assert lin.forward(x).equal(before)
 
@@ -165,6 +165,35 @@ def test_vllm_reads_results_after_a_while_not_only_every_16_steps(monkeypatch, t
     vllm_plugin._STATE["guard"] = None
 
 
+def test_vllm_time_based_reads_wait_for_the_gpu_and_count_based_ones_dont(monkeypatch, tmp_path):
+    """A non-blocking read reports the previous one, so on a GPU an alert read on the time condition would
+    otherwise wait for another step (outside review, Oct 19, 2026). There's no idle timer: documented."""
+    sys.path.insert(0, HERE)
+    from test_serve import _fake_vllm, _plugin_env, _plugin_model
+    M, Runner = _fake_vllm(monkeypatch)
+    vllm_plugin = _plugin_env(monkeypatch, tmp_path, SDCGUARD_POLL_EVERY="3", SDCGUARD_POLL_SECONDS="2")
+    monkeypatch.setitem(vllm_plugin._STATE, "steps", 0)
+    clock = [1000.0]
+    monkeypatch.setattr(vllm_plugin.time, "monotonic", lambda: clock[0])
+    vllm_plugin.register()
+    model = _plugin_model(M, n_layers=1)
+    runner = Runner(model)
+    g = vllm_plugin.guard()
+    reads = []
+    real_poll = g.poll
+    monkeypatch.setattr(g, "poll", lambda wait=False: reads.append(wait) or real_poll(wait=wait))
+    x = torch.randn(1, 256).bfloat16()
+    with torch.no_grad():
+        for t in (1000.1, 1000.2, 1000.3):        # steps 1-3 within 2 s: only step 3 reads, without waiting
+            clock[0] = t
+            runner.execute_model(x)
+        assert reads == [False]
+        clock[0] = 1003.0                          # 2.7 s after the last read: read right away, waiting
+        runner.execute_model(x)
+        assert reads == [False, True]
+    vllm_plugin._STATE["guard"] = None
+
+
 def test_a_persistent_column_swap_is_caught_by_the_math_modes():
     """Two outputs of a block swapped after every GEMM: invisible to the plain sum, and to any one signed
     sum where both columns share a sign. Fresh patterns every GEMM catch it."""
@@ -190,3 +219,67 @@ def test_board_rejects_cards_whose_math_mode_counts_disagree():
     card.pop("digest", None)
     card["digest"] = board.digest(card)
     assert "disagree" in board.validate(card)
+
+
+def test_math_mode_evidence_reaches_the_certificate_and_the_fleet_archive(tmp_path):
+    """Found by an outside review (Oct 19, 2026): evidence from the math modes and the stress check was saved
+    but left out of the certificate's hashes, the fleet report's counts and the RMA archive."""
+    pytest.importorskip("cryptography")
+    import zipfile
+    from sdcguard import fleet
+    real = modes.gemm
+
+    def corrupt_int8(mode, a, b):
+        c = real(mode, a, b)
+        if mode == "int8":
+            c[0, 0] += 1
+        return c
+
+    key, pub = certify.keygen(str(tmp_path / "issuer"))
+    with patch.object(modes, "gemm", side_effect=corrupt_int8):
+        full = check.check_one("cpu", minutes=0.01, out_root=str(tmp_path / "out"), key_path=key)
+    assert full["result"] == "FAIL"
+    mode_ev = [e for e in full["evidence"] if os.path.basename(e).startswith("math_mode_evidence_")]
+    cert_path = os.path.join(full["out_dir"], "certificate.json")
+    cert = json.load(open(cert_path))
+    assert cert["result"] == "FAIL" and cert["corrupted_results"]["math_modes"] == full["wrong"]["math_modes"] > 0
+    assert {os.path.basename(e) + ".pt" for e in mode_ev} <= set(cert["evidence_sha256"])
+    assert certify.verify(cert_path, pub)["ok"]
+
+    rows = fleet.collect([str(tmp_path / "out")])
+    assert rows[0]["result"] == "FAIL" and rows[0]["corrupted"] == full["wrong"]["math_modes"]
+    report = fleet.write(rows, str(tmp_path / "fleet"))
+    with zipfile.ZipFile(next(iter(report["rma"].values()))) as z:
+        names = set(z.namelist())
+        readme = z.read("README.txt").decode()
+    assert {"check.json", "certificate.json", "summary.json"} <= names
+    assert {os.path.basename(e) + ext for e in mode_ev for ext in (".pt", ".json")} <= names
+    assert "in the math-mode check" in readme and f"sdcguard replay {os.path.basename(mode_ev[0])}.pt" in readme
+
+    with open(mode_ev[0] + ".pt", "ab") as f:            # tamper with one evidence file
+        f.write(b"changed")
+    v = certify.verify(cert_path, pub)
+    assert not v["ok"] and not v["evidence_files_match"]
+
+
+def test_any_unjudged_check_makes_the_run_incomplete():
+    """The README says a run that couldn't judge part of its work isn't a PASS; until Oct 19, 2026 up to 1% of
+    unjudged checks were let through with a warning (outside review)."""
+    from sdcguard import verdict
+    assert verdict.from_counts(0, 1000, 0) == "PASS"
+    assert verdict.from_counts(0, 1000, 1) == "INCOMPLETE" == verdict.from_counts(0, 0, 0)
+    assert verdict.from_counts(1, 1000, 5) == "FAIL"
+    assert verdict.unjudged_note(1, 1000, "x")[0][0] == "bad"
+
+
+def test_both_replay_commands_exit_the_same_way(monkeypatch):
+    from types import SimpleNamespace
+    from sdcguard import cli
+    for r, code in (({"recomputations": 2, "recomputations_that_failed_the_check": 1}, 1),
+                    ({"recomputations": 2, "recomputations_that_failed_the_check": 0,
+                      "recomputations_that_couldnt_be_judged": 2}, 2),
+                    ({"recomputations": 2, "recomputations_that_failed_the_check": 0,
+                      "recomputations_that_couldnt_be_judged": 1}, 0)):
+        monkeypatch.setattr(screen, "replay", lambda *a, _r=r, **k: _r)
+        assert cli.cmd_replay(SimpleNamespace(evidence="x", times=2, device="cpu")) == code
+        assert screen.main(["--replay", "x", "--times", "2", "--device", "cpu"]) == code

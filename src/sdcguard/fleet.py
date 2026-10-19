@@ -7,8 +7,9 @@ Reads every summary.json (and certificate.json, if present) under the given fold
   fleet_report.html   one page: how many GPUs passed, which failed, per-GPU details
   fleet_report.json   the same, for scripts and dashboards
   quarantine.txt      the GPUs to pull: UUID, host, PCI slot, serial (empty when all passed)
-  rma/<GPU UUID>.zip  for each failed GPU: its summary, certificate, evidence (inputs and wrong outputs
-                      of the failed matmuls) and a README with the replay command. NVIDIA's RMA process
+  rma/<GPU UUID>.zip  for each failed GPU: its summary, full check result (check.json), certificate,
+                      evidence (inputs and wrong outputs of the failed matmuls, from every phase) and a
+                      README with the replay commands. NVIDIA's RMA process
                       asks for data "illustrating that the failure follows the particular" board; a
                       replay on a healthy GPU giving the right answer, and on this one the wrong answer,
                       is that.
@@ -51,14 +52,20 @@ def collect(roots: Iterable[str]) -> list[dict]:
                     chk = None
             g = s.get("gpu", {})
             key = g.get("gpu_uuid") or os.path.abspath(d)
+            # `sdcguard check` writes check.json with every phase (workload, stress check, math modes); a bare
+            # `sdcguard screen` has only the workload summary
+            wrong = dict((chk or {}).get("wrong") or {"workload_training": s.get("corrupted_results_training") or 0,
+                                                     "workload_serving": s.get("corrupted_results_serving") or 0})
+            evidence = [_local(e, d) for e in ((chk or {}).get("evidence") or s.get("evidence") or [])]
             row = {"dir": os.path.abspath(d), "gpu_uuid": g.get("gpu_uuid"), "gpu_name": g.get("gpu_name"),
                    "host": g.get("host"), "pci_bus_id": g.get("pci_bus_id"), "serial": g.get("serial"),
                    "driver": g.get("driver"), "result": s.get("result"), "minutes": s.get("minutes"),
                    "matmuls_checked": s.get("matmuls_checked") or 0,
                    "serving_layer_checks": s.get("linear_layer_checks_while_serving") or 0,
                    "tflop": s.get("approx_matmul_tflop") or 0.0,
-                   "corrupted": (s.get("corrupted_results_training") or 0) + (s.get("corrupted_results_serving") or 0),
-                   "worst_clean_score": s.get("worst_clean_z"), "evidence": s.get("evidence") or [],
+                   "corrupted": sum(v or 0 for k, v in wrong.items() if k != "memory_words"),
+                   "wrong_by_phase": wrong,
+                   "worst_clean_score": s.get("worst_clean_z"), "evidence": evidence,
                    "simulated": bool(s.get("SIMULATED_FAULTS")), "certificate": bool(cert),
                    "signed": bool(cert and cert.get("signature")), "issued_at": (cert or {}).get("issued_at"),
                    "mtime": os.path.getmtime(os.path.join(d, "summary.json")),
@@ -72,22 +79,38 @@ def collect(roots: Iterable[str]) -> list[dict]:
     return sorted(rows.values(), key=lambda r: (r["result"] != "FAIL", r["host"] or "", r["pci_bus_id"] or ""))
 
 
+def _local(e: str, d: str) -> str:
+    """An evidence path as recorded, or the same file next to the summary (results moved or copied)."""
+    if os.path.exists(e + ".pt") or os.path.exists(e + ".json"):
+        return e
+    return os.path.join(d, os.path.basename(e))
+
+
+_PHASES = {"workload_training": "in the training workload", "workload_serving": "in the serving workload",
+           "stress": "in the stress check", "math_modes": "in the math-mode check",
+           "memory_words": "memory words read back wrong in the memory test"}
+
+
 def _rma_zip(row: dict, out_dir: str) -> str:
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"{row['gpu_uuid'] or 'gpu'}.zip")
+    phases = "".join(f"    {v:,} {_PHASES.get(k, k)}\n" for k, v in (row.get("wrong_by_phase") or {}).items() if v)
     readme = (f"sdcguard evidence for GPU {row['gpu_uuid']} ({row['gpu_name']}), serial {row['serial']}, "
               f"host {row['host']}, PCI {row['pci_bus_id']}\n\n"
-              f"Result: {row['result']}. {row['corrupted']} matrix multiply results failed their checksums during "
-              f"a seeded transformer workload ({row['matmuls_checked']:,} matmuls and "
-              f"{row['serving_layer_checks']:,} layer outputs checked).\n\n"
-              "Each evidence_N.pt holds the inputs and the output this GPU produced for one failed matmul; "
-              "evidence_N.json describes it. To show the failure follows the board, run on this GPU and on a "
-              "healthy one:\n\n" + "".join(f"    sdcguard replay {os.path.basename(e)}.pt\n" for e in row["evidence"]) +
+              f"Result: {row['result']}. {row['corrupted']:,} matrix multiply results failed their checks "
+              f"({row['matmuls_checked']:,} workload matmuls and {row['serving_layer_checks']:,} layer outputs "
+              f"checked, plus the stress and math-mode checks):\n" + (phases or "    none\n") + "\n"
+              "Each .pt file holds the inputs and the output this GPU produced for one failed matmul, and the .json "
+              "next to it describes it; check.json is the whole result. To show the failure follows the board, run "
+              "on this GPU and on a healthy one:\n\n" +
+              ("".join(f"    sdcguard replay {os.path.basename(e)}.pt\n" for e in row["evidence"]) or
+               "    (no evidence files: the failure wasn't in a saved matmul)\n") +
               "\nA healthy GPU recomputes the right answer every time (and the recorded output fails the check); "
-              "a faulty one tends to repeat the error.\n")
+              "a faulty one tends to repeat the error. A replay that fails again points at the GPU but doesn't by "
+              "itself rule out a software or configuration cause.\n")
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt", readme)
-        for name in ("summary.json", "certificate.json"):
+        for name in ("summary.json", "check.json", "certificate.json"):
             p = os.path.join(row["dir"], name)
             if os.path.exists(p):
                 z.write(p, name)

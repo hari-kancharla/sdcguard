@@ -133,7 +133,7 @@ def validate(r: dict) -> Optional[str]:
         unjudged = float((r.get("checked") or {}).get("unjudged") or 0)
         if r["result"] == "PASS" and (checked == 0 or sum(wrong) > 0 or r.get("repeatable") is False
                                       or float(mm.get("wrong") or 0) > 0 or mm.get("errors")
-                                      or unjudged >= max(1.0, 0.01 * checked)):
+                                      or unjudged > 0):
             return "says PASS, but its counts don't (nothing checked, wrong or unjudged results, or not repeatable)"
         if r["result"] == "FAIL" and sum(wrong) == 0:
             return "says FAIL, but counts no wrong results"

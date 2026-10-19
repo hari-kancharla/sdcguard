@@ -374,7 +374,7 @@ def main(argv=None) -> int:
     if args.replay:
         r = replay(args.replay, args.times, args.device)
         print(json.dumps(r, indent=2, default=str))
-        return 1 if r["recomputations_that_failed_the_check"] else 0
+        return verdict.replay_exit(r)
     if args.size is None:
         if torch.cuda.is_available():
             gb = torch.cuda.get_device_properties(0).total_memory / 2**30

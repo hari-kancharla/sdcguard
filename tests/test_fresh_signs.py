@@ -125,3 +125,28 @@ def test_serving_keeps_its_pattern_while_training_moves_on():
     y[3, 10] += 40 * y.float().abs().mean().to(torch.bfloat16)
     sg.check(slot, x, y)
     assert sg.read_slot(slot)[0] > 6.0
+
+
+def test_the_pattern_caches_survive_many_threads():
+    """Four threads moving through epochs at once used to hit "dictionary changed size during iteration" while
+    pruning (outside review, Oct 19, 2026)."""
+    import concurrent.futures
+    import sys
+    from sdcguard import _group
+
+    def worker(t):
+        for i in range(1500):
+            e = t * 100000 + i + 1
+            cs._signs((i % 128) + 1, "cpu", e)
+            cs._pair_weights((i % 128) + 1, torch.bfloat16, "cpu", e)
+            if i % 50 == 0:
+                _group._sign_table(torch.device("cpu"), e)
+        return True
+
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            assert all(pool.map(worker, range(4)))
+    finally:
+        sys.setswitchinterval(old)

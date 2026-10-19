@@ -196,10 +196,15 @@ def _sign_table(device: torch.device, epoch: int = 0) -> torch.Tensor:
     epoch 0; training checks move to a new epoch every checked step (see checksum._signs)."""
     key = (str(device), epoch)
     hit = _SIGNS.get(key)
-    if hit is None:
-        from .checksum import _signs
+    if hit is not None:
+        return hit[0]
+    from .checksum import _CACHE_LOCK, _signs
+    with _CACHE_LOCK:
+        hit = _SIGNS.get(key)
+        if hit is not None:
+            return hit[0]
         if epoch:                                           # keep epoch 0 (serving) and this one
-            for k in [k for k in _SIGNS if k[1] not in (0, epoch)]:
+            for k in [k for k in list(_SIGNS) if k[1] not in (0, epoch)]:
                 _SIGNS.pop(k, None)
             # every width starts the same 128-wide pattern: one table in one operation
             host = torch.tril(_signs(128, "cpu", epoch).view(1, 128).expand(128, 128)).contiguous()

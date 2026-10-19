@@ -98,14 +98,23 @@ def _now() -> _dt.datetime:
 
 
 def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optional[_dt.datetime] = None,
-         check: Optional[dict] = None) -> dict:
-    """An unsigned certificate from a screen summary (screen.screen_one's return value)."""
+         check: Optional[dict] = None, full: Optional[dict] = None) -> dict:
+    """An unsigned certificate from a screen summary (screen.screen_one's return value). full: `sdcguard
+    check`'s complete result (check.json), whose evidence and wrong-result counts cover every phase (the
+    workload, the stress check and the math modes), not only the workload."""
     now = now or _now()
     g = summary.get("gpu", {})
     evidence = {}
-    for e in summary.get("evidence", []):
+    for e in (full or {}).get("evidence", summary.get("evidence", [])):
         for ext in (".json", ".pt"):
-            evidence[os.path.basename(e) + ext] = _sha256(e + ext)
+            if os.path.exists(e + ext):
+                evidence[os.path.basename(e) + ext] = _sha256(e + ext)
+    corrupted = {"training": summary.get("corrupted_results_training"),
+                 "serving": summary.get("corrupted_results_serving")}
+    if full and full.get("wrong"):
+        w = full["wrong"]
+        corrupted.update(stress=w.get("stress", 0), math_modes=w.get("math_modes", 0),
+                         memory_words=w.get("memory_words", 0))
     simulated = bool(summary.get("SIMULATED_FAULTS"))
     cert = {
         "format": FORMAT,
@@ -122,15 +131,13 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
                      "unjudged_training_checks": summary.get("unjudged_training_checks", 0),
                      "serving_passes_with_nonfinite_output": summary.get("serving_passes_with_nonfinite_output", 0)},
         "result": summary.get("result"),
-        "corrupted_results": {"training": summary.get("corrupted_results_training"),
-                              "serving": summary.get("corrupted_results_serving")},
+        "corrupted_results": corrupted,
         "worst_clean_score": summary.get("worst_clean_z"),
         "alarm_line": summary.get("alarm_line", 6.0),
         "evidence_sha256": evidence,
         "simulated_faults": simulated,
-        "meaning": ("PASS: every checked matrix multiply on this GPU that could be judged matched its checksums "
-                    "during this workload, and fewer than 1% couldn't be judged (counts above). It says what was "
-                    "checked, not that the GPU has no defect. INCOMPLETE: nothing wrong was found, but part of the "
+        "meaning": ("PASS: every matrix multiply checked on this GPU matched its checksums, and every check could "
+                    "be judged (counts above). It says what was checked, not that the GPU has no defect. INCOMPLETE: nothing wrong was found, but part of the "
                     "check couldn't run or couldn't judge its results; this certificate doesn't vouch for the GPU. "
                     "FAIL: some results were wrong; the evidence files hold the failed matmuls' inputs and outputs, "
                     "and `sdcguard replay <evidence>.pt` recomputes them on any GPU."),
@@ -154,9 +161,9 @@ def sign(cert: dict, key_path: str) -> dict:
 
 
 def write(summary: dict, out_dir: str, key_path: Optional[str] = None, issuer: str = "",
-          valid_days: float = 30.0, check: Optional[dict] = None) -> str:
+          valid_days: float = 30.0, check: Optional[dict] = None, full: Optional[dict] = None) -> str:
     """Certificate for one screened GPU, written next to its summary as certificate.json."""
-    cert = make(summary, issuer=issuer, valid_days=valid_days, check=check)
+    cert = make(summary, issuer=issuer, valid_days=valid_days, check=check, full=full)
     if key_path:
         cert = sign(cert, key_path)
     else:

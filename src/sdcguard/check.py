@@ -508,7 +508,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     write_cards(pub, out_dir)
     if key_path is not None or issuer:
         from . import certify
-        certify.write(summary, out_dir, key_path=key_path, issuer=issuer, check=pub)
+        certify.write(summary, out_dir, key_path=key_path, issuer=issuer, check=pub, full=full)
     return full
 
 
