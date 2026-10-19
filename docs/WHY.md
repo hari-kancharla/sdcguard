@@ -1,6 +1,6 @@
 # Why sdcguard
 
-Sources checked October 18, 2026.
+Sources checked October 19, 2026.
 
 ## The problem
 
@@ -8,9 +8,13 @@ Sources checked October 18, 2026.
   devices" ([Meta, July 2025](https://engineering.fb.com/2025/07/22/data-infrastructure/how-meta-keeps-its-ai-hardware-reliable/)).
   ByteDance found 18 incidents on 13 faulty GPUs in about 35 million GPU-hours of training
   ([AEGIS, OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf)).
-- **Offline tests miss most of it.** In AEGIS the vendor's offline diagnostics caught 2 of 8 known-bad
-  machines. ByteDance's companion study found synthetic tests "miss over 60% of defective devices", and only
-  25% of defects showed up in burn-in ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)).
+- **Offline tests miss a lot of it.** In AEGIS, vendor diagnostics that take hours caught 2 of 8 known-bad
+  machines (the paper puts NVIDIA's offline EUD diagnostics at about 70% recall in its production data, at
+  several hours a run). ByteDance's companion study found synthetic tests "miss over 60% of defective
+  devices", only 25% of defects showed up in burn-in, and 40% appeared around a year after deployment
+  ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)).
+- **Which math mode breaks depends on the GPU.** In the same study, four GPUs with defective matrix units
+  all computed BF16 and FP16 correctly; each failed in a different mix of FP32, FP64, TF32 and INT8.
 - **In training it hides, in inference it ships.** 15 of the 18 AEGIS incidents caused no visible training
   failure. Meta: in inference, SDCs "affect thousands of inference consumers" (same Meta post).
 
@@ -23,9 +27,10 @@ Sources checked October 18, 2026.
 | [Google's TPU SDC checker](https://github.com/AI-Hypercomputer/maxtext/blob/main/benchmarks/xla_flags_library.py) | Re-runs the whole program, TPUs only |
 | [SCOUT / lm-resiliency](https://github.com/LMResiliency/lm-resiliency) | Needs deterministic replicas to compare against, training only |
 | AEGIS (ByteDance) | Checks the math in place, like sdcguard, but inside ByteDance's own Megatron-LM, with no code released |
-| Offline tests: NVIDIA DCGM, TinyMeg2, CoreWeave's idle-node tests | Run on idle GPUs and miss most bad ones (above). CoreWeave's stop "as soon as a customer workload is scheduled" ([docs](https://docs.coreweave.com/platform/fleet-management/hpc-verification.md)) |
-| vLLM, SGLang, TensorRT-LLM, NVIDIA Dynamo | Nothing checks the math while serving |
-| [NVIDIA NVSentinel](https://developer.nvidia.com/blog/automate-kubernetes-ai-cluster-health-with-nvsentinel/) and other fleet tools | React to XID, ECC and thermal signals, not to wrong results |
+| Offline tests: NVIDIA DCGM, TinyMeg2, CoreWeave's idle-node tests | Run on idle GPUs, between jobs, and miss many bad ones (above). CoreWeave's stop "as soon as a customer workload is scheduled" ([docs](https://docs.coreweave.com/platform/fleet-management/hpc-verification.md)) |
+| vLLM, SGLang, TensorRT-LLM, NVIDIA Dynamo | As far as I can find, none of them check matmul results while serving |
+| [NVIDIA NVSentinel](https://developer.nvidia.com/blog/automate-kubernetes-ai-cluster-health-with-nvsentinel/) and other fleet tools | React to XID, ECC and thermal signals and to failed burn-in tests, not to wrong results in the running job |
+| [assay-gpu](https://github.com/GautamTalksDev/assay-gpu) | The closest open project: GPU acceptance tests with signed attestations ([paper](https://arxiv.org/abs/2610.02240)). A different design; no side-by-side comparison yet |
 | [gpu-burn](https://github.com/wilicc/gpu-burn), [gpu-fryer](https://github.com/huggingface/gpu-fryer), memory testers | gpu-burn compares repeated fp32/fp64 matmuls with each other, so a GPU that repeats the same wrong answer passes. gpu-fryer measures speed. Memory testers test memory |
 
 ## What sdcguard does differently
@@ -36,7 +41,8 @@ Sources checked October 18, 2026.
   AMD, Intel, Arm and Microsoft, recommends exactly this
   ([OCP, 2025](https://www.opencompute.org/documents/sdc-in-ai-ocp-whitepaper-final-pdf)), and Huawei ships
   a matmul checksum for its Ascend NPUs in `torch_npu`
-  ([source](https://gitcode.com/Ascend/pytorch/blob/master/torch_npu/asd/checksum.py)). Nothing like it ships for NVIDIA GPUs.
+  ([source](https://gitcode.com/Ascend/pytorch/blob/master/torch_npu/asd/checksum.py)). AEGIS showed it
+  works at production scale on NVIDIA GPUs; its code isn't released.
 - **Names the chip and the layer:** GPU UUID, PCI slot, layer, and the row and column block of the bad output.
 - **Covers serving**, through a vLLM plugin and a Hugging Face integration.
 - **Saves evidence** you can replay on another GPU, which is what NVIDIA's RMA process asks for when its own

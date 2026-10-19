@@ -24,8 +24,11 @@ sdcguard check --share    # same, plus a link that posts your result to the publ
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
 
 It trains and serves a small GPT-style model with every matmul checked, runs big matmuls at full power,
-pattern-tests most of the free memory, measures speed against the datasheet, and runs one fixed model three
-times to see if the output stays bit-identical. The verdict is PASS, FAIL (wrong results; inputs and outputs
+checks matmuls in BF16, FP16, TF32, FP32, FP64 and INT8 (whichever the GPU supports) against a float64
+answer from the CPU, pattern-tests most of the free memory, measures speed against the datasheet, and runs one fixed
+model three times to see if the output stays bit-identical. The math modes matter because a bad GPU can get
+one wrong and the rest right: in ByteDance's study, four GPUs with broken matrix units all passed BF16 and
+FP16 ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)). The verdict is PASS, FAIL (wrong results; inputs and outputs
 are saved so `sdcguard replay` can recompute them on another GPU) or SUSPECT (no checksum failed, but output
 that should repeat exactly didn't). Handy before a long run on a rented GPU, before buying a used one, or
 after overclocking.
@@ -127,7 +130,7 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 | | |
 |---|---|
 | Works | PyTorch training in bf16/fp16 (DDP tested on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, Apple GPUs (training checks), `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4 |
-| Not checked | fp32/TF32 matmuls, quantized layers (FP8, INT4), fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
+| Not checked | fp32/TF32 matmuls in training and serving (`check` tests them one matmul at a time), quantized layers (FP8, INT4), fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
 | Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD |
 
 On Blackwell (B200) sdcguard uses the plain PyTorch checks; the faster Triton kernels cover Turing through
