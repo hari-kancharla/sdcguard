@@ -34,7 +34,11 @@ def _guarded_failures(result: dict) -> list[str]:
         return ["missing clean, injected-fault or worker reports"]
     if len(clean) != len(after) or len(clean) != len(flipped):
         return ["worker report counts differ"]
-    for i, (c, a, target) in enumerate(zip(clean, after, flipped)):
+    # counts are cumulative; what start-up (vLLM's profiling run, the warm-up) left is reported, not gated
+    startup = result.get("startup")
+    if not isinstance(startup, list) or len(startup) != len(clean):
+        startup = [{}] * len(clean)
+    for i, (c, a, target, s0) in enumerate(zip(clean, after, flipped, startup)):
         if not isinstance(c, dict) or not isinstance(a, dict):
             errors.append(f"worker {i}: malformed reports")
             continue
@@ -43,8 +47,9 @@ def _guarded_failures(result: dict) -> list[str]:
             errors.append(f"worker {i}: not every registered layer executed a check")
         elif c.get("layers_checked_since_last_read") != layers:
             errors.append(f"worker {i}: not every registered layer demonstrated a check")
-        if c.get("unjudged_checksums") != 0:
-            errors.append(f"worker {i}: clean serving had checksums that couldn't be judged (or no count)")
+        un, un0 = c.get("unjudged_checksums"), (s0.get("unjudged_checksums") if isinstance(s0, dict) else 0) or 0
+        if not isinstance(un, int) or not isinstance(un0, int) or un - un0 != 0:
+            errors.append(f"worker {i}: clean serving after warm-up had checksums that couldn't be judged (or no count)")
         if c.get("alerts") != [] or c.get("changed_weights") != []:
             errors.append(f"worker {i}: clean serving raised alerts or changed weights")
         if not isinstance(target, str) or not target:
@@ -156,6 +161,8 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     sp = SamplingParams(temperature=0.0, max_tokens=max_tokens, ignore_eos=True)
     prompts = _prompts(n_prompts)
     llm.generate(prompts[:16], sp, use_tqdm=False)                 # warm-up
+    if role == "guarded":                # counts so far (start-up and warm-up), outside the timed runs
+        res["startup"] = llm.apply_model(_guard_report)
     times = []
     for _ in range(3):                                             # three timed runs, median
         t1 = time.time()
@@ -201,6 +208,7 @@ def compare(out: str):
         "layers_with_a_nonzero_residual": clean.get("layers_checked_since_last_read"),
         "checks_executed": clean.get("checks_executed"),
         "unjudged_checksums": clean.get("unjudged_checksums"),
+        "unjudged_checksums_at_startup": (g.get("startup") or [{}])[0].get("unjudged_checksums"),
         "worst_clean_z": clean.get("worst_clean_z"),
         "clean_alerts": len(clean.get("alerts", [])),
         "flipped_layer": g.get("flipped"), "flagged_after_flip": flagged,

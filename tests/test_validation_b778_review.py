@@ -87,7 +87,8 @@ def _reports():
 
 
 @pytest.mark.parametrize("fault", [None, "outputs", "clean_alert", "no_checks", "not_executed", "unjudged",
-                                   "no_counts", "missed_fault", "wrong_layer", "missing_worker", "metadata"])
+                                   "unjudged_at_startup_only", "unjudged_after_startup", "no_counts",
+                                   "missed_fault", "wrong_layer", "missing_worker", "metadata"])
 def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         fault, monkeypatch, tmp_path, vllm_experiment):
     baseline, guarded = _reports()
@@ -101,6 +102,12 @@ def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         guarded["clean"][0]["layers_with_executed_checks"] = 0
     elif fault == "unjudged":
         guarded["clean"][0]["unjudged_checksums"] = 3
+    elif fault == "unjudged_at_startup_only":        # vLLM's profiling run, say: reported, not a failure
+        guarded["clean"][0]["unjudged_checksums"] = 3
+        guarded["startup"] = [{"unjudged_checksums": 3}]
+    elif fault == "unjudged_after_startup":
+        guarded["clean"][0]["unjudged_checksums"] = 3
+        guarded["startup"] = [{"unjudged_checksums": 1}]
     elif fault == "no_counts":
         for key in ("layers_with_executed_checks", "unjudged_checksums"):
             del guarded["clean"][0][key]
@@ -120,7 +127,7 @@ def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
 
     monkeypatch.setattr(vllm_experiment.subprocess, "run", completed)
     monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
-    assert vllm_experiment.main() == (0 if fault is None else 1)
+    assert vllm_experiment.main() == (0 if fault in (None, "unjudged_at_startup_only") else 1)
 
 
 def test_vllm_failed_processes_do_not_accept_stale_results(monkeypatch, tmp_path, vllm_experiment):
