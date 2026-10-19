@@ -10,7 +10,7 @@ failure, and the vendor's offline diagnostics caught 2 of 8 known-bad machines
 ([AEGIS, OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf)).
 
 sdcguard checks the math while it runs. Every matrix multiply it checks has to satisfy a cheap checksum
-identity, with a noise model so normal bf16/fp16 rounding never trips it. When a result is wrong you get the
+identity, with a noise model so normal bf16/fp16 rounding doesn't set it off. When a result is wrong you get the
 GPU (UUID, PCI slot), the layer and where in the output. No replay, no deterministic mode, no framework fork.
 
 ## Check a GPU
@@ -47,13 +47,10 @@ Here's what it looks like on 4 H100s:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/demo_zoom_dark.png">
-  <img alt="Two training runs on 4 H100s where GPU 2 starts corrupting results at step 205. Without sdcguard the loss looks normal, then turns NaN at step 215, and restarting from the checkpoint crashes again at 215. With sdcguard, the check at step 210 names GPU 2 by UUID and PCI slot, the run evicts it, rolls back to step 200 and finishes all 1,000 steps on 3 GPUs." src="docs/img/demo_zoom.png">
+  <img alt="Training loss of the same run on 4 H100s with and without sdcguard. GPU 2 starts returning wrong results at step 205. sdcguard flags it at step 210 and the run finishes all 1,000 steps on GPUs 0, 1 and 3. Without sdcguard the loss looks normal until it turns NaN at step 215, and restarting crashes again." src="docs/img/demo_zoom.png">
 </picture>
 
-4 H100s training a small GPT. From step 205, GPU 2 corrupts some matmul outputs (simulated in software,
-using NVIDIA's published fault patterns). Without sdcguard the loss looks fine until it goes NaN, and
-restarting from the checkpoint hits the same wall. With it, the run drops GPU 2, rolls back and finishes on
-3 GPUs. Logs: [results/demo_4gpu](results/demo_4gpu).
+Logs and raw numbers: [results/demo_4gpu](results/demo_4gpu).
 
 ## In training
 
@@ -78,8 +75,8 @@ read; with `exact_reductions=False` the gradients are bit-identical to a run wit
 SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
 ```
 
-`SDCGUARD_SHARE=0.125` checks one linear layer in eight, spread over every kind of layer and depth. With
-Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
+`SDCGUARD_SHARE=0.125` checks one linear layer in eight, spread over every kind of layer and depth. In
+vLLM's offline benchmark with Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
 word for word the same as plain vLLM's. Checking every layer costs 28% for now. Weight checksums are computed
 once at load, so weights that get corrupted in GPU memory later are caught too.
 

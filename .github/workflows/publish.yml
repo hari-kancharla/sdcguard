@@ -20,8 +20,11 @@ jobs:
         run: |
           v=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           if [ "v$v" != "$GITHUB_REF_NAME" ]; then echo "tag is $GITHUB_REF_NAME but pyproject.toml says $v"; exit 1; fi
-      # PyPI can't resolve the README's relative links, so point them at this tag on GitHub.
-      - name: Full links in the README for PyPI
+      # PyPI can't follow the README's relative links, so point them at this tag on GitHub. While the repo is
+      # private, PyPI can't load images from it either, so the PyPI page goes without them.
+      - name: README for PyPI
+        env:
+          PRIVATE: ${{ github.event.repository.private }}
         run: |
           python - <<'EOF'
           import os, re
@@ -29,6 +32,10 @@ jobs:
           repo = "https://github.com/hari-kancharla/sdcguard"
           raw = f"https://raw.githubusercontent.com/hari-kancharla/sdcguard/{tag}/"
           s = open("README.md").read()
+          if os.environ.get("PRIVATE") == "true":
+              s = re.sub(r"<picture>.*?</picture>\n+", "", s, flags=re.S)
+              s = re.sub(r"<img [^>]*>\n+", "", s)
+              s = re.sub(r"\s*Here's what it looks like on 4 H100s:", "", s)
           s = re.sub(r'(src|srcset)="(?!https?:)([^"]+)"', lambda m: f'{m[1]}="{raw}{m[2]}"', s)
           s = re.sub(r'\]\((?!https?:|#)([^)]+)\)', lambda m: f"]({repo}/blob/{tag}/{m[1]})", s)
           open("README.md", "w").write(s)
