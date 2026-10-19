@@ -572,6 +572,10 @@ if HAVE_TRITON:
         tl.store(out + pid, mx)
         tl.store(out + n2 + pid, d)
         tl.store(out + 2 * n2 + pid, (r * BJ + c).to(tl.float32))
+        # Preserve unjudged checksums independently of the maximum. A clean row must not hide a
+        # different row or block that could not be judged; padded lanes are not actual checksums.
+        unknown = tl.max(tl.max(((z < 0) & both).to(tl.int32), axis=1), axis=0)
+        tl.store(out + 3 * n2 + pid, unknown.to(tl.float32))
 
     @triton.jit
     def _tile(pid, m, nblk, ntm, ntj, BM: tl.constexpr, BJ: tl.constexpr):
@@ -652,12 +656,13 @@ if HAVE_TRITON:
 
     @triton.jit
     def _worst(T_ptr, OUT_ptr, CH: tl.constexpr):
-        """Check p: worst z over its tiles, which tile, where in the tile, and the noise there."""
+        """Check p: worst z, its location/noise, and whether any tile had unjudged checksums."""
         p = tl.program_id(0)
         P = tl.load(T_ptr + 2 * p).to(tl.pointer_type(tl.float32), bitcast=True)
         n2 = tl.load(T_ptr + 2 * p + 1)
         best = n2 * 0.0 - 2.0
         best_i = n2 * 0
+        unknown = n2 * 0.0
         for s0 in range(0, n2, CH):
             offs = s0 + tl.arange(0, CH)
             zz = tl.load(P + offs, mask=offs < n2, other=-3.0)
@@ -665,11 +670,13 @@ if HAVE_TRITON:
             take = mx > best
             best_i = tl.where(take, s0 + ix, best_i)
             best = tl.where(take, mx, best)
-        o = OUT_ptr + p * 4
+            unknown = tl.maximum(unknown, tl.max(tl.load(P + 3 * n2 + offs, mask=offs < n2, other=0.0), axis=0))
+        o = OUT_ptr + p * 5
         tl.store(o, best.to(tl.float64))
         tl.store(o + 1, best_i.to(tl.float64))
         tl.store(o + 2, tl.load(P + 2 * n2 + best_i).to(tl.float64))
         tl.store(o + 3, tl.load(P + n2 + best_i).to(tl.float64))
+        tl.store(o + 4, unknown.to(tl.float64))
 
 
 class Group:
@@ -686,7 +693,7 @@ class Group:
         self.out_max = float(min(DTYPE_MAX[dtype], BIG))   # Inf/NaN outputs: see checksum.py
         self.meta: list = []          # per check: (tiles per batch row, tiles per row, BJ, buffer, offset, tiles)
         self.tab: list = []           # per check: address of its tile results, number of tiles
-        self.result: Optional[torch.Tensor] = None      # (checks, 4) float64 after launch()
+        self.result: Optional[torch.Tensor] = None      # (checks, 5) float64 after launch()
         self._bufs: list = []         # tile-result buffers, alive until the read-back
         self._buf: Optional[torch.Tensor] = None
         self._used = 0
@@ -755,7 +762,7 @@ class Group:
                 _sign_offset(bs), _sign_offset(rem) if rem else 0, c[1], c[4], c[5], b[1], b[4], b[5],
                 bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, mx_off, JS, pst, BR=BR,
                 BW=128 if bs > 64 else 64, NATIVE=native)
-            off = self._space(3 * n2)
+            off = self._space(4 * n2)
             bk, stages, warps = _cfg(bj, self.device)
             s_ab = a[1] if a[0] > 1 else 0
             splits, steps = _splits(n2, k, bk, self.device)
@@ -793,7 +800,7 @@ class Group:
         else:
             T = host
         self._keep = [host, T]                   # alive until the read-back
-        out = torch.empty((P, 4), device=self.device, dtype=torch.float64)
+        out = torch.empty((P, 5), device=self.device, dtype=torch.float64)
         try:
             with _on(self.device):
                 _worst[(P,)](T, out, CH=CHUNK)
@@ -810,13 +817,15 @@ class Group:
             z = buf[off:off + n2]
             i = torch.argmax(z)
             rows.append(torch.stack([z[i].double(), i.double(), buf[off + 2 * n2 + i].double(),
-                                     buf[off + n2 + i].double()]))
+                                     buf[off + n2 + i].double(), buf[off + 3 * n2:off + 4 * n2].max().double()]))
         return torch.stack(rows)
 
     def row(self, idx: int, r) -> tuple:
         """Decode read-back row r of check idx: (max_z, batch, row, col_block, noise)."""
         per_b, ntj, bj = self.meta[idx][:3]
-        z, t, li, den = r
+        z, t, li, den, unknown = r
+        if unknown and z <= self.z:
+            z = -1.0                 # no alarm, but an incomplete check must not become a clean result
         bi, t2 = divmod(int(t), per_b)
         tm, tj = divmod(t2, ntj)
         li = int(li)

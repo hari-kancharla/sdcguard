@@ -62,7 +62,10 @@ def test_inf_and_nan():
     do_bad = do.clone()
     do_bad[0, 0, 0, 0] = float("nan")
     r = resolve([att.backward_stat(do_bad, bad)])[0]
-    assert r.ok and r.judged          # that column can't be judged (dO isn't finite); the other columns can
+    assert r.ok and not r.judged      # one column can't be judged (dO isn't finite): the check is incomplete
+    worse = bad.clone()
+    worse[1, 2, 5, 9] += 100 * dv.float().pow(2).mean().sqrt().to(dv.dtype)
+    assert not resolve([att.backward_stat(do_bad, worse)])[0].ok      # corruption elsewhere still shows
     r = resolve([att.backward_stat(torch.full_like(do, float("nan")), bad)])[0]
     assert r.ok and not r.judged
     o_bad = o.clone()

@@ -279,8 +279,9 @@ def test_a_corrupted_baddbmm_alerts_and_coverage_counts_it():
     assert g.stats["alerts"] == 1
     lin = nn.Linear(64, 64)
     g2 = SDCGuard().protect(lin)
-    cov = g2.coverage(lambda: (lin(torch.randn(16, 64)), torch.baddbmm(torch.randn(16, 64, 64), torch.randn(16, 64, 8),
-                                                                          torch.randn(16, 8, 64))))
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        cov = g2.coverage(lambda: (lin(torch.randn(16, 64)), torch.baddbmm(torch.randn(16, 64, 64), torch.randn(16, 64, 8),
+                                                                              torch.randn(16, 8, 64))))
     assert 0 < cov["share_checked_in_fast_mode"] < 1
 
 

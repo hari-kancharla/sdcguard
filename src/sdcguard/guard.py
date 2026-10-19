@@ -137,7 +137,8 @@ def _exact_reductions_off(hold) -> None:
 
 
 def _flat2d(t: torch.Tensor) -> torch.Tensor:
-    return t.reshape(-1, t.shape[-1])
+    # With zero input/output channels, reshape(-1, 0) cannot infer the leading dimension.
+    return t.reshape(math.prod(t.shape[:-1]), t.shape[-1])
 
 
 def matmul_checks(name: str, args, kwargs, out):
@@ -346,6 +347,15 @@ def _fast_forward(mod: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
 
 @torch.compiler.disable
 def _fast_checked(guard, mod, x):
+    # Autocast only converts eligible floating inputs. In particular a float64 layer must stay float64,
+    # and an invalid mixed-dtype call must keep PyTorch's error instead of being silently repaired by our
+    # casts. Delegate those cases to the original operator, which owns the complete dtype contract.
+    inputs = (x, mod.weight) + ((mod.bias,) if mod.bias is not None else ())
+    eligible = (torch.float16, torch.bfloat16, torch.float32)
+    if any(t.dtype not in eligible for t in inputs):
+        return torch.nn.Linear.forward(mod, x)
+    if not torch.is_autocast_enabled(x.device.type) and any(t.dtype != x.dtype for t in inputs):
+        return torch.nn.Linear.forward(mod, x)
     dt = _compute_dtype(x)
     if dt not in UNIT_ROUNDOFF:                  # fp32/TF32: not checked
         return torch.nn.Linear.forward(mod, x)
@@ -566,11 +576,16 @@ class SDCGuard(TorchDispatchMode):
 
     def coverage(self, forward_fn: Callable[[], None]) -> dict:
         """Run forward_fn() once (a forward pass, no backward needed) and report what share of its
-        matmul work (multiply-adds) runs inside protected linear layers: what fast mode checks.
+        matmul work (multiply-adds) runs in bf16/fp16 inside protected linear layers: what fast mode
+        can check on checked steps, before any sample_rate sampling. Run it in the same dtype/autocast
+        region as the real workload; merely attaching to a float32 linear does not make it checked.
         Matmuls elsewhere, including the ones inside fused attention (scaled_dot_product_attention),
-        count as unchecked. Each forward matmul has two backward matmuls of the same size, so the
-        share holds for the whole step."""
-        total, inside, depth = [0], [0], [0]
+        count as unchecked. This is a potential-coverage estimate of the observed forward operations,
+        not proof that checks executed: probe hooks can change which fused path PyTorch selects, and
+        backward work depends on which inputs/parameters require gradients. `guard_stats` is a separate
+        snapshot of cumulative actual checks/skips since construction. `share_checked_in_fast_mode` is
+        retained as a compatibility alias for `share_eligible_in_fast_mode`."""
+        total, inside, eligible, depth = [0], [0], [0], [0]
 
         class _Count(TorchDispatchMode):
             def __torch_dispatch__(self, func, types, args=(), kwargs=None):
@@ -583,6 +598,8 @@ class SDCGuard(TorchDispatchMode):
                         total[0] += flops
                         if depth[0] > 0:
                             inside[0] += flops
+                            if _C.dtype in UNIT_ROUNDOFF:
+                                eligible[0] += flops
                 elif name.startswith("aten::_scaled_dot_product") or name == "aten::scaled_dot_product_attention":
                     q, k = args[0], args[1]            # fused attention: Q K^T and P V, never checked here
                     total[0] += 2 * q.numel() * k.shape[-2]
@@ -604,9 +621,12 @@ class SDCGuard(TorchDispatchMode):
         finally:
             for h in hooks:
                 h.remove()
-        share = inside[0] / total[0] if total[0] else 0.0
+        share = eligible[0] / total[0] if total[0] else 0.0
         return {"matmul_multiply_adds": total[0], "in_protected_linear_layers": inside[0],
-                "share_checked_in_fast_mode": share, "skipped_layers": dict(self.skipped)}
+                "eligible_multiply_adds_in_protected_linear_layers": eligible[0],
+                "coverage_kind": "potential", "share_eligible_in_fast_mode": share,
+                "share_checked_in_fast_mode": share, "skipped_layers": dict(self.skipped),
+                "guard_stats": dict(self.stats)}
 
     # ------------------------------------------------------------------ schedule
     def should_check(self, step: int) -> bool:

@@ -100,6 +100,12 @@ class LayerChecksums:
     """Everything the check needs about one weight matrix W (n outputs x k inputs), computed once."""
 
     def __init__(self, weight: torch.Tensor, bias: Optional[torch.Tensor], block: int = 128):
+        # A caller may attach or refresh under autocast. The cached reference must still be computed in
+        # its declared precision; otherwise even healthy outputs can fail, particularly with bias cancellation.
+        with torch.autocast(device_type=weight.device.type, enabled=False):
+            self._initialize(weight, bias, block)
+
+    def _initialize(self, weight: torch.Tensor, bias: Optional[torch.Tensor], block: int) -> None:
         # (every tensor here is created with an explicit dtype: vLLM processes weights under a bf16
         # default dtype, set_default_torch_dtype in its model loader)
         W = weight.detach()
@@ -212,6 +218,15 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     """Check y2 = x2 @ W^T (+ bias) for one layer and fold the worst z into state[slot].
 
     No host sync and no data-dependent Python control flow, so it is safe inside CUDA graphs."""
+    with torch.autocast(device_type=x2.device.type, enabled=False):
+        _check_static_impl(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum,
+                           wsq, width, state, slot, z, abs_floor)
+
+
+def _check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
+                       pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor,
+                       bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
+                       state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     dt = y2.dtype
     u = UNIT_ROUNDOFF[dt]
     h = HALF_TINY_STEP[dt]
@@ -290,6 +305,15 @@ def check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pa
                      bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
                      state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     """The Triton check where it has passed its first-use comparison, else the PyTorch one."""
+    with torch.autocast(device_type=x2.device.type, enabled=False):
+        _check_static_any(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum,
+                          wsq, width, state, slot, z, abs_floor)
+
+
+def _check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
+                      pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor,
+                      bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
+                      state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     if x2.shape[0] == 0:                       # empty batch: nothing to check
         return
     from . import _serve_fast
@@ -397,9 +421,9 @@ class ServeGuard:
         in its serving dtype, and before torch.compile / CUDA graph capture.
 
         share < 1 checks only that share of the linear layers (spread over layer kinds and depths, see
-        select_layer), for a lower cost. A defective GPU unit corrupts every matmul that runs on it
-        (round 3, NVBit: all layers flagged at once), so a share still catches it in the same pass. With
-        share 1/R, replicas with offsets 0 to R-1 check every layer between them, each exactly once."""
+        select_layer), for a lower cost and less coverage. Detection then depends on whether a faulty
+        computation reaches one of the selected layers. With share 1/R, replicas with offsets 0 to R-1
+        select every layer between them, each exactly once; each replica/request still checks its own share."""
         from . import _swap
         took_flags = False
         if self.exact_reductions and self._restore is None:
@@ -629,7 +653,8 @@ class ServeGuard:
     # ---------------------------------------------------------------- results
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
-        layer at exactly 0 has not been checked since then: a quick way to see the checks really run."""
+        positive score proves a check contributed a residual. Zero is ambiguous: no execution, an exactly
+        matching result, and an unjudged result can all produce zero in this score-only state."""
         out = {}
         for dev, st in self._state.items():
             rows = [r[0] for r in decode_state(st[:len(self.layers)].detach().to("cpu"))]
@@ -770,6 +795,8 @@ class ServeGuard:
             # (cast to fp32, say: the checks need bf16 or fp16; the layer runs unchecked until it's back)
             if lay.get("took_over"):
                 mod.__dict__["_sdcguard_forward"] = None
+            if hasattr(mod, "_sdcguard_args"):
+                mod._sdcguard_args = None
             self.unsupported[lay["name"]] = (f"weights are {str(w.dtype).replace('torch.', '')} now (the check "
                                              "needs bf16 or fp16): not checked")
             return
@@ -785,9 +812,19 @@ class ServeGuard:
             self._grow(w.device)
             if lay.get("took_over"):
                 mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
+            if hasattr(mod, "_sdcguard_args"):
+                mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
+                mod._sdcguard_trace = self.inline and not self.uses_fast(slot)
             return
         with torch.no_grad():
             for a, c in zip(old.tensors(True) + old.tensors(False), new.tensors(True) + new.tensors(False)):
                 if a.data_ptr() != c.data_ptr():
                     a.copy_(c)
             old.fingerprint.copy_(new.fingerprint)
+        # A supported dtype may have returned after an unsupported one without changing shape. The earlier
+        # refresh disabled this forward; copying the tensors alone would leave it unchecked forever.
+        if lay.get("took_over") and mod.__dict__.get("_sdcguard_forward") is None:
+            mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
+        if hasattr(mod, "_sdcguard_args") and mod._sdcguard_args is None:
+            mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
+            mod._sdcguard_trace = self.inline and not self.uses_fast(slot)

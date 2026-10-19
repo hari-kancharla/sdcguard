@@ -1,10 +1,11 @@
 """Detector 2: the canary batch.
 
 Every N steps, all GPUs run the same small batch through the same weights and
-compare a fingerprint of every layer's output. Healthy GPUs agree; the GPU that
-disagrees with the majority is faulty, and the first layer (in execution order)
-where it disagrees points at the failing operation. This catches faults in any op
-(norms, attention, MoE routing), not just matmuls. Same idea as phase 1 of
+compare a fingerprint of every layer's output. A rank that disagrees with the
+majority is reported as suspect, together with the first disagreeing layer call.
+The discrepancy can come from hardware, software or different execution state;
+the fingerprint alone does not identify its cause. This can expose differences
+in any covered op (norms, attention, MoE routing), not just matmuls. Same idea as phase 1 of
 ByteDance's SDCHunter (OSDI '26).
 
 Some GPU kernels aren't bit-for-bit deterministic, so comparisons use a relative
@@ -28,7 +29,7 @@ class Canary:
         self.tol = tol
         self.forward_fn = forward_fn or (lambda m, batch: m(batch))
         include = include or (lambda name, mod: len(list(mod.children())) == 0)  # leaf modules
-        self.modules = [(n, m) for n, m in model.named_modules() if n and include(n, m)]
+        self.modules = [(n or type(m).__name__, m) for n, m in model.named_modules() if include(n, m)]
         self.last_names: list[str] = []
 
     @torch.no_grad()
@@ -45,12 +46,15 @@ class Canary:
                     rows.append(torch.stack([tt.sum(), tt.abs().sum()]).double().cpu())
                     names.append(name)
             hooks.append(mod.register_forward_hook(hook))
-        was_training = self.model.training
-        self.model.eval()   # no dropout: every rank must compute the same thing
+        # A model can deliberately mix training and eval modules (frozen BatchNorm, teacher branches).
+        # Calling model.train(previous_root_flag) afterwards would overwrite every child's own mode.
+        training_states = [(mod, mod.training) for mod in self.model.modules()]
         try:
+            self.model.eval()   # no dropout: every rank must compute the same thing
             self.forward_fn(self.model, batch)
         finally:
-            self.model.train(was_training)
+            for mod, was_training in training_states:
+                mod.training = was_training
             for h in hooks:
                 h.remove()
         self.last_names = names

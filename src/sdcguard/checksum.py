@@ -105,8 +105,8 @@ class CheckResult:
 
     @property
     def judged(self) -> bool:
-        """False when nothing in the output could be judged (non-finite inputs, legitimate overflow):
-        ok then means "no evidence either way", not "clean"."""
+        """False when any checksum could not be judged and no other checksum found corruption.
+        Non-finite inputs or legitimate overflow then leave an incomplete check, not a clean one."""
         return not (math.isfinite(self.max_z) and self.max_z < 0)
 
 
@@ -316,7 +316,17 @@ def _matmul_fp32(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
     return torch.cat([torch.matmul(A3[:, i:i + rows].float(), Bb) for i in range(0, m, rows)], dim=-2)
 
 
-UNJUDGED = -1.0     # z of a block that can't be judged; a check whose every block is unjudged reports it
+UNJUDGED = -1.0     # incomplete check: at least one checksum unjudged, and no other checksum found corruption
+
+
+def _complete_score(max_z: torch.Tensor, unknown: list[torch.Tensor], z: float) -> torch.Tensor:
+    """Keep a detected failure; otherwise any unjudged checksum makes the whole check incomplete.
+
+    Taking only a maximum drops negative UNJUDGED scores whenever another row is finite. Reducing the
+    coverage flag separately preserves it across rows, blocks and remainder spans, without a host read.
+    """
+    incomplete = unknown[0] if len(unknown) == 1 else torch.stack(unknown).any()
+    return torch.where(incomplete & (max_z <= z), UNJUDGED, max_z)
 
 
 def _judge_nonfinite(z, expected, actual, noise, bound, dtype, cnorm=None, width: int = 1, step: float = 0.0,
@@ -416,7 +426,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
 
     A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1, 1)                      # (bA, m, 1, 1)
     A_l1 = _norm_fp32(A3, ord=1).view(A3.shape[0], m, 1)                    # (bA, m, 1)
-    maxes, args, noises = [], [], []
+    maxes, args, noises, unknown = [], [], [], []
     for start, width, nblk, off in spans:
         end = start + width * nblk
         Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)          # a view when possible
@@ -465,6 +475,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
                  + floor[..., :1]).add_(abs_floor)
         zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
         zs = _judge_nonfinite(zs, expected, actual, noise, bound, C3.dtype, cnorm, width, 2 * h, k)
+        unknown.append((zs < 0).any())
         mz, arg = torch.max(zs.view(-1), 0)
         maxes.append(mz)
         # gather, not den.view(-1)[arg]: indexing with a GPU tensor makes the CPU wait for the GPU
@@ -479,6 +490,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
         max_z = mz.gather(0, best).squeeze(0)
         arg = torch.stack(args).gather(0, best).squeeze(0)
         nz = torch.stack(noises).gather(0, best).squeeze(0)
+    max_z = _complete_score(max_z, unknown, z)
     return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
                      batched=C.dim() == 3)
 
@@ -497,6 +509,9 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
 # the running sum with a standard deviation of ulp / sqrt(12) ~ 0.58 u |running sum|, and no running sum can
 # exceed |a_row| |b_column| (Cauchy-Schwarz). C1 = 0.6. The k / N term is the bias of truncating once per
 # tensor-core step (N products, modes.n_fma); sqrt(width): rounding of the fp32 outputs themselves.
+# Cauchy-Schwarz bounds the exact partial sums, but the sqrt(k) noise scaling additionally assumes
+# sufficiently independent rounding errors. This is a statistical estimate requiring held-out validation,
+# not a deterministic error bound or a universal false-alarm guarantee.
 #
 # Until Oct 19, 2026 the first term had no sqrt(k): it assumed the running sums stay near the final output.
 # On real training (backward dW of the attention input and output layers, 4,096 tokens) they don't, and the
@@ -580,7 +595,7 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
 
     A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1)                          # (bA, m, 1)
     A_l1 = _norm_fp32(A3, ord=1).view(A3.shape[0], m, 1)
-    maxes, args, noises = [], [], []
+    maxes, args, noises, unknown = [], [], [], []
     for start, width, nblk, off in spans:
         end = start + width * nblk
         Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)
@@ -615,6 +630,7 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
         zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
         zs = _judge_nonfinite(zs.float(), expected, actual, noise, bound.unsqueeze(-1), torch.float32, cnorm, width,
                               0.0, k)
+        unknown.append((zs < 0).any())
         mz, arg = torch.max(zs.view(-1), 0)
         maxes.append(mz)
         noises.append(den.float().expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0))
@@ -628,6 +644,7 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
         max_z = mz.gather(0, best).squeeze(0)
         arg = torch.stack(args).gather(0, best).squeeze(0)
         nz = torch.stack(noises).gather(0, best).squeeze(0)
+    max_z = _complete_score(max_z, unknown, z)
     return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
                      batched=C.dim() == 3)
 

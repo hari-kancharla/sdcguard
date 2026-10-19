@@ -134,6 +134,9 @@ def backward_stat(dO: torch.Tensor, dV: torch.Tensor, z: float = 6.0,
         flat = zz.reshape(-1)
         mz, idx = flat.max(0)
         nz = noise.reshape(-1)[idx]
+        # as in the matmul checks: a column that couldn't be judged makes the check incomplete unless another
+        # column found corruption
+        mz = torch.where((flat < 0).any() & (mz <= z), torch.full_like(mz, -1.0), mz)
     return CheckStat(max_z=mz, argmax=idx * 2, noise=nz, spans=((0, 1, d, 0),), m=b * hk, batched=False)
 
 
