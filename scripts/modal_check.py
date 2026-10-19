@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 25 min, about $3.20
+    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 25 min, about $5
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -167,40 +167,50 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     environment and run from outside the source tree (what `pip install sdcguard` gets); then the `sdcguard
     check` command itself for 1.5 minutes, exactly as a user would run it; with_bench, per-shape kernel timings;
     last, the attention check's calibration (an experiment with its own criteria, reported separately).
-    Returns the output and each part's exit code: a finished run isn't a passed one. The optional steps at the
-    end only start when there's time left before the function's hard limit (on Oct 19 the L4 hit it and its
-    whole result was lost)."""
+    Returns the output and each part's exit code: a finished run isn't a passed one. Every step has its own time
+    limit inside the function's, and the optional steps at the end only start when there's time left (on Oct 19
+    the L4 and the H100 hit the hard limit and their whole results were lost)."""
     t0 = time.time()
 
     def left() -> float:                     # seconds before the hard limit, keeping 2 minutes to save and return
         return TESTS_LIMIT[label] - (time.time() - t0) - 120
 
+    def run(cmd, budget: float, **kw) -> subprocess.CompletedProcess:
+        """A step with its own time limit: if it runs over, it's stopped (exit code 124, its output so far kept)
+        and the steps after it still run. On Oct 19 two runs hit the function's hard limit and lost everything."""
+        try:
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=max(30.0, budget), **kw)
+        except subprocess.TimeoutExpired as e:
+            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+            return subprocess.CompletedProcess(e.cmd, 124, out, err + f"\n(stopped after {budget / 60:.1f} minutes)")
+
     os.makedirs(OUT, exist_ok=True)
-    p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-rs", "tests", "--ignore", "tests/test_fast.py"],
-                       cwd=R, capture_output=True, text=True)
+    # the suite gets at most half the function's time, so the comparisons, the wheel and `check` always run;
+    # --durations names the slowest tests, and a test still running after 4 minutes gets every thread's stack
+    # printed (pytest's faulthandler_timeout), so a hang shows where it is
+    p = run([sys.executable, "-m", "pytest", "-q", "-rs", "--durations=25", "-o", "faulthandler_timeout=240", "tests",
+             "--ignore", "tests/test_fast.py"], TESTS_LIMIT[label] * 0.5, cwd=R)
     with open(f"{OUT}/pytest_{label}.txt", "w") as f:
-        f.write(p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n")
+        f.write(p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
     vol.commit()
     env = {**os.environ, "PYTHONPATH": f"{R}/src"}
-    fc = subprocess.run([sys.executable, "tests/_fast_compare.py", "cuda"], cwd=R, capture_output=True, text=True,
-                        env=env)
+    fc = run([sys.executable, "tests/_fast_compare.py", "cuda"], min(8 * 60, left() - 10 * 60), cwd=R, env=env)
     with open(f"{OUT}/fast_compare_{label}.txt", "w") as f:
-        f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
+        f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
     vol.commit()
-    sc = subprocess.run([sys.executable, "tests/_serve_fast_compare.py", "cuda"], cwd=R, capture_output=True,
-                        text=True, env=env)
+    sc = run([sys.executable, "tests/_serve_fast_compare.py", "cuda"], min(8 * 60, left() - 8 * 60), cwd=R, env=env)
     with open(f"{OUT}/serve_compare_{label}.txt", "w") as f:
-        f.write(sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n")
+        f.write(sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
     vol.commit()
     bench = None
     if with_bench and left() > 15 * 60:      # per-shape time of the Triton check next to the matmul and the plain check
-        bench = subprocess.run([sys.executable, "experiments/bench_kernels.py"], cwd=R, capture_output=True,
-                               text=True, env=env)
+        bench = run([sys.executable, "experiments/bench_kernels.py"], min(8 * 60, left() - 7 * 60), cwd=R, env=env)
     # The wheel, in a clean environment that sees torch but not the source tree. Every step runs without
     # PYTHONPATH and builds from a copy: with the image's PYTHONPATH (the source tree) and the egg-info an
     # in-tree build leaves there, pip sees sdcguard 0.3.0 as "already installed" and skips the wheel
     # (what broke this step on Oct 19).
-    whl = subprocess.run(
+    whl = run(
         "set -e; unset PYTHONPATH; rm -rf /tmp/w /tmp/venv /tmp/run /tmp/srccopy; mkdir -p /tmp/w /tmp/run; "
         f"mkdir /tmp/srccopy && cp -r {R}/src {R}/pyproject.toml {R}/README.md {R}/LICENSE /tmp/srccopy/; "
         "rm -rf /tmp/srccopy/src/*.egg-info; "
@@ -213,13 +223,13 @@ def _tests(label: str, with_bench: bool = False) -> dict:
         "sys.exit(0 if \"/tmp/venv/\" in sdcguard.__file__ else 1)'; "
         "/tmp/venv/bin/sdcguard selftest; "
         "/tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
-        shell=True, capture_output=True, text=True, executable="/bin/bash")
+        min(6 * 60, left() - 4 * 60), shell=True, executable="/bin/bash")
     with open(f"{OUT}/wheel_{label}.txt", "w") as f:
         f.write(whl.stdout + "\n" + whl.stderr + f"\n[exit code {whl.returncode}]\n")
     if os.path.isdir(f"{OUT}/tests_cli_{label}"):
         shutil.rmtree(f"{OUT}/tests_cli_{label}")
-    c = subprocess.run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
-                        f"{OUT}/tests_cli_{label}"], cwd=R, capture_output=True, text=True)
+    c = run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
+             f"{OUT}/tests_cli_{label}"], min(6 * 60, left()), cwd=R)
     with open(f"{OUT}/tests_cli_output_{label}.txt", "w") as f:
         f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
@@ -410,7 +420,7 @@ def _passed(result: dict) -> bool:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on an L4, an H100 and a B200 at once: about 25 minutes, about $3.20 (hard limits 45 minutes "
+        print("Tests on an L4, an H100 and a B200 at once: about 25 minutes, about $5 (hard limits 45 minutes "
               "for the L4 and 30 for the others, about $6.40 in all).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
