@@ -190,6 +190,16 @@ def _autograd_node() -> Optional[str]:
     return node.name() if node is not None else None
 
 
+def _unsupported_linear(mod: torch.nn.Module) -> Optional[str]:
+    """Why fast mode can't take over this nn.Linear (None if it can). The checked path computes the
+    plain linear itself, so a layer whose forward does anything else must keep its own forward."""
+    if type(mod).forward is not torch.nn.Linear.forward:
+        return f"{type(mod).__name__} has its own forward"
+    if "forward" in mod.__dict__:
+        return "forward replaced on the instance (a hook or wrapper)"
+    return None
+
+
 class SDCGuard(TorchDispatchMode):
     """Checksums sampled matmuls while active.
 
@@ -261,6 +271,7 @@ class SDCGuard(TorchDispatchMode):
         self._hooks: list = []
         self._identity: dict = {}
         self._protected: dict = {}            # module -> name, for modules wrapped by protect()
+        self.skipped: dict = {}               # layer name -> why protect() left it alone
         self._active = False                  # fast mode: True while a checked step runs
         self._casts: dict = {}                # fast mode: low-precision copies of weights, this step
 
@@ -300,6 +311,10 @@ class SDCGuard(TorchDispatchMode):
         """
         for name, mod in model.named_modules():
             if isinstance(mod, torch.nn.Linear) and mod not in self._protected:
+                why = _unsupported_linear(mod)
+                if why:                       # its own forward does more than the plain linear: leave it alone
+                    self.skipped[name or type(mod).__name__] = why
+                    continue
                 self._protected[mod] = name or type(mod).__name__
                 mod.forward = self._make_forward(mod, self._protected[mod])
         return self
@@ -401,7 +416,7 @@ class SDCGuard(TorchDispatchMode):
                 h.remove()
         share = inside[0] / total[0] if total[0] else 0.0
         return {"matmul_multiply_adds": total[0], "in_protected_linear_layers": inside[0],
-                "share_checked_in_fast_mode": share}
+                "share_checked_in_fast_mode": share, "skipped_layers": dict(self.skipped)}
 
     # ------------------------------------------------------------------ schedule
     def should_check(self, step: int) -> bool:

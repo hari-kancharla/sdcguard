@@ -269,6 +269,8 @@ def check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pa
                      bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
                      state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     """The Triton check where it has passed its first-use comparison, else the PyTorch one."""
+    if x2.shape[0] == 0:                       # empty batch: nothing to check
+        return
     from . import _serve_fast
     if _serve_fast.ready(y2.device, y2.dtype):
         try:
@@ -355,6 +357,7 @@ class ServeGuard:
         self._identity: dict = {}
         self.worst_seen: dict = {}                 # layer name -> worst score ever read back (clean or not)
         self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0}
+        self.unsupported: dict = {}                # layer name -> why it isn't checked
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -374,12 +377,19 @@ class ServeGuard:
                 if mod.weight.dtype not in UNIT_ROUNDOFF:
                     self.stats["skipped_layers"] += 1
                     continue
+                if type(mod).forward is not torch.nn.Linear.forward:
+                    # its output isn't x @ W^T + b, so the check would misfire: leave it alone, say so
+                    self.unsupported[name or type(mod).__name__] = f"{type(mod).__name__} has its own forward"
+                    self.stats["skipped_layers"] += 1
+                    continue
                 take = select_layer(i, share, offset)
                 i += 1
                 if not take:
                     self.stats["skipped_layers"] += 1
                     continue
-                self.add_layer(mod, name or type(mod).__name__)
+                slot = self.add_layer(mod, name or type(mod).__name__)
+                # a forward set on the instance (accelerate's offload hooks, say) keeps running underneath
+                self.layers[slot]["own_forward"] = mod.__dict__.get("forward")
                 mod.forward = self._make_forward(mod)
         return self
 
@@ -461,9 +471,9 @@ class ServeGuard:
     def _make_forward(self, mod: torch.nn.Linear):
         """Forward = the layer's own forward, then one call of the check op. Kept free of Python
         that torch.compile can't trace (no locks, no data-dependent branches)."""
-        plain = type(mod).forward.__get__(mod)
         guard, slot = self, mod._sdcguard_slot - 1
         lay = self.layers[slot]
+        plain = lay.get("own_forward") or type(mod).forward.__get__(mod)
         cs, state, op = lay["cs"], self._state[lay["device"]], _op()
         k, n, z, floor = cs.k, cs.n, float(self.z), float(self.abs_floor)
 
@@ -471,7 +481,7 @@ class ServeGuard:
 
         def forward(x):
             y = plain(x)
-            if guard.enabled:
+            if guard.enabled and x.numel() > 0:
                 # torch.compile: the custom op (or the PyTorch check traced into the graph); eager: a plain call,
                 # without the custom-op dispatch (that cost ~100 us per layer in eager decoding on the H100)
                 if torch.compiler.is_compiling():
@@ -492,6 +502,8 @@ class ServeGuard:
             mod = lay["module"]
             if "forward" in mod.__dict__:
                 del mod.forward
+            if lay.get("own_forward") is not None:
+                mod.forward = lay["own_forward"]
             mod._sdcguard_slot = 0
         self.layers.clear()
         self._state.clear()
