@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # test suite on an L4, about 13 min, about $0.25
+    modal run scripts/modal_check.py --phase tests   # test suite on an L4 and an H100, about 15 min, about $1.30
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -69,6 +69,8 @@ image = (
     .add_local_dir(LOCAL / "tests", f"{R}/tests", ignore=_skip)
     .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip)
     .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml")
+    .add_local_file(LOCAL / "README.md", f"{R}/README.md")             # (the wheel's description)
+    .add_local_file(LOCAL / "LICENSE", f"{R}/LICENSE")
     # two board tests read the seed cards
     .add_local_dir(LOCAL / "docs" / "board" / "seed", f"{R}/docs/board/seed",
                    ignore=lambda p: p.name.startswith("._"))
@@ -153,36 +155,62 @@ SWEEP = [("b200", b200), ("h200", h200), ("h100_a", h100_a), ("h100_b", h100_b),
          ("l40s", l40s), ("l4_a", l4_a), ("l4_pair", l4_pair), ("t4", t4)]
 
 
-@app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
-def tests() -> dict:
+def _tests(label: str) -> dict:
     """The test suite on a GPU (includes a 30-second `check` on the GPU); the Triton checks compared with the
-    plain ones on this GPU (tests/_fast_compare.py, the comparison test_fast.py runs in Triton's CPU
-    interpreter); then the `sdcguard check` command itself for 1.5 minutes, exactly as a user would run it.
-    Returns the output and each part's exit code: a finished run isn't a passed one."""
+    plain ones on this GPU (tests/_fast_compare.py and tests/_serve_fast_compare.py, which test_fast.py and
+    test_serve.py run in Triton's CPU interpreter); the package built as a wheel, installed in a fresh virtual
+    environment and run from outside the source tree (what `pip install sdcguard` gets); then the `sdcguard
+    check` command itself for 1.5 minutes, exactly as a user would run it. Returns the output and each part's
+    exit code: a finished run isn't a passed one."""
     os.makedirs(OUT, exist_ok=True)
     p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-rs", "tests", "--ignore", "tests/test_fast.py"],
                        cwd=R, capture_output=True, text=True)
-    with open(f"{OUT}/pytest_l4.txt", "w") as f:
+    with open(f"{OUT}/pytest_{label}.txt", "w") as f:
         f.write(p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n")
     vol.commit()
+    env = {**os.environ, "PYTHONPATH": f"{R}/src"}
     fc = subprocess.run([sys.executable, "tests/_fast_compare.py", "cuda"], cwd=R, capture_output=True, text=True,
-                        env={**os.environ, "PYTHONPATH": f"{R}/src"})
-    with open(f"{OUT}/fast_compare_l4.txt", "w") as f:
+                        env=env)
+    with open(f"{OUT}/fast_compare_{label}.txt", "w") as f:
         f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
-    if os.path.isdir(f"{OUT}/tests_cli"):
-        shutil.rmtree(f"{OUT}/tests_cli")
+    # the wheel, in a clean environment that sees torch but not the source tree
+    whl = subprocess.run(
+        "set -e; rm -rf /tmp/w /tmp/venv /tmp/run; mkdir -p /tmp/w /tmp/run; "
+        f"{sys.executable} -m pip wheel --no-deps --no-build-isolation -q -w /tmp/w {R}; "
+        f"{sys.executable} -m venv --system-site-packages /tmp/venv; "
+        "/tmp/venv/bin/pip install -q --no-deps /tmp/w/sdcguard-*.whl; cd /tmp/run; "
+        "env -u PYTHONPATH /tmp/venv/bin/python -c 'import sdcguard, sys; print(sdcguard.__file__); "
+        "sys.exit(0 if \"/tmp/venv/\" in sdcguard.__file__ else 1)'; "
+        "env -u PYTHONPATH /tmp/venv/bin/sdcguard selftest; "
+        "env -u PYTHONPATH /tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
+        shell=True, capture_output=True, text=True, executable="/bin/bash")
+    if os.path.isdir(f"{OUT}/tests_cli_{label}"):
+        shutil.rmtree(f"{OUT}/tests_cli_{label}")
     c = subprocess.run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
-                        f"{OUT}/tests_cli"], cwd=R, capture_output=True, text=True)
-    with open(f"{OUT}/tests_cli_output.txt", "w") as f:
+                        f"{OUT}/tests_cli_{label}"], cwd=R, capture_output=True, text=True)
+    with open(f"{OUT}/tests_cli_output_{label}.txt", "w") as f:
         f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
     mismatches = [ln for ln in fc.stdout.splitlines() if '"agree": false' in ln]
-    text = (p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n"
+    text = (f"===== {label}\n" + p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n"
             + "Triton vs plain checks on this GPU: " + (fc.stdout.strip().splitlines() or ["(no output)"])[-1]
             + "".join("\n  " + ln[:300] for ln in mismatches) + (fc.stderr[-1500:] if fc.returncode else "")
             + f"\n[fast compare exit code {fc.returncode}]\n\n"
+            + "Installed wheel (fresh venv, outside the source tree):\n" + whl.stdout[-2500:] + whl.stderr[-1500:]
+            + f"\n[wheel exit code {whl.returncode}]\n\n"
             + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]")
-    return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "check": c.returncode}
+    return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "wheel": whl.returncode,
+            "check": c.returncode}
+
+
+@app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
+def tests() -> dict:
+    return _tests("l4")
+
+
+@app.function(gpu="H100!", volumes=VOLS, cpu=4, memory=32768, timeout=30 * 60)
+def tests_h100() -> dict:
+    return _tests("h100")
 
 
 DIAG = r"""
@@ -308,18 +336,25 @@ def _download() -> None:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on 1 L4: about 13 minutes, about $0.25 (hard limit 30 minutes, about $0.60).", flush=True)
+        print("Tests on an L4 and an H100 at once: about 15 minutes, about $1.30 (hard limit 30 minutes each, "
+              "about $3.20).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
-        r = tests.remote()
-        r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
-        print(r["text"], flush=True)
+        calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn())]
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)
-        path = dest / f"l4_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-        path.write_text(r["text"])
-        failed = {k: v for k, v in r.items() if k != "text" and v != 0}
-        print(f"\nSaved {path}.", flush=True)
+        failed = {}
+        for label, call in calls:
+            try:
+                r = call.get(timeout=35 * 60)
+            except Exception as e:  # noqa: BLE001
+                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}", "run": 2}
+            r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
+            print(r["text"], flush=True)
+            path = dest / f"{label}_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+            path.write_text(r["text"])
+            print(f"\nSaved {path}.", flush=True)
+            failed.update({f"{label} {k}": v for k, v in r.items() if k != "text" and v != 0})
         if failed:
             print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE)", flush=True)
             raise SystemExit(1)

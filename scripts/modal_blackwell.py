@@ -2,7 +2,7 @@
 
     modal run scripts/modal_blackwell.py
 
-About 5 minutes on one B200, about $0.55 at Modal's prices on Oct 18, 2026 ($6.25 an hour for the GPU plus
+About 8 minutes on one B200 (six variants), about $0.90 at Modal's prices on Oct 18, 2026 ($6.25 an hour for the GPU plus
 about $0.38 for CPU and memory); it stops at 15 minutes, so at most about $1.70. Results go to
 results/blackwell_triton/.
 """
