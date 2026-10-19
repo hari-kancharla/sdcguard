@@ -252,16 +252,20 @@ def test_many_gpus_path_reports_a_child_that_crashed(monkeypatch, tmp_path, caps
 
 
 def test_triton_kernels_wait_for_validation_on_new_gpu_generations(monkeypatch):
-    """A B200 faulted (misaligned address) in the first-use comparison: on compute capability 10+ the
-    plain checks run unless SDCGUARD_TRITON_NEW_ARCH=1."""
+    """A fault in an unvalidated kernel ends the process, so generations newer than the validated ones run the
+    plain checks unless SDCGUARD_TRITON_NEW_ARCH=1. Blackwell (capability 10) runs the kernels without
+    software pipelining since Oct 19 (a B200 faulted with it; test_arch_config.py), =0 opts out."""
     import torch
     from sdcguard import _group, _serve_fast
     cuda = torch.device("cuda", 0)
     monkeypatch.delenv("SDCGUARD_TRITON_NEW_ARCH", raising=False)
-    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (10, 0))
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (12, 0))
     assert _group.arch_ok(cuda) is False
     monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "1")
     assert _group.arch_ok(cuda) is True
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (10, 0))
+    monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "0")
+    assert _group.arch_ok(cuda) is False
     monkeypatch.delenv("SDCGUARD_TRITON_NEW_ARCH")
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (9, 0))
     assert _group.arch_ok(cuda) is True
