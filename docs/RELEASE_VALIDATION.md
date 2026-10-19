@@ -65,8 +65,12 @@ thresholds is not sufficient evidence of a useful detector.
 The vLLM experiment now requires, per worker, that every registered layer executed its check (GPU-side
 counts from `ServeGuard.coverage_report()`), that no clean-run checksum went unjudged, and, as before, a
 positive residual in every layer. The counts passed on CPU and in Triton's interpreter on October 19 and
-have not run on a GPU or in vLLM yet: until a vLLM run in compiled mode shows them, don't claim them there. `experiments/demo_vllm.py` is a recording aid and its zero exit alone is not a behavior validation gate;
-use the gated `vllm_check.py` results and inspect the actual alert in the demo.
+have not run on a GPU or in vLLM yet: until a vLLM run in compiled mode shows them, don't claim them there.
+
+`experiments/demo_vllm.py` is a recording aid. Since October 19 it exits 1 unless the healthy answers raised
+no alert and an alert named the flipped layer, but it checks less than `vllm_check.py` (no output comparison,
+no per-layer counts): use the gated `vllm_check.py` results for validation and inspect the actual alert in
+the demo.
 
 ## 4. Sensitivity and behavior, not just green tests
 
