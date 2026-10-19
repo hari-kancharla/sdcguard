@@ -216,6 +216,6 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     if cert.get("simulated_faults"):
         problems.append("this screen injected SIMULATED faults (a demo, not a real result)")
     out["problems"] = problems
-    out["ok"] = (out["signature_valid"] and out["trusted_key"] is not False and not out["expired"] and match
+    out["ok"] = (out["signature_valid"] and out["trusted_key"] is not False and out["expired"] is False and match
                  and not cert.get("simulated_faults") and cert.get("format") == FORMAT)
     return out

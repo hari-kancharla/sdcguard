@@ -106,6 +106,16 @@ def validate(r: dict) -> Optional[str]:
         tf = (r.get("speed") or {}).get("matmul_tflops")
         if tf is not None and not 0 <= float(tf) < 50000:
             return "implausible speed"
+        wrong = [float(v) for v in (r.get("wrong") or {}).values()]
+        checked = float((r.get("checked") or {}).get("results") or 0)
+        if any(v < 0 for v in wrong) or checked < 0:
+            return "negative counts"
+        if r["result"] == "PASS" and (checked == 0 or sum(wrong) > 0 or r.get("repeatable") is False):
+            return "says PASS, but its counts don't (nothing checked, wrong results, or not repeatable)"
+        if r["result"] == "FAIL" and sum(wrong) == 0:
+            return "says FAIL, but counts no wrong results"
+        if r["result"] == "SUSPECT" and sum(wrong) > 0:
+            return "says SUSPECT, but counts wrong results (that's a FAIL)"
     except (TypeError, ValueError):
         return "malformed numbers"
     return None
