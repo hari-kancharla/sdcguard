@@ -82,7 +82,8 @@ HALF_TINY_STEP = {torch.bfloat16: 0.0, torch.float16: 2.0**-25}
 
 # Largest finite value of each output dtype: Inf/NaN outputs are judged only when the inputs
 # can't produce values this large (see above). BIG: the same for outputs too large to square.
-DTYPE_MAX = {torch.bfloat16: float(torch.finfo(torch.bfloat16).max), torch.float16: 65504.0}
+DTYPE_MAX = {torch.bfloat16: float(torch.finfo(torch.bfloat16).max), torch.float16: 65504.0,
+             torch.float32: float(torch.finfo(torch.float32).max)}
 BIG = 1e18
 
 # Above this many elements, the CPU/MPS fallback converts A to fp32 in row chunks.
@@ -292,7 +293,13 @@ def matmul_zscores(
     u = UNIT_ROUNDOFF.get(C.dtype)
     if u is None:
         return None
+    # backward passes often run under autocast, which would round this fp32 math to bf16/fp16 on CPUs
+    # and Apple GPUs
+    with torch.autocast(device_type=C.device.type, enabled=False):
+        return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u)
 
+
+def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u) -> CheckStat:
     A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
     nb_batch, m, n = C3.shape
     k = A3.shape[-1]
@@ -374,6 +381,145 @@ def matmul_zscores(
         nz = torch.stack(noises).gather(0, best).squeeze(0)
     return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
                      batched=C.dim() == 3)
+
+# --- checks of fp32 accumulators (SDCGuard(precise=True)) -----------------------------------------------
+#
+# In precise mode a bf16/fp16 linear layer's matmul keeps its fp32 result (the tensor cores' accumulator)
+# long enough to check it, and only then rounds it to bf16/fp16. That result has 16 more bits than the
+# rounded one, so the check sees far smaller errors (AEGIS, OSDI '26, found its production incidents with
+# checksums over fp32 accumulators, not over bf16 outputs).
+#
+# Both sides of the identity are added up in float64 (the inputs are bf16/fp16, so A @ (block sums of B)
+# in float64 is all but exact), and the noise is the fp32 accumulation error of the result alone, as in
+# modes.py:
+#     u * (C1 |alpha| |a_row| |B_block| + (C2 sqrt(k) + C3 k / N + sqrt(width)) |C_block|),  u = 2^-24
+# N: products the tensor cores add per truncation step (modes.n_fma); sqrt(width): rounding of the fp32
+# outputs themselves. The plain sum also has to beat the same bound with |C_block| summed instead of
+# squared (outputs whose errors line up), as in matmul_zscores. float64 is fast on data-center GPUs
+# (A100, H100, B200) and slow on most others, which is why precise mode is opt-in.
+ACC_UNIT = 2.0 ** -24
+ACC_C1, ACC_C2, ACC_C3 = 1.0, 1.0, 1.0
+_F64_CHUNK = 1 << 24          # elements converted to float64 at a time
+
+
+def acc_supported(A: torch.Tensor, C: torch.Tensor) -> bool:
+    return C.dtype == torch.float32 and A.dtype in UNIT_ROUNDOFF
+
+
+def _pair_sums64(Xb: torch.Tensor) -> torch.Tensor:
+    """Plain and signed block sums in float64: (..., nblk, width) -> (..., nblk, 2), in chunks."""
+    width = Xb.shape[-1]
+    w = _pair_weights(width, torch.float64, Xb.device)
+    flat = Xb.reshape(-1, width)
+    out = torch.empty(flat.shape[0], 2, dtype=torch.float64, device=Xb.device)
+    rows = max(1, _F64_CHUNK // max(1, width))
+    for i in range(0, flat.shape[0], rows):
+        out[i:i + rows] = flat[i:i + rows].double() @ w
+    return out.view(*Xb.shape[:-1], 2)
+
+
+def _matmul64(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
+    """A3 ((bA, m, k), any dtype) @ Bb ((bB, k, c), float64) in float64, A converted in row chunks."""
+    m, k = A3.shape[-2], A3.shape[-1]
+    rows = max(1, _F64_CHUNK // max(1, A3.shape[0] * k))
+    if rows >= m:
+        return torch.matmul(A3.double(), Bb)
+    return torch.cat([torch.matmul(A3[:, i:i + rows].double(), Bb) for i in range(0, m, rows)], dim=-2)
+
+
+def matmul_zscores_acc(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+    *,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    block: int = 128,
+    abs_floor: float = ABS_FLOOR,
+    z: float = 6.0,
+    nfma: Optional[int] = None,
+) -> Optional[CheckStat]:
+    """Queue the check of C = beta*bias + alpha*(A @ B) where A and B are bf16/fp16 and C is the fp32
+    result (not rounded). Same layout and read-back as matmul_zscores (resolve() decodes both). None if
+    the dtypes don't fit. nfma: tensor-core products per truncation step (None: no tensor cores)."""
+    if not acc_supported(A, C):
+        return None
+    with torch.autocast(device_type=C.device.type, enabled=False):     # its fp32/fp64 math stays as written
+        return _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma)
+
+
+def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma) -> CheckStat:
+    A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
+    nb_batch, m, n = C3.shape
+    k = A3.shape[-1]
+    if A3.shape[-2] != m or B3.shape[-2] != k or B3.shape[-1] != n:
+        raise ValueError(f"shape mismatch: A{tuple(A.shape)} B{tuple(B.shape)} C{tuple(C.shape)}")
+    u = ACC_UNIT
+    steps = k / nfma if nfma else 0.0
+
+    bs = max(1, min(block, n))
+    spans, offset = [], 0
+    for start, width, nblk in ((0, bs, n // bs), ((n // bs) * bs, n % bs, 1)):
+        if nblk and width:
+            spans.append((start, width, nblk, offset))
+            offset += max(nb_batch, A3.shape[0], B3.shape[0]) * m * nblk * 2
+
+    A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1)                          # (bA, m, 1)
+    A_l1 = _norm_fp32(A3, ord=1).view(A3.shape[0], m, 1)
+    maxes, args, noises = [], [], []
+    for start, width, nblk, off in spans:
+        end = start + width * nblk
+        Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)
+        Bblk = B3[..., start:end].reshape(B3.shape[0], k, nblk, width)
+        B2 = _pair_sums64(Bblk)                                              # (bB, k, nblk, 2) float64
+        expected = _matmul64(A3, B2.view(B3.shape[0], k, 2 * nblk)).view(-1, m, nblk, 2)
+        bound = A_l1 * Bblk.abs().amax(dim=(-3, -1)).float().unsqueeze(-2)  # (b, m, nblk)
+        if alpha != 1.0:
+            expected = expected * alpha
+            bound = bound * abs(alpha)
+        if bias is not None and beta != 0:
+            if bias.dim() == 1:
+                bb = bias[start:end].reshape(nblk, width)
+            else:
+                bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
+            expected = expected + beta * _pair_sums64(bb)
+            bound = bound + abs(beta) * bb.abs().amax(-1).float()
+
+        actual = _pair_sums64(Cb)                                            # (b, m, nblk, 2) float64
+        cnorm = _norm_fp32(Cb)                                               # (b, m, nblk)
+        b_frob = torch.linalg.vector_norm(Bblk.float(), dim=(-3, -1)).unsqueeze(-2)   # (bB, 1, nblk)
+        per_out = ACC_C2 * math.sqrt(k) + ACC_C3 * steps + math.sqrt(width)
+        prod = (A_norm * b_frob).mul_(ACC_C1 * abs(alpha) * u)               # (b, m, nblk)
+        prod = torch.where(torch.isfinite(prod), prod, bound * (u * 128))
+        noise = (cnorm * (per_out * u) + prod).unsqueeze(-1)                 # (b, m, nblk, 1)
+        den = (noise + abs_floor).double()
+        diff = (expected - actual).abs_()
+        zs = diff / den
+        worst = (_norm_fp32(Cb, ord=1).mul_(per_out * u) + prod).unsqueeze(-1).add_(abs_floor).double()
+        zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
+        zs = _judge_nonfinite(zs.float(), expected, actual, noise, bound.unsqueeze(-1), torch.float32)
+        mz, arg = torch.max(zs.view(-1), 0)
+        maxes.append(mz)
+        noises.append(den.float().expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0))
+        args.append(arg if off == 0 else arg + off)
+
+    if len(maxes) == 1:
+        max_z, arg, nz = maxes[0], args[0], noises[0]
+    else:
+        mz = torch.stack(maxes)
+        best = mz.argmax().view(1)
+        max_z = mz.gather(0, best).squeeze(0)
+        arg = torch.stack(args).gather(0, best).squeeze(0)
+        nz = torch.stack(noises).gather(0, best).squeeze(0)
+    return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
+                     batched=C.dim() == 3)
+
+
+def check_matmul_acc(A, B, C, bias=None, *, z: float = 6.0, nfma: Optional[int] = None, **kw) -> Optional[CheckResult]:
+    """matmul_zscores_acc, answered immediately (tests and one-off use)."""
+    st = matmul_zscores_acc(A, B, C, bias, z=z, nfma=nfma, **kw)
+    return None if st is None else resolve([st], z)[0]
 
 
 def resolve(stats: Sequence[CheckStat], z: float = 6.0) -> list[CheckResult]:

@@ -25,6 +25,12 @@ big inner dimensions). That adds rounding error the checksum's noise model doesn
 on GPT-2 small it caused false alarms. While the guard is active it switches that off, so
 partial sums stay in fp32 (split-K itself stays allowed), and restores the setting on exit.
 Unchecked steps are untouched. Turn this off with SDCGuard(exact_reductions=False).
+
+Precise mode (SDCGuard(precise=True), with protect()): on checked steps each linear layer's matmuls keep
+their fp32 result (the accumulator) long enough to check it, then round it to bf16/fp16. The check then
+sees errors far smaller than bf16 rounding hides (checksum.matmul_zscores_acc). The model gets the same
+rounding of the same fp32 result, but cuBLAS may pick a different kernel for an fp32 output, so values
+on checked steps can differ from an unchecked step in the last bit; unchecked steps don't change.
 """
 from __future__ import annotations
 
@@ -39,7 +45,7 @@ from torch.utils._python_dispatch import TorchDispatchMode
 
 from . import _group
 from . import checksum as _cs
-from .checksum import ABS_FLOOR, UNIT_ROUNDOFF, CheckResult, matmul_zscores, resolve
+from .checksum import ABS_FLOOR, UNIT_ROUNDOFF, CheckResult, matmul_zscores, matmul_zscores_acc, resolve
 from .events import EventLog, SDCEvent, device_identity
 
 _OOM = getattr(torch, "OutOfMemoryError", torch.cuda.OutOfMemoryError)
@@ -138,6 +144,29 @@ def _compute_dtype(x: torch.Tensor) -> torch.dtype:
     return x.dtype
 
 
+def _acc_mm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """a @ b for bf16/fp16 a and b, with the fp32 result (the accumulator) instead of a rounded one.
+    Autocast is off inside: backward passes often run under it, and it would round the result."""
+    with torch.autocast(device_type=a.device.type, enabled=False):
+        return _acc_mm_raw(a, b)
+
+
+def _acc_mm_raw(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    if a.is_cuda:
+        try:
+            return torch.ops.aten.mm.dtype(a, b, torch.float32)
+        except (RuntimeError, NotImplementedError, AttributeError, TypeError):
+            pass                                 # older PyTorch: the same in fp32, with TF32 off
+        mm = torch.backends.cuda.matmul
+        saved = mm.allow_tf32
+        mm.allow_tf32 = False
+        try:
+            return a.float() @ b.float()
+        finally:
+            mm.allow_tf32 = saved
+    return a.float() @ b.float()
+
+
 class _CheckedLinear(torch.autograd.Function):
     """y = x W^T + b with its forward and both backward matmuls checked (fast mode, see protect()).
 
@@ -151,6 +180,14 @@ class _CheckedLinear(torch.autograd.Function):
         ctx.save_for_backward(x, w)
         ctx.has_bias = b is not None
         ctx.guard, ctx.name = guard, name
+        if guard.precise:
+            # the fp32 result, checked, then rounded once (bias added in fp32 first, as cuBLAS does)
+            x2 = _flat2d(x)
+            y32 = _acc_mm(x2, w.t())
+            if b is not None:
+                y32 = y32.add_(b.float())
+            guard._accumulator(name, "forward", x2, w.t(), y32, b)
+            return y32.to(x.dtype).view(*x.shape[:-1], w.shape[0])
         if b is None or x.dim() == 2 or (x.is_contiguous() and b.dim() == 1 and b.is_contiguous()):
             # what at::linear does here (PyTorch 2.5 to 2.14): one matmul with the bias fused in (one rounding)
             y = torch.nn.functional.linear(x, w, b)
@@ -168,6 +205,19 @@ class _CheckedLinear(torch.autograd.Function):
         guard, name = ctx.guard, ctx.name
         gy2 = _flat2d(gy)
         gx = gw = gb = None
+        if guard.precise:
+            if ctx.needs_input_grad[0]:
+                gx32 = _acc_mm(gy2, w)
+                guard._accumulator(name, "backward dX", gy2, w, gx32, None)
+                gx = gx32.to(gy2.dtype).view(x.shape)
+            if ctx.needs_input_grad[1]:
+                x2 = _flat2d(x)
+                gw32 = _acc_mm(gy2.t(), x2)
+                guard._accumulator(name, "backward dW", gy2.t(), x2, gw32, None)
+                gw = gw32.to(w.dtype)
+            if ctx.has_bias and ctx.needs_input_grad[2]:
+                gb = gy2.sum(0)
+            return gx, gw, gb, None, None
         if ctx.needs_input_grad[0]:
             gx2 = gy2.mm(w)                                          # dX = dY W
             guard._linear_check(name, "backward dX", gy2, w, gx2, None)
@@ -214,6 +264,9 @@ class SDCGuard(TorchDispatchMode):
         (for diagnostics).
     abs_floor: differences below this are not judged (default checksum.ABS_FLOOR = 1e-20).
     every: check schedule for on_step(): every N-th step (default 10).
+    precise: with protect(), check each linear layer's fp32 accumulator before it's rounded (much smaller
+        errors show; see the module docstring). on_accumulator(layer, pass, C32): optional, called with each
+        fp32 result before its check (fault-injection experiments corrupt it there).
     """
 
     def __init__(
@@ -233,9 +286,14 @@ class SDCGuard(TorchDispatchMode):
         on_result: Optional[Callable] = None,
         abs_floor: Optional[float] = None,
         every: int = 10,
+        precise: bool = False,
+        on_accumulator: Optional[Callable] = None,
     ):
         super().__init__()
         self.every = every
+        self.precise = precise                # check fp32 accumulators (protect() only; see the module docstring)
+        self.on_accumulator = on_accumulator  # experiments: on_accumulator(layer, pass, C32) before each check
+        self._nfma: dict = {}
         self._dense: Optional[tuple] = None          # (first, last + 1) steps of a restart window
         self.abs_floor = ABS_FLOOR if abs_floor is None else abs_floor
         self.exact_reductions = exact_reductions
@@ -255,8 +313,8 @@ class SDCGuard(TorchDispatchMode):
         self.log = EventLog(log_path)
         self.step: Optional[int] = None
         # skipped_oom: checks skipped because the GPU ran out of memory for them (training goes on)
-        self.stats = {"matmuls_seen": 0, "checked": 0, "unjudged": 0, "skipped_dtype": 0, "skipped_oom": 0,
-                      "alerts": 0}
+        self.stats = {"matmuls_seen": 0, "checked": 0, "checked_fp32": 0, "unjudged": 0, "skipped_dtype": 0,
+                      "skipped_oom": 0, "alerts": 0}
         self._lock = threading.RLock()        # autograd runs one thread per GPU when a process has several
         self._streams: dict = {}              # CUDA streams the checks ran on (the flush waits for them)
         # Fast checks on NVIDIA GPUs (see _group.py), per (device, dtype): each check's GPU work is
@@ -374,6 +432,22 @@ class SDCGuard(TorchDispatchMode):
                         None if pass_ == "forward" else pass_, A, B, C, bias, 1.0, 1.0)
             if self.immediate or len(self._pending) >= self.max_pending:
                 self.flush()
+
+    def _accumulator(self, name, pass_, A, B, C32, bias) -> None:
+        """Precise mode: an fp32 matmul result before it's rounded. Experiments may change it first."""
+        if self.on_accumulator is not None:
+            self.on_accumulator(name, pass_, C32)
+        self._linear_check(name, pass_, A, B, C32, bias)
+
+    def _tensor_core_steps(self, C: torch.Tensor, dtype: torch.dtype) -> Optional[int]:
+        if not C.is_cuda:
+            return None
+        key = (C.device.index, dtype)
+        if key not in self._nfma:
+            from .modes import n_fma
+            self._nfma[key] = n_fma("bf16" if dtype == torch.bfloat16 else "fp16",
+                                    torch.cuda.get_device_capability(C.device))
+        return self._nfma[key]
 
     def coverage(self, forward_fn: Callable[[], None]) -> dict:
         """Run forward_fn() once (a forward pass, no backward needed) and report what share of its
@@ -533,16 +607,22 @@ class SDCGuard(TorchDispatchMode):
 
     def _queue(self, name, where, node, A, B, C, bias, alpha, beta) -> None:
         """Queue one check (its GPU work starts now; results are read at the flush)."""
-        if C.dtype not in UNIT_ROUNDOFF:
+        acc = self.precise and _cs.acc_supported(A, C)
+        if C.dtype not in UNIT_ROUNDOFF and not acc:
             self.stats["skipped_dtype"] += 1
             return
         token = self.on_check_start(name, C) if self.on_check_start is not None else None
         detail = {"op": name, "where": where, "pass": "backward" if node else "forward",
-                  "shape_A": tuple(A.shape), "shape_B": tuple(B.shape), "dtype": str(C.dtype),
-                  "device": C.device}
+                  "shape_A": tuple(A.shape), "shape_B": tuple(B.shape),
+                  "dtype": f"float32 accumulator of {A.dtype}" if acc else str(C.dtype), "device": C.device}
         entry = None
         try:
-            if _cs.USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, self.block):
+            if acc:
+                st = matmul_zscores_acc(A, B, C, bias, alpha=alpha, beta=beta, block=self.block,
+                                        abs_floor=self.abs_floor, z=self.z,
+                                        nfma=self._tensor_core_steps(C, A.dtype))
+                entry = ("s", st, None, token, detail)
+            elif _cs.USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, self.block):
                 key = (C.device, C.dtype)
                 try:
                     g = self._groups.get(key)
@@ -570,6 +650,8 @@ class SDCGuard(TorchDispatchMode):
             s = torch.cuda.current_stream(C.device)
             self._streams[(C.device.index, s.cuda_stream)] = s
         self.stats["checked"] += 1
+        if acc:
+            self.stats["checked_fp32"] += 1
         self._pending.append(entry)
 
     def flush(self) -> list[CheckResult]:

@@ -268,19 +268,29 @@ class FaultInjector(TorchDispatchMode):
 
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         out = func(*args, **(kwargs or {}))
-        if (self.armed and isinstance(out, torch.Tensor) and out.dtype in self.dtypes
-                and _op_name(func) in TARGET_OPS
-                and (self.start_step is None or (self.step is not None and self.step >= self.start_step))):
-            self.eligible += 1
-            if self._rng.random() < self.rate:
-                with torch.no_grad():
-                    info = corrupt_(out, self._rng, self.fm, self.band)
-                if info:
-                    info.update(step=self.step, op=_op_name(func), checked=False, caught=False)
-                    self.events.append(info)
-                    # Keep a reference so the memory can't be reused by another tensor; a detector
-                    # matches its check to this fault by data pointer.
-                    self.last_out = out
-                    self.pending = len(self.events) - 1
-            self.rate = min(1.0, self.rate * self.escalate)
+        if isinstance(out, torch.Tensor) and out.dtype in self.dtypes and _op_name(func) in TARGET_OPS:
+            self._maybe_corrupt(out, _op_name(func))
         return out
+
+    def corrupt_tensor(self, layer: str, pass_: str, t: torch.Tensor) -> None:
+        """Corrupt a result the operator hook doesn't see, with the same rate, fault model and records:
+        SDCGuard(precise=True, on_accumulator=inj.corrupt_tensor) passes each fp32 accumulator here before
+        checking it and rounding it for the model. Only forward results, like the hook."""
+        if pass_ == "forward":
+            self._maybe_corrupt(t, f"accumulator of {layer}")
+
+    def _maybe_corrupt(self, out: torch.Tensor, op: str) -> None:
+        if not self.armed or not (self.start_step is None or (self.step is not None and self.step >= self.start_step)):
+            return
+        self.eligible += 1
+        if self._rng.random() < self.rate:
+            with torch.no_grad():
+                info = corrupt_(out, self._rng, self.fm, self.band)
+            if info:
+                info.update(step=self.step, op=op, checked=False, caught=False)
+                self.events.append(info)
+                # Keep a reference so the memory can't be reused by another tensor; a detector
+                # matches its check to this fault by data pointer.
+                self.last_out = out
+                self.pending = len(self.events) - 1
+        self.rate = min(1.0, self.rate * self.escalate)
