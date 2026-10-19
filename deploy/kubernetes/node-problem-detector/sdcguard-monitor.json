@@ -1,8 +1,8 @@
 {
   "plugin": "custom",
   "pluginConfig": {
-    "invoke_interval": "6h",
-    "timeout": "10m",
+    "invoke_interval": "10m",
+    "timeout": "1m",
     "max_output_length": 200,
     "concurrency": 1,
     "enable_message_change_based_condition_update": false
@@ -22,7 +22,7 @@
       "condition": "GPUComputeIncorrect",
       "reason": "GPUComputedWrongResults",
       "path": "/opt/sdcguard/sdcguard-check.sh",
-      "timeout": "10m"
+      "timeout": "1m"
     }
   ]
 }
