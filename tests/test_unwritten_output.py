@@ -87,3 +87,21 @@ def test_the_correct_output_passes_both_checks():
         slot = sg.add_layer(lin, "fc")
         sg.check(slot, x, lin(x).detach())
         assert not events and sg.read_slot(slot)[0] < 6.0
+
+
+def test_the_gpu_experiment_measures_it(monkeypatch):
+    """experiments/mps_unwritten.py runs this layer on a real H200 under MPS (scripts/modal_mps.py). Its own
+    counting has to work: here, on the CPU, with the unwritten output emulated."""
+    import importlib.util
+    import os
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "experiments", "mps_unwritten.py")
+    spec = importlib.util.spec_from_file_location("mps_unwritten", path)
+    mu = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mu)
+    clean = mu.one_dtype(torch.float16, torch.device("cpu"))
+    assert clean["wrong_outputs"] == 0 and clean["training_check"]["alerts"] == 0
+    assert clean["serving_check"] == {"layers": 1, "alerts": 0, "first": None}
+    monkeypatch.setattr(torch.nn.functional, "linear", _unwritten_linear("stale"))
+    bad = mu.one_dtype(torch.float16, torch.device("cpu"))
+    assert bad["wrong_outputs"] > 10000 and bad["training_check"]["alerts"] >= 1
+    assert bad["serving_check"]["alerts"] == 1 and bad["serving_check"]["first"]["col_block"] >= 2
