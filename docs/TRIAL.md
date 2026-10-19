@@ -1,25 +1,41 @@
 # Trying sdcguard on your GPUs
 
-A trial takes about 30 minutes of your time and needs no access to your data or your customers' jobs.
-Everything below runs sdcguard's own synthetic workloads unless you choose step 3.
+Start with sdcguard's synthetic workloads; no access to customer jobs or data is needed unless you choose
+step 3. Allow time for installation and reviewing the results as well as the check itself.
 
 ## 1. Check every GPU on a few nodes (5 minutes, unattended)
 
 ```bash
 pip install sdcguard
-sdcguard check --out sdcguard_check            # every GPU on the node, in parallel, about 5 minutes
+sdcguard check --offline --out sdcguard_check  # every visible GPU, in parallel; about 5 minutes plus setup
 ```
 
-Each GPU gets a verdict (PASS, FAIL, SUSPECT or INCOMPLETE), a card and a `result.json`. `result.json` holds the
-GPU model, driver, software versions, what was checked and found, speed and health readings, and a short hash of
-the GPU's UUID (to count distinct GPUs). It has no hostname, serial number, PCI address, full UUID or IP
-address. The full record, with those, stays in `check.json` on your machine.
+Each GPU gets a verdict (PASS, FAIL, SUSPECT or INCOMPLETE), a card and a `result.json`. Start with
+`result.json` if you choose to share anything: it is the minimal result card. It contains the GPU model,
+driver, software versions, provider and region when detected, counts, speed and health readings, notes, and
+a short hash of the GPU UUID. It omits dedicated hostname, serial, PCI and full UUID fields. Review it first:
+provider labels and error text in notes can still disclose operational details.
+
+`--offline` disables the read-only request for the public board's reference data. The check does not upload
+its results. Uploading any file requires your explicit opt-in. `--share` prepares a GitHub issue link for you
+to review; the card is published only if you submit that issue.
 
 To collect many nodes into one page:
 
 ```bash
 sdcguard report node*/sdcguard_check --out fleet_report     # fleet_report.html, quarantine.txt, rma/
 ```
+
+Keep this report private by default: it includes hostnames, full GPU identifiers, PCI addresses, serial
+numbers and local paths when available. Support bundles under `rma/` can include saved tensor operands and
+outputs. Inspect and redact these files before explicitly choosing to send them to anyone.
+
+To review a copied incident bundle, extract it and keep each evidence `.pt` beside its `.json`. Select one
+actual file from the extracted directory and run `sdcguard replay /path/to/evidence_0.pt`. Replay recomputes
+the saved operation and reports what the CPU check and current device found. A passing recomputation does
+not establish that the original cause was a physical GPU defect. A signature shown in the fleet page is
+only present, not verified there; use `sdcguard verify /path/to/certificate.json --pubkey /path/to/trusted.pub`
+with the complete bundle and a public key you trust when verification matters.
 
 ## 2. Optional: as a node health check
 
@@ -36,13 +52,17 @@ with guard.on_step(step):
     loss = model(x, y); loss.backward()
 ```
 
-Every 50th step, every nn.Linear's matmuls (forward, dX and dW) are checked. Alerts go to the JSON-lines file:
+On selected steps, supported `nn.Linear` matmuls (forward, dX and dW) are checked. Review skipped or unjudged
+counts and the coverage limits in the README. Alerts go to the JSON-lines file:
 layer name, matrix shapes, the position in the output, the score and the GPU's identity, never tensor values.
 
-## What to send back (only what you're comfortable sharing)
+## What to send back (review first; sharing is optional)
 
-- The `result.json` files, or `fleet_report.json` (counts per GPU, no tensor data).
-- For step 3: the events file (empty is a useful answer) and the step time with and without the guard.
+- The selected `result.json` files are enough to start. Do not substitute a fleet report or support bundle
+  without inspecting its machine identifiers, paths and any tensor data and explicitly agreeing to share it.
+- For step 3: the checked, skipped and unjudged counts and step time with and without the guard. An empty
+  events file alone does not demonstrate coverage. Share the events file only after reviewing its layer
+  names and GPU identifiers.
 - Five answers, a sentence each:
   1. How did you find the last GPU that computed wrong results (or how would you)?
   2. What does one cost you: hours lost, jobs rerun, credits paid, an RMA you couldn't get?
@@ -53,12 +73,16 @@ layer name, matrix shapes, the position in the output, the score and the GPU's i
 
 ## What the verdicts mean, and don't
 
-PASS says every checked result was correct and every part of the check ran. It is not a guarantee: a faulty
-GPU can pass a 5-minute check, because many faults are intermittent (ByteDance found synthetic tests miss most
-defective GPUs). FAIL means at least one result was wrong, with the inputs and output saved so `sdcguard
-replay` can recompute it on another GPU; or the driver reported memory errors it couldn't correct. A FAIL on a
-GPU you believe is healthy is the most valuable thing you can send us: it's either a bad GPU or a bug in
-sdcguard, and we want to know which.
+PASS means the implemented checks found no failure in the work they judged, and the required supported
+parts completed. It does not guarantee a healthy GPU or exact output correctness. A short run can miss an
+intermittent fault or an error outside the detector's coverage. FAIL records a failed numerical or memory
+check, or a relevant reported hardware error; SUSPECT records a repeatability discrepancy; INCOMPLETE means
+some required work could not be run or judged.
+
+Available failing matmul inputs and outputs are saved for replay; a dead CUDA context can prevent saving
+some evidence. Inspect the actual bundle. Investigate an unexpected FAIL before deciding what to do with
+the node: possible causes include hardware, backend software, configuration and the checker itself.
 
 `--simulate-faults` exists for demos only: its results are labelled SIMULATED everywhere and the board rejects
-them.
+them. It demonstrates detection and evidence handling, not a defect in the GPU. Simulated fleet results
+remain visible but do not enter the quarantine list.

@@ -243,8 +243,7 @@ def test_certificate_with_an_unreadable_expiry_is_not_ok(tmp_path):
 
 def _card(**changes):
     from sdcguard import board
-    seed = os.path.join(HERE, "..", "docs", "board", "seed")
-    with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
+    with open(os.path.join(HERE, "fixtures", "board_card.json")) as f:
         r = json.load(f)
     for k, v in changes.items():
         r[k] = v

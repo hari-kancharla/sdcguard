@@ -41,6 +41,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Optional
 
 from . import verdict
@@ -141,22 +142,31 @@ def memory_test(dev, seconds: float, share: float = 0.8) -> dict:
         return out
 
     t_end, passes, bad, words = time.time() + seconds, 0, 0, 0
-    while True:
-        for j, b in enumerate(blocks):
-            pattern(b, j, passes)
-        _sync(dev)
-        for j, b in enumerate(blocks):
-            bad += int(torch.ne(b, pattern(scratch, j, passes)).sum())
-            words += n
-        passes += 1
-        if time.time() >= t_end and passes >= 2:
-            break
+    error = None
+    try:
+        while True:
+            for j, b in enumerate(blocks):
+                pattern(b, j, passes)
+            _sync(dev)
+            for j, b in enumerate(blocks):
+                bad += int(torch.ne(b, pattern(scratch, j, passes)).sum())
+                words += n
+            passes += 1
+            if time.time() >= t_end and passes >= 2:
+                break
+    except Exception as e:  # noqa: BLE001
+        from .screen import error_text
+        error = error_text(e)
     gib = len(blocks) * chunk / 2**30
     blocks.clear()
-    if dev.type == "cuda":
-        torch.cuda.empty_cache()
+    if dev.type == "cuda" and error is None:
+        try:
+            torch.cuda.empty_cache()
+        except Exception as e:  # noqa: BLE001
+            from .screen import error_text
+            error = error_text(e)
     return {"gib_tested": round(gib, 2), "of_gib": round(total / 2**30, 1) if total else None, "passes": passes,
-            "words_checked": words, "wrong_words": bad}
+            "words_checked": words, "wrong_words": bad, "error": error}
 
 
 def matmul_speed(dev, dtype, seconds: float) -> dict:
@@ -241,17 +251,25 @@ def stress_check(dev, dtype, seconds: float) -> dict:
                 unjudged += 1
             elif math.isfinite(r.max_z):
                 worst = max(worst, r.max_z)
+        else:
+            unjudged += 1
 
+    error = None
     try:
         one()                                   # the first check compiles the GPU kernels: not timed
         _sync(dev)
         t_end = time.time() + seconds
         while time.time() < t_end or checked < 3:
             one()
+    except Exception as e:  # noqa: BLE001
+        # Preserve completed checks and CPU evidence when this same phase later
+        # crashes. The caller stops subsequent GPU work and reports these counts.
+        from .screen import error_text
+        error = error_text(e)
     finally:
         _exact_reductions_off(restore)
     return {"matmuls_checked": checked, "wrong": wrong, "unjudged": unjudged, "worst_clean_score": round(worst, 3),
-            "size": n, "failures": failures}
+            "size": n, "failures": failures, "error": error}
 
 
 def software() -> dict:
@@ -426,10 +444,11 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     from .screen import _save_evidence, device_dir, error_text
     from .modes import save_evidence as save_mode_evidence
     out_dir, ident = device_dir(dev, out_root, tag)
+    run_id = uuid.uuid4().hex
     if tag is not None:          # (a child of a multi-GPU check: tell the parent where this GPU's results go now,
         with open(os.path.join(out_root, f".child_{tag}.json"), "w") as f:     # in case this process dies)
-            json.dump({"out_dir": out_dir}, f)
-    ev_meta = {"sdcguard": sw.get("sdcguard"), "torch": sw.get("torch"), "seed": seed}
+            json.dump({"out_dir": out_dir, "run_id": run_id}, f)
+    ev_meta = {"sdcguard": sw.get("sdcguard"), "torch": sw.get("torch"), "seed": seed, "run_id": run_id}
     evidence: list = []
     stopped: dict = {}
 
@@ -440,7 +459,11 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         if stopped:
             return None
         try:
-            return fn()
+            value = fn()
+            if isinstance(value, dict) and value.get("error"):
+                stopped.update(phase=label, error=value["error"])
+                say(f"{name}: {label} stopped with an error ({stopped['error']}); reporting what was found so far")
+            return value
         except Exception as e:  # noqa: BLE001
             stopped.update(phase=label, error=error_text(e))
             say(f"{name}: {label} stopped with an error ({stopped['error']}); reporting what was found so far")
@@ -479,7 +502,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         say(f"{name}: training and serving workload, every matmul checked ({left:.1f} min)")
         # screen_one reports a workload that stops on an error itself (with what it found before the error)
         summary = phase("workload", lambda: screen_one(dev, left, size, out_root, seed,
-                                                       simulate_faults=simulate_faults, tag=tag)) or {}
+                                                       simulate_faults=simulate_faults, tag=tag, run_id=run_id)) or {}
         if summary.get("error"):
             stopped.update(phase="workload", error=summary["error"])
     if fp is not None and len(prints) == 2:
@@ -547,7 +570,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         prov = {"name": provider, "detected_from": "--provider"}
     full = {
         "schema": SCHEMA.replace("check/", "check-full/"), "result": result, "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "minutes": round((time.time() - t_start) / 60, 2), "device": str(dev),
+        "minutes": round((time.time() - t_start) / 60, 2), "device": str(dev), "run_id": run_id,
         "gpu": {**(summary.get("gpu") or ident), **{k: static.get(k) for k in static}}, "software": sw, "provider": prov,
         "wrong": wrong, "hardware_errors": hw_errors, "checked_results": checked, "repeatable": repeatable,
         "fingerprints": prints, "fingerprint_key": fp_key, "fingerprint_weights": fp.weights if fp else None,
@@ -613,7 +636,10 @@ def _summary_of(full: dict) -> dict:
     check.json knows when the workload didn't get to write one."""
     try:
         with open(os.path.join(full["out_dir"], "summary.json")) as f:
-            return json.load(f)
+            summary = json.load(f)
+        if full.get("run_id") and summary.get("run_id") != full["run_id"]:
+            raise ValueError("summary belongs to a previous run")
+        return summary
     except (OSError, ValueError):
         return {"gpu": full.get("gpu") or {}, "device": full.get("device"), "result": full["result"]}
 
@@ -693,7 +719,8 @@ def public(full: dict) -> dict:
         "headroom": {"worst_clean_score": full["worst_clean_score"], "alarm_line": full["alarm_line"]},
         "repeatable": full["repeatable"],
         "fingerprint": {"key": full.get("fingerprint_key"),
-                        "output": (full.get("fingerprints") or [{}])[0].get("output")},
+                        "output": (full.get("fingerprints") or [{}])[0].get("output"),
+                        "runs": len(full.get("fingerprints") or [])},
         "speed": {"matmul_tflops": sp.get("tflops"), "dtype": sp.get("dtype"),
                   "pct_of_datasheet": pct(sp.get("tflops"), spec.get("matmul_tflops")),
                   "drop_pct": sp.get("drop_pct"), "bandwidth_gbs": bw.get("gbs"),
@@ -834,7 +861,9 @@ def lines(pub: dict) -> list:
     if pub["repeatable"] is None:
         rows.append(("repeatable", "not checked (the check stopped before the second fingerprint run)"))
     else:
-        rows.append(("repeatable", ("3 of 3 runs bit-identical" if pub["repeatable"] else
+        runs = (pub.get("fingerprint") or {}).get("runs")
+        recorded = f"{runs} recorded runs" if isinstance(runs, int) and not isinstance(runs, bool) else "recorded runs"
+        rows.append(("repeatable", (f"{recorded} bit-identical" if pub["repeatable"] else
                                     "NO: outputs changed between runs") + (f", fingerprint {fpo[:12]}" if fpo else "")))
     if s.get("matmul_tflops"):
         rows.append(("speed", f"{s['dtype']} matmul {_n(s['matmul_tflops'])} TFLOPS"
@@ -1111,13 +1140,22 @@ def _children(args) -> tuple:
     for i, code in enumerate(codes):
         log = os.path.join(args.out, f"child_{i}.log")
         out_dir = None
+        run_id = None
         try:
             with open(os.path.join(args.out, f".child_{i}.json")) as f:
-                out_dir = json.load(f)["out_dir"]
+                marker = json.load(f)
+                out_dir, run_id = marker["out_dir"], marker.get("run_id")
             with open(os.path.join(out_dir, "check.json")) as f:
                 r = json.load(f)
             if not isinstance(r, dict) or "result" not in r:
                 raise ValueError("check.json without a result")
+            if not run_id or r.get("run_id") != run_id:
+                raise ValueError("check.json belongs to a previous run")
+            if code != 0:
+                r.setdefault("notes", []).insert(0, ["bad", f"the GPU worker exited unexpectedly ({code}); "
+                                                      "the saved result may be incomplete"])
+                if r["result"] == "PASS":
+                    r["result"] = "INCOMPLETE"
             found.append(r)
             continue
         except (OSError, ValueError, KeyError, TypeError):
@@ -1128,11 +1166,22 @@ def _children(args) -> tuple:
             try:
                 with open(os.path.join(out_dir, "summary.json")) as f:
                     s = json.load(f)
-                bad = (s.get("corrupted_results_training") or 0) + (s.get("corrupted_results_serving") or 0)
+                if run_id and s.get("run_id") == run_id:
+                    bad = (s.get("corrupted_results_training") or 0) + (s.get("corrupted_results_serving") or 0)
             except (OSError, ValueError, AttributeError):
                 pass
-            bad = bad or len([f for f in os.listdir(out_dir) if f.startswith(("evidence_", "math_mode_evidence_"))
-                              and f.endswith(".pt")])
+            # Old evidence can remain beside this run after a rerun. Only count
+            # an incident explicitly tagged with this worker's run identifier.
+            for name in os.listdir(out_dir):
+                if not name.startswith(("evidence_", "math_mode_evidence_")) or not name.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(out_dir, name)) as f:
+                        ev = json.load(f)
+                    if run_id and ev.get("run_id") == run_id:
+                        bad += 1
+                except (OSError, ValueError, AttributeError):
+                    pass
         if bad:
             failed += 1
             problems.append(f"GPU {ids[i]}: FAIL: it computed wrong results and then its check died (exit {code}); "

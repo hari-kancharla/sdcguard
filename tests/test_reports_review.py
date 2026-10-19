@@ -216,7 +216,7 @@ def test_a_certificate_covers_every_phase_and_the_result_files(tmp_path, keys):
     d = os.path.join(tmp_path, "cpu")
     cert = json.load(open(os.path.join(d, "certificate.json")))
     assert code == 1 and cert["result"] == "FAIL" and cert["corrupted_results"]["math_modes"] > 0
-    assert set(cert["files_sha256"]) == {"check.json", "result.json"} and cert["evidence_sha256"]
+    assert set(cert["files_sha256"]) == {"summary.json", "check.json", "result.json"} and cert["evidence_sha256"]
     assert certify.verify(os.path.join(d, "certificate.json"), pub)["ok"]
     # a valid FAIL certificate is authentic, but doesn't pass --require-pass
     assert _main(cli.main, ["verify", os.path.join(d, "certificate.json"), "--pubkey", pub])[0] == 0
@@ -285,9 +285,12 @@ def test_new_uncorrectable_ecc_errors_or_a_failed_row_remap_fail_the_check(tmp_p
 # --- M3: the board -------------------------------------------------------------------------------------
 
 def _seed():
-    seed = os.path.join(HERE, "..", "docs", "board", "seed")
-    with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
-        return json.load(f)
+    # A schema fixture, never an asserted result from a real GPU. Unit tests
+    # should run from the source archive without the public board's historical data.
+    with open(os.path.join(HERE, "fixtures", "board_card.json")) as f:
+        r = json.load(f)
+    r["digest"] = board.digest(r)
+    return r
 
 
 def _signed(r):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
 import subprocess
 import sys
@@ -167,6 +168,8 @@ def _nhc_cached(a) -> int:
         return 2
     try:
         age_h = (time.time() - float(st.get("time", 0))) / 3600
+        if not math.isfinite(age_h) or age_h < 0:
+            raise ValueError("invalid or future timestamp")
     except (TypeError, ValueError):
         print(f"UNKNOWN: unreadable sdcguard screen result in {a.out}")
         return 2
@@ -185,6 +188,17 @@ def cmd_nhc(a) -> int:
     2 = couldn't tell (the conventions of Kubernetes node-problem-detector custom plugins)."""
     if a.cached:
         return _nhc_cached(a)
+    if a.simulate_faults > 0:
+        # A demonstration must never turn into a production drain signal or
+        # overwrite a real cached FAIL/PASS. Keep its workload files separate too.
+        demo_args = argparse.Namespace(**{**vars(a), "out": os.path.join(a.out, "simulated")})
+        try:
+            code = _run_screen(demo_args, capture=True).returncode
+            detail = f"demo screen exited {code}; evidence in {os.path.abspath(demo_args.out)}"
+        except Exception as e:  # noqa: BLE001
+            detail = f"demo could not run ({type(e).__name__})"
+        print(f"SIMULATED: {detail}; not a node health result, cached status unchanged")
+        return 2
     t0 = time.time()
     try:
         code = _run_screen(a, capture=True).returncode
@@ -197,6 +211,9 @@ def cmd_nhc(a) -> int:
         _nhc_status(a.out, line, rc)
         return rc
     rows = _fresh_summaries(a.out, t0)
+    if any(s.get("SIMULATED_FAULTS") for _d, s in rows):
+        print("UNKNOWN: simulated screen results cannot update the node health status")
+        return 2
     bad = [s for _d, s in rows if s.get("result") == "FAIL"]
     partial = [s for _d, s in rows if s.get("result") == "INCOMPLETE"]
     if bad:

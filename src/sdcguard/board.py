@@ -30,6 +30,11 @@ import subprocess
 import sys
 from typing import Optional
 
+if __package__:
+    from ._capabilities import expected
+else:                                       # GitHub Actions runs this file without installing torch
+    from _capabilities import expected
+
 SCHEMA = "sdcguard-check/1"
 RESULTS = ("PASS", "FAIL", "SUSPECT")
 MIN_MINUTES = 1.0
@@ -167,7 +172,6 @@ def _consistency_problem(r: dict) -> Optional[str]:
             return "says PASS, but part of the check didn't run or reported errors (that's INCOMPLETE or FAIL)"
         cc = str((r.get("gpu") or {}).get("compute_cap") or "")
         try:
-            from .modes import expected
             cap = tuple(int(x) for x in cc.split(".")[:2]) if cc else None
         except ValueError:
             cap = None
@@ -190,8 +194,11 @@ def validate(r: dict) -> Optional[str]:
             return f"larger than {MAX_CARD_BYTES // 1024} KB"
     except (TypeError, ValueError, RecursionError):
         return "malformed card"
-    if set(r) - _KEYS:
-        return "malformed card (fields the check doesn't write: " + ", ".join(sorted(map(str, set(r) - _KEYS)))[:120] + ")"
+    # _source is attached by from_dirs/from_issues after ingestion; it is not part of the card's digest.
+    # Reject unknown card fields while retaining the board's own provenance metadata.
+    extra = set(r) - _KEYS - {"_source"}
+    if extra:
+        return "malformed card (fields the check doesn't write: " + ", ".join(sorted(map(str, extra)))[:120] + ")"
     if not _all_finite(r):
         return "malformed card (NaN, Infinity, an oversized text or deep nesting)"
     shape = _shape_problem(r)

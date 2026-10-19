@@ -62,6 +62,8 @@ def collect(roots: Iterable[str]) -> list[dict]:
             if s is None and chk is None:
                 continue
             s = s or {}
+            if chk and chk.get("run_id") and s.get("run_id") != chk["run_id"]:
+                s = {}                      # a workload summary left by an older run is not this run's evidence
             cert = _load(os.path.join(d, "certificate.json")) if "certificate.json" in files else None
             g = {**(chk or {}).get("gpu", {}), **s.get("gpu", {})} if chk else s.get("gpu", {})
             key = g.get("gpu_uuid") or os.path.abspath(d)
@@ -80,13 +82,11 @@ def collect(roots: Iterable[str]) -> list[dict]:
             changed = []
             if cert:
                 result = _worse(result, cert.get("result") or "INCOMPLETE")
-                from .certify import _sha256
-                for name, digest in ((cert.get("files_sha256") or {}) | (cert.get("evidence_sha256") or {})).items():
-                    p = os.path.join(d, os.path.basename(name))
-                    if os.path.exists(p) and _sha256(p) != digest:
-                        changed.append(os.path.basename(name))
-                if changed:
-                    notes.insert(0, "changed after the certificate was issued: " + ", ".join(changed))
+                from .certify import artifact_problems
+                artifact_errors = artifact_problems(cert, d)
+                changed = [name for name, why in artifact_errors.items() if why.startswith("changed")]
+                if artifact_errors:
+                    notes[:0] = [f"{name} {why}" for name, why in artifact_errors.items()]
                     result = _worse(result, "INCOMPLETE")
             mpath = os.path.join(d, "check.json" if chk else "summary.json")
             row = {"dir": os.path.abspath(d), "gpu_uuid": g.get("gpu_uuid"), "gpu_name": g.get("gpu_name"),
@@ -113,9 +113,10 @@ def collect(roots: Iterable[str]) -> list[dict]:
 
 
 def _local(e: str, d: str) -> str:
-    """An evidence path as recorded, or the same file next to the summary (results moved or copied)."""
-    if os.path.exists(e + ".pt") or os.path.exists(e + ".json"):
-        return e
+    """Evidence belongs to the result directory being reviewed, including moved/copied bundles.
+
+    Never follow an old absolute path into a different run or another person's files.
+    """
     return os.path.join(d, os.path.basename(e))
 
 
@@ -188,6 +189,7 @@ code{font-size:12px}
 def write(rows: list[dict], out_dir: str) -> dict:
     os.makedirs(out_dir, exist_ok=True)
     failed = [r for r in rows if r["result"] in ("FAIL", "SUSPECT")]
+    candidates = [r for r in failed if not r["simulated"]]
     stats = {"gpus": len(rows), "passed": sum(r["result"] == "PASS" for r in rows), "failed": len(failed),
              "suspect": sum(r["result"] == "SUSPECT" for r in rows),
              "incomplete": sum(r["result"] == "INCOMPLETE" for r in rows),
@@ -195,13 +197,14 @@ def write(rows: list[dict], out_dir: str) -> dict:
              "serving_layer_checks": sum(r["serving_layer_checks"] for r in rows),
              "tflop_checked": round(sum(r["tflop"] for r in rows), 1),
              "simulated_runs": sum(r["simulated"] for r in rows),
+             "quarantine_candidates": len(candidates),
              "generated_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()}
     taken: set = set()
     rma = {r["gpu_uuid"] or r["dir"]: _rma_zip(r, os.path.join(out_dir, "rma"), _zip_name(r, taken)) for r in failed}
     with open(os.path.join(out_dir, "quarantine.txt"), "w") as f:
-        for r in failed:
+        for r in candidates:
             f.write(f"{r['gpu_uuid']}\thost={r['host']}\tpci={r['pci_bus_id']}\tserial={r['serial']}"
-                    f"{'  (SIMULATED faults: demo)' if r['simulated'] else ''}\n")
+                    "\n")
     report = {"stats": stats, "gpus": [{k: v for k, v in r.items() if k != "mtime"} for r in rows], "rma": rma}
     with open(os.path.join(out_dir, "fleet_report.json"), "w") as f:
         json.dump(report, f, indent=2, default=str)
@@ -215,7 +218,7 @@ def write(rows: list[dict], out_dir: str) -> dict:
             f"{r['serving_layer_checks']:,}", f"{r['tflop']:,}", str(r["corrupted"]),
             e(str(r["worst_clean_score"])), "" if r.get("matmul_tflops") is None else f"{r['matmul_tflops']:,.0f}",
             e("; ".join(r.get("notes") or [])[:160]),
-            "signed" if r["signed"] else ("unsigned" if r["certificate"] else "none"))) +
+            "signature present (not verified here)" if r["signed"] else ("unsigned" if r["certificate"] else "none"))) +
             "</tr>")
     head = ("result", "host", "GPU UUID", "GPU", "PCI", "serial", "matmuls checked", "layer checks (serving)",
             "TFLOP checked", "corrupted results", "worst clean score", "matmul TFLOPS", "notes", "certificate")

@@ -93,6 +93,38 @@ def _sha256(path: str) -> Optional[str]:
     return h.hexdigest()
 
 
+def artifact_problems(cert: dict, out_dir: str) -> dict:
+    """Check every artifact declared by a certificate, including absent files.
+
+    Signature validity and artifact availability are different facts: a detached
+    certificate can have a valid signature without supplying its evidence.
+    """
+    problems = {}
+    manifest = {}
+    for field in ("evidence_sha256", "files_sha256"):
+        entries = cert.get(field) or {}
+        if not isinstance(entries, dict):
+            problems[field] = "malformed artifact manifest"
+            continue
+        for name, digest in entries.items():
+            if not isinstance(name, str) or os.path.basename(name) != name or name in ("", ".", ".."):
+                problems[str(name)] = "invalid artifact name"
+                continue
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                problems[name] = "invalid SHA-256 digest"
+                continue
+            if name in manifest and manifest[name] != digest:
+                problems[name] = "conflicting artifact digests"
+            manifest[name] = digest
+    for name, digest in manifest.items():
+        actual = _sha256(os.path.join(out_dir, name))
+        if actual is None:
+            problems[name] = "missing or unreadable since the certificate was issued"
+        elif actual != digest:
+            problems[name] = "changed since the certificate was issued"
+    return problems
+
+
 def _now() -> _dt.datetime:
     return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
 
@@ -107,8 +139,13 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
     evidence = {}
     for e in (full or {}).get("evidence", summary.get("evidence", [])):
         for ext in (".json", ".pt"):
-            if os.path.exists(e + ext):
-                evidence[os.path.basename(e) + ext] = _sha256(e + ext)
+            digest = _sha256(e + ext)
+            if digest is None:
+                raise FileNotFoundError(f"cannot certify missing evidence: {e + ext}")
+            name = os.path.basename(e) + ext
+            if name in evidence and evidence[name] != digest:
+                raise ValueError(f"evidence files have the same name and different contents: {name}")
+            evidence[name] = digest
     corrupted = {"training": summary.get("corrupted_results_training"),
                  "serving": summary.get("corrupted_results_serving")}
     if full and full.get("wrong"):
@@ -118,11 +155,15 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
     simulated = bool(summary.get("SIMULATED_FAULTS")) or bool((full or {}).get("simulated_faults"))
     # the files a fleet report or a person reads the result from: a change to them after signing is detected
     files = {}
-    if full and full.get("out_dir"):
-        for name in ("check.json", "result.json"):
-            digest = _sha256(os.path.join(full["out_dir"], name))
-            if digest:
+    out_dir = (full or {}).get("out_dir") or summary.get("out_dir")
+    if out_dir:
+        required = ("check.json", "result.json") if full else ("summary.json",)
+        for name in ("summary.json", "check.json", "result.json"):
+            digest = _sha256(os.path.join(out_dir, name))
+            if digest is not None:
                 files[name] = digest
+            elif name in required:
+                raise FileNotFoundError(f"cannot certify missing result: {os.path.join(out_dir, name)}")
     cert = {
         "format": FORMAT,
         "issued_at": now.isoformat(),
@@ -173,7 +214,7 @@ def sign(cert: dict, key_path: str) -> dict:
 def write(summary: dict, out_dir: str, key_path: Optional[str] = None, issuer: str = "",
           valid_days: float = 30.0, check: Optional[dict] = None, full: Optional[dict] = None) -> str:
     """Certificate for one screened GPU, written next to its summary as certificate.json."""
-    cert = make(summary, issuer=issuer, valid_days=valid_days, check=check, full=full)
+    cert = make({**summary, "out_dir": out_dir}, issuer=issuer, valid_days=valid_days, check=check, full=full)
     if key_path:
         cert = sign(cert, key_path)
     else:
@@ -188,7 +229,8 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     """Check a certificate. Returns {"ok", "signed", "signature_valid", "trusted_key", "expired",
     "evidence_files_match", "result", "gpu", "problems"}. ok means: signature valid, signed by the given
     public key (when one is given), not expired, evidence files and the check's result files (check.json,
-    result.json, if present next to it) unchanged. ok says the certificate is authentic, not that the GPU
+    result.json) present and unchanged. ok says the certificate is authentic and its declared artifacts are
+    available, not that the GPU
     passed: read "result" (or use `sdcguard verify --require-pass`)."""
     with open(path) as f:
         cert = json.load(f)
@@ -230,12 +272,10 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     if out["expired"]:
         problems.append(f"expired on {cert.get('valid_until')}")
     here = os.path.dirname(os.path.abspath(path))
-    match = True
-    for name, digest in {**(cert.get("evidence_sha256") or {}), **(cert.get("files_sha256") or {})}.items():
-        p = os.path.join(here, os.path.basename(str(name)))
-        if os.path.exists(p) and _sha256(p) != digest:
-            match = False
-            problems.append(f"{os.path.basename(str(name))} changed since the certificate was issued")
+    artifacts = artifact_problems(cert, here)
+    match = not artifacts
+    problems.extend(f"{name} {why}" for name, why in artifacts.items())
+    out["artifact_problems"] = artifacts
     out["evidence_files_match"] = match
     if cert.get("simulated_faults"):
         problems.append("this screen injected SIMULATED faults (a demo, not a real result)")

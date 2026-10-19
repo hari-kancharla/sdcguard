@@ -42,6 +42,8 @@ from typing import Callable, Optional
 
 import torch
 
+from ._capabilities import expected
+
 ALARM = 6.0
 BLOCK = 128
 C1, C2, C3 = 1.0, 1.0, 1.0
@@ -172,13 +174,6 @@ def gemm(mode: str, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
 # Error messages that mean "this GPU or this PyTorch build doesn't offer that", as opposed to a failure.
 _UNSUPPORTED = re.compile(r"not supported|NOT_SUPPORTED|not implemented for|only supported|is not available|"
                           r"isn't supported|requires .*(?:compute capability|sm_?\d+|SM ?\d+)", re.IGNORECASE)
-
-
-def expected(mode: str, cc: tuple) -> bool:
-    """Does every GPU of compute capability cc run this mode (with the PyTorch sdcguard supports)? A mode the GPU
-    should run that fails its probe is an error, never "unsupported"."""
-    need = {"bf16": (8, 0), "tf32": (8, 0), "fp8": (8, 9), "int8": (7, 5)}.get(mode, (0, 0))
-    return tuple(cc) >= need
 
 
 class ProbeError(RuntimeError):

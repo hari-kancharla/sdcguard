@@ -32,6 +32,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from typing import Optional
 
 import torch
@@ -143,17 +144,22 @@ class _Recorder(SDCGuard):
 
 def _block_slices(A, B, C, bias, row, col_block, batch, block):
     A, B, C = A.detach().cpu(), B.detach().cpu(), C.detach().cpu()
+    # Bias follows the output's broadcast rules, including scalars, singleton
+    # rows and a batch dimension (baddbmm). Slice it only after broadcasting.
+    if bias is not None:
+        bias = torch.broadcast_to(bias.detach().cpu(), C.shape)
     if A.dim() == 3:
-        A = A[batch or 0]
+        A = A[(batch or 0) if A.shape[0] > 1 else 0]
     if B.dim() == 3:
-        B = B[batch or 0]
+        B = B[(batch or 0) if B.shape[0] > 1 else 0]
     if C.dim() == 3:
         C = C[batch or 0]
+        if bias is not None:
+            bias = bias[batch or 0]
     lo, hi = col_block * block, min(C.shape[-1], (col_block + 1) * block)
     b = None
     if bias is not None:
-        bias = bias.detach().cpu()
-        b = bias[lo:hi] if bias.dim() == 1 else bias[(row if bias.shape[0] > 1 else 0):][:1, lo:hi]
+        b = bias[row:row + 1, lo:hi]
     return A[row:row + 1], B[:, lo:hi], C[row:row + 1, lo:hi], b
 
 
@@ -202,17 +208,28 @@ def cpu_recheck(A, B, C, bias, alpha, beta, row, col_block, batch=None, epoch: i
         return {**out, "judged": False,
                 "reading": "the CPU couldn't judge this block either (values that aren't finite in the inputs)"}
     wrong = not r.ok
+    confirmed = exact["outputs_outside_rounding_envelope"] > 0
+    if confirmed:
+        reading = "the CPU recomputation places the recorded output outside the stated rounding envelope"
+    elif wrong:
+        reading = ("the CPU checksum also flags this output; its error remains within the deterministic rounding "
+                   "envelope, so this is a statistical mismatch rather than an independently confirmed fault")
+    else:
+        reading = ("the CPU did not reproduce the checksum mismatch; the check's own GPU arithmetic, differences "
+                   "in numerical execution, or a checker error may explain it. This does not prove the output "
+                   "correct or identify a hardware fault")
     return {**out, "judged": True, "max_z": r.max_z, "output_wrong": wrong,
-            "reading": ("the CPU agrees: the GPU's output was wrong" if wrong else
-                        "the CPU finds this output correct: the error was in the check's own GPU arithmetic "
-                        "(the GPU still computed something wrong, just not this output)")}
+            "output_mismatch_confirmed": confirmed, "reading": reading}
 
 
 def _save_evidence(out_dir: str, n: int, res, ops, ident: dict, meta: dict) -> str:
     A, B, C, bias, alpha, beta, name, where = ops[:8]
     epoch = ops[8] if len(ops) > 8 else 0
     from .checksum import _SIGN_SEED
-    path = os.path.join(out_dir, f"evidence_{n}")
+    # The stress phase finishes before the workload starts. Both used evidence_0,
+    # so a later training fault silently replaced the saved stress incident.
+    prefix = "evidence_stress" if meta.get("phase") == "stress" else "evidence"
+    path = os.path.join(out_dir, f"{prefix}_{n}")
     torch.save({"A": A.detach().cpu(), "B": B.detach().cpu(), "C": C.detach().cpu(),
                 "bias": None if bias is None else bias.detach().cpu(), "alpha": alpha, "beta": beta,
                 "op": name, "where": where, "row": res.row, "col_block": res.col_block, "batch": res.batch,
@@ -256,7 +273,7 @@ def error_text(e: BaseException) -> str:
 
 def screen_one(device: torch.device, minutes: float, size: str, out_root: str, seed: int = 0,
                max_evidence: int = 5, simulate_faults: float = 0.0, max_steps: Optional[int] = None,
-               tag: Optional[str] = None) -> dict:
+               tag: Optional[str] = None, run_id: Optional[str] = None) -> dict:
     """Screen one device. Returns a summary dict (also written to out_root/<id>/summary.json).
 
     simulate_faults: for demos and tests only, corrupt this share of the training matmul outputs in
@@ -289,6 +306,7 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
     flops = 0.0
     evidence, serve_alerts = [], []
     meta = {"sdcguard": __version__, "torch": torch.__version__, "seed": seed, "size": size,
+            "run_id": run_id or uuid.uuid4().hex,
             "dtype": str(dtype).replace("torch.", "")}
     inj = None
     if simulate_faults > 0:
@@ -371,6 +389,8 @@ def _loop(model, opt, serve_model, sguard, tguard, inj, gen, device, dtype, voca
 
 def replay(path: str, times: int = 200, device: Optional[str] = None) -> dict:
     """Recompute a saved matmul `times` times on this device and check each result."""
+    if isinstance(times, bool) or not isinstance(times, int) or times < 1:
+        raise ValueError("--times must be at least 1")
     ev = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(ev, dict):
         raise ValueError(f"{path} is not an sdcguard evidence file")
@@ -405,8 +425,9 @@ def replay(path: str, times: int = 200, device: Optional[str] = None) -> dict:
                          ev.get("batch"), ev.get("epoch") or 0, seed=ev.get("sign_seed"))
         out["recorded_block_on_cpu"] = rc
         if rc.get("judged") and not rc.get("output_wrong"):
-            out["reading"] += ("; the recorded output itself passes the same check on the CPU, so this file shows "
-                               "the check's own arithmetic going wrong on the GPU that saved it, not a wrong output")
+            out["reading"] += ("; the CPU did not reproduce the recorded checksum mismatch. The check's own "
+                               "arithmetic, numerical execution differences or a checker error remain possible; "
+                               "this result alone does not identify the cause")
     elif out.get("recorded_output_check") and out["recorded_output_check"]["judged"] and \
             out["recorded_output_check"]["ok"]:
         out["reading"] += ("; the recorded output passes the check here (an older evidence file, without the "
@@ -422,6 +443,8 @@ def _replay(path, times, dev, A, B, C, bias, alpha, beta) -> dict:
         it was corrupted, up to kernel choice on a different GPU model)."""
         with torch.no_grad():
             if A.dim() == 3 and B.dim() == 3:
+                if bias is not None and beta != 0:
+                    return torch.baddbmm(bias.to(A.dtype), A, B, beta=beta, alpha=alpha).to(C.dtype)
                 out = torch.bmm(A, B)
             elif A.dim() == 3 or B.dim() == 3:
                 out = torch.matmul(A, B)
@@ -429,7 +452,10 @@ def _replay(path, times, dev, A, B, C, bias, alpha, beta) -> dict:
                 return torch.addmm(bias.to(A.dtype), A, B, beta=beta, alpha=alpha).to(C.dtype)
             else:
                 out = torch.mm(A, B)
-            return (out * alpha if alpha != 1 else out).to(C.dtype)
+            out = out * alpha if alpha != 1 else out
+            if bias is not None and beta != 0:
+                out = out + beta * bias
+            return out.to(C.dtype)
 
     for i in range(times):
         out = recompute()
@@ -497,7 +523,11 @@ def main(argv=None) -> int:
                    help="demo only: corrupt this share of matmul outputs in software")
     args = p.parse_args(argv)
     if args.replay:
-        r = replay(args.replay, args.times, args.device)
+        try:
+            r = replay(args.replay, args.times, args.device)
+        except Exception as e:  # noqa: BLE001
+            print(f"sdcguard replay: could not run: {error_text(e)}")
+            return 2
         print(json.dumps(r, indent=2, default=str))
         return verdict.replay_exit(r)
     if args.size is None:

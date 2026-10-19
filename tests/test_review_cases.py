@@ -210,8 +210,7 @@ def test_a_persistent_column_swap_is_caught_by_the_math_modes():
 
 
 def test_board_rejects_cards_whose_math_mode_counts_disagree():
-    seed = os.path.join(HERE, "..", "docs", "board", "seed")
-    with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
+    with open(os.path.join(HERE, "fixtures", "board_card.json")) as f:
         card = json.load(f)
     card["wrong"]["math_modes"] = 0
     card["math_modes"] = {"ran": ["fp32"], "matmuls": 6, "wrong": 1, "not_checked": {}, "errors": {},

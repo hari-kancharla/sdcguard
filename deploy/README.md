@@ -26,3 +26,7 @@ vLLM plugin (`SDCGUARD=1`) or the training check instead; they check the job's o
 
 After a screen, `sdcguard report <out dirs> --out fleet_report` turns the results of many nodes into one
 page, a quarantine list and an evidence zip per failed GPU for the RMA.
+
+Fault-injection demonstrations do not produce node health decisions. `sdcguard nhc --simulate-faults`
+writes its workload under `<out>/simulated`, exits 2 and leaves the real cached status unchanged. Fleet
+reports keep simulated incidents visible with their replay artifacts, but omit them from `quarantine.txt`.
