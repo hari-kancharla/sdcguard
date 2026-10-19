@@ -116,14 +116,24 @@ customer. While serving, alerts can go to a Slack or Discord webhook or to Prome
 For `C = A @ B`, the sum of each block of 128 output columns has to equal `A` times the matching column sums
 of `B`. Both sides are cheap, so a wrong value in `C` shows up as a mismatch. This is algorithm-based fault
 tolerance (Huang and Abraham, 1984). Each block gets a plain sum and a randomly signed one, so most errors that
-cancel in one show in the other. Not all: two outputs of a block swapped where the signs match cancel in both,
-which is why `check` draws fresh sign patterns for every matmul it tests.
+cancel in one show in the other. Not all: two outputs of a block swapped where the signs match cancel in both.
+So `check` draws fresh sign patterns for every matmul it tests, and training checks take a new pattern every
+checked step; a fault that keeps swapping the same two outputs then shows on about half the checked steps
+instead of never. Serving computes its weight checksums once at load, so it keeps one pattern.
 
 bf16 results are rounded, so the two sides never match exactly. sdcguard estimates each block's rounding
 noise and only alarms past 6 times that. In 24.6 million checks over 5 GPU-hours of clean training it never
 false-alarmed (worst score 3.54). The trade-off: errors under about 1% of a block hide in the noise. On NVIDIA
 GPUs the checks run as Triton kernels, which first have to match the plain PyTorch check or the plain check
 is used instead. Results are read back without stalling the GPU.
+
+A recent real case of this kind: on NVIDIA's forum on Oct 2, 2026, a user reported that on H200s shared
+through MPS, some cuBLASLt kernels report success but leave part of the output unwritten, with no error and no
+Xid ([thread](https://forums.developer.nvidia.com/t/384873), [repro](https://github.com/Yeosangho/mps-cublaslt-fp16-corruption-repro)).
+NVIDIA reproduced it on Oct 6. It's a software bug, not a bad GPU, but it looks the same from the outside.
+[tests/test_unwritten_output.py](tests/test_unwritten_output.py) emulates the reported layer (16x2048x1000,
+columns 256 to 999 left as zeros, stale values or NaN) on CPU. The training and serving checks flag every
+variant, scoring 600 to 7,000 or non-finite, where the correct output scores about 1.
 
 It also holds up against faults injected into real hardware. Flipping a mantissa bit in every tensor-core
 instruction on one lane of an L4 (about a 10% error in one input) left the loss untouched, and sdcguard
@@ -134,7 +144,7 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 | | |
 |---|---|
 | Works | PyTorch training in bf16/fp16 (DDP tested on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, Apple GPUs (training checks), `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4 |
-| Not checked | fp32/TF32 matmuls in training and serving (`check` tests them one matmul at a time), quantized layers (FP8, INT4), fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
+| Not checked | fp32/TF32 matmuls in training and serving (`check` tests them one matmul at a time), convolutions, quantized layers (FP8, INT4), fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
 | Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD |
 
 On Blackwell (B200) sdcguard uses the plain PyTorch checks; the faster Triton kernels cover Turing through
