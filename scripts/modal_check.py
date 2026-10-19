@@ -280,8 +280,13 @@ def _download() -> None:
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
         print("Tests on 1 L4: about 13 minutes, about $0.25 (hard limit 30 minutes, about $0.60).", flush=True)
-        print(tests.remote(), flush=True)
-        print("\nDone.", flush=True)
+        text = tests.remote()
+        print(text, flush=True)
+        dest = LOCAL / "results" / "gpu_tests"
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / f"l4_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+        path.write_text(text)
+        print(f"\nSaved {path}. Done.", flush=True)
         return
     if phase == "fetch":
         _download()
