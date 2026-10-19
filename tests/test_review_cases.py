@@ -177,7 +177,7 @@ def test_a_persistent_column_swap_is_caught_by_the_math_modes():
 
     with patch.object(modes, "gemm", side_effect=swapped):
         r = modes.screen(torch.device("cpu"), 0, shape=(128, 256, 256))
-    assert r["matmuls"] == 36 and r["wrong"] >= 30
+    assert r["matmuls"] == len(modes.MODES) * len(modes.VARIANTS) and r["wrong"] >= 0.8 * r["matmuls"]
 
 
 def test_board_rejects_cards_whose_math_mode_counts_disagree():

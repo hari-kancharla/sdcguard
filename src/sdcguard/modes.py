@@ -1,4 +1,4 @@
-"""Matmuls in six math modes, checked: BF16, FP16, TF32, FP32, FP64 and INT8 (FP8 and FP4 not yet).
+"""Matmuls in seven math modes, checked: BF16, FP16, TF32, FP32, FP64, INT8 and FP8 (E4M3; FP4 not yet).
 
 A defective GPU can compute some modes correctly and not others. In SDCHunter (OSDI '26) all four
 GEMM-defective GPUs computed BF16 and FP16 correctly and failed in FP32, FP64, TF32 or INT8 (which ones
@@ -7,7 +7,7 @@ check, over several input distributions and scales.
 
 Each check runs one GEMM in one mode on the GPU and compares every row-block sum of the result (plain, and
 with random signs, as in checksum.py) with a float64 reference computed on the CPU from the same inputs.
-The inputs are chosen so that every product is exact in the accumulator (bf16 and fp16 values,
+The inputs are chosen so that every product is exact in the accumulator (bf16, fp16 and fp8 values,
 TF32-representable fp32 values, small integers) and the results are kept in fp32 (fp64, int32), so the only
 error left is the accumulation's own rounding:
 
@@ -18,6 +18,12 @@ error left is the accumulation's own rounding:
                     Mikaitis, "Accurate Models of NVIDIA Tensor Cores", arXiv 2512.07004): the truncation
                     always rounds toward zero, so its error grows with the number of steps k / N, and the
                     model adds u * (k / N) |C_block|
+    FP8             the same model, but on Ada and Hopper the tensor cores keep only 13 bits below the
+                    largest term of each step (Blackwell keeps 25), with N = 16 (Ada) or 32 (Hopper,
+                    Blackwell), from the same paper. u = 2^-14 there (2^-24 on Blackwell): on an emulation of
+                    that model, clean results then stay as far from the alarm as the other modes' do (worst
+                    score under 0.5). Inputs avoid fp8 subnormals, and k is 256 instead of 1024 to keep the
+                    coarser rounding small. The GPU calibration run is this model's first real test
 
 A result is wrong when it's more than 6 of those units away from the reference. Inputs are zero-mean: with
 all-positive inputs the tensor cores' truncation errors would line up and need a looser model.
@@ -38,8 +44,10 @@ import torch
 ALARM = 6.0
 BLOCK = 128
 C1, C2, C3 = 1.0, 1.0, 1.0
-UNIT = {"fp32": 2.0 ** -24, "fp64": 2.0 ** -53}
-MODES = ("bf16", "fp16", "tf32", "fp32", "fp64", "int8")
+UNIT = {"fp32": 2.0 ** -24, "fp64": 2.0 ** -53, "fp8": 2.0 ** -14}
+MODES = ("bf16", "fp16", "tf32", "fp32", "fp64", "int8", "fp8")
+FP8_K = 256                 # FP8 checks use this inner size at most (see above)
+FP8_MAX, FP8_MIN_NORMAL = 448.0, 2.0 ** -6
 SHAPE = {"cuda": (2048, 1024, 2048), "cpu": (256, 256, 256)}     # (m, k, n)
 # what each check runs: inputs, how the GPU computes, the result's type, what it's compared with
 PROFILE = {
@@ -49,6 +57,7 @@ PROFILE = {
     "fp32": ("fp32", "fp32 FMA (TF32 off)", "fp32", "float64 on the CPU"),
     "fp64": ("fp64", "fp64 FMA", "fp64", "float64 on the CPU"),
     "int8": ("int8", "integer tensor cores, int32 accumulation", "int32", "exact integers on the CPU"),
+    "fp8": ("fp8 E4M3 (no subnormals)", "tensor cores (FP8), fp32 result", "fp32", "float64 on the CPU"),
 }
 # (distribution, scale): zero-mean, spread over magnitudes
 VARIANTS = (("normal", 1.0), ("uniform", 2.0 ** -8), ("sparse", 2.0 ** 6), ("normal", 2.0 ** 8),
@@ -58,14 +67,34 @@ VARIANTS = (("normal", 1.0), ("uniform", 2.0 ** -8), ("sparse", 2.0 ** 6), ("nor
 def n_fma(mode: str, cc: Optional[tuple]) -> Optional[int]:
     """Products the tensor cores add per truncation step (Khattak and Mikaitis, Table 3). Older or unknown
     GPUs get the smallest value seen on any generation, which assumes the most steps."""
-    if mode not in ("bf16", "fp16", "tf32") or cc is None:
+    if mode not in ("bf16", "fp16", "tf32", "fp8") or cc is None:
         return None
     major = cc[0]
+    if mode == "fp8":
+        return 32 if major in (9, 10, 12) else 16
     if major in (9, 10, 12):                     # Hopper, Blackwell
         return 8 if mode == "tf32" else 16
     if major == 8:                               # Ampere, Ada
         return 4 if mode == "tf32" else 8
     return 4
+
+
+def acc_unit(mode: str, cc: Optional[tuple]) -> float:
+    """The accumulation's rounding unit u in the noise model. FP8 on a GPU: 2^-24 on Blackwell, which keeps 25
+    bits below each step's largest term like the other modes; 2^-14 on Ada, Hopper and anything unknown, which
+    keep 13. Without a GPU (cc None) every mode is computed with fp32 FMAs."""
+    if mode == "fp64":
+        return UNIT["fp64"]
+    if mode == "fp8" and cc is not None and cc[0] not in (10, 12):
+        return UNIT["fp8"]
+    return UNIT["fp32"]
+
+
+def _fp8_exact(x: torch.Tensor) -> torch.Tensor:
+    """fp8 E4M3 values with no subnormals (whether a GPU keeps fp8 subnormals isn't something to bet a verdict
+    on): magnitudes below the smallest normal become 0, the rest are clamped to the largest finite value."""
+    x = x.clamp(-FP8_MAX, FP8_MAX)
+    return torch.where(x.abs() < FP8_MIN_NORMAL, torch.zeros_like(x), x).to(torch.float8_e4m3fn)
 
 
 def _tf32_exact(x: torch.Tensor) -> torch.Tensor:
@@ -99,6 +128,10 @@ def _inputs(mode: str, shape: tuple, dist: str, scale: float, gen: torch.Generat
             a = a * (torch.rand(m, k, generator=gen) < 0.1)
         a, b = a.to(torch.int8), b.to(torch.int8)
         return a, b, a.double(), b.double()
+    if mode == "fp8":            # fp8's range is narrow (2^-6 to 448): real FP8 matmuls scale into it
+        s = min(max(scale, 2.0 ** -4), 2.0 ** 4)
+        a, b = _fp8_exact(_sample((m, k), dist, s, gen)), _fp8_exact(_sample((k, n), dist, s, gen))
+        return a, b, a.double(), b.double()
     a, b = _sample((m, k), dist, scale, gen), _sample((k, n), dist, scale, gen)
     if mode == "bf16":
         a, b = a.bfloat16(), b.bfloat16()
@@ -121,6 +154,10 @@ def gemm(mode: str, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         return torch.ops.aten.mm.dtype(a, b, torch.float32)
     if mode == "int8":
         return torch._int_mm(a, b)
+    if mode == "fp8":            # per-tensor scales of 1: the GPU multiplies the fp8 values as they are
+        one = torch.ones((), device=a.device, dtype=torch.float32)
+        return torch._scaled_mm(a, b.t().contiguous().t(), scale_a=one, scale_b=one, out_dtype=torch.float32,
+                                use_fast_accum=False)
     if mode == "fp64":
         return a @ b
     prev = torch.get_float32_matmul_precision()
@@ -135,11 +172,13 @@ def available(mode: str, dev: torch.device) -> Optional[str]:
     """None if the mode can run on dev, else why not (shown on the card as not checked)."""
     if dev.type != "cuda":
         return None
-    major, _ = torch.cuda.get_device_capability(dev)
+    major, minor = torch.cuda.get_device_capability(dev)
     if mode in ("tf32", "bf16") and major < 8:
         return "needs compute capability 8.0 or newer"
+    if mode == "fp8" and (major, minor) < (8, 9):
+        return "needs compute capability 8.9 or newer"
     try:
-        dt = {"bf16": torch.bfloat16, "fp16": torch.float16, "int8": torch.int8,
+        dt = {"bf16": torch.bfloat16, "fp16": torch.float16, "int8": torch.int8, "fp8": torch.float8_e4m3fn,
               "fp64": torch.float64}.get(mode, torch.float32)
         x = torch.ones(32, 32, device=dev).to(dt)
         gemm(mode, x, x)
@@ -160,14 +199,15 @@ def draw_signs(gen: torch.Generator, n: int = PROJECTIONS) -> torch.Tensor:
 
 
 def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma: Optional[int] = None,
-          signs: Optional[torch.Tensor] = None) -> dict:
+          signs: Optional[torch.Tensor] = None, unit: Optional[float] = None) -> dict:
     """Compare a GEMM result c (fp32, fp64 or int32, on any device) with the float64 reference from the exact
     inputs a64 @ b64 (CPU): the plain sum of every 128-column block and one signed sum per row of `signs`
     (default: checksum.py's per-process pattern). Returns per-block scores and the summary check_once reports.
 
     typical_caught: the size of an error in one output that this check typically catches, relative to a typical
     output of its block (the median over blocks of the alarm line; some blocks need more, cancelling errors
-    can need more, and an error the checksums can't see at all needs any size)."""
+    can need more, and an error the checksums can't see at all needs any size). unit: the accumulation's
+    rounding unit (default: fp32's, or fp64's for FP64; see acc_unit)."""
     m, n = c.shape
     k = a64.shape[1]
     nblk = n // BLOCK
@@ -192,7 +232,7 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
         return {"wrong_blocks": int(bad.sum()), "blocks": m * nblk, "worst_z": None, "typical_caught": None,
                 "z": torch.where(bad, float("inf"), 0.0)}
     diff = (expected - actual.double()).abs()
-    u = UNIT["fp64" if mode == "fp64" else "fp32"]
+    u = unit if unit is not None else UNIT["fp64" if mode == "fp64" else "fp32"]
     a_norm = a64.norm(dim=1)[:, None]                                                # (m, 1)
     b_frob = bb.pow(2).sum(dim=(0, 2)).sqrt()[None, :]                               # (1, nblk)
     steps = k / nfma if nfma else 0.0
@@ -210,14 +250,18 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
 
 def check_once(mode: str, dev: torch.device, shape: tuple, dist: str, scale: float, gen: torch.Generator,
                fault: Optional[float] = None, run: Optional[Callable] = None, nfma: Optional[int] = None,
-               keep: bool = False) -> dict:
+               keep: bool = False, unit: Optional[float] = None) -> dict:
     """One GEMM in `mode` on dev, checked against the CPU reference with fresh sign patterns.
 
     fault (tests, experiments): add an error to one output, this many times the typical (root-mean-square)
     output of its block; for INT8 any fault adds 1. run: compute the GEMM some other way (tests emulate
-    tensor-core rounding with it). nfma: tensor-core products per step (default: from the GPU). keep: on a
-    wrong result, return the operands too (for evidence that `sdcguard replay` can recompute)."""
+    tensor-core rounding with it). nfma, unit: tensor-core products per step and the rounding unit (default:
+    from the GPU). keep: on a wrong result, return the operands too (for evidence that `sdcguard replay` can
+    recompute). FP8 checks use an inner size of at most FP8_K."""
     m, k, n = shape
+    if mode == "fp8":
+        k = min(k, FP8_K)
+        shape = (m, k, n)
     if n % BLOCK:
         raise ValueError(f"n must be a multiple of {BLOCK}")
     a, b, a64, b64 = _inputs(mode, shape, dist, scale, gen)
@@ -230,13 +274,16 @@ def check_once(mode: str, dev: torch.device, shape: tuple, dist: str, scale: flo
         else:
             blk = c[i, (j // BLOCK) * BLOCK:(j // BLOCK + 1) * BLOCK].double()
             c[i, j] += fault * float(blk.norm()) / math.sqrt(BLOCK)
-    if nfma is None and dev.type == "cuda":
-        nfma = n_fma(mode, torch.cuda.get_device_capability(dev))
-    r = judge(mode, a64, b64, c, nfma, signs)
+    cc = torch.cuda.get_device_capability(dev) if dev.type == "cuda" else None
+    if nfma is None:
+        nfma = n_fma(mode, cc)
+    if unit is None:
+        unit = acc_unit(mode, cc)
+    r = judge(mode, a64, b64, c, nfma, signs, unit)
     r.pop("z")
     if keep and r["wrong_blocks"]:
         r["operands"] = {"mode": mode, "A": a, "B": b, "C": c.detach().cpu(), "signs": signs, "shape": list(shape),
-                         "dist": dist, "scale": scale, "nfma": nfma}
+                         "dist": dist, "scale": scale, "nfma": nfma, "unit": unit}
     return r
 
 
@@ -262,13 +309,15 @@ def replay(ev: dict, times: int, dev: torch.device, nfma: Optional[int] = None) 
     mode = ev["mode"]
     a, b, signs = ev["A"], ev["B"], ev["signs"]
     a64, b64 = a.double(), b.double()
-    if nfma is None and dev.type == "cuda":
-        nfma = n_fma(mode, torch.cuda.get_device_capability(dev))
-    rec = judge(mode, a64, b64, ev["C"], ev.get("nfma"), signs)
+    cc = torch.cuda.get_device_capability(dev) if dev.type == "cuda" else None
+    if nfma is None:
+        nfma = n_fma(mode, cc)
+    unit = acc_unit(mode, cc)
+    rec = judge(mode, a64, b64, ev["C"], ev.get("nfma"), signs, ev.get("unit"))
     bad = 0
     worst = 0.0
     for _ in range(times):
-        r = judge(mode, a64, b64, gemm(mode, a.to(dev), b.to(dev)), nfma, signs)
+        r = judge(mode, a64, b64, gemm(mode, a.to(dev), b.to(dev)), nfma, signs, unit)
         bad += bool(r["wrong_blocks"])
         if r["worst_z"] is not None:
             worst = max(worst, r["worst_z"] if math.isfinite(r["worst_z"]) else float("inf"))

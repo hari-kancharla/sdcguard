@@ -2,7 +2,7 @@
 
     modal run scripts/modal_modes.py
 
-For each GPU: each of the six math modes, many times over every input distribution, to see how far clean
+For each GPU: each of the seven math modes, many times over every input distribution, to see how far clean
 results stay from the alarm (calibration); experiments/sensitivity.py (bf16 check vs fp32 check on the same
 matmuls); the 20-second math-mode screen exactly as `sdcguard check` runs it; and experiments/precise_gpu.py
 (precise mode in training: false alarms, what the model sees, cost, injected faults caught). Results go to

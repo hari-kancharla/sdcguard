@@ -668,12 +668,15 @@ def _modes_row(mm: dict) -> Optional[str]:
     errors = mm.get("errors") or {}
     unsupported = [k for k in (mm.get("not_checked") or {}) if k not in errors]
     if ran:
-        names = "all 6 modes" if len(ran) == 6 else " ".join(ran)
+        names = f"all {len(ran)} modes" if not unsupported and not errors else " ".join(ran)
         text = f"{names} vs float64: {_n(mm['matmuls'])} matmuls, " + (
             f"{mm['wrong']} WRONG" if mm.get("wrong") else "0 wrong")
-        rel = [v for v in (mm.get("typical_error_caught") or {}).values() if isinstance(v, (int, float))]
+        sens = {k: v for k, v in (mm.get("typical_error_caught") or {}).items() if isinstance(v, (int, float))}
+        rel = [v for k, v in sens.items() if k != "fp8"]
         if rel:
             text += f", typical sensitivity {_pct(max(rel))}"
+        if "fp8" in sens:            # FP8 tensor cores round much more coarsely: shown on its own
+            text += f" (fp8 {_pct(sens['fp8'])})" if rel else f", typical sensitivity {_pct(sens['fp8'])} (fp8)"
     else:
         text = "none ran"
     if errors:

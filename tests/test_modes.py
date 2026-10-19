@@ -27,7 +27,7 @@ def test_every_mode_runs_clean_on_the_cpu():
             assert 0 < rec["worst_z"] < 2 and 0 < rec["typical_error_caught"] < 1e-2
 
 
-@pytest.mark.parametrize("mode", ["bf16", "fp16", "tf32", "fp32", "fp64"])
+@pytest.mark.parametrize("mode", ["bf16", "fp16", "tf32", "fp32", "fp64", "fp8"])
 @pytest.mark.parametrize("variant", [0, 2, 4])
 def test_errors_are_caught_at_the_size_the_card_claims(mode, variant):
     dist, scale = modes.VARIANTS[variant]
@@ -73,16 +73,31 @@ def _tensor_core(nfma, frac_bits):
     return run
 
 
-@pytest.mark.parametrize("mode,nfma,frac", [("tf32", 4, 24), ("bf16", 8, 24), ("fp16", 16, 25), ("tf32", 8, 25)])
-def test_tensor_core_rounding_stays_far_from_the_alarm(mode, nfma, frac):
+@pytest.mark.parametrize("mode,nfma,frac,cc", [
+    ("tf32", 4, 24, (8, 0)), ("bf16", 8, 24, (8, 0)), ("fp16", 16, 25, (9, 0)), ("tf32", 8, 25, (9, 0)),
+    ("fp8", 16, 13, (8, 9)), ("fp8", 32, 13, (9, 0)), ("fp8", 32, 25, (10, 0))])      # Ada, Hopper, Blackwell
+def test_tensor_core_rounding_stays_far_from_the_alarm(mode, nfma, frac, cc):
     run = _tensor_core(nfma, frac)
     shape = (64, 512, 256)
-    for dist, scale in modes.VARIANTS[:3]:
-        r = modes.check_once(mode, CPU, shape, dist, scale, _gen(), run=run, nfma=nfma)
+    unit = modes.acc_unit(mode, cc)
+    assert nfma == modes.n_fma(mode, cc)
+    for dist, scale in modes.VARIANTS:
+        r = modes.check_once(mode, CPU, shape, dist, scale, _gen(), run=run, nfma=nfma, unit=unit)
         assert r["wrong_blocks"] == 0 and r["worst_z"] < 1.5, (dist, r)
-    caught = modes.check_once(mode, CPU, shape, "normal", 1.0, _gen(), run=run, nfma=nfma,
+    caught = modes.check_once(mode, CPU, shape, "normal", 1.0, _gen(), run=run, nfma=nfma, unit=unit,
                               fault=3 * r["typical_caught"])
     assert caught["wrong_blocks"] == 1
+
+
+def test_fp8_inputs_are_exact_normal_e4m3_values():
+    a, b, a64, b64 = modes._inputs("fp8", (64, 256, 256), "normal", 2.0 ** 8, _gen())
+    assert a.dtype == b.dtype == torch.float8_e4m3fn
+    for x in (a64, b64):
+        nz = x[x != 0].abs()
+        assert nz.min() >= modes.FP8_MIN_NORMAL and nz.max() <= modes.FP8_MAX and torch.isfinite(x).all()
+    assert torch.equal(a.double(), a64)
+    r = modes.check_once("fp8", CPU, (64, 1024, 256), "normal", 1.0, _gen())
+    assert r["wrong_blocks"] == 0 and r["blocks"] == 64 * 2
 
 
 def test_tensor_core_steps_by_generation():
@@ -91,12 +106,16 @@ def test_tensor_core_steps_by_generation():
     assert modes.n_fma("bf16", (8, 0)) == 8 and modes.n_fma("tf32", (8, 9)) == 4       # Ampere, Ada
     assert modes.n_fma("fp16", (7, 5)) == 4 and modes.n_fma("fp16", (13, 0)) == 4      # older, unknown
     assert modes.n_fma("fp32", (9, 0)) is None and modes.n_fma("int8", (9, 0)) is None
+    assert modes.n_fma("fp8", (8, 9)) == 16 and modes.n_fma("fp8", (9, 0)) == 32 and modes.n_fma("fp8", (10, 0)) == 32
+    assert modes.acc_unit("fp8", (9, 0)) == modes.acc_unit("fp8", (8, 9)) == 2.0 ** -14
+    assert modes.acc_unit("fp8", (10, 0)) == modes.acc_unit("fp8", None) == modes.acc_unit("bf16", (9, 0)) == 2.0 ** -24
 
 
 def test_modes_that_cant_run_are_listed_not_passed(monkeypatch):
     monkeypatch.setattr(modes, "available", lambda m, dev: "not here" if m in ("fp64", "int8") else None)
     r = modes.screen(CPU, 0, shape=SHAPE)
-    assert r["ran"] == ["bf16", "fp16", "tf32", "fp32"] and r["not_checked"] == {"fp64": "not here", "int8": "not here"}
+    assert r["ran"] == ["bf16", "fp16", "tf32", "fp32", "fp8"]
+    assert r["not_checked"] == {"fp64": "not here", "int8": "not here"}
 
 
 def test_a_mode_that_errors_is_listed_and_the_rest_still_run(monkeypatch):
@@ -110,3 +129,13 @@ def test_a_mode_that_errors_is_listed_and_the_rest_still_run(monkeypatch):
     r = modes.screen(CPU, 0, shape=SHAPE)
     assert "int8" not in r["ran"] and "shape not supported" in r["not_checked"]["int8"]
     assert r["modes"]["fp32"]["matmuls"] == len(modes.VARIANTS)
+
+
+def test_the_card_shows_fp8_sensitivity_on_its_own():
+    from sdcguard import check
+    mm = {"ran": list(modes.MODES), "matmuls": 84, "wrong": 0, "errors": {}, "not_checked": {},
+          "typical_error_caught": {"bf16": 2e-4, "fp32": 1e-4, "int8": "exact sums", "fp8": 0.17}}
+    assert check._modes_row(mm) == "all 7 modes vs float64: 84 matmuls, 0 wrong, typical sensitivity 0.02% (fp8 17%)"
+    mm.update(ran=list(modes.MODES[:-1]), not_checked={"fp8": "needs compute capability 8.9 or newer"},
+              typical_error_caught={"bf16": 2e-4})
+    assert check._modes_row(mm).endswith("typical sensitivity 0.02%; unsupported: fp8")

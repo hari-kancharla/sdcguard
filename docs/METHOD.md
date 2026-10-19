@@ -157,6 +157,28 @@ defects can be narrower; that's what checking every layer is for.
 - Every check reads A, B and C right after its matmul, in the same CUDA stream, because FSDP frees gathered
   weights right after each layer.
 
+## Math modes, sensitivity and precise mode (criteria written before the GPU run)
+
+Written October 19, 2026, before `scripts/modal_modes.py` ran on a T4, L4, A100 80GB, H100 and B200 (raw
+output will go to `results/math_modes/`), together with the GPU test suite (`scripts/modal_check.py --phase
+tests`).
+
+1. **Clean math modes:** 0 wrong results in every mode each GPU supports, and a worst clean score under 3
+   (half the alarm line). A mode that reaches 3 on any GPU gets a looser noise model, and a smaller
+   sensitivity claim, before launch. FP8's noise model is new: it comes from a published model of the tensor
+   cores (Khattak and Mikaitis, arXiv 2512.07004: 13 bits kept below each step's largest term on Ada and
+   Hopper, 25 on Blackwell), not from a GPU measurement, so this run is its first real test. Emulating that
+   model on the CPU, its worst clean score stays under 0.5 at the inner size it uses.
+2. **Unsupported isn't an error:** FP8 runs on the L4, H100 and B200 and shows as unsupported on the T4 and
+   A100; BF16 and TF32 show as unsupported on the T4.
+3. **Sensitivity:** on the same matmuls, the check of the fp32 accumulator flags errors at least 100 times
+   smaller than the check of the bf16 result. (On the CPU the gap is about 1,000 times.)
+4. **Precise mode:** 0 false alarms on clean training steps, and more of the injected faults caught than the
+   ordinary bf16 checks catch on the same model. Its cost is reported as measured, with no pass line.
+5. **GPU test suite:** every test passes.
+
+If any of these fails, launch waits for the fix and a rerun.
+
 ## sdcguard check
 
 What it runs: the same checksum checks as training and the screen (alarm at 6); a memory test that writes a
