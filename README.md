@@ -71,7 +71,9 @@ for step, (x, y) in enumerate(loader):
 ```
 
 On an H100, checking every 20th step costs 1.7% on GPT-2 small and 1.3% on a 0.9B model. The checks only
-read; with `exact_reductions=False` the gradients are bit-identical to a run without sdcguard.
+read; with `exact_reductions=False` the gradients are bit-identical to a run without sdcguard (one exception:
+a protected layer's weight also used directly by another op in the same autocast region, where the two uses
+get separate bf16 copies of the weight).
 
 ## In serving (vLLM, Hugging Face)
 
@@ -122,18 +124,23 @@ checked step; a fault that keeps swapping the same two outputs then shows on abo
 instead of never. Serving computes its weight checksums once at load, so it keeps one pattern.
 
 bf16 results are rounded, so the two sides never match exactly. sdcguard estimates each block's rounding
-noise and only alarms past 6 times that. In 24.6 million checks over 5 GPU-hours of clean training it never
-false-alarmed (worst score 3.54). The trade-off: errors under about 1% of a block hide in the noise. On NVIDIA
+noise and only alarms past 6 times that. In 24.6 million checks over 5 GPU-hours of clean training (Oct 14-15,
+the default mode of that version) it never false-alarmed (worst score 3.54); the board sweep with every phase of
+`check` added 1.68 million more on 10 GPUs (Oct 18, worst 3.67). The trade-off: errors under about 1% of a block hide in the noise. On NVIDIA
 GPUs the checks run as Triton kernels, which first have to match the plain PyTorch check or the plain check
-is used instead. Results are read back without stalling the GPU.
+is used instead. Serving reads results back without stalling the GPU; training reads them once at the end of
+each checked step.
 
 A recent real case of this kind: on NVIDIA's forum on Oct 2, 2026, a user reported that on H200s shared
 through MPS, some cuBLASLt kernels report success but leave part of the output unwritten, with no error and no
 Xid ([thread](https://forums.developer.nvidia.com/t/384873), [repro](https://github.com/Yeosangho/mps-cublaslt-fp16-corruption-repro)).
 NVIDIA reproduced it on Oct 6. It's a software bug, not a bad GPU, but it looks the same from the outside.
-[tests/test_unwritten_output.py](tests/test_unwritten_output.py) emulates the reported layer (16x2048x1000,
-columns 256 to 999 left as zeros, stale values or NaN) on CPU. The training and serving checks flag every
-variant, scoring 600 to 7,000 or non-finite, where the correct output scores about 1.
+We reproduced it on an H200 on Modal on Oct 19 ([results](results/mps_bug)): with MPS limiting the process to
+14%, 40% or 75% of the SMs, the reported layer (16x2048x1000) computed wrong forward outputs or weight
+gradients, and the training check raised an alert at each of those shares; at 50% and 100% it computed
+correctly. At 20% every output was right, but the check still alerted: the bug had hit the check's own matmul. Each saved evidence file now includes a
+recheck on the CPU that tells the two apart ("the output was wrong" or "the check's own GPU arithmetic was").
+[tests/test_unwritten_output.py](tests/test_unwritten_output.py) emulates the reported pattern on CPU.
 
 It also holds up against faults injected into real hardware. Flipping a mantissa bit in every tensor-core
 instruction on one lane of an L4 (about a 10% error in one input) left the loss untouched, and sdcguard
@@ -143,9 +150,10 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 
 | | |
 |---|---|
-| Works | PyTorch training in bf16/fp16 (DDP tested on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, Apple GPUs (training checks), `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4 |
-| Not checked | fp32/TF32 and quantized (FP8, INT4) matmuls in training and serving (`check` tests fp32, TF32 and FP8 one matmul at a time), convolutions, fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
-| Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD |
+| Works | PyTorch training in bf16/fp16 (DDP tested on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4 |
+| Not checked | fp32/TF32 and quantized (FP8, INT4) matmuls in training and serving (`check` tests fp32, TF32 and FP8 one matmul at a time), convolutions, fused MoE experts, vLLM's LM head, the inside of fused attention (only `check`'s repeatability test covers it), `nn.MultiheadAttention`'s output projection and `nn.TransformerEncoderLayer`'s fused inference path (both listed as unchecked, not reported as checked) |
+| Not supported on checked steps | `torch.func` transforms (vmap, grad) and `torch.compile(fullgraph=True)`: fast mode runs checked steps' linear layers eagerly |
+| Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD, Apple GPUs (only the operator mapping is unit-tested) |
 
 On Blackwell (B200) sdcguard uses the plain PyTorch checks; the faster Triton kernels cover Turing through
 Hopper for now.

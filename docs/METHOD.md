@@ -179,6 +179,64 @@ tests`).
 
 If any of these fails, launch waits for the fix and a rerun.
 
+### What the run found (October 19, 2026)
+
+Raw output: [results/math_modes](../results/math_modes), [results/gpu_tests](../results/gpu_tests),
+[results/precise_diag](../results/precise_diag), [results/precise_models](../results/precise_models).
+
+1. **Clean math modes: met, after one fix.** 0 wrong results in every mode that ran, on all five GPUs; the
+   worst clean score was 1.20 (A100 TF32 and B200 TF32), far under 3. INT8 didn't run anywhere: the check
+   summed INT8 results with an integer matmul on the GPU, which CUDA doesn't have, so every card said
+   INCOMPLETE. Fixed (float64 sums, exact here); the second run had INT8 at 0 wrong on the H100, A100 and L4.
+   FP8 on real GPUs matched what the tensor-core model predicted: worst clean score 0.27 (L4), 0.30 (H100)
+   and 0.06 (B200).
+2. **Unsupported isn't an error: met.** FP8 unsupported on the T4 and A100, BF16 and TF32 on the T4.
+3. **Sensitivity: met on the four bf16 GPUs, not on the T4.** On the same matmuls, half of the errors were
+   caught from about 20% of a typical output by the bf16-result check and from 0.055% by the fp32-accumulator
+   check: about 360 times smaller on the L4, A100, H100 and B200. The T4 has no bf16, and its fp16 result
+   keeps three more bits: 5.5% against 0.17%, 32 times. (That is the math-mode check's noise model on random
+   matrices of inner size 256. On real training matmuls with thousands of tokens, precise mode needs a more
+   cautious model, and is less sensitive: see item 4 and the next section.)
+4. **Precise mode: failed.** 70 to 78 false alarms in 2,970 clean checks on the A100, H100 and B200 (worst
+   score 17.9 to 20.3), 3 on the L4, none on the T4. Taken apart check by check: all the high scores were in
+   the backward dW matmuls of the attention input and the output layer (4,096 tokens), where per-output errors
+   were 3 to 5 times the model's allowance. The model scaled the random part of the rounding with the final
+   output, but every product is rounded against the running sum, and there the running sums wander far beyond
+   where they end. A third run on the same workload reproduced the failure (72 to 84 alarms on the A100, H100
+   and B200, 6 on the L4) and scored two candidate fixes on the same 30 steps on five GPUs: tracking the
+   running sums (16, 8 or 4 points along k) still alarmed 6 times on the A100's output layer (worst 7.8) and
+   needs extra matmuls; scaling that term by sqrt(k / N) had no alarm anywhere (worst 5.2 on the A100), which
+   is too close to 6 to ship. Precise mode stays off by default and out of the README; the next section has
+   the model chosen from these runs and the test it has to pass.
+5. **GPU test suite: failed, then met.** 247 of 251 passed: two failures were the INT8 bug, two were the test
+   machine missing the board's seed cards. After the fixes: 252 of 252, and `sdcguard check` PASS on the L4
+   with all 7 math modes.
+
+## Precise mode: the refit noise model and its held-out test (criteria written before the run)
+
+Written October 19, 2026, after the runs above and before `scripts/modal_precise_validate.py` ran.
+
+The random part of the accumulation's rounding is now bounded from first principles instead of from the final
+output: each of the k products is aligned and truncated (tensor cores) or rounded (FMA) against the running
+sum, an error of up to one fp32 ulp with standard deviation ulp / sqrt(12), about 0.58 u |running sum|; and
+no running sum of a row times a column can exceed |a_row| |b_column| (Cauchy-Schwarz). So the term is
+0.6 sqrt(k) u |a_row| |B_block| (see `checksum.py`). On the calibration data it should score at most about 3.2
+on the A100 and 1.5 on the H100. The price is sensitivity: an estimated 1% of a typical output instead of the
+0.14 to 0.24% the old, wrong model claimed (the default bf16 check: about 20%). The constant is frozen in the
+code before this run.
+
+The held-out run uses workloads none of the candidates was chosen on (`VALIDATE` in
+`experiments/precise_models.py`): a wider model with 8,192 tokens per step and a 50,257-token vocabulary, the
+calibration shape with a new seed, a narrow 12-layer model with 8,192 tokens per step, two of them fed
+word-like (Zipf) token streams, which make the output layer's gradients far more lopsided than the uniform
+random tokens of the calibration run, and higher learning rates. The same five GPUs (H100, B200, A100, L4 in
+bf16, T4 in fp16).
+
+Criteria: on every GPU, 0 alarms in every clean check and a worst score of at most 4 (a 1.5x margin under the
+alarm line). The run also reports the typical error caught (median and 90th percentile) and the cost per step
+of precise mode and of the default check, with no pass line. If the criteria fail, precise mode stays
+experimental and undocumented in the README, and the failure is written up here.
+
 ## sdcguard check
 
 What it runs: the same checksum checks as training and the screen (alarm at 6); a memory test that writes a

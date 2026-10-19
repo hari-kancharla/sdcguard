@@ -268,7 +268,18 @@ def software() -> dict:
         except md.PackageNotFoundError:
             pass
     from . import __version__
-    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas}
+    # what decides which units a "fp32" matmul really runs on: TF32, and (CUDA 12.9 and later) cuBLAS emulation
+    # of FP32/FP64 on lower-precision tensor cores, which environment variables can switch on
+    mm = {"allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32)}
+    fp32p = getattr(torch.backends.cuda.matmul, "fp32_precision", None)
+    if fp32p is not None:
+        mm["fp32_precision"] = str(fp32p)
+    env = {k: v[:40] for k, v in sorted(os.environ.items()) if k.startswith(("CUBLAS_", "CUBLASLT_", "NVIDIA_TF32"))
+           and k != "CUBLAS_WORKSPACE_CONFIG"}
+    if env:
+        mm["env"] = env
+    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas,
+            "matmul": mm}
 
 
 class Fingerprinter:
@@ -881,7 +892,26 @@ def terminal(pub: dict, out_dir: str = "") -> str:
     out += [f"  {k:<11} {v}" for k, v in lines(pub)]
     if out_dir:
         out.append(f"  {'files':<11} {out_dir}/ (result.json, card.svg, card.md)")
+    nxt = next_steps(pub, out_dir)
+    if nxt:
+        out.append(f"  {'next':<11} {nxt}")
     return "\n".join(out)
+
+
+def next_steps(pub: dict, out_dir: str = "") -> str:
+    """What to do about a result that isn't a PASS (the terminal output; not on the shared card)."""
+    where = out_dir or "the output folder"
+    if pub["result"] == "FAIL":
+        if pub.get("simulated_faults"):
+            return "(a demo: the faults were simulated in software) try `sdcguard replay` on an evidence .pt file"
+        return (f"stop scheduling work on this GPU. To show the failure follows the board, run `sdcguard replay "
+                f"<evidence>.pt` from {where} on this GPU and on a healthy one; `sdcguard report {where}` bundles "
+                f"the evidence for an RMA")
+    if pub["result"] == "SUSPECT":
+        return "run `sdcguard check` again; if outputs differ again, take the card to your provider"
+    if pub["result"] == "INCOMPLETE":
+        return "the notes above say what didn't run or couldn't be judged; fix that (often free GPU memory) and rerun"
+    return ""
 
 
 def _md(x) -> str:

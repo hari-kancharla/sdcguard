@@ -14,7 +14,9 @@ Sources checked October 19, 2026.
   devices", only 25% of defects showed up in burn-in, and 40% appeared around a year after deployment
   ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)).
 - **Which math mode breaks depends on the GPU.** In the same study, four GPUs that got matrix multiplies
-  wrong all computed BF16 and FP16 correctly, and failed in FP32, FP64, TF32 or INT8 depending on the GPU.
+  wrong all computed BF16 and FP16 correctly; each failed at least one of FP32, FP64, TF32 and INT8 (one only
+  FP32, one only FP64, two all four; Table 3). A check of bf16 matmuls alone, in training or anywhere else,
+  would have passed all four, which is why `sdcguard check` tests every mode the GPU supports.
 - **In training it hides, in inference it ships.** 15 of the 18 AEGIS incidents caused no visible training
   failure. Meta: in inference, SDCs "affect thousands of inference consumers" (same Meta post).
 
@@ -37,12 +39,18 @@ Sources checked October 19, 2026.
 
 - **Checks the math instead of redoing it.** Algorithm-based fault tolerance on every checked matmul, so no
   replay, no deterministic mode and no replicas. It works on one GPU, with sharded weights and with
-  nondeterministic kernels. The Open Compute Project's SDC white paper, written with NVIDIA, Meta, Google,
-  AMD, Intel, Arm and Microsoft, recommends exactly this
-  ([OCP, 2025](https://www.opencompute.org/documents/sdc-in-ai-ocp-whitepaper-final-pdf)), and Huawei ships
-  a matmul checksum for its Ascend NPUs in `torch_npu`
-  ([source](https://gitcode.com/Ascend/pytorch/blob/master/torch_npu/asd/checksum.py)). AEGIS showed it
-  works at production scale on NVIDIA GPUs; its code isn't released.
+  nondeterministic kernels. The Open Compute Project's SDC white paper (NVIDIA, Meta, Google, AMD, Intel,
+  Arm and Microsoft, August 2025) points to "emerging research on algorithm-based fault tolerance (ABFT,)
+  especially when integrated directly into core AI kernels" as a direction, though not in its call to action
+  ([OCP, 2025](https://www.opencompute.org/documents/sdc-in-ai-ocp-whitepaper-final-pdf), section 5.4), and
+  Huawei ships a matmul checksum for its Ascend NPUs in `torch_npu`
+  ([source](https://gitcode.com/Ascend/pytorch/blob/master/torch_npu/asd/checksum.py)). AEGIS showed checksums
+  work at production scale on NVIDIA GPUs, with a finding that matters here: it located its incidents only
+  with checksums over the fp32 accumulators. "We did not successfully locate SDC incidents using checksums
+  accumulated from bfloat16 outputs" (section 8); those need roughly 10,000 times larger errors to be
+  detected (section 7.5). sdcguard's default checks read the bf16/fp16 outputs (cheap, and in serving the
+  only option without changing cuBLAS); its precise mode checks the fp32 accumulators the way AEGIS does,
+  and is still being validated on GPUs ([METHOD.md](METHOD.md)). AEGIS's code isn't released.
 - **Names the chip and the layer:** GPU UUID, PCI slot, layer, and the row and column block of the bad output.
 - **Covers serving**, through a vLLM plugin and a Hugging Face integration.
 - **Saves evidence** you can replay on another GPU, which is what NVIDIA's RMA process asks for when its own
@@ -53,8 +61,10 @@ Sources checked October 19, 2026.
 
 - The checksums cover matrix multiplies, which is most of the math. Attention internals, norms and the rest
   are covered only by `sdcguard check`'s repeatability test and, in training, the cross-GPU canary.
-- Errors under about 1% of an output block hide in bf16 rounding noise. Those seem to matter least: TU
-  Berlin, injecting faults into LLM training, found "Only exponent bits exhibited measurable impact"
-  ([Altenbernd et al., 2026](https://arxiv.org/html/2604.00726)).
+- Errors under about 1% of an output block hide in bf16 rounding noise. TU Berlin, injecting faults into LLM
+  training, found "Only exponent bits exhibited measurable impact"
+  ([Altenbernd et al., 2026](https://arxiv.org/html/2604.00726)), but AEGIS's production incidents were
+  found only by fp32-accumulator checksums (above): on real defective GPUs the default checks may be too
+  coarse, which is what precise mode is for.
 - All faults so far were simulated in software or injected into a real GPU with NVBit. No GPU pulled from a
   fleet for silent corruption has been tested yet.
