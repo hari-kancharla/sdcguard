@@ -140,6 +140,8 @@ def run(dev: torch.device, steps: int, seed: int = 0, say=print, cfg: dict = Non
     low = torch.bfloat16 if dev.type != "cuda" or torch.cuda.get_device_capability(dev)[0] >= 8 else torch.float16
     torch.manual_seed(seed)
     model = ScreenModel(cfg["vocab"], cfg["layers"], cfg["width"], cfg["heads"], cfg["seq"]).to(dev)
+    # This fixed workload has trainable inputs/weights at every Linear: forward, dX and dW.
+    expected_checks = 3 * steps * sum(isinstance(layer, torch.nn.Linear) for layer in model.modules())
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.get("lr", 3e-4))
     gen = torch.Generator().manual_seed(seed + 1)
     g = SDCGuard(every=1, precise=True)
@@ -186,19 +188,22 @@ def run(dev: torch.device, steps: int, seed: int = 0, say=print, cfg: dict = Non
             opt.zero_grad(set_to_none=True)
             if n % 5 == 4 or n == steps - 1:
                 say(f"step {n}: worst {({k: round(v, 2) for k, v in worst.items()})}")
-        g.unprotect()
     finally:
+        g.unprotect()
         SDCGuard._accumulator = orig
 
     summary = {}
     for name, z in zs.items():
         zt = torch.tensor(z)
         ct = torch.cat(caught[name]).float()
-        summary[name] = {"checks": len(z), "alarms": int((zt > ALARM).sum()), "worst": round(float(zt.max()), 3),
+        summary[name] = {"checks": len(z), "alarms": int((zt > ALARM).sum()),
+                         "unjudged": int(((zt < 0) | ~torch.isfinite(zt)).sum()),
+                         "worst": round(float(zt.max()), 3),
                          "p99_9": round(float(zt.kthvalue(max(1, int(0.999 * len(z)))).values), 3),
                          "typical_error_caught_median": float(f"{float(ct.median()):.3g}"),
                          "typical_error_caught_p90": float(f"{float(ct.kthvalue(max(1, int(0.9 * ct.numel()))).values):.3g}")}
     out = {"config": cfg, "dtype": str(low).replace("torch.", ""), "steps": steps, "models": summary,
+           "guard_stats": dict(g.stats), "expected_checks": expected_checks,
            "lr": cfg.get("lr", 3e-4),
            "worst_by_layer_and_pass": dict(sorted(by_pass.items(), key=lambda kv: -kv[1]["current"]))}
     if dev.type == "cuda":
@@ -264,13 +269,30 @@ def validate(dev: torch.device, say=print) -> dict:
             continue
         r["name"] = cfg["name"]
         res.append(r)
-    worst = max((r["models"]["current_as_shipped"]["worst"] for r in res), default=0.0)
-    alarms = sum(r["models"]["current_as_shipped"]["alarms"] for r in res)
+    measured = [r["models"]["current_as_shipped"] for r in res]
+    worst = max((r["worst"] for r in measured), default=0.0)
+    alarms = sum(r["alarms"] for r in measured)
+    unjudged = sum(r["unjudged"] for r in measured)
+    # An absent check or an unknown score cannot establish a clean validation run, and neither can a workload
+    # that didn't run. Inspect every workload: Python max() can conceal a later NaN.
+    complete = bool(measured) and not skipped and all(
+        r["checks"] > 0 and r["unjudged"] == 0 and math.isfinite(r["worst"]) and 0 <= r["worst"] <= 4.0
+        for r in measured
+    )
+    # The diagnostic calculation above is independent of the production guard queue.
+    # Both must have executed all checks; diagnostic-only scores cannot validate protection.
+    complete = complete and all(
+        workload.get("expected_checks", 0) == observed["checks"]
+        and workload.get("guard_stats", {}).get("checked") == observed["checks"]
+        and workload.get("guard_stats", {}).get("checked_fp32") == observed["checks"]
+        and all(workload.get("guard_stats", {}).get(key) == 0
+                for key in ("unjudged", "skipped_oom", "skipped_dtype", "alerts"))
+        for workload, observed in zip(res, measured)
+    )
     out = {"workloads": res, "skipped": skipped,
            "as_shipped": {"alarms": alarms, "worst": worst, "complete": not skipped,
-                          "checks": sum(r["models"]["current_as_shipped"]["checks"] for r in res),
-                          # a run that skipped a workload can't meet the criteria
-                          "criteria_met": bool(res) and not skipped and alarms == 0 and worst <= 4.0}}
+                          "checks": sum(r["checks"] for r in measured), "unjudged": unjudged,
+                          "criteria_met": complete and alarms == 0}}
     try:
         out["overhead"] = overhead(dev, VALIDATE["cuda" if dev.type == "cuda" else "cpu"][-1 if dev.type != "cuda" else 1])
     except Exception as e:  # noqa: BLE001
@@ -283,7 +305,8 @@ def validate(dev: torch.device, say=print) -> dict:
 
 def validate_markdown(v: dict) -> str:
     a = v["as_shipped"]
-    lines = [f"## {v.get('gpu', 'CPU')}: {a['checks']} held-out checks, {a['alarms']} alarms, worst {a['worst']} "
+    lines = [f"## {v.get('gpu', 'CPU')}: {a['checks']} held-out checks, {a['alarms']} alarms, "
+             f"{a.get('unjudged', 0)} unjudged, worst {a['worst']} "
              f"(criteria {'MET' if a['criteria_met'] else 'NOT MET'}: 0 alarms, worst at most 4"
              f"{'' if a.get('complete', True) else ', and every workload run'})", ""]
     for sk in v.get("skipped", []):

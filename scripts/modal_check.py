@@ -67,14 +67,16 @@ image = (
     .env({"PYTHONPATH": f"{R}/src:{R}/experiments", "PYTHONUNBUFFERED": "1", "TIKTOKEN_CACHE_DIR": f"{V}/data/tiktoken"})
     .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip)
     .add_local_dir(LOCAL / "tests", f"{R}/tests", ignore=_skip)
+    .add_local_dir(LOCAL / "scripts", f"{R}/scripts", ignore=_skip)
     .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip)
     .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml")
     .add_local_file(LOCAL / "README.md", f"{R}/README.md")             # (the wheel's description)
     .add_local_file(LOCAL / "LICENSE", f"{R}/LICENSE")
-    # two board tests read the seed cards
-    .add_local_dir(LOCAL / "docs" / "board" / "seed", f"{R}/docs/board/seed",
-                   ignore=lambda p: p.name.startswith("._"))
 )
+# Seed cards are historical artifacts, not prerequisites for testing a source archive.
+if (LOCAL / "docs" / "board" / "seed").is_dir():
+    image = image.add_local_dir(LOCAL / "docs" / "board" / "seed", f"{R}/docs/board/seed",
+                                ignore=lambda p: p.name.startswith("._"))
 
 app = modal.App("sdcguard-check", image=image)
 vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
@@ -200,6 +202,8 @@ def _tests(label: str, with_bench: bool = False) -> dict:
         "/tmp/venv/bin/sdcguard selftest; "
         "/tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
         shell=True, capture_output=True, text=True, executable="/bin/bash")
+    with open(f"{OUT}/wheel_{label}.txt", "w") as f:
+        f.write(whl.stdout + "\n" + whl.stderr + f"\n[exit code {whl.returncode}]\n")
     if os.path.isdir(f"{OUT}/tests_cli_{label}"):
         shutil.rmtree(f"{OUT}/tests_cli_{label}")
     c = subprocess.run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
@@ -376,7 +380,15 @@ def _download() -> None:
         shutil.copy(pngs[0], LOCAL / "docs" / "img" / "example_card.png")
         print(f"README example card: docs/img/example_card.png (from {pngs[0].parent.parent.name})", flush=True)
     subprocess.run([sys.executable, str(LOCAL / "src" / "sdcguard" / "board.py"), "--dir", str(seed), "--out",
-                    str(LOCAL / "docs" / "board")])
+                    str(LOCAL / "docs" / "board")], check=True)
+
+
+def _passed(result: dict) -> bool:
+    """A completed remote call is useful evidence only if it returned successful checks and actual cards."""
+    cards = result.get("cards")
+    return result.get("exit") == 0 and isinstance(cards, dict) and bool(cards) and all(
+        card.get("result") == "PASS" for card in cards.values()
+    )
 
 
 @app.local_entrypoint()
@@ -432,10 +444,14 @@ def main(phase: str = "sweep", force: bool = False):
         print(f"\n=== {r['label']} ({r['minutes']} min, exit {r['exit']}): {verdicts}\n{r['output'][-2500:]}", flush=True)
         if r["exit"] not in (0, 1) and r["errors"]:
             print(r["errors"][-1500:], flush=True)
+        failed = not _passed(r)
         try:
             _download()
         except Exception as e:  # noqa: BLE001
+            failed = True
             print(f"(could not download results: {e}. Run --phase fetch later.)", flush=True)
+        if failed:
+            raise SystemExit("B200 VALIDATION FAILED OR INCOMPLETE. Inspect the saved results.")
         print("\nDone.", flush=True)
         return
     if phase != "sweep":
@@ -447,17 +463,24 @@ def main(phase: str = "sweep", force: bool = False):
         print(msg)
         return
     calls = [(label, f.spawn()) for label, f in SWEEP]
+    failed = []
     for label, call in calls:
         try:
             r = call.get()
+            if not _passed(r):
+                failed.append(label)
             verdicts = ", ".join(f"{c['gpu']['name']}: {c['result']}" for c in r["cards"].values()) or "no result"
             print(f"\n=== {r['label']} ({r['minutes']} min, exit {r['exit']}): {verdicts}\n{r['output'][-2500:]}", flush=True)
             if r["exit"] not in (0, 1) and r["errors"]:
                 print(r["errors"][-1500:], flush=True)
         except Exception as e:  # noqa: BLE001
+            failed.append(label)
             print(f"\n=== {label}: did not finish ({type(e).__name__}: {e})", flush=True)
     try:
         _download()
     except Exception as e:  # noqa: BLE001
+        failed.append("result download or board build")
         print(f"(could not download results: {e}. Run --phase fetch later.)", flush=True)
+    if failed:
+        raise SystemExit(f"SWEEP FAILED OR INCOMPLETE: {', '.join(failed)}. Inspect the saved results.")
     print("\nDone.", flush=True)

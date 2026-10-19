@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -23,6 +24,47 @@ import time
 
 MODEL = "Qwen/Qwen2.5-1.5B-Instruct"     # bf16, public, has biases on q/k/v (tests the bias path)
 FLIP_LAYER = "model.layers.10.mlp.down_proj"
+
+
+def _guarded_failures(result: dict) -> list[str]:
+    """Validate observed behavior independently of whether the serving process exited normally."""
+    errors = []
+    clean, after, flipped = (result.get(k) for k in ("clean", "after_flip", "flipped"))
+    if not all(isinstance(v, list) and v for v in (clean, after, flipped)):
+        return ["missing clean, injected-fault or worker reports"]
+    if len(clean) != len(after) or len(clean) != len(flipped):
+        return ["worker report counts differ"]
+    for i, (c, a, target) in enumerate(zip(clean, after, flipped)):
+        if not isinstance(c, dict) or not isinstance(a, dict):
+            errors.append(f"worker {i}: malformed reports")
+            continue
+        layers = c.get("layers", 0)
+        if not isinstance(layers, int) or layers <= 0 or c.get("layers_checked_since_last_read") != layers:
+            errors.append(f"worker {i}: not every registered layer demonstrated a check")
+        if c.get("alerts") != [] or c.get("changed_weights") != []:
+            errors.append(f"worker {i}: clean serving raised alerts or changed weights")
+        if not isinstance(target, str) or not target:
+            errors.append(f"worker {i}: no weight was corrupted")
+            continue
+        locations = {e.get("where") for e in a.get("alerts", []) if isinstance(e, dict)}
+        if target not in locations or target not in a.get("changed_weights", []):
+            errors.append(f"worker {i}: the corrupted layer was not identified by both checks")
+    return errors
+
+
+def _comparison_failures(baseline: dict, guarded: dict) -> list[str]:
+    errors = _guarded_failures(guarded)
+    before, after = baseline.get("first_outputs"), guarded.get("first_outputs")
+    if not isinstance(before, list) or not before or before != after:
+        errors.append("compared completions are missing or differ")
+    for field in ("model", "vllm", "enforce_eager"):
+        if field not in baseline or baseline.get(field) != guarded.get(field):
+            errors.append(f"baseline and guarded {field} do not match")
+    for name, result in (("baseline", baseline), ("guarded", guarded)):
+        value = result.get("output_tokens_per_s")
+        if not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
+            errors.append(f"{name} throughput is missing or invalid")
+    return errors
 
 
 def _prompts(n: int):
@@ -127,6 +169,10 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     with open(os.path.join(out, f"{tag or role}.json"), "w") as f:
         json.dump(res, f, indent=1, default=str)
     print(json.dumps({k: v for k, v in res.items() if k != "first_outputs"}, indent=1, default=str), flush=True)
+    failures = _guarded_failures(res) if role == "guarded" else []
+    if failures:
+        print("VALIDATION FAILED: " + "; ".join(failures), flush=True)
+    return 1 if failures else 0
 
 
 def compare(out: str):
@@ -156,9 +202,12 @@ def compare(out: str):
     if os.path.exists(path):
         old = json.load(open(path))
     summary = {**old, **summary}
+    failures = _comparison_failures(b, g)
+    summary["validation"] = {"passed": not failures, "errors": failures}
     with open(os.path.join(out, "SUMMARY.json"), "w") as f:
         json.dump(summary, f, indent=1, default=str)
     print(json.dumps(summary, indent=1, default=str), flush=True)
+    return failures
 
 
 def add_vanilla(out: str):
@@ -195,9 +244,12 @@ def add_share(out: str, tag: str):
         "worst_clean_z": clean.get("worst_clean_z"),
         "flagged_after_flip": sorted({x["where"] for x in after.get("alerts", [])}),
         "verify_weights_after_flip": after.get("changed_weights")}
+    failures = _comparison_failures(b, g)
+    summary["shares"][g["share"]]["validation"] = {"passed": not failures, "errors": failures}
     with open(path, "w") as f:
         json.dump(summary, f, indent=1, default=str)
     print(json.dumps(summary["shares"][g["share"]], indent=1, default=str), flush=True)
+    return failures
 
 
 def main():
@@ -213,8 +265,7 @@ def main():
                    "share of layers, e.g. 0.125,0.25")
     a = p.parse_args()
     if a.role:
-        run_role(a.role, a.out, a.prompts, a.max_tokens, a.model, a.enforce_eager, a.tag)
-        return
+        return run_role(a.role, a.out, a.prompts, a.max_tokens, a.model, a.enforce_eager, a.tag)
     shares = [float(x) for x in a.shares.split(",") if x.strip()]
     def go(role, env=None, extra=()):
         cmd = [sys.executable, __file__, "--role", role, "--out", a.out, "--prompts", str(a.prompts),
@@ -228,6 +279,7 @@ def main():
     attempts = [({}, ()), ({"SDCGUARD_SERVE_FAST": "0"}, ()), ({}, ("--enforce-eager",))]
     baseline_ok: dict = {}
     mode = attempts[-1]
+    matched_pair = False
     for env, extra in attempts:
         if extra not in baseline_ok:
             baseline_ok[extra] = go("baseline", extra=extra) == 0
@@ -238,26 +290,41 @@ def main():
         print(f"guarded run {env or ''} {' '.join(extra)}: exit code {code}", flush=True)
         if code == 0 and baseline_ok[extra]:
             mode = (env, extra)
+            matched_pair = True
             break
+    if not matched_pair:
+        print("VALIDATION FAILED: no successful baseline/guarded pair; stale files are not accepted", flush=True)
+        return 1
+    failures = []
     try:
-        compare(a.out)
+        failures.extend(compare(a.out))
     except Exception as e:  # noqa: BLE001
         print(f"comparison failed: {e}", flush=True)
+        failures.append(f"comparison failed: {e}")
     code = go("vanilla", extra=mode[1])          # same mode, PyTorch's default reductions, no sdcguard
     print(f"vanilla run {' '.join(mode[1])}: exit code {code}", flush=True)
     try:
+        if code:
+            raise RuntimeError(f"vanilla process exited {code}")
         add_vanilla(a.out)
     except Exception as e:  # noqa: BLE001
         print(f"vanilla comparison failed: {e}", flush=True)
+        failures.append(f"vanilla comparison failed: {e}")
     for share in shares:            # same mode as the main pair, fewer layers checked
         tag = f"guarded_share_{share}"
         code = go("guarded", {**mode[0], "SDCGUARD_SHARE": str(share)}, (*mode[1], "--tag", tag))
         print(f"guarded run, share {share} of layers: exit code {code}", flush=True)
         try:
-            add_share(a.out, tag)
+            if code:
+                raise RuntimeError(f"share {share} process exited {code}")
+            failures.extend(add_share(a.out, tag))
         except Exception as e:  # noqa: BLE001
             print(f"share comparison failed: {e}", flush=True)
+            failures.append(f"share comparison failed: {e}")
+    if failures:
+        print("VALIDATION FAILED: " + "; ".join(failures), flush=True)
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

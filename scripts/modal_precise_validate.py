@@ -105,21 +105,25 @@ def main() -> None:
     dest = LOCAL / "results" / "precise_validate"
     dest.mkdir(parents=True, exist_ok=True)
     text = []
+    results = {}
     for name, call in started:
         try:
             r = call.get(timeout=LIMIT + 300)
         except Exception as e:  # noqa: BLE001
             r = {"label": name, "error": f"{type(e).__name__}: {str(e)[:300]}"}
         r["source"] = src
+        results[name] = r
         (dest / f"{name}.json").write_text(json.dumps(r, indent=2, default=str))
         text.append(r.get("markdown") or f"## {name}: could not run: {r.get('error')}\n")
         print(f"{name}: finished", flush=True)
-    met = [n for n in ("h100", "b200", "a100_80gb", "l4", "t4")
-           if (json.loads((dest / f"{n}.json").read_text()).get("as_shipped") or {}).get("criteria_met")]
+    met = [name for name, r in results.items()
+           if not r.get("error") and (r.get("as_shipped") or {}).get("criteria_met") is True]
     head = (f"# Precise mode, held-out validation\n\nCriteria (pre-registered): 0 alarms and worst score at most 4 "
             f"on every GPU. Met on {len(met)} of 5: {', '.join(met) or 'none'}.\n\n")
     (dest / "SUMMARY.md").write_text(head + "\n".join(text))
     print(head + "\n".join(text))
-    print(f"Done. Results in {dest}", flush=True)
-    if len(met) < len(jobs):        # the exit code says whether the pre-registered criteria were met everywhere
+    print(f"Results saved in {dest}", flush=True)
+    if len(met) != len(jobs):        # the exit code says whether the pre-registered criteria were met everywhere
+        print("PRECISE VALIDATION FAILED. Precise mode remains experimental. Done.", flush=True)
         raise SystemExit(1)
+    print("All required GPUs met the held-out numerical criteria. Done.", flush=True)

@@ -102,35 +102,54 @@ def _locked(phase: str, force: bool) -> str | None:
 def vllm(force: bool = False) -> str:
     msg = _locked("vllm", force)
     if msg:
-        return msg
+        raise RuntimeError(msg)
     import shutil
     out = f"{RUNS}/vllm"
     if os.path.isdir(out):
         shutil.rmtree(out)
+    os.makedirs(out, exist_ok=True)
     t0 = time.time()
+    codes = {}
     try:
-        _tee([sys.executable, "-c", "import importlib.metadata as m; print([e for e in m.entry_points("
-              "group='vllm.general_plugins')])"], f"{out}/entry_points.txt")
+        codes["entry_points"] = _tee([sys.executable, "-c", "import importlib.metadata as m; "
+              "entries=list(m.entry_points(group='vllm.general_plugins')); print(entries); "
+              "assert any(e.name == 'sdcguard' for e in entries), 'sdcguard plugin entry point missing'"],
+              f"{out}/entry_points.txt")
         # a small model (fast) and a 7B one (per-layer costs like real deployments); each: without sdcguard,
         # with it on every layer, and on 1/8 of the layers, under vLLM's default torch.compile + CUDA graphs
-        for tag, model in (("qwen1.5b", "Qwen/Qwen2.5-1.5B-Instruct"), ("qwen7b", "Qwen/Qwen2.5-7B-Instruct")):
-            _tee([sys.executable, f"{R}/experiments/vllm_check.py", "--out", f"{out}/{tag}", "--model", model,
-                  "--shares", "0.125"], f"{out}/{tag}.txt", cwd="/root")
-            vol.commit()
+        if codes["entry_points"] == 0:
+            for tag, model in (("qwen1.5b", "Qwen/Qwen2.5-1.5B-Instruct"), ("qwen7b", "Qwen/Qwen2.5-7B-Instruct")):
+                codes[tag] = _tee([sys.executable, f"{R}/experiments/vllm_check.py", "--out", f"{out}/{tag}",
+                                   "--model", model, "--shares", "0.125"], f"{out}/{tag}.txt", cwd="/root")
+                vol.commit()
     finally:
         with open(f"{out}/TIME.txt", "w") as f:
             f.write(f"{(time.time() - t0) / 60:.1f} minutes on {GPU}\n")
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_codes": codes, "passed": len(codes) == 3 and all(c == 0 for c in codes.values())}, f)
         vol.commit()
+    if len(codes) != 3 or any(code != 0 for code in codes.values()):
+        raise RuntimeError(f"vLLM validation failed: {codes}; diagnostics were saved to {out}")
     return f"vllm finished in {(time.time() - t0) / 60:.1f} minutes"
 
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
 def demo(force: bool = False) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
+    msg = _locked("demo", force)
+    if msg:
+        raise RuntimeError(msg)
     out = f"{RUNS}/demo"
     os.makedirs(out, exist_ok=True)
-    code = _tee([sys.executable, f"{R}/experiments/demo_vllm.py"], f"{out}/demo.txt", cwd="/root")
-    vol.commit()
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/demo_vllm.py"], f"{out}/demo.txt", cwd="/root")
+    finally:
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0}, f)
+        vol.commit()
+    if code != 0:
+        raise RuntimeError(f"vLLM demo failed (exit code {code}); diagnostics were saved to {out}")
     return f"demo finished (exit code {code})"
 
 
@@ -157,11 +176,20 @@ def main(phase: str = "vllm", force: bool = False):
     if phase not in ESTIMATES:
         raise SystemExit(f"--phase must be one of {', '.join(ESTIMATES)}")
     print(f"Phase '{phase}': {ESTIMATES[phase]}. Everything shuts down by itself when it's done.", flush=True)
+    failures = []
     try:
         if phase == "vllm":
-            print(vllm.remote(force), flush=True)
+            message = vllm.remote(force)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED"):
+                failures.append(str(message))
         elif phase == "demo":
-            print(demo.remote(force), flush=True)
+            message = demo.remote(force)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED"):
+                failures.append(str(message))
+    except Exception as e:  # noqa: BLE001 (download diagnostics before reporting the remote failure)
+        failures.append(f"{phase} did not complete: {type(e).__name__}: {e}")
     finally:
         try:
             data = bundle.remote()
@@ -172,4 +200,7 @@ def main(phase: str = "vllm", force: bool = False):
             print(f"Results are in {dest / f'gpu_{ROUND}'} ({len(data) / 1e6:.1f} MB)", flush=True)
         except Exception as e:  # noqa: BLE001
             print(f"(could not download results: {e}. Run --phase fetch later.)", flush=True)
+            failures.append(f"result download failed: {type(e).__name__}: {e}")
+    if failures:
+        raise SystemExit("VALIDATION NOT COMPLETED: " + "; ".join(failures))
     print("\nDone.", flush=True)
