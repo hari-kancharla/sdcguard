@@ -249,18 +249,28 @@ def overhead(dev: torch.device, cfg: dict, steps: int = 6) -> dict:
 def validate(dev: torch.device, say=print) -> dict:
     """The held-out run: the frozen model (as shipped) and the earlier candidates on workloads none of them was
     chosen on, plus what precise mode costs."""
-    res = []
+    res, skipped = [], []
     for cfg in VALIDATE["cuda" if dev.type == "cuda" else "cpu"]:
         say(f"validate: {cfg['name']}")
-        r = run(dev, cfg["steps"], say=lambda s, n=cfg["name"]: say(f"{n}: {s}"), cfg=cfg,
-                models=("current_as_shipped", "shipped", "current", "sqrt_steps"))
+        try:
+            r = run(dev, cfg["steps"], say=lambda s, n=cfg["name"]: say(f"{n}: {s}"), cfg=cfg,
+                    models=("current_as_shipped", "shipped", "current", "sqrt_steps"))
+        except torch.cuda.OutOfMemoryError as e:
+            # one workload too big for this GPU (the wide one on a 16 GB T4, Oct 19) shouldn't lose the others
+            skipped.append({"name": cfg["name"], "error": f"did not fit in GPU memory: {str(e).splitlines()[0][:160]}"})
+            say(f"{cfg['name']}: did not fit in GPU memory, skipped")
+            if dev.type == "cuda":
+                torch.cuda.empty_cache()
+            continue
         r["name"] = cfg["name"]
         res.append(r)
-    worst = max(r["models"]["current_as_shipped"]["worst"] for r in res)
+    worst = max((r["models"]["current_as_shipped"]["worst"] for r in res), default=0.0)
     alarms = sum(r["models"]["current_as_shipped"]["alarms"] for r in res)
-    out = {"workloads": res, "as_shipped": {"alarms": alarms, "worst": worst,
-                                            "checks": sum(r["models"]["current_as_shipped"]["checks"] for r in res),
-                                            "criteria_met": alarms == 0 and worst <= 4.0}}
+    out = {"workloads": res, "skipped": skipped,
+           "as_shipped": {"alarms": alarms, "worst": worst, "complete": not skipped,
+                          "checks": sum(r["models"]["current_as_shipped"]["checks"] for r in res),
+                          # a run that skipped a workload can't meet the criteria
+                          "criteria_met": bool(res) and not skipped and alarms == 0 and worst <= 4.0}}
     try:
         out["overhead"] = overhead(dev, VALIDATE["cuda" if dev.type == "cuda" else "cpu"][-1 if dev.type != "cuda" else 1])
     except Exception as e:  # noqa: BLE001
@@ -274,7 +284,10 @@ def validate(dev: torch.device, say=print) -> dict:
 def validate_markdown(v: dict) -> str:
     a = v["as_shipped"]
     lines = [f"## {v.get('gpu', 'CPU')}: {a['checks']} held-out checks, {a['alarms']} alarms, worst {a['worst']} "
-             f"(criteria {'MET' if a['criteria_met'] else 'NOT MET'}: 0 alarms, worst at most 4)", ""]
+             f"(criteria {'MET' if a['criteria_met'] else 'NOT MET'}: 0 alarms, worst at most 4"
+             f"{'' if a.get('complete', True) else ', and every workload run'})", ""]
+    for sk in v.get("skipped", []):
+        lines += [f"### {sk['name']}: not run ({sk['error']})", ""]
     for r in v["workloads"]:
         lines.append(markdown(r).replace("## ", "### " + r["name"] + ": ", 1))
     if v.get("overhead"):

@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # test suite on an L4 and an H100, about 15 min, about $1.30
+    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 15 min, about $3
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -155,7 +155,7 @@ SWEEP = [("b200", b200), ("h200", h200), ("h100_a", h100_a), ("h100_b", h100_b),
          ("l40s", l40s), ("l4_a", l4_a), ("l4_pair", l4_pair), ("t4", t4)]
 
 
-def _tests(label: str) -> dict:
+def _tests(label: str, with_bench: bool = False) -> dict:
     """The test suite on a GPU (includes a 30-second `check` on the GPU); the Triton checks compared with the
     plain ones on this GPU (tests/_fast_compare.py and tests/_serve_fast_compare.py, which test_fast.py and
     test_serve.py run in Triton's CPU interpreter); the package built as a wheel, installed in a fresh virtual
@@ -173,16 +173,31 @@ def _tests(label: str) -> dict:
                         env=env)
     with open(f"{OUT}/fast_compare_{label}.txt", "w") as f:
         f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
-    # the wheel, in a clean environment that sees torch but not the source tree
+    sc = subprocess.run([sys.executable, "tests/_serve_fast_compare.py", "cuda"], cwd=R, capture_output=True,
+                        text=True, env=env)
+    with open(f"{OUT}/serve_compare_{label}.txt", "w") as f:
+        f.write(sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n")
+    bench = None
+    if with_bench:      # per-shape time of the Triton check next to the matmul and the plain check
+        bench = subprocess.run([sys.executable, "experiments/bench_kernels.py"], cwd=R, capture_output=True,
+                               text=True, env=env)
+    # The wheel, in a clean environment that sees torch but not the source tree. Every step runs without
+    # PYTHONPATH and builds from a copy: with the image's PYTHONPATH (the source tree) and the egg-info an
+    # in-tree build leaves there, pip sees sdcguard 0.3.0 as "already installed" and skips the wheel
+    # (what broke this step on Oct 19).
     whl = subprocess.run(
-        "set -e; rm -rf /tmp/w /tmp/venv /tmp/run; mkdir -p /tmp/w /tmp/run; "
-        f"{sys.executable} -m pip wheel --no-deps --no-build-isolation -q -w /tmp/w {R}; "
+        "set -e; unset PYTHONPATH; rm -rf /tmp/w /tmp/venv /tmp/run /tmp/srccopy; mkdir -p /tmp/w /tmp/run; "
+        f"mkdir /tmp/srccopy && cp -r {R}/src {R}/pyproject.toml {R}/README.md {R}/LICENSE /tmp/srccopy/; "
+        "rm -rf /tmp/srccopy/src/*.egg-info; "
+        f"{sys.executable} -m pip wheel --no-deps --no-build-isolation -q -w /tmp/w /tmp/srccopy; "
+        f"{sys.executable} -m zipfile -l /tmp/w/sdcguard-*.whl | tail -n +2 | wc -l | sed 's/^/files in the wheel: /'; "
         f"{sys.executable} -m venv --system-site-packages /tmp/venv; "
-        "/tmp/venv/bin/pip install -q --no-deps /tmp/w/sdcguard-*.whl; cd /tmp/run; "
-        "env -u PYTHONPATH /tmp/venv/bin/python -c 'import sdcguard, sys; print(sdcguard.__file__); "
+        "/tmp/venv/bin/python -m pip install --no-deps --disable-pip-version-check /tmp/w/sdcguard-*.whl; "
+        "cd /tmp/run; "
+        "/tmp/venv/bin/python -c 'import sdcguard, sys; print(sdcguard.__file__); "
         "sys.exit(0 if \"/tmp/venv/\" in sdcguard.__file__ else 1)'; "
-        "env -u PYTHONPATH /tmp/venv/bin/sdcguard selftest; "
-        "env -u PYTHONPATH /tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
+        "/tmp/venv/bin/sdcguard selftest; "
+        "/tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
         shell=True, capture_output=True, text=True, executable="/bin/bash")
     if os.path.isdir(f"{OUT}/tests_cli_{label}"):
         shutil.rmtree(f"{OUT}/tests_cli_{label}")
@@ -196,11 +211,17 @@ def _tests(label: str) -> dict:
             + "Triton vs plain checks on this GPU: " + (fc.stdout.strip().splitlines() or ["(no output)"])[-1]
             + "".join("\n  " + ln[:300] for ln in mismatches) + (fc.stderr[-1500:] if fc.returncode else "")
             + f"\n[fast compare exit code {fc.returncode}]\n\n"
+            + "Triton vs plain serving checks on this GPU: "
+            + (sc.stdout.strip().splitlines() or ["(no output)"])[-1]
+            + "".join("\n  " + ln[:300] for ln in sc.stdout.splitlines() if '"agree": false' in ln)
+            + (sc.stderr[-1500:] if sc.returncode else "") + f"\n[serve compare exit code {sc.returncode}]\n\n"
+            + ("" if bench is None else "Kernel timings (experiments/bench_kernels.py):\n" + bench.stdout[-3000:]
+               + bench.stderr[-800:] + f"\n[bench exit code {bench.returncode}]\n\n")
             + "Installed wheel (fresh venv, outside the source tree):\n" + whl.stdout[-2500:] + whl.stderr[-1500:]
             + f"\n[wheel exit code {whl.returncode}]\n\n"
             + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]")
-    return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "wheel": whl.returncode,
-            "check": c.returncode}
+    return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "serve_compare": sc.returncode,
+            "wheel": whl.returncode, "check": c.returncode, **({} if bench is None else {"bench": bench.returncode})}
 
 
 @app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=30 * 60)
@@ -211,6 +232,11 @@ def tests() -> dict:
 @app.function(gpu="H100!", volumes=VOLS, cpu=4, memory=32768, timeout=30 * 60)
 def tests_h100() -> dict:
     return _tests("h100")
+
+
+@app.function(gpu="B200", volumes=VOLS, cpu=4, memory=32768, timeout=30 * 60)
+def tests_b200() -> dict:
+    return _tests("b200", with_bench=True)
 
 
 DIAG = r"""
@@ -336,11 +362,11 @@ def _download() -> None:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on an L4 and an H100 at once: about 15 minutes, about $1.30 (hard limit 30 minutes each, "
-              "about $3.20).", flush=True)
+        print("Tests on an L4, an H100 and a B200 at once: about 15 minutes, about $3 (hard limit 30 minutes "
+              "each, about $6.60).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
-        calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn())]
+        calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)
         failed = {}

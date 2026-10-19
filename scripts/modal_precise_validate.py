@@ -121,3 +121,5 @@ def main() -> None:
     (dest / "SUMMARY.md").write_text(head + "\n".join(text))
     print(head + "\n".join(text))
     print(f"Done. Results in {dest}", flush=True)
+    if len(met) < len(jobs):        # the exit code says whether the pre-registered criteria were met everywhere
+        raise SystemExit(1)
