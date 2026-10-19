@@ -62,12 +62,16 @@ _PHI = (math.sqrt(5.0) - 1.0) / 2.0
 def select_layer(i: int, share: float, offset: int = 0) -> bool:
     """Is linear layer number i (in model order) one of the checked share? Golden-ratio spacing: a
     share spreads over every kind of layer and every depth (every 4th layer would pick the same
-    projection in every transformer block). Different offsets pick different layers."""
+    projection in every transformer block). Layer i sits at the point i x 0.618... (mod 1) and is taken
+    when that point falls in a window of width `share` starting at offset x share: with share 1/R, offsets
+    0 to R-1 split the layers between R replicas, every layer checked by exactly one. (Until Oct 19, 2026
+    the offset shifted the layer number instead, and offsets 0 to 7 at share 0.125 left 10% of the layers
+    unchecked everywhere; an independent review found it.)"""
     if share >= 1.0:
         return True
     if share <= 0.0:
         return False
-    return ((i + offset) * _PHI) % 1.0 < share
+    return ((i * _PHI) % 1.0 - offset * share) % 1.0 < share
 
 
 def _static(t: torch.Tensor) -> None:
@@ -256,6 +260,10 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     zero = torch.zeros_like(zs)
     zs = torch.where(zs == zs, zs, zero)
     zs = torch.where(e_bad, zero, zs)
+    # finite outputs too large for the inputs (checksum._judge_nonfinite explains)
+    cap = bound * (1.02 + x2.shape[1] * 2.0 ** -22) + 2 * h
+    imposs = ~e_bad & ~a_bad & ~big & (lim < BIG) & (noise / u > cap * wsq.view(1, nb, 1))
+    zs = torch.where(imposs, inf, zs)
     zs = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dt], BIG), inf, zero), zs)
     zs = torch.where(big, torch.where(lim < BIG, inf, zero), zs)
     # one extra 0 at the end: an empty batch (m = 0) then scores 0 instead of failing the reduction, with no
@@ -284,7 +292,7 @@ def check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pa
     if x2.shape[0] == 0:                       # empty batch: nothing to check
         return
     from . import _serve_fast
-    if _serve_fast.ready(y2.device, y2.dtype):
+    if pair_full.shape[0] <= 128 and _serve_fast.ready(y2.device, y2.dtype):     # (its sign table holds 128)
         try:
             _serve_fast.check(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum, wsq, width,
                               state, slot, z, abs_floor)
@@ -389,48 +397,104 @@ class ServeGuard:
 
         share < 1 checks only that share of the linear layers (spread over layer kinds and depths, see
         select_layer), for a lower cost. A defective GPU unit corrupts every matmul that runs on it
-        (round 3, NVBit: all layers flagged at once), so a share still catches it in the same pass;
-        give replicas different offsets to cover every layer across a fleet."""
+        (round 3, NVBit: all layers flagged at once), so a share still catches it in the same pass. With
+        share 1/R, replicas with offsets 0 to R-1 check every layer between them, each exactly once."""
+        from . import _swap
+        took_flags = False
         if self.exact_reductions and self._restore is None:
             from .guard import _exact_reductions_on
             self._restore = _exact_reductions_on() or ()
+            took_flags = True
+        first = len(self.layers)
+        try:
+            self._attach(model, share, offset)
+        except BaseException:
+            # nothing half-done: the layers this call took over go back, and so do the settings
+            for lay in self.layers[first:]:
+                self._release(lay)
+            del self.layers[first:]
+            self.stats["layers"] = len(self.layers)
+            if took_flags:
+                from .guard import _exact_reductions_off
+                _exact_reductions_off(self._restore)
+                self._restore = None
+            raise
+        return self
+
+    def _attach(self, model: torch.nn.Module, share: float, offset: int) -> None:
+        from . import _swap
+        bypassed = {**_swap.multihead_out_projs(model), **_swap.fused_encoder_linears(model)}
+        mine = {id(lay["module"]) for lay in self.layers}
         i = 0
         for name, mod in model.named_modules():
-            if isinstance(mod, torch.nn.Linear) and not getattr(mod, "_sdcguard_slot", None):
-                if mod.weight.dtype not in UNIT_ROUNDOFF:
+            if not isinstance(mod, torch.nn.Linear):
+                continue
+            label = name or type(mod).__name__
+            if id(mod) in mine:
+                continue
+            if getattr(mod, "_sdcguard_slot", None) or _swap.is_guarded(mod):
+                # (a second ServeGuard, or a training guard's protect(), has it: listed, never doubled)
+                self.unsupported[label] = ("already checked by another ServeGuard" if getattr(mod, "_sdcguard_slot", None)
+                                           else "already checked by a training guard (protect)")
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.dtype not in UNIT_ROUNDOFF:
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.numel() == 0:
+                self.unsupported[label] = "no weights (a layer with 0 inputs or outputs): nothing to check"
+                self.stats["skipped_layers"] += 1
+                continue
+            if type(mod).forward is not torch.nn.Linear.forward:
+                # its output isn't x @ W^T + b, so the check would misfire: leave it alone, say so
+                self.unsupported[label] = f"{type(mod).__name__} has its own forward"
+                self.stats["skipped_layers"] += 1
+                continue
+            if id(mod) in bypassed:
+                self.unsupported[label] = bypassed[id(mod)]
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.device.type == "meta":
+                self.unsupported[label] = "weights not on a device when attached (offloaded); not checked"
+                self.stats["skipped_layers"] += 1
+                continue
+            # A forward set on the instance runs instead of the class's. accelerate's device hooks (dispatch_model,
+            # device_map=...) keep the real forward as _old_forward and call it after moving the inputs to the
+            # weights' device: the check goes there, underneath the hook. Any other instance forward could compute
+            # something else, so it's left alone and listed (a check of one sample can't prove it's a plain linear
+            # layer for every input).
+            hooked = False
+            if "forward" in mod.__dict__ and not _is_linear_forward(mod.__dict__["forward"], mod):
+                if not _accelerate_hooked(mod):
+                    self.unsupported[label] = "forward replaced on the instance (not an accelerate device hook); not checked"
                     self.stats["skipped_layers"] += 1
                     continue
-                if type(mod).forward is not torch.nn.Linear.forward:
-                    # its output isn't x @ W^T + b, so the check would misfire: leave it alone, say so
-                    self.unsupported[name or type(mod).__name__] = f"{type(mod).__name__} has its own forward"
-                    self.stats["skipped_layers"] += 1
-                    continue
-                label = name or type(mod).__name__
-                if mod.weight.device.type == "meta":
-                    self.unsupported[label] = "weights not on a device when attached (offloaded); not checked"
-                    self.stats["skipped_layers"] += 1
-                    continue
-                # A forward set on the instance runs instead of nn.Linear.forward. accelerate's device hooks
-                # (dispatch_model, device_map=...) keep the real forward as _old_forward and call it after moving
-                # the inputs to the weights' device: the check goes there, underneath the hook. Any other
-                # instance forward could compute something else, so it's left alone and listed (a check of one
-                # sample can't prove it's a plain linear layer for every input).
-                target = "forward"
-                if "forward" in mod.__dict__ and not _is_linear_forward(mod.__dict__["forward"], mod):
-                    if not _accelerate_hooked(mod):
-                        self.unsupported[label] = "forward replaced on the instance (not an accelerate device hook); not checked"
-                        self.stats["skipped_layers"] += 1
-                        continue
-                    target = "_old_forward"
-                take = select_layer(i, share, offset)
-                i += 1
-                if not take:
-                    self.stats["skipped_layers"] += 1
-                    continue
-                slot = self.add_layer(mod, label)
-                self.layers[slot]["wraps"] = (target, mod.__dict__.get(target))
-                setattr(mod, target, self._make_forward(mod))
-        return self
+                hooked = True
+            take = select_layer(i, share, offset)
+            i += 1
+            if not take:
+                self.stats["skipped_layers"] += 1
+                continue
+            slot = self.add_layer(mod, label)
+            _swap.take_over(mod, self._make_forward(mod))
+            if hooked:          # accelerate's hook calls _old_forward: the subclass's forward, bound to this layer
+                mod.__dict__["_old_forward"] = type(mod).forward.__get__(mod)
+            self.layers[slot]["took_over"] = True
+
+    def _release(self, lay: dict) -> None:
+        """Give one layer its own forward back (whatever hooks were added or removed while it was attached)."""
+        from . import _swap
+        mod = lay["module"]
+        if lay.get("took_over"):
+            _swap.give_back(mod)
+            for attr in ("forward", "_old_forward"):
+                f = mod.__dict__.get(attr)
+                if getattr(f, "__func__", None) in _swap.forwards():
+                    if attr == "forward":            # (a hook removed meanwhile left the bound forward behind)
+                        del mod.__dict__[attr]
+                    else:
+                        mod.__dict__[attr] = type(mod).forward.__get__(mod)
+        mod.__dict__.pop("_sdcguard_slot", None)
 
     def add_layer(self, mod: torch.nn.Module, name: str, weight: Optional[torch.Tensor] = None,
                   bias: Optional[torch.Tensor] = None) -> int:
@@ -438,19 +502,24 @@ class ServeGuard:
         w = mod.weight if weight is None else weight
         b = getattr(mod, "bias", None) if bias is None else bias
         cs = LayerChecksums(w, b, self.block)
-        from . import _serve_fast
-        if _serve_fast.usable(w.device, w.dtype):
-            _serve_fast.verified(w.device, w.dtype)        # first-use comparison, once per device and dtype
-            try:
-                _serve_fast.warm(*cs.tensors(True), cs.k, cs.n, cs.dtype)    # compile now, not while serving
-            except Exception:  # noqa: BLE001  (a compile problem shows up, and falls back, at the first check)
-                pass
+        self._prepare(cs, w)
         slot = len(self.layers)
         self.layers.append({"name": name, "module": mod, "cs": cs, "device": w.device})
         mod._sdcguard_slot = slot + 1              # 0 means "not registered"
         self._grow(w.device)
         self.stats["layers"] += 1
         return slot
+
+    def _prepare(self, cs: "LayerChecksums", w: torch.Tensor) -> None:
+        """The Triton check's first-use comparison and compile, before serving (blocks up to 128 wide only:
+        its sign table holds 128; wider blocks use the PyTorch check)."""
+        from . import _serve_fast
+        if cs.bs <= 128 and _serve_fast.usable(w.device, w.dtype):
+            _serve_fast.verified(w.device, w.dtype)        # first-use comparison, once per device and dtype
+            try:
+                _serve_fast.warm(*cs.tensors(True), cs.k, cs.n, cs.dtype)    # compile now, not while serving
+            except Exception:  # noqa: BLE001  (a compile problem shows up, and falls back, at the first check)
+                pass
 
     def _grow(self, device: torch.device) -> None:
         """The state tensor of a device has room for 4,096 layers; past that it is reallocated (and
@@ -468,8 +537,8 @@ class ServeGuard:
                 mod = lay["module"]
                 if lay["device"] != device:
                     continue
-                if "wraps" in lay:
-                    setattr(mod, lay["wraps"][0], self._make_forward(mod))
+                if lay.get("took_over"):
+                    mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
                 if hasattr(mod, "_sdcguard_args"):         # registered by an engine plugin (vLLM)
                     mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
         self._state[device] = new
@@ -489,7 +558,7 @@ class ServeGuard:
         """This layer's checks run as the Triton kernel (else the PyTorch check)."""
         from . import _serve_fast
         lay = self.layers[slot]
-        return _serve_fast.ready(lay["device"], lay["cs"].dtype)
+        return lay["cs"].bs <= 128 and _serve_fast.ready(lay["device"], lay["cs"].dtype)
 
     def check(self, slot: int, x: torch.Tensor, y: torch.Tensor, with_bias: bool = True) -> None:
         """Queue the check of layer `slot` for input x and output y (any leading dims)."""
@@ -508,27 +577,35 @@ class ServeGuard:
                 float(self.abs_floor))
 
     def _make_forward(self, mod: torch.nn.Linear):
-        """Forward = the layer's own forward, then one call of the check op. Kept free of Python
-        that torch.compile can't trace (no locks, no data-dependent branches)."""
+        """The forward of an attached layer (sdcguard._swap calls it with the layer it runs on): the plain
+        linear, then one call of the check op. Kept free of Python that torch.compile can't trace (no locks,
+        no data-dependent branches)."""
         guard, slot = self, mod._sdcguard_slot - 1
         lay = self.layers[slot]
-        plain = type(mod).forward.__get__(mod)              # nn.Linear.forward (attach() makes sure)
         cs, state, op = lay["cs"], self._state[lay["device"]], _op()
         k, n, z, floor = cs.k, cs.n, float(self.z), float(self.abs_floor)
-
+        dtype, device = cs.dtype, lay["device"]
         trace = guard.inline and not guard.uses_fast(slot)
+        with_bias, without = cs.tensors(True), cs.tensors(False)
 
-        def forward(x):
-            y = plain(x)
-            if guard.enabled and x.numel() > 0:
-                # torch.compile: the custom op (or the PyTorch check traced into the graph); eager: a plain call,
-                # without the custom-op dispatch (that cost ~100 us per layer in eager decoding on the H100)
+        def forward(m, x):
+            b = m.bias
+            # at::linear adds the bias inside the matmul (one rounding) for 2-D inputs and contiguous ones with
+            # a plain bias; otherwise it rounds the matmul, then adds the bias (rounded again). The check
+            # assumes one rounding, so in the second case it checks the matmul alone and adds the bias after,
+            # the way at::linear does (same values).
+            fused = b is None or x.dim() <= 2 or (x.is_contiguous() and b.dim() == 1 and b.is_contiguous())
+            y = torch.nn.functional.linear(x, m.weight, b if fused else None)
+            # (a layer cast to another dtype, or a replica on another device, isn't what the checksums
+            # describe: it runs unchecked until refresh(); verify_weights() lists it)
+            if guard.enabled and x.numel() > 0 and y.dtype == dtype and y.device == device:
                 if torch.compiler.is_compiling():
                     call = check_static_impl if trace else op
                 else:
                     call = check_static_any
-                call(x.reshape(-1, k), y.reshape(-1, n), *lay["cs"].tensors(), state, slot, z, floor)
-            return y
+                call(x.reshape(-1, k), y.reshape(-1, n), *(with_bias if fused and b is not None else without),
+                     state, slot, z, floor)
+            return y if fused else y + b
 
         return forward
 
@@ -538,16 +615,11 @@ class ServeGuard:
             _exact_reductions_off(self._restore)
         self._restore = None
         for lay in self.layers:
-            mod = lay["module"]
-            if "wraps" in lay:
-                attr, saved = lay["wraps"]
-                if saved is None:
-                    mod.__dict__.pop(attr, None)
-                else:
-                    setattr(mod, attr, saved)
-            mod._sdcguard_slot = 0
+            self._release(lay)
         self.layers.clear()
         self._state.clear()
+        self._host.clear()                 # (a read still in flight belongs to layers that are gone)
+        self.stats["layers"] = 0
 
     # ---------------------------------------------------------------- results
     def worst_z(self) -> dict:
@@ -648,9 +720,18 @@ class ServeGuard:
                           identity=dict(self._identity[key]))
             self.stats["alerts"] += 1
             self.log.add(ev)
-            if self.on_alert:
-                self.on_alert(ev)
             out.append(ev)
+        # the callback runs after every layer's result is recorded: one that raises can't lose the others (the
+        # state they came from was already reset)
+        err = None
+        for ev in out:
+            if self.on_alert:
+                try:
+                    self.on_alert(ev)
+                except Exception as e:  # noqa: BLE001
+                    err = err or e
+        if err is not None:
+            raise err
         return out
 
     def verify_weights(self) -> list[str]:
@@ -680,10 +761,25 @@ class ServeGuard:
         mod = lay["module"]
         w = mod.weight if weight is None else weight
         b = getattr(mod, "bias", None) if bias is None else bias
+        if w.dtype not in UNIT_ROUNDOFF:
+            # (cast to fp32, say: the checks need bf16 or fp16; the layer runs unchecked until it's back)
+            if lay.get("took_over"):
+                mod.__dict__["_sdcguard_forward"] = None
+            self.unsupported[lay["name"]] = (f"weights are {str(w.dtype).replace('torch.', '')} now (the check "
+                                             "needs bf16 or fp16): not checked")
+            return
+        self.unsupported.pop(lay["name"], None)
         new = LayerChecksums(w, b if isinstance(b, torch.Tensor) else None, self.block)
         old = lay["cs"]
-        if (new.n, new.k) != (old.n, old.k) or new.parts.shape != old.parts.shape:
-            lay["cs"] = new                      # shape changed: nothing captured can stay valid anyway
+        if (new.n, new.k) != (old.n, old.k) or new.parts.shape != old.parts.shape or new.dtype != old.dtype \
+                or w.device != lay["device"]:
+            # shape, dtype or device changed: nothing captured can stay valid anyway; the layer's forward is
+            # rebuilt around the new checksums
+            lay["cs"], lay["device"] = new, w.device
+            self._prepare(new, w)
+            self._grow(w.device)
+            if lay.get("took_over"):
+                mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
             return
         with torch.no_grad():
             for a, c in zip(old.tensors(True) + old.tensors(False), new.tensors(True) + new.tensors(False)):

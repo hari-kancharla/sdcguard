@@ -62,8 +62,11 @@ class Canary:
             return True
         if self.tol == 0:
             return False
-        close = (a - b).abs() <= self.tol * torch.maximum(a.abs(), b.abs()) + 1e-300
-        return bool((close | both_nan).all())
+        # an infinity is close only to the same infinity (inf - inf is NaN, inf <= inf is True: a relative
+        # tolerance would call a finite value close to +inf; found by an independent review, Oct 19, 2026)
+        finite = torch.isfinite(a) & torch.isfinite(b)
+        close = finite & ((a - b).abs() <= self.tol * torch.maximum(a.abs(), b.abs()) + 1e-300)
+        return bool((close | (a == b) | both_nan).all())
 
     @torch.no_grad()
     def check(self, batch, group=None, step: Optional[int] = None):

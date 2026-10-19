@@ -22,7 +22,8 @@ nothing). What it does, in every vLLM process:
 
 Settings (environment variables): SDCGUARD_Z (alert threshold, default 6), SDCGUARD_LOG (also append
 alerts as JSON lines to this file), SDCGUARD_POLL_EVERY, SDCGUARD_SHARE (check only this share of the
-linear layers, e.g. 0.125, for a lower cost) and SDCGUARD_OFFSET (which ones; vary it across replicas),
+linear layers, e.g. 0.125, for a lower cost) and SDCGUARD_OFFSET (which ones: with share 1/R, replicas with
+offsets 0 to R-1 check every layer between them, each exactly once),
 SDCGUARD_WEBHOOK (post alerts to Slack, Discord or any JSON endpoint; SDCGUARD_WEBHOOK_FORMAT=slack,
 discord or json) and SDCGUARD_METRICS_PORT (Prometheus metrics; each GPU worker adds its local index).
 

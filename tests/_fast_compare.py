@@ -114,6 +114,13 @@ def corrupted(device):
     A = torch.randn(64, 96, generator=g).to(device=device, dtype=torch.bfloat16)
     B = torch.randn(96, 300, generator=g).to(device=device, dtype=torch.bfloat16)
     res = []
+    # two huge outputs of opposite sign where the sign pattern agrees cancel in both checksums: only "larger
+    # than the inputs allow" catches them, the same way in both checks
+    s0 = cs._signs(128, "cpu", 0)
+    j = next(j for j in range(1, 128) if s0[j] == s0[0])
+    C = A @ B
+    C[9, 128], C[9, 128 + j] = 1e18, -1e18
+    res.append(("huge outputs that cancel in both checksums", A, B, C, True))
     C = A @ B
     C[17, 130:162:4] = 0                                   # zero 8 values in row 17, block 1
     res.append(("zeroed chunk", A, B, C, True))

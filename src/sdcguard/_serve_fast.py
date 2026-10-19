@@ -171,6 +171,10 @@ if HAVE_TRITON:
             big0 = nfin & (~e_bad0) & (~a_bad0)
             z0 = tl.where(z0 == z0, z0, 0.0)
             z0 = tl.where(e_bad0, 0.0, z0)
+            # finite outputs too large for the inputs (checksum._judge_nonfinite explains)
+            cap = bound * (1.02 + k * 2.384185791015625e-07) + 2.0 * h
+            imposs = (~nfin) & (lim < lim_big) & (tl.sqrt(sq) > cap * tl.sqrt(wf)[None, :])
+            z0 = tl.where(imposs & (~e_bad0) & (~a_bad0), float("inf"), z0)
             z0 = tl.where(a_bad0, tl.where(lim < lim_a, float("inf"), 0.0), z0)
             z0 = tl.where(big0, tl.where(lim < lim_big, float("inf"), 0.0), z0)
             e_bad1 = ~(tl.abs(exp1) < float("inf"))
@@ -178,6 +182,7 @@ if HAVE_TRITON:
             big1 = nfin & (~e_bad1) & (~a_bad1)
             z1 = tl.where(z1 == z1, z1, 0.0)
             z1 = tl.where(e_bad1, 0.0, z1)
+            z1 = tl.where(imposs & (~e_bad1) & (~a_bad1), float("inf"), z1)
             z1 = tl.where(a_bad1, tl.where(lim < lim_a, float("inf"), 0.0), z1)
             z1 = tl.where(big1, tl.where(lim < lim_big, float("inf"), 0.0), z1)
             z0 = tl.where(both, z0, -1.0)
@@ -218,6 +223,8 @@ def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: to
     k = x2.shape[1]
     nb = b2n.shape[0]
     bs = pair_full.shape[0]
+    if bs > 128:            # the sign table holds widths 1..128 (serve.check_static_any routes wider blocks away)
+        raise ValueError(f"the Triton serving check takes blocks up to 128 wide, not {bs}")
     rem = n - (n // bs) * bs
     if parts.shape[1] == 6 * nb:                      # three low-precision parts (NVIDIA)
         if parts.dtype == dt and x2.is_cuda:

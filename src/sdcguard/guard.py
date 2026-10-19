@@ -38,6 +38,7 @@ import contextlib
 import math
 import random
 import threading
+import weakref
 from typing import Callable, Optional
 
 import torch
@@ -66,7 +67,8 @@ def op_name(func) -> str:
 
 # Ops whose output is a plain matrix product we can verify. Apple GPUs (MPS) run nn.Linear as
 # "_mps_linear" or "linear" and its backward as "linear_backward" instead of mm/addmm.
-FORWARD_MATMUL_OPS = {"aten::mm", "aten::bmm", "aten::addmm", "aten::_mps_linear", "aten::linear"}
+FORWARD_MATMUL_OPS = {"aten::mm", "aten::bmm", "aten::addmm", "aten::_mps_linear", "aten::linear",
+                      "aten::baddbmm", "aten::addbmm", "aten::mv", "aten::addmv"}
 MATMUL_OPS = FORWARD_MATMUL_OPS | {"aten::linear_backward", "aten::mps_linear_backward"}
 
 
@@ -75,31 +77,62 @@ def _reduced_precision_flags():
     return m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction
 
 
-def _exact_reductions_on() -> Optional[tuple]:
-    """Turn off reduced-precision reductions in bf16/fp16 cuBLAS matmuls. Returns what to restore
-    (None if nothing was changed). Settings already off (including the tuple form) are left alone."""
+# The reduced-precision settings are process-wide, and guards (training steps, ServeGuards, the screen) can
+# overlap in any order: the first holder saves and changes them, the last one to let go puts them back.
+_FLAGS_LOCK = threading.Lock()
+_FLAGS = {"holds": 0, "changed": None}
+
+
+class _FlagHold:
+    """One holder of the exact-reduction settings (truthy; let go once with _exact_reductions_off)."""
+    __slots__ = ("live",)
+
+    def __init__(self):
+        self.live = True
+
+    def __bool__(self):
+        return True
+
+
+def _exact_reductions_on() -> Optional[_FlagHold]:
+    """Turn off reduced-precision reductions in bf16/fp16 cuBLAS matmuls until every holder has let go.
+    Returns the hold (None if nothing could be changed). Settings already off (including the tuple form) are
+    left alone."""
     if not torch.cuda.is_available():
         return None
-    try:
-        bf16, fp16 = _reduced_precision_flags()
-        m = torch.backends.cuda.matmul
-        if bf16 is True:
-            m.allow_bf16_reduced_precision_reduction = False
-        if fp16 is True:
-            m.allow_fp16_reduced_precision_reduction = False
-        return (bf16 is True, fp16 is True)
-    except (AttributeError, RuntimeError, TypeError):
-        return None
+    with _FLAGS_LOCK:
+        try:
+            if _FLAGS["holds"] == 0:
+                bf16, fp16 = _reduced_precision_flags()
+                m = torch.backends.cuda.matmul
+                if bf16 is True:
+                    m.allow_bf16_reduced_precision_reduction = False
+                if fp16 is True:
+                    m.allow_fp16_reduced_precision_reduction = False
+                _FLAGS["changed"] = (bf16 is True, fp16 is True)
+        except (AttributeError, RuntimeError, TypeError):
+            return None
+        _FLAGS["holds"] += 1
+        return _FlagHold()
 
 
-def _exact_reductions_off(changed: Optional[tuple]) -> None:
-    if not changed:
+def _exact_reductions_off(hold) -> None:
+    """Let go of a hold from _exact_reductions_on (twice, or None, is a no-op)."""
+    if not isinstance(hold, _FlagHold) or not hold.live:
         return
-    m = torch.backends.cuda.matmul
-    if changed[0]:
-        m.allow_bf16_reduced_precision_reduction = True
-    if changed[1]:
-        m.allow_fp16_reduced_precision_reduction = True
+    hold.live = False
+    with _FLAGS_LOCK:
+        _FLAGS["holds"] = max(0, _FLAGS["holds"] - 1)
+        if _FLAGS["holds"]:
+            return
+        changed, _FLAGS["changed"] = _FLAGS["changed"], None
+        if not changed:
+            return
+        m = torch.backends.cuda.matmul
+        if changed[0]:
+            m.allow_bf16_reduced_precision_reduction = True
+        if changed[1]:
+            m.allow_fp16_reduced_precision_reduction = True
 
 
 def _flat2d(t: torch.Tensor) -> torch.Tensor:
@@ -114,6 +147,25 @@ def matmul_checks(name: str, args, kwargs, out):
         beta = kwargs.get("beta", args[3] if len(args) > 3 else 1)
         alpha = kwargs.get("alpha", args[4] if len(args) > 4 else 1)
         return [(args[1], args[2], out, args[0], float(alpha), float(beta))]
+    if name == "aten::baddbmm":                                   # beta * input + alpha * (b1 @ b2), batched
+        beta = kwargs.get("beta", args[3] if len(args) > 3 else 1)
+        alpha = kwargs.get("alpha", args[4] if len(args) > 4 else 1)
+        return [(args[1], args[2], out, args[0], float(alpha), float(beta))]
+    if name == "aten::addbmm":                                    # beta * input + alpha * sum_b (b1[b] @ b2[b])
+        b1, b2 = args[1], args[2]
+        beta = kwargs.get("beta", args[3] if len(args) > 3 else 1)
+        alpha = kwargs.get("alpha", args[4] if len(args) > 4 else 1)
+        bb, m, k = b1.shape
+        A = b1.permute(1, 0, 2).reshape(m, bb * k)                   # one matmul over the stacked k
+        return [(A, b2.reshape(bb * k, b2.shape[-1]), out, args[0], float(alpha), float(beta))]
+    if name == "aten::mv":                                        # matrix @ vector: a one-column matmul
+        return [(args[0], args[1].unsqueeze(-1), out.unsqueeze(-1), None, 1.0, 1.0)]
+    if name == "aten::addmv":
+        beta = kwargs.get("beta", args[3] if len(args) > 3 else 1)
+        alpha = kwargs.get("alpha", args[4] if len(args) > 4 else 1)
+        bias = args[0]
+        bias = bias.unsqueeze(-1) if bias.dim() == 1 else bias       # (m,) -> one value per row
+        return [(args[1], args[2].unsqueeze(-1), out.unsqueeze(-1), bias, float(alpha), float(beta))]
     if name in ("aten::_mps_linear", "aten::linear"):            # y = x W^T + b
         x, w = args[0], args[1]
         b = args[2] if len(args) > 2 else kwargs.get("bias")
@@ -243,11 +295,63 @@ def _autograd_node() -> Optional[str]:
 def _unsupported_linear(mod: torch.nn.Module) -> Optional[str]:
     """Why fast mode can't take over this nn.Linear (None if it can). The checked path computes the
     plain linear itself, so a layer whose forward does anything else must keep its own forward."""
+    from . import _swap
+    if _swap.is_guarded(mod):
+        return "already checked by another guard"
     if type(mod).forward is not torch.nn.Linear.forward:
         return f"{type(mod).__name__} has its own forward"
     if "forward" in mod.__dict__:
         return "forward replaced on the instance (a hook or wrapper)"
     return None
+
+
+def _autocast_cache_on() -> bool:
+    try:
+        return bool(torch.is_autocast_cache_enabled())
+    except AttributeError:                        # older PyTorch
+        return True
+
+
+# autocast drops its cast cache when the outermost autocast region ends (torch.clear_autocast_cache); the
+# fast mode's cast cache follows it, so a step with several autocast regions casts as often as autocast does
+_CLEAR = {"orig": None}
+_IN_STEP: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def _follow_autocast_cache() -> None:
+    if _CLEAR["orig"] is not None:
+        return
+    orig = torch.clear_autocast_cache
+
+    def clear_autocast_cache():
+        orig()
+        for g in list(_IN_STEP):
+            g._casts.clear()
+
+    clear_autocast_cache.__doc__ = orig.__doc__
+    _CLEAR["orig"] = orig
+    torch.clear_autocast_cache = clear_autocast_cache
+
+
+def _fast_forward(mod: torch.nn.Module, x: torch.Tensor) -> torch.Tensor:
+    """A protected layer's forward (see SDCGuard.protect): its plain forward, except on checked steps. A
+    method of the layer's class (sdcguard._swap), so it always runs with the weights of the layer it's called
+    on, copies and replicas included."""
+    guard = mod._sdcguard_guard
+    if not guard._active:
+        return torch.nn.Linear.forward(mod, x)
+    return _fast_checked(guard, mod, x)
+
+
+@torch.compiler.disable
+def _fast_checked(guard, mod, x):
+    dt = _compute_dtype(x)
+    if dt not in UNIT_ROUNDOFF:                  # fp32/TF32: not checked
+        return torch.nn.Linear.forward(mod, x)
+    w = guard._cast(mod.weight, dt)
+    b = guard._cast(mod.bias, dt) if mod.bias is not None else None
+    with torch.autocast(device_type=x.device.type, enabled=False):
+        return _CheckedLinear.apply(x.to(dt), w, b, guard, mod._sdcguard_name)
 
 
 class SDCGuard(TorchDispatchMode):
@@ -305,7 +409,7 @@ class SDCGuard(TorchDispatchMode):
         self.abs_floor = ABS_FLOOR if abs_floor is None else abs_floor
         self.exact_reductions = exact_reductions
         self.on_result = on_result
-        self._restore_flags: Optional[tuple] = None
+        self._restore_flags = None
         self._depth = 0
         self._is_matmul: dict = {}
         self.sample_rate = sample_rate
@@ -376,53 +480,47 @@ class SDCGuard(TorchDispatchMode):
         Works with autocast (bf16/fp16), DDP and FSDP2. Under torch.compile, unchecked steps run
         compiled; checked steps run the linear layers eagerly.
         """
+        from . import _swap
+        direct = _swap.multihead_out_projs(model)
         for name, mod in model.named_modules():
             if isinstance(mod, torch.nn.Linear) and mod not in self._protected:
-                why = _unsupported_linear(mod)
+                why = direct.get(id(mod)) or _unsupported_linear(mod)
                 if why:                       # its own forward does more than the plain linear: leave it alone
                     self.skipped[name or type(mod).__name__] = why
                     continue
                 self._protected[mod] = name or type(mod).__name__
-                mod.forward = self._make_forward(mod, self._protected[mod])
+                mod.__dict__["_sdcguard_guard"] = self
+                mod.__dict__["_sdcguard_name"] = self._protected[mod]
+                _swap.take_over(mod, _fast_forward)
         return self
 
     def unprotect(self) -> None:
         """Undo protect(): the layers run their own forward again."""
+        from . import _swap
         for mod in self._protected:
-            if "forward" in mod.__dict__:
-                del mod.forward
+            if mod.__dict__.get("_sdcguard_guard") is self:
+                _swap.give_back(mod)
         self._protected.clear()
 
-    def _make_forward(self, mod: torch.nn.Linear, name: str):
-        guard = self
-        plain = type(mod).forward.__get__(mod)
-
-        @torch.compiler.disable
-        def checked(x):
-            dt = _compute_dtype(x)
-            if dt not in UNIT_ROUNDOFF:                  # fp32/TF32: not checked
-                return plain(x)
-            w = guard._cast(mod.weight, dt)
-            b = guard._cast(mod.bias, dt) if mod.bias is not None else None
-            with torch.autocast(device_type=x.device.type, enabled=False):
-                return _CheckedLinear.apply(x.to(dt), w, b, guard, name)
-
-        def forward(x):
-            if not guard._active:
-                return plain(x)
-            return checked(x)
-
-        return forward
-
     def _cast(self, p: torch.Tensor, dt: torch.dtype) -> torch.Tensor:
-        """p in dtype dt, cast once per checked step and reused, as autocast caches its casts: a layer
-        used twice in one step then sums its weight gradient the way autocast would."""
+        """p in dtype dt, cast once and reused for as long as autocast reuses its own casts: a layer used
+        twice in one autocast region then sums its weight gradient the way autocast would. Like autocast's
+        cache, this one holds only leaf tensors that need gradients, is off when autocast's is
+        (cache_enabled=False), and is dropped when the outermost autocast region ends, so weights changed
+        in place between regions (p.data.add_(), as weight perturbation and manual updates do, which no
+        version counter sees) are cast again."""
         if p.dtype == dt:
             return p
+        if not (p.requires_grad and p.is_leaf) or not _autocast_cache_on():
+            return p.to(dt)
         # Grad mode is part of the key: a cast made under no_grad (an eval forward in the same step, or
         # the first pass of reentrant activation checkpointing) has no autograd history and must not be
-        # reused by a forward that needs gradients.
-        key = (id(p), dt, p._version, torch.is_grad_enabled())
+        # reused by a forward that needs gradients. The data pointer catches `p.data = new_tensor`.
+        try:
+            ptr = p.data_ptr()
+        except RuntimeError:                  # no storage (torch.func transforms wrap tensors): no cache
+            return p.to(dt)
+        key = (id(p), dt, p._version, torch.is_grad_enabled(), ptr)
         hit = self._casts.get(key)
         if hit is None or hit[0] is not p:
             hit = self._casts[key] = (p, p.to(dt))
@@ -528,7 +626,11 @@ class SDCGuard(TorchDispatchMode):
     @contextlib.contextmanager
     def at_step(self, step: int):
         """Enter the guard and tag alerts with a training step. After protect(), only the protected
-        linear layers are checked (fast mode); otherwise every matmul PyTorch runs is."""
+        linear layers are checked (fast mode); otherwise every matmul PyTorch runs is. Nested inside a
+        checked step it does nothing: the outer step is the one being checked (and its number stays)."""
+        if self._active or self._depth > 0:
+            yield self
+            return
         self.step = step
         if self._protected:
             with self._fast_step():
@@ -544,22 +646,51 @@ class SDCGuard(TorchDispatchMode):
             return
         self._new_epoch()
         restore = _exact_reductions_on() if self.exact_reductions else None
+        _follow_autocast_cache()
         self._active = True
         self._casts.clear()
-        ok = False
+        _IN_STEP.add(self)
         try:
             yield
-            ok = True
-        finally:
-            self._active = False
-            self._casts.clear()
-            _exact_reductions_off(restore)
-            if not ok:
-                with self._lock:
-                    self._pending.clear()
-                    self._groups.clear()
-                    self._streams.clear()
+        except Exception as e:
+            self._end_fast_step(restore)
+            self._flush_after_error(e)
+            raise
+        except BaseException:
+            self._end_fast_step(restore)
+            self._drop_pending()
+            raise
+        self._end_fast_step(restore)
         self.flush()
+
+    def _end_fast_step(self, restore) -> None:
+        self._active = False
+        _IN_STEP.discard(self)
+        self._casts.clear()
+        _exact_reductions_off(restore)
+
+    def _drop_pending(self) -> None:
+        with self._lock:
+            n = len(self._pending)
+            self._pending.clear()
+            self._groups.clear()
+            self._streams.clear()
+            self.stats["checked"] -= n                # queued, never judged: not counted as checked
+
+    def _flush_after_error(self, error: BaseException) -> None:
+        """The step raised. Its queued checks are still read back (the step most likely to raise is the one a
+        faulty GPU broke, through NaN gradients for example): alerts are recorded and passed to on_alert, but
+        the step's own exception is the one that propagates, with a note when a check failed."""
+        try:
+            with self._lock:
+                results = self._flush(raise_alerts=False)
+        except Exception:  # noqa: BLE001  (e.g. the GPU is gone: don't hide the step's own error)
+            self._drop_pending()
+            return
+        bad = sum(not r.ok for r in results)
+        if bad and hasattr(error, "add_note"):
+            error.add_note(f"sdcguard: {bad} matmul result(s) of this step failed their checksum before this "
+                           "error (see the guard's log)")
 
     def _new_epoch(self) -> None:
         """Start a checked step: with fresh_signs, its signed checksums use a pattern no earlier step used,
@@ -593,11 +724,10 @@ class SDCGuard(TorchDispatchMode):
             self._leave()
         if exc_type is None:
             self.flush()
+        elif isinstance(exc, Exception):
+            self._flush_after_error(exc)
         else:
-            with self._lock:
-                self._pending.clear()
-                self._groups.clear()
-                self._streams.clear()
+            self._drop_pending()
         return result
 
     # ------------------------------------------------------------------ checking
@@ -625,6 +755,9 @@ class SDCGuard(TorchDispatchMode):
 
     def _queue(self, name, where, node, A, B, C, bias, alpha, beta) -> None:
         """Queue one check (its GPU work starts now; results are read at the flush)."""
+        if _cs.is_empty(C):                       # m = 0 or n = 0 (an MoE expert with no tokens): nothing to check
+            self.stats["empty"] = self.stats.get("empty", 0) + 1
+            return
         acc = self.precise and _cs.acc_supported(A, C)
         if C.dtype not in UNIT_ROUNDOFF and not acc:
             self.stats["skipped_dtype"] += 1
@@ -677,7 +810,7 @@ class SDCGuard(TorchDispatchMode):
         with self._lock:
             return self._flush()
 
-    def _flush(self) -> list[CheckResult]:
+    def _flush(self, raise_alerts: bool = True) -> list[CheckResult]:
         if not self._pending:
             return []
         pending, self._pending = self._pending, []
@@ -733,7 +866,7 @@ class SDCGuard(TorchDispatchMode):
                                        row=r, col_block=blk, noise=den))
             kept.append(p)
         self._flushed = kept                        # the queue entries `results` belong to, in order
-        first_error = None
+        first_error = callback_error = None
         for (_kind, _st, _idx, token, detail), res in zip(kept, results):
             if res.ok and not res.judged:
                 self.stats["unjudged"] += 1          # e.g. NaN inputs: no evidence either way
@@ -743,16 +876,24 @@ class SDCGuard(TorchDispatchMode):
                     self.z_values.append(res.max_z)
                 elif self._rng.random() < 0.01:
                     self.z_values[self._rng.randrange(self._z_cap)] = res.max_z
-            if self.on_check is not None:
-                self.on_check(detail["op"], token, res)
-            if self.on_result is not None:
-                self.on_result(detail, res)
+            # a callback that raises mustn't cost the alerts after it: every result is recorded first, then
+            # the first callback error is raised
+            try:
+                if self.on_check is not None:
+                    self.on_check(detail["op"], token, res)
+                if self.on_result is not None:
+                    self.on_result(detail, res)
+            except Exception as e:  # noqa: BLE001
+                callback_error = callback_error or e
             if not res.ok:
-                event = self._alert(detail, res)
+                event, err = self._alert(detail, res)
+                callback_error = callback_error or err
                 if self.raise_on_alert and first_error is None:
                     first_error = SDCError(event.to_json())
-        if first_error is not None:
+        if raise_alerts and first_error is not None:
             raise first_error
+        if raise_alerts and callback_error is not None:
+            raise callback_error
         return results
 
     def _alert(self, detail: dict, res: CheckResult) -> SDCEvent:
@@ -766,6 +907,10 @@ class SDCGuard(TorchDispatchMode):
         event = SDCEvent(detector="checksum", step=self.step, detail=detail,
                          identity=dict(self._identity[key]))
         self.log.add(event)
+        err = None
         if self.on_alert:
-            self.on_alert(event)
-        return event
+            try:
+                self.on_alert(event)
+            except Exception as e:  # noqa: BLE001  (raised by _flush once every result is recorded)
+                err = e
+        return event, err

@@ -36,7 +36,7 @@ def main():
                 if split:      # the GPU layout: three low-precision parts of the block sums
                     B2 = cs.parts                                   # (on the CPU: plain fp32 block sums)
                     cs.parts = _split3(B2 / cs.scale.view(1, -1), dt).contiguous()
-                for corrupt in (None, "big", "nan", "inf", "zero_block", "small"):
+                for corrupt in (None, "big", "nan", "inf", "zero_block", "small", "huge_pair"):
                     yy = y.clone()
                     r, c = (m * 2) // 3, (n * 3) // 5
                     if corrupt == "big":
@@ -49,6 +49,15 @@ def main():
                         yy[r, :] = 0
                     elif corrupt == "small":
                         yy[r, c] += yy[r, c].abs() * 0.001        # below the noise: both must pass
+                    elif corrupt == "huge_pair" and n >= 2:
+                        # two huge outputs of opposite sign where the sign pattern agrees: they cancel in both
+                        # checksums; only "larger than the inputs allow" catches them
+                        from sdcguard.checksum import _signs
+                        s0 = _signs(min(128, n), "cpu", 0)
+                        j = next((j for j in range(1, min(128, n)) if s0[j] == s0[0]), None)
+                        if j is not None:
+                            yy[r, 0], yy[r, j] = 1e4 if dt == torch.float16 else 1e18, \
+                                -1e4 if dt == torch.float16 else -1e18
                     (rz, rf, rn), (fz, ff, fn) = run(x, yy, cs)
                     if corrupt in (None, "small"):
                         agree = rz <= 6.0 and fz <= 6.0 and abs(fz - rz) <= 0.05 + 0.02 * rz

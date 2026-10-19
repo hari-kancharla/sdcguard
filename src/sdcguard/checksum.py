@@ -319,19 +319,46 @@ def _matmul_fp32(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
 UNJUDGED = -1.0     # z of a block that can't be judged; a check whose every block is unjudged reports it
 
 
-def _judge_nonfinite(z, expected, actual, noise, bound, dtype):
+def _judge_nonfinite(z, expected, actual, noise, bound, dtype, cnorm=None, width: int = 1, step: float = 0.0,
+                     k: int = 0):
     """Judging Inf/NaN (see the module docstring). An expected side that isn't finite can't be
     judged (non-finite inputs, or values too large for fp32 sums): z = UNJUDGED. An Inf/NaN output, or
     one too large to square in fp32, is corruption (z = inf) only if the inputs can't produce it; if they
-    can (fp16 loss-scaling overflow, say), it can't be judged either."""
+    can (fp16 loss-scaling overflow, say), it can't be judged either.
+
+    cnorm (the block's L2 norm), width and step (one subnormal step of the output dtype): finite outputs too
+    large for the inputs are corruption too. Every output of the block is at most `bound` (plus rounding), so
+    the block's norm is at most that times sqrt(width). Two huge outputs of opposite sign that cancel in both
+    checksums (+1e18 and -1e18 where the pattern has the same sign) are caught this way (independent review,
+    Oct 19, 2026)."""
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad
     lim = bound * 1.01
     z = torch.where(z == z, z, UNJUDGED)                # inf/inf (both sides huge): nothing to judge
     z = torch.where(e_bad, UNJUDGED, z)
+    if cnorm is not None:
+        cn = cnorm.unsqueeze(-1) if cnorm.dim() == z.dim() - 1 else cnorm
+        # (each output may also be off by the accumulation's worst-case rounding, k x 2^-22 of the bound)
+        cap = bound * (1.02 + k * 2.0 ** -22) + step
+        imposs = ~e_bad & ~a_bad & ~big & (lim < BIG) & (cn > cap * math.sqrt(width))
+        z = torch.where(imposs, float("inf"), z)
     z = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dtype], BIG), float("inf"), UNJUDGED), z)
     return torch.where(big, torch.where(lim < BIG, float("inf"), UNJUDGED), z)
+
+
+def _pad_empty_k(A: torch.Tensor, B: torch.Tensor):
+    """A @ B with k = 0 (an MoE expert that got no tokens, in a weight gradient) is all zeros: check it as a
+    product with one zero column, so C must equal the bias (or zero)."""
+    if A.shape[-1] == 0:
+        A = A.new_zeros(*A.shape[:-1], 1)
+        B = B.new_zeros(*B.shape[:-2], 1, B.shape[-1])
+    return A, B
+
+
+def is_empty(C: torch.Tensor) -> bool:
+    """An output with no elements (m = 0 or n = 0): nothing to check."""
+    return C.numel() == 0
 
 
 def matmul_zscores(
@@ -360,6 +387,9 @@ def matmul_zscores(
     u = UNIT_ROUNDOFF.get(C.dtype)
     if u is None:
         return None
+    if is_empty(C):
+        raise ValueError("empty output: nothing to check (callers skip these, see is_empty)")
+    A, B = _pad_empty_k(A, B)
     # backward passes often run under autocast, which would round this fp32 math to bf16/fp16 on CPUs
     # and Apple GPUs
     with torch.autocast(device_type=C.device.type, enabled=False):
@@ -405,16 +435,19 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
         if bias is not None and beta != 0:
             if bias.dim() == 1:                                              # (n,)
                 bb = bias[start:end].reshape(nblk, width)
-            else:                                                            # (m, n) or (1, n)
+            elif bias.dim() <= 2:                                            # (m, n) or (1, n)
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
+            else:                                                            # (batch, m, n) and friends: baddbmm
+                bb = torch.broadcast_to(bias, (nb_batch, m, n))[..., start:end].reshape(nb_batch, m, nblk, width)
             expected = expected.add(_pair_sums(bb, epoch), alpha=beta)
-            bound = bound + abs(beta) * bb.abs().amax(-1).float()             # (nblk,) or (m, nblk)
+            bound = bound + abs(beta) * bb.abs().amax(-1).float()             # (nblk,), (m, nblk) or (b, m, nblk)
 
         actual = _pair_sums(Cb, epoch)                                       # (batch, m, nblk, 2)
         # Rounding noise of a block sum ~ unit roundoff x L2 norm of the outputs (same for +-1
         # signs), plus a floor for the fp32 rounding of `expected` itself (matters only when the
         # outputs nearly cancel): 1e-5 x |alpha| x |a_row| x |checksum column of B|.
-        noise = _norm_fp32(Cb).mul_(u).unsqueeze(-1)                         # (batch, m, nblk, 1)
+        cnorm = _norm_fp32(Cb)                                               # (batch, m, nblk)
+        noise = (cnorm * u).unsqueeze(-1)                                    # (batch, m, nblk, 1)
         b2n = _norm_fp32(B2, dim=-3).unsqueeze(-3)                           # (bB, 1, nblk, 2)
         bound = bound.unsqueeze(-1)                                          # (b, m, nblk, 1)
         floor = (A_norm * b2n).mul_(1e-5 * abs(alpha))
@@ -431,7 +464,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
         worst = (_norm_fp32(Cb, ord=1).mul_(1.25 * u).add_(1.25 * width * h).unsqueeze(-1)
                  + floor[..., :1]).add_(abs_floor)
         zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
-        zs = _judge_nonfinite(zs, expected, actual, noise, bound, C3.dtype)
+        zs = _judge_nonfinite(zs, expected, actual, noise, bound, C3.dtype, cnorm, width, 2 * h, k)
         mz, arg = torch.max(zs.view(-1), 0)
         maxes.append(mz)
         # gather, not den.view(-1)[arg]: indexing with a GPU tensor makes the CPU wait for the GPU
@@ -513,6 +546,9 @@ def matmul_zscores_acc(
     the dtypes don't fit. nfma: tensor-core products per truncation step (None: no tensor cores)."""
     if not acc_supported(A, C):
         return None
+    if is_empty(C):
+        raise ValueError("empty output: nothing to check (callers skip these, see is_empty)")
+    A, B = _pad_empty_k(A, B)
     with torch.autocast(device_type=C.device.type, enabled=False):     # its fp32/fp64 math stays as written
         return _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch)
 
@@ -549,8 +585,10 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
         if bias is not None and beta != 0:
             if bias.dim() == 1:
                 bb = bias[start:end].reshape(nblk, width)
-            else:
+            elif bias.dim() <= 2:
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
+            else:
+                bb = torch.broadcast_to(bias, (nb_batch, m, n))[..., start:end].reshape(nb_batch, m, nblk, width)
             expected = expected + beta * _pair_sums64(bb, epoch)
             bound = bound + abs(beta) * bb.abs().amax(-1).float()
 
@@ -566,7 +604,8 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
         zs = diff / den
         worst = (_norm_fp32(Cb, ord=1).mul_(per_out * u) + prod).unsqueeze(-1).add_(abs_floor).double()
         zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
-        zs = _judge_nonfinite(zs.float(), expected, actual, noise, bound.unsqueeze(-1), torch.float32)
+        zs = _judge_nonfinite(zs.float(), expected, actual, noise, bound.unsqueeze(-1), torch.float32, cnorm, width,
+                              0.0, k)
         mz, arg = torch.max(zs.view(-1), 0)
         maxes.append(mz)
         noises.append(den.float().expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0))
@@ -586,6 +625,8 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
 
 def check_matmul_acc(A, B, C, bias=None, *, z: float = 6.0, nfma: Optional[int] = None, **kw) -> Optional[CheckResult]:
     """matmul_zscores_acc, answered immediately (tests and one-off use)."""
+    if is_empty(C) and acc_supported(A, C):
+        return CheckResult(ok=True, max_z=0.0, nonfinite=False)
     st = matmul_zscores_acc(A, B, C, bias, z=z, nfma=nfma, **kw)
     return None if st is None else resolve([st], z)[0]
 
@@ -636,6 +677,8 @@ def check_matmul(
     abs_floor: float = ABS_FLOOR,
 ) -> Optional[CheckResult]:
     """Check C = beta*bias + alpha*(A @ B) and answer immediately. None if dtype unsupported."""
+    if is_empty(C) and C.dtype in UNIT_ROUNDOFF:
+        return CheckResult(ok=True, max_z=0.0, nonfinite=False)       # nothing that could be wrong
     if USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, block):
         try:
             r = _group.check_now(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)

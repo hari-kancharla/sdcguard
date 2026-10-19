@@ -85,11 +85,16 @@ def test_fp32_layers_are_left_alone():
 
 
 def test_unprotect_restores_forward():
+    """protect() gives each layer a subclass whose forward runs the check (sdcguard._swap); unprotect() puts
+    the layer's own class back and leaves nothing on the instance."""
+    import torch.nn as nn
     m = Net()
     g = SDCGuard().protect(m)
-    assert "forward" in m.a.__dict__
+    assert type(m.a) is not nn.Linear and isinstance(m.a, nn.Linear) and type(m.a).forward is not nn.Linear.forward
+    assert "forward" not in m.a.__dict__ and repr(m.a).startswith("Linear(")
     g.unprotect()
-    assert "forward" not in m.a.__dict__
+    assert type(m.a) is nn.Linear and "forward" not in m.a.__dict__
+    assert not [k for k in m.a.__dict__ if k.startswith("_sdcguard")]
 
 
 def test_coverage_counts_matmuls_outside_linear_layers():

@@ -529,6 +529,10 @@ if HAVE_TRITON:
         big = (~e_bad) & (~a_bad) & ~(sq < float("inf"))
         z = tl.where(z == z, z, -1.0)             # inf/inf (both sides huge): nothing to judge (-1, as in checksum.py)
         z = tl.where(e_bad, -1.0, z)
+        # finite outputs too large for the inputs (checksum._judge_nonfinite explains); lim is 1.01 x the bound
+        cap = lim / 1.01 * (1.02 + k * 2.384185791015625e-07) + 2.0 * half_tiny
+        imposs = (~e_bad) & (~a_bad) & (~big) & (lim < 1e18) & (tl.sqrt(sq) > cap * tl.sqrt(wblk)[None, :])
+        z = tl.where(imposs, float("inf"), z)
         z = tl.where(a_bad, tl.where(lim < out_max, float("inf"), -1.0), z)
         z = tl.where(big, tl.where(lim < 1e18, float("inf"), -1.0), z)
         z = tl.where(both, z, -1.0)
@@ -709,7 +713,8 @@ class Group:
         # bf16 tensor cores (sm80+). Tests can run the same math in Triton's CPU interpreter,
         # which gets bf16 dots wrong, with fp32 products instead (emulate).
         emulate = self.device.type == "cpu" and os.environ.get("SDCGUARD_TEST_NATIVE") == "1"
-        native = self.dtype == torch.bfloat16 and (prec != "ieee" or emulate)
+        native = self.dtype == torch.bfloat16 and (prec != "ieee" or emulate) and \
+            os.environ.get("SDCGUARD_TRITON_NATIVE", "1") != "0"     # (=0: experiments/triton_blackwell.py)
         pst = bB * kb * JS
         P16 = torch.empty(3 * pst, device=self.device, dtype=torch.bfloat16) if native else W
         bj = _bj(J)
