@@ -5,9 +5,9 @@ criteria on Oct 19).
 
     modal run scripts/modal_mode_compare.py
 
-About 5 to 15 minutes per GPU, about $1.50 in total at Modal's prices on Oct 18, 2026 (per hour: H100 $3.95,
-A100 80GB $2.50, L4 $0.80, plus about $0.38 per machine for CPU and memory). Every function stops at 30 minutes,
-so it can't cost more than about $4.20. There is no pass line (the reporting rules are in the experiment's
+About 5 to 15 minutes per GPU, about $1.50 in total at Modal's prices (per hour: H100 $3.95, A100 80GB $2.50,
+L4 $0.80, plus about $0.45 per machine for 4 CPU cores at $0.0472 and 32 GiB at $0.008 a GiB). Every function
+stops at 30 minutes, so it can't cost more than about $4.30. There is no pass line (the reporting rules are in the experiment's
 docstring and in docs/METHOD.md, written before the run); the exit code says whether every GPU ran. Results go
 to results/mode_compare/.
 """

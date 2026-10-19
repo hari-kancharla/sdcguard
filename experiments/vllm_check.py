@@ -18,6 +18,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -189,7 +190,7 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     return 1 if failures else 0
 
 
-def compare(out: str):
+def compare(out: str, passed_as: str | None = None):
     b = json.load(open(os.path.join(out, "baseline.json")))
     g = json.load(open(os.path.join(out, "guarded.json")))
     same = sum(x == y for x, y in zip(b["first_outputs"], g["first_outputs"]))
@@ -199,6 +200,7 @@ def compare(out: str):
     summary = {
         "model": g["model"], "vllm": g["vllm"],
         "guarded_mode": "enforce_eager" if g.get("enforce_eager") else "torch.compile + CUDA graphs",
+        "attempt_that_passed": passed_as,          # compiled (the default), compiled_pytorch_check or eager
         "triton_layers": clean.get("triton_layers"),
         "same_outputs": f"{same}/{len(b['first_outputs'])}",
         "output_tokens_per_s": {"without": b["output_tokens_per_s"], "with": g["output_tokens_per_s"]},
@@ -294,28 +296,43 @@ def main():
     # If a run fails, fall back so one paid run still gives a matched pair: the PyTorch check traced into the
     # compiled graph, then both runs without torch.compile / CUDA graphs. The baseline always runs in the
     # same mode as the guarded run.
-    attempts = [({}, ()), ({"SDCGUARD_SERVE_FAST": "0"}, ()), ({}, ("--enforce-eager",))]
+    # Every attempt writes its own files (baseline_<mode>.json, guarded_<mode>.json), so a failed attempt's
+    # evidence is kept; the pair that passed is copied to baseline.json and guarded.json for the comparison.
+    attempts = [("compiled", {}, ()), ("compiled_pytorch_check", {"SDCGUARD_SERVE_FAST": "0"}, ()),
+                ("eager", {}, ("--enforce-eager",))]
+    for stale in ("baseline.json", "guarded.json"):            # never compare against an earlier run's files
+        try:
+            os.remove(os.path.join(a.out, stale))
+        except OSError:
+            pass
     baseline_ok: dict = {}
-    mode = attempts[-1]
-    matched_pair = False
-    for env, extra in attempts:
+    mode = attempts[-1][1:]
+    matched = None
+    for name, env, extra in attempts:
+        btag = "baseline_eager" if extra else "baseline_compiled"
         if extra not in baseline_ok:
-            baseline_ok[extra] = go("baseline", extra=extra) == 0
+            baseline_ok[extra] = go("baseline", extra=(*extra, "--tag", btag)) == 0
             print(f"baseline run {' '.join(extra)}: {'ok' if baseline_ok[extra] else 'FAILED'}", flush=True)
         if not baseline_ok[extra]:
             continue                       # vLLM itself doesn't start in this mode: try the next one
-        code = go("guarded", env, extra)
-        print(f"guarded run {env or ''} {' '.join(extra)}: exit code {code}", flush=True)
-        if code == 0 and baseline_ok[extra]:
-            mode = (env, extra)
-            matched_pair = True
+        code = go("guarded", env, (*extra, "--tag", f"guarded_{name}"))
+        print(f"guarded run ({name}): exit code {code}", flush=True)
+        if code == 0:
+            mode, matched = (env, extra), name
+            shutil.copyfile(os.path.join(a.out, f"{btag}.json"), os.path.join(a.out, "baseline.json"))
+            shutil.copyfile(os.path.join(a.out, f"guarded_{name}.json"), os.path.join(a.out, "guarded.json"))
             break
-    if not matched_pair:
+    if matched is None:
         print("VALIDATION FAILED: no successful baseline/guarded pair; stale files are not accepted", flush=True)
         return 1
     failures = []
+    if matched != attempts[0][0]:
+        # a fallback gives a matched pair, but it doesn't validate vLLM's default mode (compiled, CUDA graphs,
+        # the Triton check): that attempt's files (guarded_compiled.json, its log) say what went wrong
+        failures.append(f"the default mode (torch.compile + CUDA graphs, Triton check) did not pass; the pair "
+                        f"that passed ran as '{matched}'")
     try:
-        failures.extend(compare(a.out))
+        failures.extend(compare(a.out, matched))
     except Exception as e:  # noqa: BLE001
         print(f"comparison failed: {e}", flush=True)
         failures.append(f"comparison failed: {e}")

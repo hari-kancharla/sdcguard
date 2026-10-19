@@ -1,10 +1,15 @@
 """The sdcguard vLLM plugin on real vLLM 0.31, on a Modal H100.
 
-    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $1.65
+    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (at most 75 min, about $6)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s, alerts on clean traffic, and a flipped weight bit caught and located.
+
+Costs use Modal's prices (H100 $3.95 an hour; CPU $0.0472 a core-hour and memory $0.008 a GiB-hour, so
+these 8-core, 64 GiB machines cost about $4.84 an hour). If vLLM's default compiled mode fails, the experiment
+also tries two fallback modes, which takes longer (the 75-minute limit still caps it), and it then reports a
+failure: a fallback doesn't validate the default mode.
 
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
 hard time limit, and a phase won't start again within an hour of its last start unless you pass --force.
@@ -165,8 +170,8 @@ def bundle() -> bytes:
 
 
 ESTIMATES = {
-    "vllm": "about 25 minutes on 1 H100: roughly $1.65 (hard limit 75 minutes, about $4.95)",
-    "demo": "about 5 minutes on 1 H100: roughly $0.40 (hard limit 15 minutes, about $1.05)",
+    "vllm": "about 25 minutes on 1 H100: roughly $2 (hard limit 75 minutes, about $6)",
+    "demo": "about 5 minutes on 1 H100: roughly $0.40 (hard limit 15 minutes, about $1.20)",
     "fetch": "download only: a few cents",
 }
 
