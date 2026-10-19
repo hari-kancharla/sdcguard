@@ -195,12 +195,13 @@ def _sign_table(device: torch.device, epoch: int = 0) -> torch.Tensor:
     Built once per device and epoch, and copied without making the CPU wait for the GPU. Serving uses
     epoch 0; training checks move to a new epoch every checked step (see checksum._signs)."""
     key = (str(device), epoch)
-    if key not in _SIGNS:
+    hit = _SIGNS.get(key)
+    if hit is None:
         from .checksum import _signs
         if epoch:                                           # keep epoch 0 (serving) and this one
             for k in [k for k in _SIGNS if k[1] not in (0, epoch)]:
-                del _SIGNS[k]
-        if epoch:                                           # every width starts the same 128-wide pattern
+                _SIGNS.pop(k, None)
+            # every width starts the same 128-wide pattern: one table in one operation
             host = torch.tril(_signs(128, "cpu", epoch).view(1, 128).expand(128, 128)).contiguous()
         else:
             host = torch.zeros(128, 128, dtype=torch.float32)   # (explicit: vLLM loads under bf16 default)
@@ -212,8 +213,8 @@ def _sign_table(device: torch.device, epoch: int = 0) -> torch.Tensor:
             dev = host.to(device, non_blocking=True)
         else:
             dev = host.to(device)
-        _SIGNS[key] = (dev, host)
-    return _SIGNS[key][0]
+        hit = _SIGNS[key] = (dev, host)
+    return hit[0]
 
 
 def _precision(device: torch.device) -> str:

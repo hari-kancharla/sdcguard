@@ -182,7 +182,7 @@ def _drop_old(cache: dict, epoch: int) -> None:
     """Keep epoch 0 and the current epoch only (the caches would grow by one pattern per step otherwise)."""
     if epoch:
         for k in [k for k in cache if k[-1] not in (0, epoch)]:
-            del cache[k]
+            cache.pop(k, None)              # (pop: another thread may have dropped it first)
 
 
 def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
@@ -190,7 +190,8 @@ def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
     Epoch 0 draws each width on its own; a later epoch draws one pattern and narrower blocks use its start
     (one draw per checked step instead of one per block width)."""
     key = (width, str(device), epoch)
-    if key not in _SIGNS:
+    out = _SIGNS.get(key)
+    if out is None:
         _drop_old(_SIGNS, epoch)
         if epoch == 0:
             g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
@@ -202,8 +203,8 @@ def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
                 g = torch.Generator().manual_seed((_SIGN_SEED + n + 7919 * epoch) % (2 ** 63))
                 base = _SIGNS[("base", n, epoch)] = (torch.randint(0, 2, (n,), generator=g) * 2 - 1).float()
             s = base[:width]
-        _SIGNS[key] = s.to(device)
-    return _SIGNS[key]
+        out = _SIGNS[key] = s.to(device)
+    return out
 
 
 def _c_gemm(flat: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
