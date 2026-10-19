@@ -158,6 +158,42 @@ SWEEP = [("b200", b200), ("h200", h200), ("h100_a", h100_a), ("h100_b", h100_b),
 
 
 TESTS_LIMIT = {"l4": 45 * 60, "h100": 30 * 60, "b200": 30 * 60}     # each tests function's hard limit (seconds)
+TESTS_WAIT = 3 * 3600      # how long the terminal waits for all of them, GPU queues included (queued time is free)
+
+
+def _wait_all(calls, cap: float, every: float = 20.0, say=print):
+    """Yield (label, result) for each spawned call as it finishes, in whatever order they finish, printing what's
+    still running every 5 minutes. Waiting one call at a time with a fixed timeout gave up on the H100 and the
+    B200 on Oct 19 while they were still queued or running (TimeoutError after 35, 70 and 105 minutes). A call
+    still pending after `cap` seconds is reported as not finished, with where its logs are."""
+    pending = dict(calls)
+    errors = {label: 0 for label in pending}
+    t0 = last = time.time()
+    while pending:
+        for label, call in list(pending.items()):
+            try:
+                r = call.get(timeout=0)
+            except Exception as e:  # noqa: BLE001
+                if type(e).__name__ == "TimeoutError" and time.time() - t0 < cap:
+                    errors[label] = 0
+                    continue                      # not finished yet (a function's own time limit raises another error)
+                errors[label] += 1
+                if type(e).__name__ != "TimeoutError" and errors[label] < 3:
+                    continue                      # asked again before giving up: a dropped connection isn't a result
+                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}"
+                             + (f" (still not finished after {cap / 3600:.1f} hours)" if type(e).__name__ ==
+                                "TimeoutError" else "")
+                             + f"\nLogs written before it stopped: modal volume get sdcguard-runs "
+                             f"/check_sweep/pytest_{label}.txt results/gpu_tests/ (also fast_compare_, "
+                             f"serve_compare_, wheel_, tests_cli_output_)", "run": 2}
+            del pending[label]
+            yield label, r
+        if pending:
+            if time.time() - last >= 300:
+                last = time.time()
+                say(f"... {(last - t0) / 60:.0f} minutes in, still running or waiting for a GPU: "
+                    f"{', '.join(pending)}", flush=True)
+            time.sleep(every)
 
 
 def _tests(label: str, with_bench: bool = False) -> dict:
@@ -169,7 +205,7 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     last, the attention check's calibration (an experiment with its own criteria, reported separately).
     Returns the output and each part's exit code: a finished run isn't a passed one. Every step has its own time
     limit inside the function's, and the optional steps at the end only start when there's time left (on Oct 19
-    the L4 and the H100 hit the hard limit and their whole results were lost)."""
+    none of the three returned in time and nothing came back; the logs each step saves are on the volume)."""
     t0 = time.time()
 
     def left() -> float:                     # seconds before the hard limit, keeping 2 minutes to save and return
@@ -425,17 +461,12 @@ def main(phase: str = "sweep", force: bool = False):
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
+        print("Started. Each GPU's result prints as soon as it's done; time spent waiting for a GPU isn't billed. "
+              "Keep this terminal open until it prints Done.", flush=True)
         dest = LOCAL / "results" / "gpu_tests"
         dest.mkdir(parents=True, exist_ok=True)
         failed, att = {}, {}
-        for label, call in calls:
-            try:
-                r = call.get(timeout=TESTS_LIMIT[label] + 15 * 60)       # (+ time waiting for a GPU)
-            except Exception as e:  # noqa: BLE001
-                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}\nLogs written before it "
-                             f"stopped: modal volume get sdcguard-runs /check_sweep/pytest_{label}.txt "
-                             f"results/gpu_tests/ (also fast_compare_, serve_compare_, wheel_, tests_cli_output_)",
-                     "run": 2}
+        for label, r in _wait_all(calls, TESTS_WAIT):
             r["text"] = f"code fingerprint {src['sha256']} ({src['files']} files)\n" + r["text"]
             print(r["text"], flush=True)
             stamp = time.strftime('%Y%m%d_%H%M%S')
@@ -453,7 +484,8 @@ def main(phase: str = "sweep", force: bool = False):
         print("Attention check criteria (0 clean alarms, worst at most 4): " + ", ".join(
             f"{k} {'MET' if v == 0 else 'NOT MET' if v == 1 else f'error ({v})'}" for k, v in att.items()), flush=True)
         if failed:
-            print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE)", flush=True)
+            print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE). Done.",
+                  flush=True)
             raise SystemExit(1)
         print("All passed. Done.", flush=True)
         return

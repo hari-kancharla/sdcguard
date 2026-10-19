@@ -154,3 +154,63 @@ def test_tiny_held_out_workload_validates_real_production_checks(monkeypatch):
     assert result["as_shipped"]["criteria_met"] is True
     assert result["as_shipped"]["checks"] == 15
     assert result["workloads"][0]["guard_stats"]["checked_fp32"] == 15
+
+
+class _Pending:
+    """A spawned call that isn't finished for `polls` polls, then returns `result` (or raises it)."""
+
+    def __init__(self, result, polls=0, flaky=0):
+        self.result, self.polls, self.flaky = result, polls, flaky
+
+    def get(self, timeout=None):
+        if self.flaky:
+            self.flaky -= 1
+            raise ConnectionError("connection dropped")
+        if self.polls:
+            self.polls -= 1
+            raise TimeoutError()
+        if isinstance(self.result, Exception):
+            raise self.result
+        return copy.deepcopy(self.result)
+
+
+def test_the_tests_phase_waits_for_every_gpu_and_reports_them_as_they_finish(tmp_path, monkeypatch):
+    module = _load("scripts/modal_check.py", monkeypatch)
+    monkeypatch.setattr(module, "LOCAL", tmp_path)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+    ok = {"text": "fixture", "pytest": 0, "fast_compare": 0, "serve_compare": 0, "wheel": 0, "check": 0,
+          "attention_calibration": 0}
+
+    class FunctionTimeoutError(Exception):
+        pass
+    spawns = {"tests": _Pending(ok, polls=50), "tests_h100": _Pending(ok, polls=5, flaky=2),
+              "tests_b200": _Pending(FunctionTimeoutError("hit its time limit"), polls=3)}
+    for name, call in spawns.items():
+        monkeypatch.setattr(module, name, types.SimpleNamespace(spawn=lambda c=call: c))
+    with pytest.raises(SystemExit) as exc:
+        module.main(phase="tests")
+    assert exc.value.code == 1
+    saved = sorted(p.name.split("_")[0] for p in (tmp_path / "results" / "gpu_tests").glob("*.txt"))
+    assert saved == ["b200", "h100", "l4"]            # all three reported, the slow L4 included
+    b200 = next((tmp_path / "results" / "gpu_tests").glob("b200_*.txt")).read_text()
+    assert "FunctionTimeoutError" in b200 and "modal volume get" in b200
+
+
+def _wait_module(monkeypatch):
+    module = _load("scripts/modal_check.py", monkeypatch)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+    return module
+
+
+def test_wait_all_gives_up_only_after_the_cap(monkeypatch):
+    module = _wait_module(monkeypatch)
+    clock = [0.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+
+    class Never:
+        def get(self, timeout=None):
+            clock[0] += 600
+            raise TimeoutError()
+    out = list(module._wait_all([("h100", Never())], cap=3600, say=lambda *a, **k: None))
+    assert len(out) == 1 and out[0][0] == "h100" and out[0][1]["run"] == 2
+    assert "still not finished after 1.0 hours" in out[0][1]["text"]
