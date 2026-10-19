@@ -54,6 +54,7 @@ model whose last layer has a remainder block (1000 outputs) so the multi-span pa
 """
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import threading
@@ -181,6 +182,30 @@ _SIGN_SEED = int(os.environ.get("SDCGUARD_SIGN_SEED") or int.from_bytes(os.urand
 
 
 _CACHE_LOCK = threading.RLock()     # the pattern caches are shared by every thread (one per GPU in autograd)
+
+
+@contextlib.contextmanager
+def sign_seed(seed: Optional[int]):
+    """Use another process's sign patterns for a while (a replay judging a recorded output with the patterns
+    that flagged it). It swaps a process-wide setting: for one-off tools such as `sdcguard replay`, not while
+    other threads are checking matmuls. The Triton checks keep their own copy of the patterns, so use it with
+    CPU tensors."""
+    global _SIGN_SEED
+    if seed is None:
+        yield
+        return
+    with _CACHE_LOCK:
+        old = _SIGN_SEED
+        _SIGN_SEED = int(seed)
+        _SIGNS.clear()
+        _PAIR_W.clear()
+    try:
+        yield
+    finally:
+        with _CACHE_LOCK:
+            _SIGN_SEED = old
+            _SIGNS.clear()
+            _PAIR_W.clear()
 
 
 def _drop_old(cache: dict, epoch: int) -> None:

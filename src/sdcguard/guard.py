@@ -333,6 +333,7 @@ class SDCGuard(TorchDispatchMode):
         self._z_cap = 20000
         self._rng = random.Random(seed)
         self._pending: list = []
+        self._flushed: list = []                    # (see _flush)
         self._module: Optional[str] = None
         self._hooks: list = []
         self._identity: dict = {}
@@ -731,6 +732,7 @@ class SDCGuard(TorchDispatchMode):
                                        batch=b if len(p[4]["shape_A"]) == 3 else None,
                                        row=r, col_block=blk, noise=den))
             kept.append(p)
+        self._flushed = kept                        # the queue entries `results` belong to, in order
         first_error = None
         for (_kind, _st, _idx, token, detail), res in zip(kept, results):
             if res.ok and not res.judged:

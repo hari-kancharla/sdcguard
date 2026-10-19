@@ -115,7 +115,14 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
         w = full["wrong"]
         corrupted.update(stress=w.get("stress", 0), math_modes=w.get("math_modes", 0),
                          memory_words=w.get("memory_words", 0))
-    simulated = bool(summary.get("SIMULATED_FAULTS"))
+    simulated = bool(summary.get("SIMULATED_FAULTS")) or bool((full or {}).get("simulated_faults"))
+    # the files a fleet report or a person reads the result from: a change to them after signing is detected
+    files = {}
+    if full and full.get("out_dir"):
+        for name in ("check.json", "result.json"):
+            digest = _sha256(os.path.join(full["out_dir"], name))
+            if digest:
+                files[name] = digest
     cert = {
         "format": FORMAT,
         "issued_at": now.isoformat(),
@@ -135,12 +142,15 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
         "worst_clean_score": summary.get("worst_clean_z"),
         "alarm_line": summary.get("alarm_line", 6.0),
         "evidence_sha256": evidence,
+        "files_sha256": files,
+        "hardware_errors": list((full or {}).get("hardware_errors") or []),
         "simulated_faults": simulated,
         "meaning": ("PASS: every matrix multiply checked on this GPU matched its checksums, and every check could "
-                    "be judged (counts above). It says what was checked, not that the GPU has no defect. INCOMPLETE: nothing wrong was found, but part of the "
-                    "check couldn't run or couldn't judge its results; this certificate doesn't vouch for the GPU. "
-                    "FAIL: some results were wrong; the evidence files hold the failed matmuls' inputs and outputs, "
-                    "and `sdcguard replay <evidence>.pt` recomputes them on any GPU."),
+                    "be judged (counts above). It says what was checked, not that the GPU has no defect. INCOMPLETE: "
+                    "nothing wrong was found, but part of the check couldn't run or couldn't judge its results; this certificate doesn't vouch for the GPU. "
+                    "FAIL: some results were wrong (the evidence files hold the failed matmuls' inputs and outputs, "
+                    "and `sdcguard replay <evidence>.pt` recomputes them on any GPU), or the driver reported memory "
+                    "errors it couldn't correct (hardware_errors)."),
     }
     if check:   # from `sdcguard check`: speed, memory test, repeatability, health, and its overall verdict
         cert["check"] = {k: check.get(k) for k in ("result", "checked", "wrong", "headroom", "repeatable",
@@ -177,7 +187,9 @@ def write(summary: dict, out_dir: str, key_path: Optional[str] = None, issuer: s
 def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datetime] = None) -> dict:
     """Check a certificate. Returns {"ok", "signed", "signature_valid", "trusted_key", "expired",
     "evidence_files_match", "result", "gpu", "problems"}. ok means: signature valid, signed by the given
-    public key (when one is given), not expired, evidence files (if present next to it) unchanged."""
+    public key (when one is given), not expired, evidence files and the check's result files (check.json,
+    result.json, if present next to it) unchanged. ok says the certificate is authentic, not that the GPU
+    passed: read "result" (or use `sdcguard verify --require-pass`)."""
     with open(path) as f:
         cert = json.load(f)
     problems = []
@@ -219,11 +231,11 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
         problems.append(f"expired on {cert.get('valid_until')}")
     here = os.path.dirname(os.path.abspath(path))
     match = True
-    for name, digest in (cert.get("evidence_sha256") or {}).items():
-        p = os.path.join(here, name)
+    for name, digest in {**(cert.get("evidence_sha256") or {}), **(cert.get("files_sha256") or {})}.items():
+        p = os.path.join(here, os.path.basename(str(name)))
         if os.path.exists(p) and _sha256(p) != digest:
             match = False
-            problems.append(f"evidence file {name} changed since the certificate was issued")
+            problems.append(f"{os.path.basename(str(name))} changed since the certificate was issued")
     out["evidence_files_match"] = match
     if cert.get("simulated_faults"):
         problems.append("this screen injected SIMULATED faults (a demo, not a real result)")

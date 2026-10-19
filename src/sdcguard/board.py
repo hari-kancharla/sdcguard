@@ -75,8 +75,14 @@ def _shape_problem(r: dict) -> Optional[str]:
             return f"speed.{k} is not a number"
     for part in ("checked", "wrong", "headroom"):
         for k, v in (r.get(part) or {}).items():
+            if part == "checked" and k == "memory_skipped":       # (why the memory test didn't run, or None)
+                if v is not None and not isinstance(v, str):
+                    return "checked.memory_skipped is malformed"
+                continue
             if not _num_ok(v, -1e18, 1e18):
                 return f"{part}.{k} is not a number"
+    if r.get("stopped") is not None and not isinstance(r.get("stopped"), dict):
+        return "stopped is malformed"
     mm = r.get("math_modes")
     if mm is not None:
         if not isinstance(mm, dict):
@@ -99,10 +105,95 @@ def _shape_problem(r: dict) -> Optional[str]:
     return None
 
 
+_KEYS = {"schema", "result", "date", "minutes", "gpu", "software", "provider", "checked", "wrong", "hardware_errors",
+         "stopped", "headroom", "repeatable", "fingerprint", "speed", "health", "notes", "board", "simulated_faults",
+         "math_modes", "digest"}
+_WRONG = {"workload_training", "workload_serving", "stress", "math_modes", "memory_words"}
+MAX_CARD_BYTES = 64 * 1024
+
+
+def _all_finite(v, depth: int = 0) -> bool:
+    """No NaN or Infinity anywhere (they make results.json invalid JSON), no huge strings, no deep nesting."""
+    if depth > 8:
+        return False
+    if isinstance(v, float):
+        return math.isfinite(v)
+    if isinstance(v, str):
+        return len(v) <= 2000
+    if isinstance(v, dict):
+        return all(isinstance(k, str) and len(k) <= 200 and _all_finite(x, depth + 1) for k, x in v.items())
+    if isinstance(v, list):
+        return all(_all_finite(x, depth + 1) for x in v)
+    return v is None or isinstance(v, (bool, int))
+
+
+def _count(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 10 ** 15
+
+
+def _consistency_problem(r: dict) -> Optional[str]:
+    """A card's parts have to agree with its result. (The board can check that a card is consistent; it can't
+    prove a hand-made card describes a real run. The digest only shows it wasn't edited by accident.)"""
+    res, wrong, checked = r.get("result"), r.get("wrong") or {}, r.get("checked") or {}
+    if set(wrong) - _WRONG:
+        return "it counts wrong results in a part the check doesn't have"
+    if not {"workload_training", "workload_serving", "stress", "memory_words"} <= set(wrong):
+        return "its wrong-result counts are incomplete"
+    if not all(_count(v) for v in wrong.values()) or not _count(checked.get("results")) or \
+            not _count(checked.get("unjudged") or 0):
+        return "its counts aren't whole numbers"
+    if r.get("repeatable") is not None and not isinstance(r.get("repeatable"), bool):
+        return "repeatable is not true or false"
+    if r.get("hardware_errors") is not None and (not isinstance(r["hardware_errors"], list) or
+                                                 not all(isinstance(x, str) for x in r["hardware_errors"])):
+        return "hardware_errors is malformed"
+    name = str((r.get("gpu") or {}).get("name") or "").strip().lower()
+    if not name or name in ("cuda", "none") or name.startswith("cpu"):
+        return "not a GPU result"
+    mm = r.get("math_modes") or {}
+    if mm and "math_modes" not in wrong:
+        return "its math-mode results aren't in its wrong-result counts"
+    b = r.get("board") or {}
+    odd = any(lvl == "bad" and ("odd one out" in t or "differs from" in t) for lvl, t in r.get("notes") or [])
+    if res == "PASS":
+        if any(lvl == "bad" for lvl, _t in r.get("notes") or []):
+            return "says PASS, but its notes report a problem"
+        if r.get("repeatable") is not True:
+            return "says PASS, but its repeatability wasn't confirmed"
+        if b.get("disagrees_with_majority") or odd:
+            return "says PASS, but its fingerprint disagrees with other GPUs (that's SUSPECT)"
+        if r.get("hardware_errors") or r.get("stopped") or checked.get("memory_skipped") or \
+                (checked.get("serving_nonfinite") or 0) > 0:
+            return "says PASS, but part of the check didn't run or reported errors (that's INCOMPLETE or FAIL)"
+        cc = str((r.get("gpu") or {}).get("compute_cap") or "")
+        try:
+            from .modes import expected
+            cap = tuple(int(x) for x in cc.split(".")[:2]) if cc else None
+        except ValueError:
+            cap = None
+        for m in (mm.get("not_checked") or {}):
+            if cap is None or expected(m, cap):
+                return f"says PASS, but the {m} math mode didn't run on a GPU that supports it"
+    if res == "FAIL" and not sum(wrong.values()) and not r.get("hardware_errors"):
+        return "says FAIL, but counts no wrong results"
+    if res == "SUSPECT" and r.get("repeatable") is not False and not b.get("disagrees_with_majority") and not odd:
+        return "says SUSPECT, but nothing on it disagrees"
+    return None
+
+
 def validate(r: dict) -> Optional[str]:
     """None if the card can go on the board, else the reason it can't."""
     if not isinstance(r, dict) or r.get("schema") != SCHEMA:
         return f"not a {SCHEMA} result card"
+    try:
+        if len(json.dumps(r, default=str)) > MAX_CARD_BYTES:
+            return f"larger than {MAX_CARD_BYTES // 1024} KB"
+    except (TypeError, ValueError, RecursionError):
+        return "malformed card"
+    if set(r) - _KEYS:
+        return "malformed card (fields the check doesn't write: " + ", ".join(sorted(map(str, set(r) - _KEYS)))[:120] + ")"
+    if not _all_finite(r):
+        return "malformed card (NaN, Infinity, an oversized text or deep nesting)"
     shape = _shape_problem(r)
     if shape:
         return f"malformed card ({shape})"
@@ -135,13 +226,11 @@ def validate(r: dict) -> Optional[str]:
                                       or float(mm.get("wrong") or 0) > 0 or mm.get("errors")
                                       or unjudged > 0):
             return "says PASS, but its counts don't (nothing checked, wrong or unjudged results, or not repeatable)"
-        if r["result"] == "FAIL" and sum(wrong) == 0:
-            return "says FAIL, but counts no wrong results"
         if r["result"] == "SUSPECT" and sum(wrong) > 0:
             return "says SUSPECT, but counts wrong results (that's a FAIL)"
     except (TypeError, ValueError):
         return "malformed numbers"
-    return None
+    return _consistency_problem(r)
 
 
 def _s(v, n: int = 80) -> str:
@@ -383,7 +472,7 @@ def build(results: list, out: str, repo: Optional[str] = None) -> dict:
     with open(os.path.join(out, "index.html"), "w") as f:
         f.write(html_page(agg, good, repo))
     with open(os.path.join(out, "results.json"), "w") as f:
-        json.dump(good, f, indent=1, default=str)
+        json.dump(good, f, indent=1, default=str, allow_nan=False)
     with open(os.path.join(out, "reference.json"), "w") as f:
         json.dump(reference(agg), f, indent=1)
     return {"totals": agg["totals"], "accepted": len(good),

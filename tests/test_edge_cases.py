@@ -259,8 +259,10 @@ def test_board_rejects_cards_whose_verdict_contradicts_their_counts():
     assert "PASS" in board.validate(_card(checked={"results": 0}))
     assert "PASS" in board.validate(_card(wrong={"stress": 2}))
     assert "FAIL" in board.validate(_card(result="FAIL"))
-    assert board.validate(_card(result="FAIL", wrong={"stress": 2})) is None
-    assert "negative" in board.validate(_card(wrong={"stress": -1}))
+    every = {"workload_training": 0, "workload_serving": 0, "stress": 0, "memory_words": 0}
+    assert board.validate(_card(result="FAIL", wrong={**every, "stress": 2})) is None
+    assert "incomplete" in board.validate(_card(result="FAIL", wrong={"stress": 2}))     # parts left out
+    assert "negative" in board.validate(_card(wrong={**every, "stress": -1}))
 
 
 def test_a_check_that_cant_judge_anything_says_so(plain_check):

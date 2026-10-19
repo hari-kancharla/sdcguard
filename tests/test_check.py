@@ -135,6 +135,8 @@ def test_board_build_validates_and_aggregates(cpu_run, tmp_path):
         r = copy.deepcopy(base)
         r["gpu"].update(name=name, id_hash=idh)
         r.update(result=res, minutes=minutes, provider={"name": prov})
+        if res == "SUSPECT":            # (a real SUSPECT card says what disagreed: here, its own reruns)
+            r["repeatable"] = False
         r["speed"]["matmul_tflops"] = tf
         r["fingerprint"] = {"key": "k1", "output": logits}
         r["digest"] = board.digest(r)

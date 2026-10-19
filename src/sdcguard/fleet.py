@@ -24,56 +24,89 @@ import zipfile
 from typing import Iterable
 
 
+_SEVERITY = {"FAIL": 3, "SUSPECT": 2, "INCOMPLETE": 1, "PASS": 0}
+
+
+def _worse(a, b):
+    """The more serious of two results (an unknown one counts as INCOMPLETE)."""
+    sa, sb = _SEVERITY.get(a, 1), _SEVERITY.get(b, 1)
+    return a if sa >= sb else b
+
+
+def _num(v) -> float:
+    """A count from a file that may have been edited by hand: a number, or 0."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) != float("inf") else 0
+
+
+def _load(path: str):
+    try:
+        with open(path) as f:
+            v = json.load(f)
+        return v if isinstance(v, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
 def collect(roots: Iterable[str]) -> list[dict]:
-    """One row per screened GPU (the newest summary for each GPU UUID wins)."""
+    """One row per screened GPU (the newest result for each GPU UUID wins). A folder counts when it has a
+    summary.json (`sdcguard screen`) or a check.json (`sdcguard check`, which also covers a check that stopped
+    before its workload ran). When a certificate is there, the row's result is the more serious of the
+    certificate's and the files', and files changed since the certificate was issued are flagged."""
     rows: dict = {}
     for root in roots:
         for d, _dirs, files in os.walk(root):
-            if "summary.json" not in files:
+            if "summary.json" not in files and "check.json" not in files:
                 continue
-            try:
-                with open(os.path.join(d, "summary.json")) as f:
-                    s = json.load(f)
-            except (OSError, ValueError):
+            s = _load(os.path.join(d, "summary.json")) if "summary.json" in files else None
+            chk = _load(os.path.join(d, "check.json")) if "check.json" in files else None
+            if s is None and chk is None:
                 continue
-            cert = None
-            if "certificate.json" in files:
-                try:
-                    with open(os.path.join(d, "certificate.json")) as f:
-                        cert = json.load(f)
-                except (OSError, ValueError):
-                    cert = None
-            chk = None
-            if "check.json" in files:
-                try:
-                    with open(os.path.join(d, "check.json")) as f:
-                        chk = json.load(f)
-                except (OSError, ValueError):
-                    chk = None
-            g = s.get("gpu", {})
+            s = s or {}
+            cert = _load(os.path.join(d, "certificate.json")) if "certificate.json" in files else None
+            g = {**(chk or {}).get("gpu", {}), **s.get("gpu", {})} if chk else s.get("gpu", {})
             key = g.get("gpu_uuid") or os.path.abspath(d)
             # `sdcguard check` writes check.json with every phase (workload, stress check, math modes); a bare
             # `sdcguard screen` has only the workload summary
             wrong = dict((chk or {}).get("wrong") or {"workload_training": s.get("corrupted_results_training") or 0,
                                                      "workload_serving": s.get("corrupted_results_serving") or 0})
             evidence = [_local(e, d) for e in ((chk or {}).get("evidence") or s.get("evidence") or [])]
+            wl = (chk or {}).get("workload") or {}
+            notes = [t for lvl, t in (chk or {}).get("notes") or [] if lvl in ("bad", "warn")]
+            if chk is None and s.get("error"):
+                notes.insert(0, f"the screen stopped with an error ({s['error']})")
+            result = (chk or {}).get("result") or s.get("result") or "INCOMPLETE"
+            if chk and s.get("result") == "FAIL":
+                result = "FAIL"
+            changed = []
+            if cert:
+                result = _worse(result, cert.get("result") or "INCOMPLETE")
+                from .certify import _sha256
+                for name, digest in ((cert.get("files_sha256") or {}) | (cert.get("evidence_sha256") or {})).items():
+                    p = os.path.join(d, os.path.basename(name))
+                    if os.path.exists(p) and _sha256(p) != digest:
+                        changed.append(os.path.basename(name))
+                if changed:
+                    notes.insert(0, "changed after the certificate was issued: " + ", ".join(changed))
+                    result = _worse(result, "INCOMPLETE")
+            mpath = os.path.join(d, "check.json" if chk else "summary.json")
             row = {"dir": os.path.abspath(d), "gpu_uuid": g.get("gpu_uuid"), "gpu_name": g.get("gpu_name"),
                    "host": g.get("host"), "pci_bus_id": g.get("pci_bus_id"), "serial": g.get("serial"),
-                   "driver": g.get("driver"), "result": s.get("result"), "minutes": s.get("minutes"),
-                   "matmuls_checked": s.get("matmuls_checked") or 0,
-                   "serving_layer_checks": s.get("linear_layer_checks_while_serving") or 0,
-                   "tflop": s.get("approx_matmul_tflop") or 0.0,
-                   "corrupted": sum(v or 0 for k, v in wrong.items() if k != "memory_words"),
-                   "wrong_by_phase": wrong,
-                   "worst_clean_score": s.get("worst_clean_z"), "evidence": evidence,
-                   "simulated": bool(s.get("SIMULATED_FAULTS")), "certificate": bool(cert),
-                   "signed": bool(cert and cert.get("signature")), "issued_at": (cert or {}).get("issued_at"),
-                   "mtime": os.path.getmtime(os.path.join(d, "summary.json")),
+                   "driver": g.get("driver"), "result": result,
+                   "minutes": (chk or {}).get("minutes") or s.get("minutes"),
+                   "matmuls_checked": _num(s.get("matmuls_checked") or wl.get("matmuls_checked")),
+                   "serving_layer_checks": _num(s.get("linear_layer_checks_while_serving")
+                                                or wl.get("linear_layer_checks_while_serving")),
+                   "tflop": _num(s.get("approx_matmul_tflop") or wl.get("approx_matmul_tflop")),
+                   "corrupted": sum(_num(v) for k, v in wrong.items() if k != "memory_words"),
+                   "wrong_by_phase": wrong, "hardware_errors": (chk or {}).get("hardware_errors") or [],
+                   "worst_clean_score": (chk or {}).get("worst_clean_score", s.get("worst_clean_z")),
+                   "evidence": evidence,
+                   "simulated": bool(s.get("SIMULATED_FAULTS") or (chk or {}).get("simulated_faults")),
+                   "certificate": bool(cert), "signed": bool(cert and cert.get("signature")),
+                   "changed_since_certificate": changed, "issued_at": (cert or {}).get("issued_at"),
+                   "mtime": os.path.getmtime(mpath),
                    "matmul_tflops": ((chk or {}).get("speed") or {}).get("tflops"),
-                   "repeatable": (chk or {}).get("repeatable"),
-                   "notes": [t for lvl, t in (chk or {}).get("notes") or [] if lvl in ("bad", "warn")]}
-            if chk and chk.get("result") in ("FAIL", "SUSPECT", "INCOMPLETE") and row["result"] != "FAIL":
-                row["result"] = chk["result"]
+                   "repeatable": (chk or {}).get("repeatable"), "notes": notes}
             if key not in rows or row["mtime"] > rows[key]["mtime"]:
                 rows[key] = row
     return sorted(rows.values(), key=lambda r: (r["result"] != "FAIL", r["host"] or "", r["pci_bus_id"] or ""))
@@ -91,15 +124,28 @@ _PHASES = {"workload_training": "in the training workload", "workload_serving": 
            "memory_words": "memory words read back wrong in the memory test"}
 
 
-def _rma_zip(row: dict, out_dir: str) -> str:
+def _zip_name(row: dict, taken: set) -> str:
+    """A file name for a GPU's RMA zip: its UUID (or its folder's name) made safe for a path, unique."""
+    from .screen import _safe_name
+    base = _safe_name(str(row.get("gpu_uuid") or os.path.basename(row["dir"]) or "gpu"))
+    name, i = base, 2
+    while name in taken:
+        name, i = f"{base}_{i}", i + 1
+    taken.add(name)
+    return name + ".zip"
+
+
+def _rma_zip(row: dict, out_dir: str, name: str = "") -> str:
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, f"{row['gpu_uuid'] or 'gpu'}.zip")
+    path = os.path.join(out_dir, name or _zip_name(row, set()))
     phases = "".join(f"    {v:,} {_PHASES.get(k, k)}\n" for k, v in (row.get("wrong_by_phase") or {}).items() if v)
     readme = (f"sdcguard evidence for GPU {row['gpu_uuid']} ({row['gpu_name']}), serial {row['serial']}, "
               f"host {row['host']}, PCI {row['pci_bus_id']}\n\n"
               f"Result: {row['result']}. {row['corrupted']:,} matrix multiply results failed their checks "
               f"({row['matmuls_checked']:,} workload matmuls and {row['serving_layer_checks']:,} layer outputs "
-              f"checked, plus the stress and math-mode checks):\n" + (phases or "    none\n") + "\n"
+              f"checked, plus the stress and math-mode checks):\n" + (phases or "    none\n") + "\n" +
+              "".join(f"Reported by the driver: {t}\n" for t in row.get("hardware_errors") or []) +
+              ("\n" if row.get("hardware_errors") else "") +
               "Each .pt file holds the inputs and the output this GPU produced for one failed matmul, and the .json "
               "next to it describes it; check.json is the whole result. To show the failure follows the board, run "
               "on this GPU and on a healthy one:\n\n" +
@@ -110,7 +156,7 @@ def _rma_zip(row: dict, out_dir: str) -> str:
               "itself rule out a software or configuration cause.\n")
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("README.txt", readme)
-        for name in ("summary.json", "check.json", "certificate.json"):
+        for name in ("summary.json", "check.json", "result.json", "certificate.json"):
             p = os.path.join(row["dir"], name)
             if os.path.exists(p):
                 z.write(p, name)
@@ -150,7 +196,8 @@ def write(rows: list[dict], out_dir: str) -> dict:
              "tflop_checked": round(sum(r["tflop"] for r in rows), 1),
              "simulated_runs": sum(r["simulated"] for r in rows),
              "generated_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()}
-    rma = {r["gpu_uuid"]: _rma_zip(r, os.path.join(out_dir, "rma")) for r in failed}
+    taken: set = set()
+    rma = {r["gpu_uuid"] or r["dir"]: _rma_zip(r, os.path.join(out_dir, "rma"), _zip_name(r, taken)) for r in failed}
     with open(os.path.join(out_dir, "quarantine.txt"), "w") as f:
         for r in failed:
             f.write(f"{r['gpu_uuid']}\thost={r['host']}\tpci={r['pci_bus_id']}\tserial={r['serial']}"
