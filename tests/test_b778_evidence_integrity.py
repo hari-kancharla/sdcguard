@@ -229,4 +229,3 @@ def test_partial_fingerprint_run_card_reports_only_completed_runs(tmp_path, monk
     # Older cards did not record this count; never invent it when reading one.
     card["fingerprint"].pop("runs", None)
     assert dict(check.lines(card))["repeatable"].startswith("recorded runs bit-identical")
-

@@ -274,7 +274,7 @@ def test_new_uncorrectable_ecc_errors_or_a_failed_row_remap_fail_the_check(tmp_p
     full = _full(tmp_path)
     assert code == 1 and full["result"] == "FAIL" and len(full["hardware_errors"]) == 2
     pub = check.public(full)
-    assert check.headline(pub) == "the driver reported memory errors it couldn't correct"
+    assert check.headline(pub) == "the driver reported a hardware error"
     assert "3 new uncorrectable ECC" in out
     card = dict(pub, gpu=dict(pub["gpu"], name="NVIDIA A100-SXM4-80GB"), minutes=5)
     card.pop("digest")

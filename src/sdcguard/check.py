@@ -18,7 +18,7 @@ What it does, per GPU (all GPUs at once, so a machine is tested the way it's use
               GPUs of the same model running the same software (here, and on the public board)
   health      temperature, power, clocks, throttling, PCIe link, ECC and memory-repair counters
 
-Verdict: PASS (every check ran and every result it could judge was correct), FAIL (results were wrong;
+Verdict: PASS (no failure detected under the completed checks), FAIL (a failure criterion was met;
 the failed matmuls of the workload, stress and math-mode checks are saved for `sdcguard replay`), SUSPECT
 (no checksum failed, but outputs that should be bit-identical weren't), INCOMPLETE (nothing wrong was found,
 but part of the check couldn't run or couldn't judge its results). Exit code 0 PASS, 1 FAIL or SUSPECT,
@@ -599,7 +599,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
 def hardware_errors(before: dict, after: dict) -> list:
     """Memory faults the driver itself reported during the check. NVIDIA's guidance treats an uncorrectable ECC
     error as an event that needs action and a row-remapping failure as grounds to replace the GPU, so either
-    one fails the check even when every checked result was correct."""
+    one fails the check even when no numerical mismatch was detected."""
     from .gpuinfo import _num
     out = []
     eu0, eu1 = _num(before.get("ecc.errors.uncorrected.volatile.total")), _num(after.get("ecc.errors.uncorrected.volatile.total"))
@@ -783,7 +783,7 @@ def _pcie(g, live):
     return f"Gen{gen} x{width}{mx}"
 
 
-VERDICT = {"PASS": "every checked result was correct", "FAIL": "this GPU computed wrong results",
+VERDICT = {"PASS": "no failure detected in completed checks", "FAIL": "a numerical, memory or hardware-error criterion failed",
            "SUSPECT": "outputs that should be identical were not",
            "INCOMPLETE": "part of the check couldn't run or couldn't judge its results"}
 
@@ -791,7 +791,7 @@ VERDICT = {"PASS": "every checked result was correct", "FAIL": "this GPU compute
 def headline(pub: dict) -> str:
     """The one-line meaning of the result. A FAIL with no wrong result is a hardware error the driver reported."""
     if pub["result"] == "FAIL" and not sum((pub.get("wrong") or {}).values()) and pub.get("hardware_errors"):
-        return "the driver reported memory errors it couldn't correct"
+        return "the driver reported a hardware error"
     return VERDICT[pub["result"]]
 
 

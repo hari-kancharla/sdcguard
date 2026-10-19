@@ -1,7 +1,12 @@
 # Method
 
-How the numbers in the README were measured. Raw output for all of it is in [results/](../results/).
+How the numbers in the README were measured. Raw output is in [results/](../results/); runs since October 19
+record the code fingerprint they ran.
 Unless noted: NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1 (CUDA 13.0), Triton 3.8.0.
+
+Measurements below belong to the implementations and workloads that produced them. In particular, the
+October 14-15 soak and October 18 overhead measurements do not validate the later precise-mode refit or
+changes to coverage reporting. Those changes need their own checks on the exact release candidate.
 
 ## Pass/fail criteria (written before the first GPU runs)
 
@@ -59,6 +64,32 @@ model of a faulty GPU, not a faulty GPU, which is why the NVBit runs below injec
 | vLLM on clean traffic | every request | 0 |
 | `sdcguard check` sweep, 10 GPUs | 1,683,363 | 0 (worst score 3.67) |
 
+## Incomplete numerical checks (October 19 review)
+
+The training checksum APIs distinguish a judged result from an incomplete check. If a row, column block,
+remainder block or batch contains a checksum that cannot be judged, and no other checksum detects
+corruption, the result is `UNJUDGED` (`max_z = -1`, `CheckResult.judged = False`). Examples include nonfinite
+inputs and values outside the range the check's arithmetic can evaluate. `CheckResult.ok = True` in this
+case means no corruption was established; it does not certify the result as clean. A detected corruption
+elsewhere in the matmul retains priority and produces an alert.
+
+The original reduction kept only the maximum score. One finite row could therefore hide another row's
+negative `UNJUDGED` score. The current [plain and precise checks](../src/sdcguard/checksum.py) retain a
+separate coverage flag. The [Triton training reduction](../src/sdcguard/_group.py) carries that flag through
+its tiles and final reduction too. The guard counts the resulting incomplete matmul in `stats["unjudged"]`,
+which the screening verdict uses. The flag reports that coverage is incomplete; it does not enumerate all
+unjudged blocks. Zero and tiny finite outputs remain judged, subject to the documented absolute noise floor.
+
+[Regression tests](../tests/test_numeric_review_b778.py) cover mixed rows, blocks, remainder blocks and
+batches, including a genuine alarm alongside an unjudged result. They passed on CPU and in the Triton
+interpreter. The changed Triton buffer layout still needs validation on real GPUs; these tests do not
+establish CUDA compilation behavior or the overhead of the change.
+
+Serving has a separate limitation: its packed worst-score state currently maps unjudged numerical cases to
+zero, so `ServeGuard` does not provide the same per-check completeness signal. Screening also examines
+nonfinite final serving outputs, but that does not establish that every internal serving checksum was
+judged. Training's coverage fix does not remove this limitation.
+
 ## Training cost
 
 Fast mode (`SDCGuard.protect(model)`), every matmul of the checked steps
@@ -75,7 +106,8 @@ Fast mode (`SDCGuard.protect(model)`), every matmul of the checked steps
 Fast mode wraps each `nn.Linear`. The first version hooked every PyTorch operation of a checked step
 (1,500 to 1,800 per GPT-2 small step) through Python, which is where most of its cost went. Matmuls outside
 `nn.Linear`, like attention written with `torch.bmm`, aren't checked in fast mode; `coverage()` reports the
-share of a model's matmul work it covers.
+potential share of the observed forward matmul work eligible for checking at its actual dtype. It does not
+establish executed coverage; inspect the separate guard counters for executed checks, skips and unjudged results.
 
 The default keeps bf16 matmul partial sums in fp32 on checked steps, which changes rounding slightly on
 those steps only. With `exact_reductions=False`, gradients are bit-identical with and without sdcguard (3
@@ -206,7 +238,7 @@ Raw output: [results/math_modes](../results/math_modes), [results/gpu_tests](../
    and B200, 6 on the L4) and scored two candidate fixes on the same 30 steps on five GPUs: tracking the
    running sums (16, 8 or 4 points along k) still alarmed 6 times on the A100's output layer (worst 7.8) and
    needs extra matmuls; scaling that term by sqrt(k / N) had no alarm anywhere (worst 5.2 on the A100), which
-   is too close to 6 to ship. Precise mode stays off by default and out of the README; the next section has
+   is too close to 6 to ship. Precise mode stays off by default and is documented as experimental; the next section has
    the model chosen from these runs and the test it has to pass.
 5. **GPU test suite: failed, then met.** 247 of 251 passed: two failures were the INT8 bug, two were the test
    machine missing the board's seed cards. After the fixes: 252 of 252, and `sdcguard check` PASS on the L4
@@ -216,14 +248,22 @@ Raw output: [results/math_modes](../results/math_modes), [results/gpu_tests](../
 
 Written October 19, 2026, after the runs above and before `scripts/modal_precise_validate.py` ran.
 
-The random part of the accumulation's rounding is now bounded from first principles instead of from the final
-output: each of the k products is aligned and truncated (tensor cores) or rounded (FMA) against the running
-sum, an error of up to one fp32 ulp with standard deviation ulp / sqrt(12), about 0.58 u |running sum|; and
-no running sum of a row times a column can exceed |a_row| |b_column| (Cauchy-Schwarz). So the term is
-0.6 sqrt(k) u |a_row| |B_block| (see `checksum.py`). On the calibration data it should score at most about 3.2
-on the A100 and 1.5 on the H100. The price is sensitivity: an estimated 1% of a typical output instead of the
-0.14 to 0.24% the old, wrong model claimed (the default bf16 check: about 20%). The constant is frozen in the
-code before this run.
+The refit uses a **statistical estimate** for accumulation noise:
+`0.6 sqrt(k) u |a_row| |B_block|`, with `u = 2^-24`, the row's L2 norm and the block's Frobenius norm
+([implementation](../src/sdcguard/checksum.py), `ACC_C1` and `_acc_zscores`). Cauchy-Schwarz bounds the
+magnitude of an exact partial dot product by the full input row and column norms. It does not establish
+the distribution or independence of floating-point rounding errors. The estimate additionally assumes
+that their random component combines approximately with `sqrt(k)` scaling; the coefficient 0.6 is motivated
+by a roughly uniform rounding-error model. The implementation retains a separate term for the accumulation
+bias and a more conservative plain-sum test when output rounding errors align.
+
+These assumptions can fail on correlated workloads or different kernel implementations. This formula is
+not a deterministic worst-case error bound, and an alarm threshold of 6 does not by itself establish a
+universal false-alarm probability. The constant was selected after the calibration failures above and frozen
+before the held-out run. The anticipated calibration scores, about 3.2 on the A100 and 1.5 on the H100, and
+the anticipated typical sensitivity, about 1% rather than the earlier model's 0.14 to 0.24%, are projections,
+not held-out GPU measurements. The historical default bf16 comparison was about 20% on those experiments.
+The held-out GPU run below tested the refit.
 
 The held-out run uses workloads none of the candidates was chosen on (`VALIDATE` in
 `experiments/precise_models.py`): a wider model with 8,192 tokens per step and a 50,257-token vocabulary, the
@@ -233,9 +273,30 @@ random tokens of the calibration run, and higher learning rates. The same five G
 bf16, T4 in fp16).
 
 Criteria: on every GPU, 0 alarms in every clean check and a worst score of at most 4 (a 1.5x margin under the
-alarm line). The run also reports the typical error caught (median and 90th percentile) and the cost per step
-of precise mode and of the default check, with no pass line. If the criteria fail, precise mode stays
-experimental and undocumented in the README, and the failure is written up here.
+alarm line). Coverage must also be complete: no unjudged or skipped checks, and both the diagnostic
+calculation and the production guard must execute the expected forward, dX and dW checks of the fixed
+workload. A clean diagnostic score cannot substitute for a guard check skipped because of memory pressure.
+The run records these counts in `guard_stats` and `expected_checks`
+([validation code](../experiments/precise_models.py)).
+
+The run also reports the typical error caught (median and 90th percentile) and the cost per step of precise
+mode and of the default check, with no overhead pass line. An overhead-measurement error is reported
+separately; meeting numerical criteria does not establish performance if that measurement failed. If the
+numerical or coverage criteria fail, precise mode stays experimental and the failure is written up here.
+
+### Sensitivity is local to a block, including in precise mode
+
+Both checks use a block-level noise estimate. A large legitimate output channel can raise the tolerance
+enough to hide substantial corruption in a smaller neighboring channel. Keeping fp32 accumulators reduces
+rounding noise but does not remove this effect.
+
+An October 19 CPU reproduction uses `A = ones(1, 1).bfloat16()` and
+`B = ones(1, 128).bfloat16()`, with `B[0, 0] = 1e10`. Changing output `[0, 1]` from 1 to 1000 still passes
+the 128-column ordinary and precise checks, at scores about `0.000026` and `0.130` respectively, against
+the alarm line of 6. A one-column block catches this specific error, but checks many more checksums and
+has a different cost. This constructed example is a limitation test, not an estimate of field failure
+frequency. Reported typical sensitivity is not a guarantee for every output position, magnitude pattern,
+or cancellation pattern.
 
 ### What the held-out run found (October 19, 2026, evening): criteria not met
 
