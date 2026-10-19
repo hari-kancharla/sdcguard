@@ -29,9 +29,10 @@ the CPU, pattern-tests most of the free memory, measures speed against the datas
 three times to see if the output stays bit-identical. The math modes matter because a bad GPU can get one
 wrong and the rest right: in ByteDance's study, four GPUs that got matrix multiplies wrong all passed BF16 and
 FP16 ([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)). The verdict is
-PASS, FAIL (wrong results; inputs and outputs are saved so `sdcguard replay` can recompute them on another
-GPU) or SUSPECT (no checksum failed, but output that should repeat exactly didn't). Handy before a long run on
-a rented GPU, before buying a used one, or after overclocking.
+PASS, FAIL (wrong results; the failed matmuls' inputs and outputs are saved so `sdcguard replay` can recompute
+them on another GPU), SUSPECT (no checksum failed, but output that should repeat exactly didn't) or
+INCOMPLETE (nothing wrong was found, but part of the check couldn't run or couldn't judge its results). Handy
+before a long run on a rented GPU, before buying a used one, or after overclocking.
 
 Shared results go on the [board](https://hari-kancharla.github.io/sdcguard/board/), by GPU model and
 provider. It starts with 10 cloud GPUs (B200, H200, two H100s, A100, L40S, three L4s, T4 on AWS, Google
@@ -102,8 +103,10 @@ sdcguard replay screen_out/GPU-.../evidence_0.pt     # recompute a failure on an
 sdcguard report node*/sdcguard_check --out fleet_report
 ```
 
-A failed check saves the matmul's inputs and the wrong output with the GPU's UUID, serial and PCI slot,
-which is the "failure follows the board" evidence NVIDIA's RMA process asks for. `sdcguard nhc` is a node
+A failed training, stress or math-mode check saves the matmul's inputs and the wrong output with the GPU's
+UUID, serial and PCI slot: the kind of evidence NVIDIA's RMA process asks for when its own diagnostic passes
+(a replay that fails again points at the GPU; it doesn't rule out a software cause on its own). Serving alerts
+name the layer and position but don't save the inputs. `sdcguard nhc` is a node
 health check for Kubernetes node-problem-detector and Slurm ([deploy/](deploy/)). `sdcguard keygen` plus
 `sdcguard check --key` gives each GPU a signed certificate, for handing GPUs between a provider and a
 customer. While serving, alerts can go to a Slack or Discord webhook or to Prometheus.
@@ -112,8 +115,9 @@ customer. While serving, alerts can go to a Slack or Discord webhook or to Prome
 
 For `C = A @ B`, the sum of each block of 128 output columns has to equal `A` times the matching column sums
 of `B`. Both sides are cheap, so a wrong value in `C` shows up as a mismatch. This is algorithm-based fault
-tolerance (Huang and Abraham, 1984). Each block gets a plain sum and a randomly signed one, so errors that
-cancel in one still show in the other.
+tolerance (Huang and Abraham, 1984). Each block gets a plain sum and a randomly signed one, so most errors that
+cancel in one show in the other. Not all: two outputs of a block swapped where the signs match cancel in both,
+which is why `check` draws fresh sign patterns for every matmul it tests.
 
 bf16 results are rounded, so the two sides never match exactly. sdcguard estimates each block's rounding
 noise and only alarms past 6 times that. In 24.6 million checks over 5 GPU-hours of clean training it never

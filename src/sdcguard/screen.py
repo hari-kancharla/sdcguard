@@ -40,6 +40,7 @@ import torch.nn.functional as F
 
 from . import __version__
 from .checksum import check_matmul
+from . import verdict
 from .events import device_identity
 from .guard import SDCGuard
 from .serve import ServeGuard
@@ -204,22 +205,30 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
         inj = FaultInjector(rate=simulate_faults, fault_model=fault_model("nvidia", "warp"), seed=seed + 3)
         meta["SIMULATED_FAULTS"] = f"yes: {simulate_faults} of matmul outputs corrupted in software (a demo, not a GPU fault)"
     t0 = time.time()
+    counts = {"serve_nonfinite": 0}
     try:
         steps, passes, flops = _loop(model, opt, serve_model, sguard, tguard, inj, gen, device, dtype, vocab, batch,
                                      seq, L, d, t_end, max_steps, evidence, serve_alerts, max_evidence, out_dir,
-                                     ident, meta)
+                                     ident, meta, counts)
     finally:
         sguard.detach()      # the serving check changes process-wide cuBLAS settings; put them back
     seconds = time.time() - t0
     bad = tguard.stats["alerts"] + len(serve_alerts)
-    summary = {"device": str(device), "gpu": ident, "result": "FAIL" if bad else "PASS", "minutes": round(seconds / 60, 2),
+    unjudged = tguard.stats.get("unjudged", 0)
+    # PASS needs judged checks: training checks that couldn't be judged, or serving passes whose output wasn't
+    # finite (the serving check scores blocks it can't judge as 0), make a clean run INCOMPLETE
+    result = verdict.from_counts(bad, tguard.stats["checked"], unjudged)
+    if result == "PASS" and verdict.from_counts(0, passes, counts["serve_nonfinite"]) == "INCOMPLETE":
+        result = "INCOMPLETE"
+    summary = {"device": str(device), "gpu": ident, "result": result, "minutes": round(seconds / 60, 2),
                "training_steps": steps, "serving_passes": passes, "matmuls_checked": tguard.stats["checked"],
                "linear_layer_checks_while_serving": passes * sguard.stats["layers"],
                "approx_matmul_tflop": round(flops / 1e12, 1), "corrupted_results_training": tguard.stats["alerts"],
                "corrupted_results_serving": len(serve_alerts),
                "serving_alerts": [e.detail for e in serve_alerts[:20]],
                "worst_clean_z": round(tguard.max_z_seen, 3), "alarm_line": 6.0, "evidence": evidence,
-               "unjudged_training_checks": tguard.stats.get("unjudged", 0),
+               "unjudged_training_checks": unjudged,
+               "serving_passes_with_nonfinite_output": counts["serve_nonfinite"],
                "out_dir": out_dir, **meta}
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2, default=str)
@@ -227,7 +236,7 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
 
 
 def _loop(model, opt, serve_model, sguard, tguard, inj, gen, device, dtype, vocab, batch, seq, L, d, t_end, max_steps,
-          evidence, serve_alerts, max_evidence, out_dir, ident, meta):
+          evidence, serve_alerts, max_evidence, out_dir, ident, meta, counts):
     steps = passes = 0
     flops = 0.0
     while True:
@@ -248,9 +257,10 @@ def _loop(model, opt, serve_model, sguard, tguard, inj, gen, device, dtype, voca
         opt.zero_grad(set_to_none=True)
         steps += 1
         with torch.no_grad():
-            serve_model(x)
+            served = serve_model(x)
         passes += 1
-        serve_alerts += sguard.poll(wait=True)
+        serve_alerts += sguard.poll(wait=True)         # (waits for the GPU anyway)
+        counts["serve_nonfinite"] += int(not bool(torch.isfinite(served).all()))
         flops += 3 * 2 * batch * seq * (12 * L * d * d + vocab * d) + 2 * batch * seq * (12 * L * d * d + vocab * d)
         if time.time() >= t_end or (max_steps is not None and steps >= max_steps):
             break
@@ -261,6 +271,13 @@ def replay(path: str, times: int = 200, device: Optional[str] = None) -> dict:
     """Recompute a saved matmul `times` times on this device and check each result."""
     ev = torch.load(path, map_location="cpu")
     dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    if ev.get("kind") == "math_mode":           # from sdcguard check's math-mode check
+        from .modes import replay as mode_replay
+        r = mode_replay(ev, min(times, 50), dev)
+        bad = r["recomputations_that_failed_the_check"]
+        return {"evidence": path, "replayed_on": device_identity(dev), **r,
+                "reading": (f"the {r['mode']} result came out wrong again on this device ({bad} of {r['recomputations']})"
+                            if bad else f"every {r['mode']} recomputation on this device matched the CPU's answer")}
     A, B, C = ev["A"].to(dev), ev["B"].to(dev), ev["C"].to(dev)
     bias = ev["bias"].to(dev) if ev["bias"] is not None else None
     alpha, beta = ev["alpha"], ev["beta"]
@@ -274,7 +291,7 @@ def replay(path: str, times: int = 200, device: Optional[str] = None) -> dict:
 
 def _replay(path, times, dev, A, B, C, bias, alpha, beta) -> dict:
     recorded = check_matmul(A, B, C, bias, alpha=alpha, beta=beta)
-    bad, worst, first_diff = 0, 0.0, None
+    bad, unjudged, worst, first_diff = 0, 0, 0.0, None
     def recompute():
         """The same operation the model ran (so a correct GPU reproduces the recorded output except where
         it was corrupted, up to kernel choice on a different GPU model)."""
@@ -294,7 +311,10 @@ def _replay(path, times, dev, A, B, C, bias, alpha, beta) -> dict:
         r = check_matmul(A, B, out, bias, alpha=alpha, beta=beta)
         if r is not None and not r.ok:
             bad += 1
-        worst = max(worst, r.max_z if r is not None and math.isfinite(r.max_z) else float("inf"))
+        elif r is None or not r.judged:
+            unjudged += 1
+            continue
+        worst = max(worst, r.max_z if math.isfinite(r.max_z) else float("inf"))
         if first_diff is None:
             diff = (out.float() - C.float()).abs()
             scale = out.float().abs().clamp_min(1e-30)
@@ -302,12 +322,23 @@ def _replay(path, times, dev, A, B, C, bias, alpha, beta) -> dict:
                           "elements_off_by_more_than_1_percent": int(((diff / scale) > 1e-2).sum()),
                           "largest_difference": float(torch.nan_to_num(diff, nan=float("inf")).max())}
     ident = device_identity(dev)
+    rec_judged = recorded is not None and recorded.judged
+    if bad:
+        reading = ("the error came back on this device: it follows the matmul's inputs on this GPU too (a "
+                   "replay doesn't by itself rule out a software or configuration cause)")
+    elif unjudged == times:
+        reading = "no recomputation could be judged (the inputs hold values that aren't finite): no evidence either way"
+    else:
+        reading = "every recomputation on this device that could be judged was correct" + (
+            f" ({unjudged} couldn't be judged)" if unjudged else "")
+    if recorded is not None and not rec_judged:
+        reading += "; the recorded output itself couldn't be judged, so this file doesn't show a wrong result"
     return {"evidence": path, "replayed_on": ident, "recorded_output_check": None if recorded is None else
-            {"max_z": recorded.max_z, "ok": recorded.ok, "row": recorded.row, "col_block": recorded.col_block},
-            "recomputations": times, "recomputations_that_failed_the_check": bad, "worst_z_of_recomputations": worst,
-            "this_device_vs_recorded_output": first_diff,
-            "reading": ("the error came back on this device: it follows this GPU" if bad else
-                        "every recomputation on this device was correct")}
+            {"max_z": recorded.max_z, "ok": recorded.ok, "judged": rec_judged, "row": recorded.row,
+             "col_block": recorded.col_block},
+            "recomputations": times, "recomputations_that_failed_the_check": bad,
+            "recomputations_that_couldnt_be_judged": unjudged, "worst_z_of_recomputations": worst,
+            "this_device_vs_recorded_output": first_diff, "reading": reading}
 
 
 def _all_gpus(args) -> int:
@@ -323,7 +354,7 @@ def _all_gpus(args) -> int:
         procs.append(subprocess.Popen(cmd, env=env))
     codes = [p.wait() for p in procs]
     print(f"sdcguard screen: {n} GPUs, {sum(c == 0 for c in codes)} PASS, {sum(c == 1 for c in codes)} FAIL, "
-          f"{sum(c not in (0, 1) for c in codes)} could not run. Details: {args.out}/<GPU UUID>/summary.json")
+          f"{sum(c not in (0, 1) for c in codes)} incomplete or could not run. Details: {args.out}/<GPU UUID>/summary.json")
     return 1 if any(c == 1 for c in codes) else (2 if any(c not in (0, 1) for c in codes) else 0)
 
 
@@ -368,9 +399,12 @@ def main(argv=None) -> int:
           f"layer checks while serving, about {s['approx_matmul_tflop']:,} TFLOP of matmul work")
     print(f"  corrupted results: {s['corrupted_results_training']} in training, {s['corrupted_results_serving']} while "
           f"serving; worst clean score {s['worst_clean_z']} (alarm line 6)")
+    if s.get("unjudged_training_checks") or s.get("serving_passes_with_nonfinite_output"):
+        print(f"  couldn't be judged: {s.get('unjudged_training_checks', 0)} training checks, "
+              f"{s.get('serving_passes_with_nonfinite_output', 0)} serving passes with output that wasn't finite")
     for e in s["evidence"]:
         print(f"  evidence: {e}.json   replay: sdcguard replay {e}.pt")
-    return 1 if s["result"] == "FAIL" else 0
+    return {"FAIL": 1, "INCOMPLETE": 2}.get(s["result"], 0)
 
 
 if __name__ == "__main__":

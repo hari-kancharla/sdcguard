@@ -149,31 +149,47 @@ def available(mode: str, dev: torch.device) -> Optional[str]:
     return None
 
 
-def _signs(width: int) -> torch.Tensor:
-    from .checksum import _signs as cs_signs
-    return cs_signs(width, "cpu").double()
+PROJECTIONS = 3        # signed checksums per block, on top of the plain sum
 
 
-def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma: Optional[int] = None) -> dict:
+def draw_signs(gen: torch.Generator, n: int = PROJECTIONS) -> torch.Tensor:
+    """n fresh random +-1 patterns (float64, CPU) for one matmul's signed checksums. Fresh for every matmul:
+    an error that one pattern can't see (two outputs of a block swapped where the pattern has the same sign,
+    say) is very unlikely to hide from all of them, and a persistent one can't hide matmul after matmul."""
+    return (torch.randint(0, 2, (n, BLOCK), generator=gen) * 2 - 1).double()
+
+
+def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma: Optional[int] = None,
+          signs: Optional[torch.Tensor] = None) -> dict:
     """Compare a GEMM result c (fp32, fp64 or int32, on any device) with the float64 reference from the exact
-    inputs a64 @ b64 (CPU). Returns per-block scores and the summary check_once reports."""
+    inputs a64 @ b64 (CPU): the plain sum of every 128-column block and one signed sum per row of `signs`
+    (default: checksum.py's per-process pattern). Returns per-block scores and the summary check_once reports.
+
+    typical_caught: the size of an error in one output that this check typically catches, relative to a typical
+    output of its block (the median over blocks of the alarm line; some blocks need more, cancelling errors
+    can need more, and an error the checksums can't see at all needs any size)."""
     m, n = c.shape
     k = a64.shape[1]
     nblk = n // BLOCK
-    s = _signs(BLOCK).to(c.device)
+    if signs is None:
+        from .checksum import _signs as cs_signs
+        signs = cs_signs(BLOCK, "cpu").double().view(1, BLOCK)
+    w = torch.cat([torch.ones(1, BLOCK, dtype=torch.float64), signs.double()], dim=0)      # (P+1, BLOCK)
+    wd = w.to(c.device)
     if mode == "int8":
         cb = c.long().view(m, nblk, BLOCK)
-        actual = torch.stack([cb.sum(-1), (cb * s.long()).sum(-1)], dim=-1).cpu()
+        actual = torch.einsum("mbw,pw->mbp", cb, wd.long()).cpu()
     else:
         cb = c.double().view(m, nblk, BLOCK)
-        actual = torch.stack([cb.sum(-1), (cb * s).sum(-1)], dim=-1).cpu()          # (m, nblk, 2)
-        c_norm = cb.norm(dim=-1).cpu()                                               # (m, nblk)
+        actual = torch.einsum("mbw,pw->mbp", cb, wd).cpu()                       # (m, nblk, P+1)
+        c_norm = cb.norm(dim=-1).cpu()                                           # (m, nblk)
     del cb
     bb = b64.view(k, nblk, BLOCK)
-    expected = torch.stack([a64 @ bb.sum(-1), a64 @ (bb * _signs(BLOCK)).sum(-1)], dim=-1)
+    expected = a64 @ torch.einsum("kbw,pw->kbp", bb, w).reshape(k, nblk * w.shape[0])
+    expected = expected.view(m, nblk, w.shape[0])
     if mode == "int8":
         bad = (actual != expected.round().long()).any(dim=-1)
-        return {"wrong_blocks": int(bad.sum()), "blocks": m * nblk, "worst_z": None, "smallest_caught": None,
+        return {"wrong_blocks": int(bad.sum()), "blocks": m * nblk, "worst_z": None, "typical_caught": None,
                 "z": torch.where(bad, float("inf"), 0.0)}
     diff = (expected - actual.double()).abs()
     u = UNIT["fp64" if mode == "fp64" else "fp32"]
@@ -186,24 +202,26 @@ def judge(mode: str, a64: torch.Tensor, b64: torch.Tensor, c: torch.Tensor, nfma
     noise = noise + 1e-300
     z = (diff / noise.unsqueeze(-1)).amax(dim=-1)
     z = torch.where(torch.isfinite(actual).all(dim=-1), z, torch.full_like(z, float("inf")))
-    # the smallest error in one output that this check would catch, relative to a typical output there
     typical = c_norm / math.sqrt(BLOCK)
     caught = (ALARM * noise / typical.clamp_min(1e-300))[typical > 0]
     return {"wrong_blocks": int((z > ALARM).sum()), "blocks": m * nblk, "worst_z": float(z.max()),
-            "smallest_caught": float(caught.median()) if caught.numel() else None, "z": z}
+            "typical_caught": float(caught.median()) if caught.numel() else None, "z": z}
 
 
 def check_once(mode: str, dev: torch.device, shape: tuple, dist: str, scale: float, gen: torch.Generator,
-               fault: Optional[float] = None, run: Optional[Callable] = None, nfma: Optional[int] = None) -> dict:
-    """One GEMM in `mode` on dev, checked against the CPU reference.
+               fault: Optional[float] = None, run: Optional[Callable] = None, nfma: Optional[int] = None,
+               keep: bool = False) -> dict:
+    """One GEMM in `mode` on dev, checked against the CPU reference with fresh sign patterns.
 
     fault (tests, experiments): add an error to one output, this many times the typical (root-mean-square)
     output of its block; for INT8 any fault adds 1. run: compute the GEMM some other way (tests emulate
-    tensor-core rounding with it). nfma: tensor-core products per step (default: from the GPU)."""
+    tensor-core rounding with it). nfma: tensor-core products per step (default: from the GPU). keep: on a
+    wrong result, return the operands too (for evidence that `sdcguard replay` can recompute)."""
     m, k, n = shape
     if n % BLOCK:
         raise ValueError(f"n must be a multiple of {BLOCK}")
     a, b, a64, b64 = _inputs(mode, shape, dist, scale, gen)
+    signs = draw_signs(gen)
     c = (run or gemm)(mode, a.to(dev), b.to(dev))
     if fault is not None:
         i, j = m // 3, n // 2
@@ -214,14 +232,57 @@ def check_once(mode: str, dev: torch.device, shape: tuple, dist: str, scale: flo
             c[i, j] += fault * float(blk.norm()) / math.sqrt(BLOCK)
     if nfma is None and dev.type == "cuda":
         nfma = n_fma(mode, torch.cuda.get_device_capability(dev))
-    r = judge(mode, a64, b64, c, nfma)
+    r = judge(mode, a64, b64, c, nfma, signs)
     r.pop("z")
+    if keep and r["wrong_blocks"]:
+        r["operands"] = {"mode": mode, "A": a, "B": b, "C": c.detach().cpu(), "signs": signs, "shape": list(shape),
+                         "dist": dist, "scale": scale, "nfma": nfma}
     return r
 
 
-def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, seed: int = 0, say=None) -> dict:
+def save_evidence(out_dir: str, n: int, failure: dict, gpu: dict, meta: dict) -> str:
+    """Write a math-mode failure as math_mode_evidence_<n>.pt (inputs, result, sign patterns) and .json."""
+    import json
+    import os
+    path = os.path.join(out_dir, f"math_mode_evidence_{n}")
+    torch.save({"kind": "math_mode", **failure}, path + ".pt")
+    info = {"what": f"a matmul in {failure['mode']} whose result disagreed with the CPU's float64 answer",
+            "mode": failure["mode"], "profile": dict(zip(("inputs", "compute", "result", "reference"),
+                                                         PROFILE[failure["mode"]])),
+            "shape_mkn": failure["shape"], "input_distribution": f"{failure['dist']} x{failure['scale']:g}",
+            "wrong_blocks": failure.get("wrong_blocks"), "worst_z": failure.get("worst_z"), "alarm_line": ALARM,
+            "gpu": gpu, **meta, "replay": f"sdcguard replay {path}.pt"}
+    with open(path + ".json", "w") as f:
+        json.dump(info, f, indent=2, default=str)
+    return path
+
+
+def replay(ev: dict, times: int, dev: torch.device, nfma: Optional[int] = None) -> dict:
+    """Recompute a saved math-mode GEMM `times` times on dev and compare each result with the CPU reference."""
+    mode = ev["mode"]
+    a, b, signs = ev["A"], ev["B"], ev["signs"]
+    a64, b64 = a.double(), b.double()
+    if nfma is None and dev.type == "cuda":
+        nfma = n_fma(mode, torch.cuda.get_device_capability(dev))
+    rec = judge(mode, a64, b64, ev["C"], ev.get("nfma"), signs)
+    bad = 0
+    worst = 0.0
+    for _ in range(times):
+        r = judge(mode, a64, b64, gemm(mode, a.to(dev), b.to(dev)), nfma, signs)
+        bad += bool(r["wrong_blocks"])
+        if r["worst_z"] is not None:
+            worst = max(worst, r["worst_z"] if math.isfinite(r["worst_z"]) else float("inf"))
+    return {"mode": mode, "recorded_wrong_blocks": rec["wrong_blocks"], "recomputations": times,
+            "recomputations_that_failed_the_check": bad, "worst_z_of_recomputations": None if mode == "int8" else worst}
+
+
+def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, seed: int = 0, say=None,
+           keep_failures: int = 3) -> dict:
     """Every mode the GPU and PyTorch support, cycling through the input variants until `seconds` is used
-    (each mode at least one full cycle, at most four). Modes that can't run are listed with the reason."""
+    (each mode at least one full cycle, at most four). Modes the GPU or PyTorch doesn't support are listed as
+    unsupported; a supported mode that errors is listed as an error (an incomplete check, not a pass). The
+    operands of up to keep_failures wrong results come back in out["failures"] (not JSON: save them with
+    save_evidence and pop them)."""
     say = say or (lambda s: None)
     shape = tuple(shape or SHAPE["cuda" if dev.type == "cuda" else "cpu"])
     gen = torch.Generator().manual_seed(1000 + seed)
@@ -233,8 +294,9 @@ def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, see
             out["modes"][m] = {"skipped": why}
         else:
             out["modes"][m] = {"matmuls": 0, "wrong": 0, "blocks_checked": 0, "worst_z": 0.0,
-                               "smallest_error_caught": None}
+                               "typical_error_caught": None}
             runnable.append(m)
+    failures = []
     t_end = time.time() + seconds
     rnd = 0
     while runnable and rnd < 4 * len(VARIANTS) and (rnd < len(VARIANTS) or time.time() < t_end):
@@ -242,7 +304,7 @@ def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, see
         for m in list(runnable):
             rec = out["modes"][m]
             try:
-                r = check_once(m, dev, shape, dist, scale, gen)
+                r = check_once(m, dev, shape, dist, scale, gen, keep=len(failures) < keep_failures)
             except Exception as e:  # noqa: BLE001  (an unsupported shape mustn't stop the whole check)
                 say(f"math mode {m} stopped: {type(e).__name__}: {e}")
                 rec["error"] = f"{type(e).__name__}: {str(e)[:120]}"
@@ -251,21 +313,26 @@ def screen(dev: torch.device, seconds: float, shape: Optional[tuple] = None, see
             rec["matmuls"] += 1
             rec["blocks_checked"] += r["blocks"]
             rec["wrong"] += bool(r["wrong_blocks"])
+            if "operands" in r:
+                failures.append({**r.pop("operands"), "wrong_blocks": r["wrong_blocks"], "worst_z": r["worst_z"]})
             if r["worst_z"] is not None and math.isfinite(r["worst_z"]):
                 rec["worst_z"] = round(max(rec["worst_z"], r["worst_z"]), 3)
-            if r["smallest_caught"] is not None:     # the worst variant's value: true for all of them
-                prev = rec["smallest_error_caught"]
-                rec["smallest_error_caught"] = max(prev or 0.0, r["smallest_caught"])
+            if r["typical_caught"] is not None:      # the least sensitive input distribution's value
+                prev = rec["typical_error_caught"]
+                rec["typical_error_caught"] = max(prev or 0.0, r["typical_caught"])
         rnd += 1
     for m in runnable:
         rec = out["modes"][m]
         if m == "int8":
             rec["worst_z"] = None
-            rec["smallest_error_caught"] = "exact"
-        elif rec["smallest_error_caught"] is not None:
-            rec["smallest_error_caught"] = float(f"{rec['smallest_error_caught']:.2g}")
+            rec["typical_error_caught"] = "exact sums"       # integer checksums must match exactly
+        elif rec["typical_error_caught"] is not None:
+            rec["typical_error_caught"] = float(f"{rec['typical_error_caught']:.2g}")
     out["wrong"] = sum(r.get("wrong", 0) for r in out["modes"].values())
     out["matmuls"] = sum(r.get("matmuls", 0) for r in out["modes"].values())
     out["ran"] = [m for m in MODES if out["modes"][m].get("matmuls") and "error" not in out["modes"][m]]
     out["not_checked"] = {m: r.get("skipped") or r.get("error") for m, r in out["modes"].items() if m not in out["ran"]}
+    out["errors"] = {m: r["error"] for m, r in out["modes"].items() if "error" in r}
+    out["unsupported"] = {m: r["skipped"] for m, r in out["modes"].items() if "skipped" in r}
+    out["failures"] = failures
     return out

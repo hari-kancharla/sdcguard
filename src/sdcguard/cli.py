@@ -110,19 +110,21 @@ def cmd_report(a) -> int:
     rep = fleet.write(rows, a.out)
     s = rep["stats"]
     print(f"sdcguard report: {s['gpus']} GPUs, {s['passed']} PASS, {s['failed'] - s['suspect']} FAIL, "
-          f"{s['suspect']} SUSPECT, "
+          f"{s['suspect']} SUSPECT, {s.get('incomplete', 0)} INCOMPLETE, "
           f"{s['matmuls_checked'] + s['serving_layer_checks']:,} results checked. "
           f"{os.path.join(a.out, 'fleet_report.html')}")
     if s["failed"]:
         print(f"  pull: {os.path.join(a.out, 'quarantine.txt')}   evidence: {os.path.join(a.out, 'rma')}/")
-    return 1 if s["failed"] else 0
+    return 1 if s["failed"] else (2 if s.get("incomplete") else 0)
 
 
 def cmd_replay(a) -> int:
     from .screen import replay
     r = replay(a.evidence, a.times, a.device)
     print(json.dumps(r, indent=2, default=str))
-    return 1 if r["recomputations_that_failed_the_check"] else 0
+    if r["recomputations_that_failed_the_check"]:
+        return 1
+    return 2 if r.get("recomputations_that_couldnt_be_judged") == r.get("recomputations") else 0
 
 
 def _nhc_status(out: str, line: str, code: int) -> None:
@@ -172,11 +174,15 @@ def cmd_nhc(a) -> int:
         return 2
     rows = _fresh_summaries(a.out, t0)
     bad = [s for _d, s in rows if s.get("result") == "FAIL"]
+    partial = [s for _d, s in rows if s.get("result") == "INCOMPLETE"]
     if bad:
         g = bad[0].get("gpu", {})
         line = (f"FAIL: {len(bad)} of {len(rows)} GPUs computed wrong results; first {g.get('gpu_uuid')} PCI "
                 f"{g.get('pci_bus_id')} serial {g.get('serial')}; evidence in {os.path.abspath(a.out)}")
         rc = 1
+    elif partial:
+        line, rc = (f"UNKNOWN: {len(partial)} of {len(rows)} GPUs couldn't be fully checked (checks that couldn't "
+                    f"judge their results); see {os.path.abspath(a.out)}"), 2
     elif code != 0 or not rows:
         line, rc = f"UNKNOWN: sdcguard screen exited {code} with {len(rows)} results", 2
     else:

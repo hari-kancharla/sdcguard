@@ -65,7 +65,7 @@ def _work(label: str) -> dict:
     cal = {}
     for m in modes.MODES:
         why = modes.available(m, dev)
-        cal[m] = {"skipped": why} if why else {"matmuls": 0, "wrong": 0, "worst_z": {}, "smallest_caught": {},
+        cal[m] = {"skipped": why} if why else {"matmuls": 0, "wrong": 0, "worst_z": {}, "typical_caught": {},
                                                 "tensor_core_steps": modes.n_fma(m, tuple(out["cc"]))}
     t_end = time.time() + CALIBRATE_SECONDS
     rounds = 0
@@ -85,8 +85,8 @@ def _work(label: str) -> dict:
                 if r["worst_z"] is not None:
                     z = r["worst_z"] if math.isfinite(r["worst_z"]) else 1e9
                     rec["worst_z"][v] = round(max(rec["worst_z"].get(v, 0.0), z), 3)
-                if r["smallest_caught"] is not None:
-                    rec["smallest_caught"][v] = float(f"{max(rec['smallest_caught'].get(v, 0.0), r['smallest_caught']):.3g}")
+                if r["typical_caught"] is not None:
+                    rec["typical_caught"][v] = float(f"{max(rec['typical_caught'].get(v, 0.0), r['typical_caught']):.3g}")
         rounds += 1
     out["calibration"] = {"shape": list(shape), "rounds": rounds, "modes": cal}
     print(label, "calibration done:", rounds, "rounds", flush=True)
@@ -156,9 +156,10 @@ def b200() -> dict:
 def _summary(results: list) -> str:
     lines = ["# Math modes on real GPUs", "",
              "Clean results only. Worst score: the largest distance from the CPU's float64 answer, in units of the "
-             "noise model (the alarm is at 6). Smallest error caught: relative to a typical output, the worst input "
-             "distribution's value.", "",
-             "| GPU | mode | matmuls | wrong | worst score | smallest error caught |", "|---|---|---|---|---|---|"]
+             "noise model (the alarm is at 6). Typical sensitivity: the size of an error in one output that the check "
+             "typically catches (median over blocks), relative to a typical output, for the least sensitive input "
+             "distribution. Not a guarantee for every position or every error pattern.", "",
+             "| GPU | mode | matmuls | wrong | worst score | typical sensitivity |", "|---|---|---|---|---|---|"]
     for r in results:
         if "error" in r:
             lines.append(f"| {r['label']} | could not run: {r['error']} | | | | |")
@@ -168,7 +169,7 @@ def _summary(results: list) -> str:
                 lines.append(f"| {r['gpu']} | {m} | not run: {rec.get('skipped') or rec.get('error')} | | | |")
                 continue
             wz = max(rec["worst_z"].values()) if rec["worst_z"] else None
-            sc = max(rec["smallest_caught"].values()) if rec["smallest_caught"] else None
+            sc = max(rec["typical_caught"].values()) if rec["typical_caught"] else None
             lines.append(f"| {r['gpu']} | {m} | {rec['matmuls']} | {rec['wrong']} | "
                          f"{'exact' if m == 'int8' else f'{wz:.2f}'} | "
                          f"{'exact' if m == 'int8' else f'{100 * sc:.3g}%'} |")

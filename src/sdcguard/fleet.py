@@ -65,7 +65,7 @@ def collect(roots: Iterable[str]) -> list[dict]:
                    "matmul_tflops": ((chk or {}).get("speed") or {}).get("tflops"),
                    "repeatable": (chk or {}).get("repeatable"),
                    "notes": [t for lvl, t in (chk or {}).get("notes") or [] if lvl in ("bad", "warn")]}
-            if chk and chk.get("result") in ("FAIL", "SUSPECT"):
+            if chk and chk.get("result") in ("FAIL", "SUSPECT", "INCOMPLETE") and row["result"] != "FAIL":
                 row["result"] = chk["result"]
             if key not in rows or row["mtime"] > rows[key]["mtime"]:
                 rows[key] = row
@@ -111,7 +111,8 @@ h1{font-size:22px;margin:0 0 4px}p.sub{color:var(--muted);margin:0 0 20px}
 .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:8px 10px;border-bottom:1px solid var(--line);
 text-align:left;white-space:nowrap}th{color:var(--muted);font-weight:600}
-.PASS{color:var(--ok);font-weight:700}.FAIL,.SUSPECT{color:var(--bad);font-weight:700}code{font-size:12px}
+.PASS{color:var(--ok);font-weight:700}.FAIL,.SUSPECT{color:var(--bad);font-weight:700}.INCOMPLETE{color:var(--muted);font-weight:700}
+code{font-size:12px}
 """
 
 
@@ -120,6 +121,7 @@ def write(rows: list[dict], out_dir: str) -> dict:
     failed = [r for r in rows if r["result"] in ("FAIL", "SUSPECT")]
     stats = {"gpus": len(rows), "passed": sum(r["result"] == "PASS" for r in rows), "failed": len(failed),
              "suspect": sum(r["result"] == "SUSPECT" for r in rows),
+             "incomplete": sum(r["result"] == "INCOMPLETE" for r in rows),
              "matmuls_checked": sum(r["matmuls_checked"] for r in rows),
              "serving_layer_checks": sum(r["serving_layer_checks"] for r in rows),
              "tflop_checked": round(sum(r["tflop"] for r in rows), 1),

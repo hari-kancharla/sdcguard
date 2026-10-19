@@ -280,7 +280,7 @@ def test_check_runs_every_math_mode(cpu_run):
     mm = full["math_modes"]
     assert mm["ran"] == list(modes.MODES) and mm["wrong"] == 0 and full["wrong"]["math_modes"] == 0
     pub = check.public(full)
-    assert pub["math_modes"]["matmuls"] == mm["matmuls"] and pub["math_modes"]["smallest_error_caught"]["int8"] == "exact"
+    assert pub["math_modes"]["matmuls"] == mm["matmuls"] and pub["math_modes"]["typical_error_caught"]["int8"] == "exact sums"
     assert "math modes" in check.terminal(pub) and board._shape_problem(pub) is None
     bad = copy.deepcopy(pub)
     bad["math_modes"]["ran"] = "all of them"

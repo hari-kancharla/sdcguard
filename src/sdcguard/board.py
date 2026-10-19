@@ -85,12 +85,12 @@ def _shape_problem(r: dict) -> Optional[str]:
             return "math_modes counts are not numbers"
         if not isinstance(mm.get("ran"), list) or not all(isinstance(x, str) for x in mm["ran"]):
             return "math_modes.ran is malformed"
-        for k in ("not_checked", "smallest_error_caught"):
-            d = mm.get(k)
+        for k in ("not_checked", "errors", "typical_error_caught"):
+            d = mm.get(k, {})
             if not isinstance(d, dict) or not all(isinstance(x, str) for x in d):
                 return f"math_modes.{k} is malformed"
-        if not all(isinstance(v, str) for v in mm["not_checked"].values()) or \
-                not all(v == "exact" or _num_ok(v, 0, 1e6) for v in mm["smallest_error_caught"].values()):
+        if not all(isinstance(v, str) for v in list(mm.get("not_checked", {}).values()) + list(mm.get("errors", {}).values())) or \
+                not all(v == "exact sums" or _num_ok(v, 0, 1e6) for v in mm.get("typical_error_caught", {}).values()):
             return "math_modes values are malformed"
     notes = r.get("notes") or []
     if not isinstance(notes, list) or not all(isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n)
@@ -108,6 +108,8 @@ def validate(r: dict) -> Optional[str]:
         return f"malformed card ({shape})"
     if r.get("digest") != digest(r):
         return "the digest doesn't match the card (it was changed after `sdcguard check` wrote it)"
+    if r.get("result") == "INCOMPLETE":
+        return "an incomplete check (part of it couldn't run or couldn't judge its results): rerun it"
     if r.get("result") not in RESULTS:
         return "unknown result"
     if r.get("simulated_faults"):
@@ -125,8 +127,14 @@ def validate(r: dict) -> Optional[str]:
         checked = float((r.get("checked") or {}).get("results") or 0)
         if any(v < 0 for v in wrong) or checked < 0:
             return "negative counts"
-        if r["result"] == "PASS" and (checked == 0 or sum(wrong) > 0 or r.get("repeatable") is False):
-            return "says PASS, but its counts don't (nothing checked, wrong results, or not repeatable)"
+        mm = r.get("math_modes") or {}
+        if mm and "math_modes" in (r.get("wrong") or {}) and float(mm.get("wrong") or 0) != float(r["wrong"]["math_modes"]):
+            return "its two math-mode counts disagree"
+        unjudged = float((r.get("checked") or {}).get("unjudged") or 0)
+        if r["result"] == "PASS" and (checked == 0 or sum(wrong) > 0 or r.get("repeatable") is False
+                                      or float(mm.get("wrong") or 0) > 0 or mm.get("errors")
+                                      or unjudged >= max(1.0, 0.01 * checked)):
+            return "says PASS, but its counts don't (nothing checked, wrong or unjudged results, or not repeatable)"
         if r["result"] == "FAIL" and sum(wrong) == 0:
             return "says FAIL, but counts no wrong results"
         if r["result"] == "SUSPECT" and sum(wrong) > 0:

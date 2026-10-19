@@ -118,7 +118,9 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
                      "training_steps": summary.get("training_steps"), "serving_passes": summary.get("serving_passes"),
                      "matmuls_checked": summary.get("matmuls_checked"),
                      "linear_layer_checks_while_serving": summary.get("linear_layer_checks_while_serving"),
-                     "approx_matmul_tflop": summary.get("approx_matmul_tflop")},
+                     "approx_matmul_tflop": summary.get("approx_matmul_tflop"),
+                     "unjudged_training_checks": summary.get("unjudged_training_checks", 0),
+                     "serving_passes_with_nonfinite_output": summary.get("serving_passes_with_nonfinite_output", 0)},
         "result": summary.get("result"),
         "corrupted_results": {"training": summary.get("corrupted_results_training"),
                               "serving": summary.get("corrupted_results_serving")},
@@ -126,14 +128,17 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
         "alarm_line": summary.get("alarm_line", 6.0),
         "evidence_sha256": evidence,
         "simulated_faults": simulated,
-        "meaning": ("PASS: every checked matrix multiply on this GPU matched its checksums during this workload. "
-                    "FAIL: some did not; the evidence files hold the inputs and wrong outputs, and "
-                    "`sdcguard replay <evidence>.pt` recomputes them on any GPU."),
+        "meaning": ("PASS: every checked matrix multiply on this GPU that could be judged matched its checksums "
+                    "during this workload, and fewer than 1% couldn't be judged (counts above). It says what was "
+                    "checked, not that the GPU has no defect. INCOMPLETE: nothing wrong was found, but part of the "
+                    "check couldn't run or couldn't judge its results; this certificate doesn't vouch for the GPU. "
+                    "FAIL: some results were wrong; the evidence files hold the failed matmuls' inputs and outputs, "
+                    "and `sdcguard replay <evidence>.pt` recomputes them on any GPU."),
     }
     if check:   # from `sdcguard check`: speed, memory test, repeatability, health, and its overall verdict
         cert["check"] = {k: check.get(k) for k in ("result", "checked", "wrong", "headroom", "repeatable",
                                                     "fingerprint", "speed", "health", "notes", "digest")}
-        if check.get("result") in ("FAIL", "SUSPECT"):
+        if check.get("result") in ("FAIL", "SUSPECT", "INCOMPLETE") and cert["result"] != "FAIL":
             cert["result"] = check["result"]
     return cert
 

@@ -18,9 +18,11 @@ What it does, per GPU (all GPUs at once, so a machine is tested the way it's use
               GPUs of the same model running the same software (here, and on the public board)
   health      temperature, power, clocks, throttling, PCIe link, ECC and memory-repair counters
 
-Verdict: PASS (every check passed), FAIL (results were wrong: evidence saved, replayable), SUSPECT
-(no checksum failed, but outputs that should be bit-identical weren't). Exit code 0 / 1 / 1, 2 if it
-couldn't run.
+Verdict: PASS (every check ran and every result it could judge was correct), FAIL (results were wrong;
+the failed matmuls of the workload, stress and math-mode checks are saved for `sdcguard replay`), SUSPECT
+(no checksum failed, but outputs that should be bit-identical weren't), INCOMPLETE (nothing wrong was found,
+but part of the check couldn't run or couldn't judge its results). Exit code 0 PASS, 1 FAIL or SUSPECT,
+2 INCOMPLETE or couldn't run.
 
 Files, per GPU, in sdcguard_check/<GPU UUID>/: check.json (everything), result.json (shareable: no
 serial number, hostname or full UUID), card.svg / card.png / card.md (the result card), plus the
@@ -41,6 +43,7 @@ import urllib.parse
 import urllib.request
 from typing import Optional
 
+from . import verdict
 from .board import SCHEMA, digest
 FP_VERSION = 2
 FP_CONFIG = {"gpu": (6, 1024, 16, 256, 2), "cpu": (2, 128, 4, 64, 2)}   # layers, width, heads, seq, batch
@@ -218,6 +221,7 @@ def stress_check(dev, dtype, seconds: float) -> dict:
     restore = _exact_reductions_on()
     checked = wrong = unjudged = 0
     worst = 0.0
+    failures = []                                   # (result, operands) of the first wrong ones, for evidence
 
     def one():
         nonlocal checked, wrong, unjudged, worst
@@ -228,6 +232,9 @@ def stress_check(dev, dtype, seconds: float) -> dict:
         if r is not None:
             if not r.ok:
                 wrong += 1
+                if len(failures) < 2:
+                    failures.append((r, (A.detach().cpu(), B.detach().cpu(), C.detach().cpu(), None, 1.0, 1.0,
+                                         "aten::mm", "stress check")))
             elif not r.judged:
                 unjudged += 1
             elif math.isfinite(r.max_z):
@@ -242,7 +249,7 @@ def stress_check(dev, dtype, seconds: float) -> dict:
     finally:
         _exact_reductions_off(restore)
     return {"matmuls_checked": checked, "wrong": wrong, "unjudged": unjudged, "worst_clean_score": round(worst, 3),
-            "size": n}
+            "size": n, "failures": failures}
 
 
 def software() -> dict:
@@ -439,8 +446,32 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     worst = max(summary.get("worst_clean_z") or 0.0, stress["worst_clean_score"])
     checked = (summary.get("matmuls_checked") or 0) + (summary.get("linear_layer_checks_while_serving") or 0) + \
         stress["matmuls_checked"] + math_modes["matmuls"]
-    result = "FAIL" if any(wrong.values()) else ("SUSPECT" if not repeatable else "PASS")
+    # evidence: the failed matmuls' operands from the workload (saved by the screen), the stress check and the
+    # math modes, each replayable with `sdcguard replay`
+    ev_meta = {"sdcguard": sw.get("sdcguard"), "torch": sw.get("torch"), "seed": seed}
+    evidence = list(summary.get("evidence") or [])
+    from .screen import _save_evidence
+    from .modes import save_evidence as save_mode_evidence
+    for res, ops in stress.pop("failures", []):
+        evidence.append(_save_evidence(out_dir, len(evidence), res, ops, summary.get("gpu", {}),
+                                       {**ev_meta, "phase": "stress"}))
+    for i, fail in enumerate(math_modes.pop("failures", [])):
+        evidence.append(save_mode_evidence(out_dir, i, fail, summary.get("gpu", {}), {**ev_meta, "phase": "math modes"}))
+    unj_train = summary.get("unjudged_training_checks") or 0
+    serve_nf = summary.get("serving_passes_with_nonfinite_output") or 0
+    incomplete = (summary.get("result") == "INCOMPLETE"
+                  or verdict.from_counts(0, stress["matmuls_checked"], stress["unjudged"]) == "INCOMPLETE"
+                  or bool(math_modes.get("errors")))
+    result = ("FAIL" if any(wrong.values()) else "SUSPECT" if not repeatable else
+              "INCOMPLETE" if incomplete else "PASS")
     notes = _notes(static, before, after, live, speed, spec)
+    for m, err in (math_modes.get("errors") or {}).items():
+        notes.insert(0, ["bad", f"the {m} math-mode check couldn't run ({err[:80]}): that part wasn't checked"])
+    notes[:0] = verdict.unjudged_note(unj_train, summary.get("matmuls_checked") or 0, "workload training")
+    notes[:0] = verdict.unjudged_note(stress["unjudged"], stress["matmuls_checked"], "stress")
+    if serve_nf:
+        notes.insert(0, ["bad", f"{serve_nf} serving passes gave output that wasn't finite (the serving check can't "
+                                "judge those)"])
     if not repeatable:
         first = next(i for i, p in enumerate(prints) if p != prints[0])
         lay = next((j for j, (a, b) in enumerate(zip(prints[0]["layers"], prints[first]["layers"])) if a != b), None)
@@ -462,7 +493,9 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         "health_before": before, "health_after": after, "live": live, "notes": notes, "board": None,
         "workload": {k: summary.get(k) for k in ("size", "seed", "training_steps", "serving_passes", "matmuls_checked",
                                                   "linear_layer_checks_while_serving", "approx_matmul_tflop",
-                                                  "evidence", "dtype")},
+                                                  "evidence", "dtype", "unjudged_training_checks",
+                                                  "serving_passes_with_nonfinite_output")},
+        "evidence": evidence, "unjudged": unj_train + stress["unjudged"],
         "simulated_faults": bool(summary.get("SIMULATED_FAULTS")), "out_dir": out_dir,
     }
     if reference:
@@ -539,7 +572,7 @@ def public(full: dict) -> dict:
                 "compute_cap": g.get("compute_cap"), "driver": g.get("driver") or g.get("driver_version"),
                 "id_hash": hashlib.sha256(uuid.encode()).hexdigest()[:12] if uuid else None},
         "software": full.get("software"), "provider": _provider(full.get("provider")),
-        "checked": {"results": full["checked_results"],
+        "checked": {"results": full["checked_results"], "unjudged": full.get("unjudged", 0),
                     "workload_tflop": (full.get("workload") or {}).get("approx_matmul_tflop"),
                     "memory_gib": (full.get("memory") or {}).get("gib_tested"),
                     "memory_passes": (full.get("memory") or {}).get("passes")},
@@ -563,9 +596,10 @@ def public(full: dict) -> dict:
         pub["math_modes"] = {"ran": list(mm.get("ran") or []), "matmuls": mm.get("matmuls") or 0,
                              "wrong": mm.get("wrong") or 0,
                              "not_checked": {k: str(v) for k, v in (mm.get("not_checked") or {}).items()},
-                             "smallest_error_caught": {k: r["smallest_error_caught"] for k, r in mm["modes"].items()
-                                                       if r.get("smallest_error_caught") is not None
-                                                       and k in (mm.get("ran") or [])}}
+                             "errors": {k: str(v) for k, v in (mm.get("errors") or {}).items()},
+                             "typical_error_caught": {k: r["typical_error_caught"] for k, r in mm["modes"].items()
+                                                      if r.get("typical_error_caught") is not None
+                                                      and k in (mm.get("ran") or [])}}
     pub["digest"] = digest(pub)
     return pub
 
@@ -609,7 +643,8 @@ def _pcie(g, live):
 
 
 VERDICT = {"PASS": "every checked result was correct", "FAIL": "this GPU computed wrong results",
-           "SUSPECT": "outputs that should be identical were not"}
+           "SUSPECT": "outputs that should be identical were not",
+           "INCOMPLETE": "part of the check couldn't run or couldn't judge its results"}
 
 
 def _n(x) -> str:
@@ -626,15 +661,25 @@ def _pct(x: float) -> str:
 
 
 def _modes_row(mm: dict) -> Optional[str]:
-    if not mm or not mm.get("ran"):
+    """Always shown when the math modes were attempted, including when none of them ran."""
+    if not mm:
         return None
-    text = f"{' '.join(mm['ran'])} vs float64: {_n(mm['matmuls'])} matmuls, "
-    text += f"{mm['wrong']} WRONG" if mm.get("wrong") else "0 wrong"
-    rel = [v for v in (mm.get("smallest_error_caught") or {}).values() if isinstance(v, (int, float))]
-    if rel:
-        text += f", sees errors down to {_pct(max(rel))}"
-    if mm.get("not_checked"):
-        text += "; not run: " + " ".join(mm["not_checked"])
+    ran = mm.get("ran") or []
+    errors = mm.get("errors") or {}
+    unsupported = [k for k in (mm.get("not_checked") or {}) if k not in errors]
+    if ran:
+        names = "all 6 modes" if len(ran) == 6 else " ".join(ran)
+        text = f"{names} vs float64: {_n(mm['matmuls'])} matmuls, " + (
+            f"{mm['wrong']} WRONG" if mm.get("wrong") else "0 wrong")
+        rel = [v for v in (mm.get("typical_error_caught") or {}).values() if isinstance(v, (int, float))]
+        if rel:
+            text += f", typical sensitivity {_pct(max(rel))}"
+    else:
+        text = "none ran"
+    if errors:
+        text += "; ERROR in " + " ".join(errors)
+    if unsupported:
+        text += "; unsupported: " + " ".join(unsupported)
     return text
 
 
@@ -730,7 +775,7 @@ def markdown(pub: dict) -> str:
             f"Check yours: `pip install sdcguard && sdcguard check`\n")
 
 
-_COLORS = {"PASS": "#22c55e", "FAIL": "#ef4444", "SUSPECT": "#f59e0b"}
+_COLORS = {"PASS": "#22c55e", "FAIL": "#ef4444", "SUSPECT": "#f59e0b", "INCOMPLETE": "#94a3b8"}
 CARD_ROWS = 9
 
 
@@ -738,6 +783,7 @@ def svg(pub: dict) -> str:
     e = html.escape
     g = pub["gpu"]
     col = _COLORS[pub["result"]]
+    pw = 150 if len(pub["result"]) <= 7 else 236          # the verdict pill fits its word
     rows = lines(pub)[:CARD_ROWS]
     body = []
     y = 288
@@ -758,8 +804,8 @@ text{{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fil
 <text x="64" y="72" class="t">sdcguard check</text><text x="1136" y="72" text-anchor="end" class="t">{e(pub['date'])}</text>
 <text x="64" y="132" class="g">{e(str(g['name']))}</text>{sim}
 <text x="64" y="168" class="w">{e(_subtitle(pub))}</text>
-<rect x="64" y="190" width="150" height="48" rx="24" fill="{col}"/><text x="139" y="225" text-anchor="middle" class="p">{e(pub['result'])}</text>
-<text x="236" y="223" class="vd">{e(VERDICT[pub['result']])}</text>
+<rect x="64" y="190" width="{pw}" height="48" rx="24" fill="{col}"/><text x="{64 + pw // 2}" y="225" text-anchor="middle" class="p">{e(pub['result'])}</text>
+<text x="{86 + pw}" y="223" class="vd">{e(VERDICT[pub['result']])}</text>
 {''.join(body)}
 <text x="64" y="596" class="f">digest {e(pub['digest'])}  ·  pip install sdcguard  ·  sdcguard check</text>
 </svg>
@@ -788,10 +834,12 @@ def png(pub: dict, path: str) -> bool:
     ax.text(64, 168, _subtitle(pub), color=mute, fontsize=15, va="baseline")
     if pub.get("simulated_faults"):
         ax.text(1136, 120, "SIMULATED FAULTS (DEMO)", color="#f59e0b", fontsize=14, ha="right", fontweight="bold")
-    ax.add_patch(FancyBboxPatch((64, 190), 150, 48, boxstyle="round,pad=0,rounding_size=24",
+    pw = 150 if len(pub["result"]) <= 7 else 236
+    ax.add_patch(FancyBboxPatch((64, 190), pw, 48, boxstyle="round,pad=0,rounding_size=24",
                                 fc=_COLORS[pub["result"]], ec="none"))
-    ax.text(139, 222, pub["result"], color="#0c0a09", fontsize=21, fontweight="bold", ha="center", va="baseline")
-    ax.text(236, 222, VERDICT[pub["result"]], color=fg, fontsize=17, va="baseline")
+    ax.text(64 + pw / 2, 222, pub["result"], color="#0c0a09", fontsize=21, fontweight="bold", ha="center",
+            va="baseline")
+    ax.text(86 + pw, 222, VERDICT[pub["result"]], color=fg, fontsize=17, va="baseline")
     y = 288
     for k, v in lines(pub)[:CARD_ROWS]:
         v = v if len(v) <= 90 else v[:87] + "..."
@@ -992,14 +1040,15 @@ def main(argv=None) -> int:
     for pr in problems:
         print(f"sdcguard check: {pr}")
     if (len(pubs) > 1 or problems) and not a.json:
-        c = {k: sum(x["result"] == k for x in pubs) for k in ("PASS", "FAIL", "SUSPECT")}
+        c = {k: sum(x["result"] == k for x in pubs) for k in ("PASS", "FAIL", "SUSPECT", "INCOMPLETE")}
         print(f"sdcguard check: {len(pubs) + len(problems)} GPUs, {c['PASS']} PASS, {c['FAIL']} FAIL, "
-              f"{c['SUSPECT']} SUSPECT" + (f", {len(problems)} could not be checked" if problems else ""))
+              f"{c['SUSPECT']} SUSPECT, {c['INCOMPLETE']} INCOMPLETE"
+              + (f", {len(problems)} could not be checked" if problems else ""))
     if not a.share and not a.json:
         print("Share it: sdcguard check --share prints a link that posts your card to the public board.")
-    if any(x["result"] != "PASS" for x in pubs):
+    if any(x["result"] in ("FAIL", "SUSPECT") for x in pubs):
         return 1
-    return 2 if problems else 0
+    return 2 if problems or any(x["result"] == "INCOMPLETE" for x in pubs) else 0
 
 
 if __name__ == "__main__":

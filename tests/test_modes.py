@@ -22,9 +22,9 @@ def test_every_mode_runs_clean_on_the_cpu():
     for m, rec in r["modes"].items():
         assert rec["matmuls"] == len(modes.VARIANTS) and rec["blocks_checked"] > 0
         if m == "int8":
-            assert rec["worst_z"] is None and rec["smallest_error_caught"] == "exact"
+            assert rec["worst_z"] is None and rec["typical_error_caught"] == "exact sums"
         else:
-            assert 0 < rec["worst_z"] < 2 and 0 < rec["smallest_error_caught"] < 1e-2
+            assert 0 < rec["worst_z"] < 2 and 0 < rec["typical_error_caught"] < 1e-2
 
 
 @pytest.mark.parametrize("mode", ["bf16", "fp16", "tf32", "fp32", "fp64"])
@@ -32,7 +32,7 @@ def test_every_mode_runs_clean_on_the_cpu():
 def test_errors_are_caught_at_the_size_the_card_claims(mode, variant):
     dist, scale = modes.VARIANTS[variant]
     clean = modes.check_once(mode, CPU, SHAPE, dist, scale, _gen())
-    claim = clean["smallest_caught"]
+    claim = clean["typical_caught"]
     assert clean["wrong_blocks"] == 0 and claim > 0
     big = modes.check_once(mode, CPU, SHAPE, dist, scale, _gen(), fault=3 * claim)
     small = modes.check_once(mode, CPU, SHAPE, dist, scale, _gen(), fault=claim / 3)
@@ -81,7 +81,7 @@ def test_tensor_core_rounding_stays_far_from_the_alarm(mode, nfma, frac):
         r = modes.check_once(mode, CPU, shape, dist, scale, _gen(), run=run, nfma=nfma)
         assert r["wrong_blocks"] == 0 and r["worst_z"] < 1.5, (dist, r)
     caught = modes.check_once(mode, CPU, shape, "normal", 1.0, _gen(), run=run, nfma=nfma,
-                              fault=3 * r["smallest_caught"])
+                              fault=3 * r["typical_caught"])
     assert caught["wrong_blocks"] == 1
 
 
