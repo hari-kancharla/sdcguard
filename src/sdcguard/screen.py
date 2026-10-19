@@ -341,6 +341,12 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
         # error (alerts, saved evidence) still counts, and the run is reported, never dropped
         error = error_text(e)
     finally:
+        serving = None
+        try:                 # what the serving checks actually did, counted on the GPU (before detach drops it)
+            sguard.poll(wait=True)
+            serving = sguard.coverage_report()
+        except Exception as e:  # noqa: BLE001
+            error = error or error_text(e)
         sguard.detach()      # the serving check changes process-wide cuBLAS settings; put them back
     steps, passes, flops = counts["steps"], counts["passes"], counts["flops"]
     seconds = time.time() - t0
@@ -354,9 +360,16 @@ def screen_one(device: torch.device, minutes: float, size: str, out_root: str, s
     result = verdict.from_counts(bad, tguard.stats["checked"], unjudged + skipped)
     if result == "PASS" and (error or verdict.from_counts(0, passes, counts["serve_nonfinite"]) == "INCOMPLETE"):
         result = "INCOMPLETE"
+    # serving: every attached layer must have run its check, and every checksum must have been judged
+    serve_gap = passes > 0 and (serving is None or bool(serving["never_checked"]) or serving["unjudged_checksums"] > 0)
+    if result == "PASS" and serve_gap:
+        result = "INCOMPLETE"
     summary = {"device": str(device), "gpu": ident, "result": result, "minutes": round(seconds / 60, 2),
                "training_steps": steps, "serving_passes": passes, "matmuls_checked": tguard.stats["checked"],
-               "linear_layer_checks_while_serving": passes * sguard.stats["layers"],
+               "serving_linear_layers": None if serving is None else serving["layers"],
+               "linear_layer_checks_while_serving": None if serving is None else serving["checks_executed"],
+               "serving_layers_never_checked": None if serving is None else serving["never_checked"],
+               "unjudged_serving_checksums": None if serving is None else serving["unjudged_checksums"],
                "approx_matmul_tflop": round(flops / 1e12, 1), "corrupted_results_training": tguard.stats["alerts"],
                "corrupted_results_serving": len(serve_alerts),
                "serving_alerts": [e.detail for e in serve_alerts[:20]],
@@ -567,7 +580,7 @@ def main(argv=None) -> int:
     print(f"sdcguard screen: {s['result']}  {g.get('gpu_name', s['device'])} {g.get('gpu_uuid') or ''} "
           f"PCI {g.get('pci_bus_id')} serial {g.get('serial')}")
     print(f"  {s['minutes']} min, {s['training_steps']} training steps, {s['serving_passes']} serving passes, "
-          f"{s['matmuls_checked']:,} matmuls checked in training, {s['linear_layer_checks_while_serving']:,} "
+          f"{s['matmuls_checked']:,} matmuls checked in training, {s['linear_layer_checks_while_serving'] or 0:,} "
           f"layer checks while serving, about {s['approx_matmul_tflop']:,} TFLOP of matmul work")
     print(f"  corrupted results: {s['corrupted_results_training']} in training, {s['corrupted_results_serving']} while "
           f"serving; worst clean score {s['worst_clean_z']} (alarm line 6)")
@@ -575,9 +588,15 @@ def main(argv=None) -> int:
         print(f"  stopped by an error: {s['error']} (what was found before it is reported here)")
     if s.get("skipped_training_checks"):
         print(f"  {s['skipped_training_checks']:,} training checks skipped (not enough GPU memory for the check)")
-    if s.get("unjudged_training_checks") or s.get("serving_passes_with_nonfinite_output"):
+    if s.get("unjudged_training_checks") or s.get("serving_passes_with_nonfinite_output") or \
+            s.get("unjudged_serving_checksums"):
         print(f"  couldn't be judged: {s.get('unjudged_training_checks', 0)} training checks, "
+              f"{s.get('unjudged_serving_checksums') or 0} serving checksums, "
               f"{s.get('serving_passes_with_nonfinite_output', 0)} serving passes with output that wasn't finite")
+    if s.get("serving_layers_never_checked"):
+        never = s["serving_layers_never_checked"]
+        print(f"  {len(never)} serving layers never ran their check: {', '.join(never[:5])}"
+              f"{' ...' if len(never) > 5 else ''}")
     for e in s["evidence"]:
         print(f"  evidence: {e}.json   replay: sdcguard replay {e}.pt")
     return {"FAIL": 1, "INCOMPLETE": 2}.get(s["result"], 0)

@@ -39,8 +39,12 @@ def _guarded_failures(result: dict) -> list[str]:
             errors.append(f"worker {i}: malformed reports")
             continue
         layers = c.get("layers", 0)
-        if not isinstance(layers, int) or layers <= 0 or c.get("layers_checked_since_last_read") != layers:
+        if not isinstance(layers, int) or layers <= 0 or c.get("layers_with_executed_checks") != layers:
+            errors.append(f"worker {i}: not every registered layer executed a check")
+        elif c.get("layers_checked_since_last_read") != layers:
             errors.append(f"worker {i}: not every registered layer demonstrated a check")
+        if c.get("unjudged_checksums") != 0:
+            errors.append(f"worker {i}: clean serving had checksums that couldn't be judged (or no count)")
         if c.get("alerts") != [] or c.get("changed_weights") != []:
             errors.append(f"worker {i}: clean serving raised alerts or changed weights")
         if not isinstance(target, str) or not target:
@@ -105,9 +109,12 @@ def _guard_report(_model):
     if g is None:
         return {"layers": 0}
     vllm_plugin.poll(wait=True)
-    worst = dict(g.worst_seen)     # positive control: worst score each layer ever showed (0 = never checked)
+    worst = dict(g.worst_seen)     # positive control: worst score each layer ever showed (> 0: a residual seen)
     finite = [z for z in worst.values() if z == z and z != float("inf")]
+    cov = g.coverage_report()      # counted on the GPU: checks executed per layer, checksums that couldn't be judged
     return {"layers": g.stats["layers"], "layers_checked_since_last_read": sum(1 for z in worst.values() if z > 0),
+            "layers_with_executed_checks": cov["layers_checked"], "checks_executed": cov["checks_executed"],
+            "unjudged_checksums": cov["unjudged_checksums"], "never_checked_sample": cov["never_checked"][:6],
             "triton_layers": sum(g.uses_fast(s) for s in range(len(g.layers))),
             "worst_clean_z": max(finite) if finite else None,
             "alerts": [e.detail | {"gpu": e.identity.get("gpu_uuid"), "gpu_name": e.identity.get("gpu_name")}
@@ -190,7 +197,10 @@ def compare(out: str):
         "output_tokens_per_s": {"without": b["output_tokens_per_s"], "with": g["output_tokens_per_s"]},
         "slowdown_pct": round(100 * (b["output_tokens_per_s"] / g["output_tokens_per_s"] - 1), 2),
         "layers_checked": clean.get("layers"),
-        "layers_that_actually_ran_checks": clean.get("layers_checked_since_last_read"),
+        "layers_that_actually_ran_checks": clean.get("layers_with_executed_checks"),
+        "layers_with_a_nonzero_residual": clean.get("layers_checked_since_last_read"),
+        "checks_executed": clean.get("checks_executed"),
+        "unjudged_checksums": clean.get("unjudged_checksums"),
         "worst_clean_z": clean.get("worst_clean_z"),
         "clean_alerts": len(clean.get("alerts", [])),
         "flipped_layer": g.get("flipped"), "flagged_after_flip": flagged,

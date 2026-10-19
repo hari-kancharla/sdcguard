@@ -115,9 +115,12 @@ for event in guard.poll():                         # never stalls the GPU
     print(event.to_json())
 ```
 
-Serving currently records residual scores, not complete executed/unjudged counters. A zero `worst_z()` score
-is ambiguous and must not be presented as proof that a layer was checked. Calling `worst_z()` itself waits for
-GPU readback; `poll()` uses the asynchronous reporting path.
+`guard.coverage_report()` says what actually ran: layers attached, layers whose check executed at least
+once, layers never checked, checks executed, and checksums that couldn't be judged (Inf/NaN or huge values
+the inputs can explain). The counts are kept on the GPU next to each layer's worst score and read back with
+it. A worst score of 0 alone (`worst_z()`) can't tell a clean layer from one that never ran; use the counts
+for that. `coverage_report()`, `counts()` and `worst_z()` wait for GPU readback; `poll()` doesn't. (The
+counts are new on October 19: tested on CPU and in Triton's interpreter, GPU run pending.)
 
 ## Across a fleet
 

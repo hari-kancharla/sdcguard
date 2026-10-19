@@ -550,6 +550,14 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     if serve_nf:
         notes.insert(0, ["bad", f"{serve_nf} serving passes gave output that wasn't finite (the serving check can't "
                                 "judge those)"])
+    serve_unj = summary.get("unjudged_serving_checksums") or 0
+    if serve_unj:
+        notes.insert(0, ["bad", f"{serve_unj:,} serving checksums couldn't be judged (outputs or sums too large or not "
+                                "finite, in a way the inputs can explain): those results weren't checked"])
+    never = summary.get("serving_layers_never_checked") or []
+    if never:
+        notes.insert(0, ["bad", f"{len(never)} serving layers never ran their check ({', '.join(never[:3])}"
+                                f"{' ...' if len(never) > 3 else ''}): those layers weren't checked"])
     if not mem_ran and not stopped:
         why = mem.get("skipped") or "no memory could be allocated for it"
         notes.insert(0, ["bad", f"the memory pattern test didn't run ({why}): GPU memory wasn't tested"])
@@ -582,7 +590,8 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
                                                   "linear_layer_checks_while_serving", "approx_matmul_tflop",
                                                   "evidence", "dtype", "unjudged_training_checks",
                                                   "skipped_training_checks", "serving_passes_with_nonfinite_output",
-                                                  "error")},
+                                                  "serving_linear_layers", "serving_layers_never_checked",
+                                                  "unjudged_serving_checksums", "error")},
         "evidence": evidence, "unjudged": unj_train + stress["unjudged"] + skipped_train,
         "stopped": stopped or None,
         "simulated_faults": bool(summary.get("SIMULATED_FAULTS")) or simulate_faults > 0, "out_dir": out_dir,

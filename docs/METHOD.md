@@ -85,10 +85,17 @@ batches, including a genuine alarm alongside an unjudged result. They passed on 
 interpreter. The changed Triton buffer layout still needs validation on real GPUs; these tests do not
 establish CUDA compilation behavior or the overhead of the change.
 
-Serving has a separate limitation: its packed worst-score state currently maps unjudged numerical cases to
-zero, so `ServeGuard` does not provide the same per-check completeness signal. Screening also examines
-nonfinite final serving outputs, but that does not establish that every internal serving checksum was
-judged. Training's coverage fix does not remove this limitation.
+Serving scores a checksum it can't judge as zero, since its packed state holds only non-negative scores,
+so a worst score alone can't show completeness. Each layer's state row now also counts the checks executed
+(empty batches excluded) and the checksums that couldn't be judged, by the same rule as training
+(`checksum._judge_nonfinite`); the Triton kernel adds them with integer atomics, the PyTorch version with
+one indexed add, both without a host sync, so CUDA graphs capture them. `ServeGuard.coverage_report()`
+returns them; `sdcguard screen` reports measured serving checks instead of passes x layers, and calls a run
+INCOMPLETE when a serving layer never ran its check or a serving checksum went unjudged. The first-use
+comparison requires the Triton counts to equal the PyTorch counts exactly, and
+[the comparison script](../tests/_serve_fast_compare.py) adds an infinite input and an fp16 overflow the
+inputs explain (both unjudged) to its cases. Status, October 19: passes on CPU and in Triton's interpreter;
+not yet run on a GPU, and its overhead is not yet measured.
 
 ## Training cost
 
@@ -141,8 +148,8 @@ greedy either way).
 
 How it works: weights don't change while serving, so the weight side of each check is computed once at
 load. Each checked layer then costs one extra cuBLAS call and one Triton kernel, which reads the layer's input
-and output once and keeps the worst score in a small GPU tensor (an integer atomic max) that is read back
-without a sync. CUDA graphs capture both. Before first use the kernel has to match the PyTorch version on
+and output once and keeps the worst score in a small GPU tensor (an integer atomic max), next to counts of
+checks executed and checksums that couldn't be judged (integer atomic adds), read back without a sync. CUDA graphs capture both. Before first use the kernel has to match the PyTorch version on
 clean and corrupted layers, or the PyTorch version runs; it agreed with the training check in 70 of 70 cases
 on the H100. Layer shares use golden-ratio spacing, so any share spreads over every layer type and depth.
 

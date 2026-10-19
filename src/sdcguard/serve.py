@@ -54,7 +54,13 @@ from .events import EventLog, SDCEvent, device_identity
 # Per layer, two int64 keys: (bits of the worst z << 32) | flat index of that checksum, and
 # (bits of the worst z << 32) | bits of its noise. z >= 0 and the bits of non-negative floats sort like
 # the floats, so the largest key holds the worst z (an integer maximum, also usable as an atomic).
-STATE_COLS = 2
+# Then two counts since the last poll: checks executed (calls of the check for that layer, empty batches
+# excluded) and checksums
+# that couldn't be judged (Inf/NaN the inputs explain: score 0, but not evidence of a clean result). A worst
+# score of 0 alone can't tell a clean layer from one never checked; the counts can. State tensors with only
+# the two key columns (older callers, tests) still work: the counts are then skipped.
+STATE_COLS = 4
+COL_CHECKS, COL_UNJUDGED = 2, 3
 
 
 _PHI = (math.sqrt(5.0) - 1.0) / 2.0
@@ -274,14 +280,20 @@ def _check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, 
     lim = bound * 1.01
     inf = torch.full_like(zs, float("inf"))
     zero = torch.zeros_like(zs)
+    nan = zs != zs                              # inf/inf (both sides huge): nothing to judge
     zs = torch.where(zs == zs, zs, zero)
     zs = torch.where(e_bad, zero, zs)
     # finite outputs too large for the inputs (checksum._judge_nonfinite explains)
     cap = bound * (1.02 + x2.shape[1] * 2.0 ** -22) + 2 * h
     imposs = ~e_bad & ~a_bad & ~big & (lim < BIG) & (noise / u > cap * wsq.view(1, nb, 1))
     zs = torch.where(imposs, inf, zs)
-    zs = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dt], BIG), inf, zero), zs)
+    lim_a = min(DTYPE_MAX[dt], BIG)
+    zs = torch.where(a_bad, torch.where(lim < lim_a, inf, zero), zs)
     zs = torch.where(big, torch.where(lim < BIG, inf, zero), zs)
+    # checksums that couldn't be judged (they score 0 above; training scores them UNJUDGED, see
+    # checksum._judge_nonfinite): nothing to compare, the expected side isn't finite, or a non-finite or
+    # too-large output the inputs can explain
+    unjudged = ((nan & ~imposs & ~a_bad & ~big) | e_bad | (a_bad & ~(lim < lim_a)) | (big & ~(lim < BIG))).sum()
     # one extra 0 at the end: an empty batch (m = 0) then scores 0 instead of failing the reduction, with no
     # data-dependent branch (this also runs traced into vLLM's compiled graph)
     flat = torch.cat([zs.reshape(-1), zs.new_zeros(1)])
@@ -289,7 +301,11 @@ def _check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, 
     nz = torch.cat([den.expand_as(zs).reshape(-1), den.new_ones(1)]).gather(0, arg.view(1)).squeeze(0)
     zb = mz.float().clamp_min(0).view(torch.int32).to(torch.int64) << 32
     keys = torch.stack([zb | arg.to(torch.int64), zb | (nz.float().view(torch.int32).to(torch.int64) & 0xFFFFFFFF)])
-    state[slot] = torch.maximum(state[slot], keys)
+    state[slot, :2] = torch.maximum(state[slot, :2], keys)
+    if state.shape[1] >= STATE_COLS:            # (a shape, not a value: no host sync, safe in CUDA graphs)
+        # one check executed, unless the batch was empty (counted without a branch on the batch size)
+        executed = torch.ones_like(y2[:, 0], dtype=torch.int64).sum().clamp(max=1)
+        state[slot, COL_CHECKS:COL_UNJUDGED + 1] += torch.stack([executed, unjudged.to(torch.int64)])
 
 
 def decode_state(rows: torch.Tensor):
@@ -298,6 +314,14 @@ def decode_state(rows: torch.Tensor):
     flats = (rows[:, 0] & 0xFFFFFFFF).tolist()
     nzs = (rows[:, 1] & 0xFFFFFFFF).to(torch.int32).view(torch.float32).tolist()
     return list(zip(zs, flats, nzs))
+
+
+def decode_counts(rows: torch.Tensor):
+    """(checks executed, unjudged checksums) per row of a state tensor (on the CPU); (0, 0) for a state without
+    the count columns."""
+    if rows.dim() != 2 or rows.shape[1] < STATE_COLS:
+        return [(0, 0)] * rows.shape[0]
+    return list(zip(rows[:, COL_CHECKS].tolist(), rows[:, COL_UNJUDGED].tolist()))
 
 
 def check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
@@ -412,7 +436,10 @@ class ServeGuard:
         self._host: dict = {}                      # device -> (pinned copy, CUDA event) of a pending read
         self._identity: dict = {}
         self.worst_seen: dict = {}                 # layer name -> worst score ever read back (clean or not)
-        self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0}
+        self.checks_seen: dict = {}                # layer name -> checks executed, read back so far
+        self.unjudged_seen: dict = {}              # layer name -> checksums that couldn't be judged, so far
+        self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0, "checks_executed": 0,
+                      "unjudged_checksums": 0}
         self.unsupported: dict = {}                # layer name -> why it isn't checked
 
     # ---------------------------------------------------------------- setup
@@ -468,6 +495,9 @@ class ServeGuard:
                 self.stats["skipped_layers"] += 1
                 continue
             if mod.weight.dtype not in UNIT_ROUNDOFF:
+                # listed, so coverage_report() shows it (an fp32 router kept in a bf16 model, say)
+                self.unsupported[label] = (f"{str(mod.weight.dtype).replace('torch.', '')} weights: the serving "
+                                           "check takes bf16 and fp16; not checked")
                 self.stats["skipped_layers"] += 1
                 continue
             if mod.weight.numel() == 0:
@@ -651,10 +681,43 @@ class ServeGuard:
         self.stats["layers"] = 0
 
     # ---------------------------------------------------------------- results
+    def counts(self) -> dict:
+        """Per layer: checks executed and checksums that couldn't be judged, everything read back so far plus
+        what hasn't been polled yet, without resetting (waits for the GPU). This, not worst_z(), says whether a
+        layer was checked."""
+        live: dict = {}
+        for dev, st in self._state.items():
+            rows = decode_counts(st[:len(self.layers)].detach().to("cpu"))
+            pending = self._host.get(dev)
+            if pending is not None:                  # a non-blocking read still on its way: count it too
+                pending[1].synchronize()
+                prev = decode_counts(pending[0])
+                rows = [(a + c, b + d) for (a, b), (c, d) in zip(rows, prev + [(0, 0)] * (len(rows) - len(prev)))]
+            for slot, (ex, un) in enumerate(rows):
+                if self.layers[slot]["device"] == dev:
+                    live[self.layers[slot]["name"]] = (ex, un)
+        out = {}
+        for lay in self.layers:
+            name = lay["name"]
+            ex, un = live.get(name, (0, 0))
+            out[name] = {"checks": self.checks_seen.get(name, 0) + ex, "unjudged": self.unjudged_seen.get(name, 0) + un}
+        return out
+
+    def coverage_report(self) -> dict:
+        """What actually ran: layers attached, layers checked at least once, layers never checked, checks
+        executed, checksums that couldn't be judged, and layers left unchecked at attach (with why)."""
+        c = self.counts()
+        return {"layers": len(self.layers), "layers_checked": sum(v["checks"] > 0 for v in c.values()),
+                "never_checked": sorted(n for n, v in c.items() if v["checks"] == 0),
+                "checks_executed": sum(v["checks"] for v in c.values()),
+                "unjudged_checksums": sum(v["unjudged"] for v in c.values()),
+                "layers_with_unjudged": sorted(n for n, v in c.items() if v["unjudged"]),
+                "not_attached": dict(self.unsupported)}
+
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
         positive score proves a check contributed a residual. Zero is ambiguous: no execution, an exactly
-        matching result, and an unjudged result can all produce zero in this score-only state."""
+        matching result, and an unjudged result can all produce zero; counts() tells them apart."""
         out = {}
         for dev, st in self._state.items():
             rows = [r[0] for r in decode_state(st[:len(self.layers)].detach().to("cpu"))]
@@ -704,6 +767,14 @@ class ServeGuard:
     def _report(self, dev: torch.device, host: torch.Tensor) -> list[SDCEvent]:
         out = []
         rows = decode_state(host)
+        for slot, (ex, un) in enumerate(decode_counts(host)[:len(self.layers)]):
+            lay = self.layers[slot]
+            if lay["device"] != dev or not (ex or un):
+                continue
+            self.checks_seen[lay["name"]] = self.checks_seen.get(lay["name"], 0) + ex
+            self.unjudged_seen[lay["name"]] = self.unjudged_seen.get(lay["name"], 0) + un
+            self.stats["checks_executed"] += ex
+            self.stats["unjudged_checksums"] += un
         try:
             return self._report_rows(dev, rows, out)
         finally:

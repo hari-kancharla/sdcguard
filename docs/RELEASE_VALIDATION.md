@@ -61,9 +61,10 @@ explain what it means before changing coefficients. A post-result threshold chan
 round and needs another held-out comparison, including sensitivity. Zero alarms achieved by widening
 thresholds is not sufficient evidence of a useful detector.
 
-The vLLM experiment currently uses positive residuals to demonstrate per-layer activity. This is more evidence
-than an empty alerts list, but is not a complete executed/unjudged counter. Do not claim that limitation is
-solved. `experiments/demo_vllm.py` is a recording aid and its zero exit alone is not a behavior validation gate;
+The vLLM experiment now requires, per worker, that every registered layer executed its check (GPU-side
+counts from `ServeGuard.coverage_report()`), that no clean-run checksum went unjudged, and, as before, a
+positive residual in every layer. The counts passed on CPU and in Triton's interpreter on October 19 and
+have not run on a GPU or in vLLM yet: until a vLLM run in compiled mode shows them, don't claim them there. `experiments/demo_vllm.py` is a recording aid and its zero exit alone is not a behavior validation gate;
 use the gated `vllm_check.py` results and inspect the actual alert in the demo.
 
 ## 4. Sensitivity and behavior, not just green tests

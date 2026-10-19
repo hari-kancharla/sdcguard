@@ -79,14 +79,15 @@ def _reports():
     baseline = {"model": "test-model", "vllm": "0.31.0", "enforce_eager": False,
                 "output_tokens_per_s": 1000.0, "first_outputs": ["hello"]}
     guarded = {**baseline, "share": "1", "clean": [{"layers": 1, "layers_checked_since_last_read": 1,
+               "layers_with_executed_checks": 1, "checks_executed": 7, "unjudged_checksums": 0,
                "alerts": [], "changed_weights": [], "worst_clean_z": 0.2, "triton_layers": 0}],
                "flipped": ["layer"], "after_flip": [{"alerts": [{"where": "layer"}],
                                                       "changed_weights": ["layer"]}]}
     return baseline, guarded
 
 
-@pytest.mark.parametrize("fault", [None, "outputs", "clean_alert", "no_checks", "missed_fault",
-                                   "wrong_layer", "missing_worker", "metadata"])
+@pytest.mark.parametrize("fault", [None, "outputs", "clean_alert", "no_checks", "not_executed", "unjudged",
+                                   "no_counts", "missed_fault", "wrong_layer", "missing_worker", "metadata"])
 def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         fault, monkeypatch, tmp_path, vllm_experiment):
     baseline, guarded = _reports()
@@ -96,6 +97,13 @@ def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         guarded["clean"][0]["alerts"] = [{"where": "layer"}]
     elif fault == "no_checks":
         guarded["clean"][0]["layers_checked_since_last_read"] = 0
+    elif fault == "not_executed":
+        guarded["clean"][0]["layers_with_executed_checks"] = 0
+    elif fault == "unjudged":
+        guarded["clean"][0]["unjudged_checksums"] = 3
+    elif fault == "no_counts":
+        for key in ("layers_with_executed_checks", "unjudged_checksums"):
+            del guarded["clean"][0][key]
     elif fault == "missed_fault":
         guarded["after_flip"][0]["alerts"] = []
     elif fault == "wrong_layer":

@@ -105,6 +105,8 @@ class Metrics:
     sdcguard_worst_score                    worst score over all layers at the last read (alarm line 6)
     sdcguard_layer_worst_score{layer}       per layer, at the last read
     sdcguard_alerts_total{layer,gpu}        alerts so far
+    sdcguard_checks_executed_total          layer checks that ran, counted on the GPU
+    sdcguard_unjudged_checksums_total       checksums that couldn't be judged (not evidence of a clean result)
     sdcguard_reads_total                    times results were read back
     sdcguard_last_read_timestamp_seconds    when (a stale value means checks stopped being read)
     """
@@ -120,6 +122,9 @@ class Metrics:
                                  registry=r)
         self.alerts = Counter("sdcguard_alerts", "Alerts", ["layer", "gpu"], registry=r)
         self.reads = Counter("sdcguard_reads", "Times results were read back", registry=r)
+        self.executed = Counter("sdcguard_checks_executed", "Layer checks that ran, counted on the GPU", registry=r)
+        self.unjudged = Counter("sdcguard_unjudged_checksums", "Checksums that couldn't be judged", registry=r)
+        self._seen: dict = {}                     # id(guard) -> (checks executed, unjudged) already exported
         self.last = Gauge("sdcguard_last_read_timestamp_seconds", "When results were last read back", registry=r)
         self.port = None
         if port is not None:
@@ -141,5 +146,13 @@ class Metrics:
         self.worst.set(worst)
         for e in events:
             self.alerts.labels(layer=str(e.detail.get("where")), gpu=str(e.identity.get("gpu_uuid"))).inc()
+        stats = getattr(guard, "stats", {})
+        ex, un = int(stats.get("checks_executed", 0)), int(stats.get("unjudged_checksums", 0))
+        pex, pun = self._seen.get(id(guard), (0, 0))
+        if ex > pex:
+            self.executed.inc(ex - pex)
+        if un > pun:
+            self.unjudged.inc(un - pun)
+        self._seen[id(guard)] = (max(ex, pex), max(un, pun))
         self.reads.inc()
         self.last.set(time.time())
