@@ -9,6 +9,7 @@ This runs the reported layer, 16x2048x1000 (ResNet-50's last layer at batch 16),
 to be an MPS client with a share set, and prints one JSON line:
   - how many outputs differ from a float64 answer on the CPU (a plain call, and one whose output buffer is
     filled with NaN first, so unwritten outputs can't look right by accident)
+  - the same for the layer's two backward matmuls (dX and dW), called the way training calls them
   - what sdcguard's training check and serving check said about the same layer
   - what `sdcguard check`'s math-mode screen said in 10 seconds
 
@@ -61,6 +62,18 @@ def one_dtype(dt, dev) -> dict:
     r["wrong_outputs_nan_prefilled"] = wrong_outputs(pre, ref)
     r["outputs"] = M * N
 
+    # the two backward matmuls, called the way the training check's backward calls them, against float64
+    gy = (torch.randn(M, N, generator=torch.Generator().manual_seed(2)) * 1e-3).to(dev, dt)
+    with torch.no_grad():
+        gx = gy.mm(lin.weight)                          # dX = dY W        (16 x 1000 by 1000 x 2048)
+        gw = gy.t().mm(x)                               # dW = dY^T X      (1000 x 16 by 16 x 2048)
+    if dev.type == "cuda":
+        torch.cuda.synchronize()
+    w64 = lin.weight.detach().double().cpu()
+    r["backward_dX_wrong_outputs"] = wrong_outputs(gx, gy.double().cpu() @ w64)
+    r["backward_dW_wrong_outputs"] = wrong_outputs(gw, gy.double().cpu().t() @ x.double().cpu())
+    r["backward_outputs"] = {"dX": M * K, "dW": N * K}
+
     # the training check: forward, dX and dW of this layer
     events = []
     g = SDCGuard(every=1, on_alert=events.append).protect(nn.Sequential(lin))
@@ -68,8 +81,13 @@ def one_dtype(dt, dev) -> dict:
         lin(x.clone().requires_grad_(True)).float().pow(2).mean().backward()
     g.unprotect()
     lin.zero_grad(set_to_none=True)
+    worst: dict = {}
+    for e in events:
+        z = e.detail.get("max_z")
+        worst[e.detail["where"]] = max(worst.get(e.detail["where"], 0.0), float("inf") if z is None else float(z))
     r["training_check"] = {"checked": g.stats["checked"], "alerts": len(events),
                            "alerts_by_matmul": sorted({e.detail["where"] for e in events}),
+                           "worst_score_by_matmul": worst,
                            "first": {k: events[0].detail.get(k) for k in ("where", "row", "col_block", "max_z",
                                                                          "nonfinite")} if events else None}
 

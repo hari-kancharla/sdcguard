@@ -112,8 +112,11 @@ def _row(r: dict) -> str:
         if "error" in d:
             cells.append(f"{dt}: error")
             continue
+        bw = (f"; backward dX {d['backward_dX_wrong_outputs']:,} wrong, dW {d['backward_dW_wrong_outputs']:,} wrong"
+              if "backward_dX_wrong_outputs" in d else "")
         cells.append(f"{dt}: {d['wrong_outputs']:,}/{d['outputs']:,} wrong (NaN-filled buffer: "
-                     f"{d['wrong_outputs_nan_prefilled']:,}); training check {d['training_check']['alerts']} alert(s), "
+                     f"{d['wrong_outputs_nan_prefilled']:,}){bw}; training check {d['training_check']['alerts']} "
+                     f"alert(s) {d['training_check'].get('worst_score_by_matmul', '')}, "
                      f"serving check {d['serving_check']['alerts']}")
     mm = r.get("math_modes") or {}
     wrong = sum(v.get("wrong", 0) for v in mm.values() if isinstance(v, dict))
