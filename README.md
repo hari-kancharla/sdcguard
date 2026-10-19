@@ -81,7 +81,7 @@ SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
 
 `SDCGUARD_SHARE=0.125` checks one linear layer in eight, spread over every kind of layer and depth. In
 vLLM's offline benchmark with Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
-word for word the same as plain vLLM's. Checking every layer costs 28% for now. Weight checksums are computed
+word for word the same as plain vLLM's. Checking every layer cuts throughput by 22% for now. Weight checksums are computed
 once at load, so weights that get corrupted in GPU memory later are caught too.
 
 Any PyTorch model:

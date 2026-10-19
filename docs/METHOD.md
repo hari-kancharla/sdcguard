@@ -96,11 +96,11 @@ Llama-shaped models with random weights, torch.compile + CUDA graphs, against no
 vLLM 0.31, Qwen2.5-7B-Instruct, vLLM's default compiled mode, offline API, 256 prompts x 128 output tokens,
 median of 3 runs ([SUMMARY.json](../results/round3_oct18/vllm/qwen7b/SUMMARY.json)):
 
-| layers checked | output tokens/s | slower than plain vLLM |
+| layers checked | output tokens/s | throughput lost against plain vLLM |
 |---|---|---|
 | none (plain vLLM) | 23,294 | |
-| 1 in 8 | 22,612 | 3.0% (1.7% the checks, 1.3% the fp32 reduction setting) |
-| every layer | 18,156 | 28% |
+| 1 in 8 | 22,612 | 2.9% (about 1.7% the checks, 1.3% the fp32 reduction setting) |
+| every layer | 18,156 | 22% (each request takes 28% longer) |
 
 64 of the 256 answers were compared and were word for word the same in every configuration. A weight bit
 flipped in a checked layer was caught in that layer as "weights changed in GPU memory". The runs set
