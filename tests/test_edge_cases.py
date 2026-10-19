@@ -1,0 +1,164 @@
+"""Edge cases from an outside code review: rounding that lines up with the sign pattern, layers with their
+own forward, empty batches, certificate dates, result cards whose verdict contradicts their counts."""
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+import torch
+import torch.nn as nn
+
+from sdcguard import SDCGuard
+from sdcguard import checksum as cs
+from sdcguard.serve import ServeGuard
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SRC = os.path.join(HERE, "..", "src")
+
+
+@pytest.fixture
+def plain_check():
+    old = cs.USE_FAST
+    cs.USE_FAST = False
+    yield
+    cs.USE_FAST = old
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_outputs_aligned_with_a_fixed_sign_pattern_dont_alarm(plain_check, dtype):
+    """B's columns proportional to a fixed +-1 pattern make every output round the same way relative
+    to that pattern. The signs are drawn per process, so data can't line up with them."""
+    g = torch.Generator().manual_seed(20261014 + 128)
+    fixed = (torch.randint(0, 2, (128,), generator=g) * 2 - 1).float()
+    a = torch.tensor([[-0.39453125]], dtype=dtype)
+    b = (fixed[None, :] * 0.1923828125).to(dtype)
+    c = (a.float() @ b.float()).to(dtype)
+    r = cs.check_matmul(a, b, c)
+    assert r.ok, r
+
+
+def _signs_in_new_process(env_extra=None):
+    env = dict(os.environ, PYTHONPATH=SRC)
+    env.pop("SDCGUARD_SIGN_SEED", None)
+    env.update(env_extra or {})
+    code = "from sdcguard import checksum as cs; print(cs._signs(16, 'cpu').int().tolist())"
+    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def test_sign_pattern_is_drawn_per_process_unless_pinned():
+    assert _signs_in_new_process({"SDCGUARD_SIGN_SEED": "7"}) == _signs_in_new_process({"SDCGUARD_SIGN_SEED": "7"})
+    draws = {_signs_in_new_process() for _ in range(3)}
+    assert len(draws) > 1
+
+
+class PlusOne(nn.Linear):
+    def forward(self, x):
+        return super().forward(x) + 1
+
+
+def _ones(layer):
+    with torch.no_grad():
+        layer.weight.fill_(1.0)
+        layer.bias.zero_()
+    return layer
+
+
+def test_fast_mode_leaves_layers_with_their_own_forward_alone():
+    model = nn.Sequential(_ones(PlusOne(4, 4)), _ones(nn.Linear(4, 4))).to(torch.bfloat16)
+    x = torch.ones(1, 4, dtype=torch.bfloat16)
+    before = model(x)
+    g = SDCGuard(every=1).protect(model)
+    with g.on_step(0):
+        after = model(x)
+    assert torch.equal(before, after)
+    assert list(g.skipped) == ["0"] and "own forward" in g.skipped["0"]
+    assert model[1] in g._protected
+
+
+def test_fast_mode_keeps_a_forward_set_on_the_instance():
+    lin = _ones(nn.Linear(2, 2))
+    orig = lin.forward
+    lin.forward = lambda inp: orig(inp) * 10
+    model = nn.Sequential(lin)
+    x = torch.ones(1, 2)
+    before = model(x)
+    g = SDCGuard(every=1).protect(model)
+    with g.on_step(0):
+        assert torch.equal(model(x), before)
+    g.unprotect()
+    assert torch.equal(model(x), before)
+    assert "instance" in g.skipped["0"]
+
+
+def test_serving_skips_layers_with_their_own_forward():
+    model = nn.Sequential(_ones(PlusOne(256, 256)), nn.Linear(256, 256)).to(torch.bfloat16)
+    x = torch.ones(3, 256, dtype=torch.bfloat16)
+    before = model(x)
+    sg = ServeGuard().attach(model)
+    assert torch.equal(model(x), before)
+    assert list(sg.unsupported) == ["0"] and sg.stats["layers"] == 1
+    assert sg.poll(wait=True) == []
+    sg.detach()
+
+
+def test_serving_keeps_a_forward_set_on_the_instance_and_restores_it():
+    lin = nn.Linear(256, 256).to(torch.bfloat16)
+    calls = []
+    orig = lin.forward
+
+    def hooked(inp):                     # like accelerate's offload hook: same math, extra bookkeeping
+        calls.append(1)
+        return orig(inp)
+
+    lin.forward = hooked
+    model = nn.Sequential(lin)
+    x = torch.randn(4, 256).to(torch.bfloat16)
+    sg = ServeGuard().attach(model)
+    model(x)
+    assert calls and sg.poll(wait=True) == []
+    sg.detach()
+    assert lin.forward is hooked
+
+
+def test_serving_handles_an_empty_batch():
+    lin = nn.Linear(256, 256).to(torch.bfloat16)
+    sg = ServeGuard().attach(nn.Sequential(lin))
+    out = lin(torch.empty(0, 256, dtype=torch.bfloat16))
+    assert out.shape == (0, 256)
+    sg.detach()
+
+
+def test_certificate_with_an_unreadable_expiry_is_not_ok(tmp_path):
+    pytest.importorskip("cryptography")
+    from sdcguard import certify
+    key, pub = certify.keygen(str(tmp_path / "k"))
+    cert = certify.make({"result": "PASS"}, issuer="test")
+    cert["valid_until"] = "not a date"
+    path = tmp_path / "certificate.json"
+    path.write_text(json.dumps(certify.sign(cert, key)))
+    v = certify.verify(str(path), pub)
+    assert v["ok"] is False and "no valid_until date" in v["problems"]
+
+
+def _card(**changes):
+    from sdcguard import board
+    seed = os.path.join(HERE, "..", "docs", "board", "seed")
+    with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
+        r = json.load(f)
+    for k, v in changes.items():
+        r[k] = v
+    r.pop("digest", None)
+    r["digest"] = board.digest(r)
+    return r
+
+
+def test_board_rejects_cards_whose_verdict_contradicts_their_counts():
+    from sdcguard import board
+    assert board.validate(_card()) is None
+    assert "PASS" in board.validate(_card(checked={"results": 0}))
+    assert "PASS" in board.validate(_card(wrong={"stress": 2}))
+    assert "FAIL" in board.validate(_card(result="FAIL"))
+    assert board.validate(_card(result="FAIL", wrong={"stress": 2})) is None
+    assert "negative" in board.validate(_card(wrong={"stress": -1}))
