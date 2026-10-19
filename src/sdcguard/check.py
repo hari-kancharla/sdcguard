@@ -10,6 +10,8 @@ What it does, per GPU (all GPUs at once, so a machine is tested the way it's use
   speed       big matmuls in bf16 (fp16 on GPUs without bf16): sustained TFLOPS, and how much the speed
               drops while the GPU heats up; memory bandwidth
   stress      big matmuls at full power with every output checked against its checksums
+  math modes  matmuls in BF16, FP16, TF32, FP32, FP64 and INT8 (whichever the GPU supports), each result kept
+              in full precision and compared with a float64 answer computed on the CPU
   workload    a GPT-style model training and serving with every matrix multiply checked (sdcguard screen)
   repeatable  the same fixed model and input run three times (start, hot, end); a healthy GPU gives
               bit-identical outputs every time. The output fingerprint can also be compared with other
@@ -387,7 +389,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         torch.cuda.set_device(dev)
     t_start = time.time()
     total = 60.0 * minutes
-    budget = {"memory": 0.04, "speed": 0.08, "bandwidth": 0.02, "stress": 0.06}
+    budget = {"memory": 0.04, "speed": 0.08, "bandwidth": 0.02, "stress": 0.06, "modes": 0.05}
     secs = {k: max(0.2, v * total) for k, v in budget.items()}
     idx = None
     if dev.type == "cuda":                        # nvidia-smi by UUID: its index order isn't CUDA's
@@ -415,6 +417,9 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     bw = bandwidth(dev, secs["bandwidth"])
     say(f"{name}: checked matmuls at full power ({secs['stress']:.0f} s)")
     stress = stress_check(dev, dtype, secs["stress"])
+    say(f"{name}: six matmul modes against a float64 reference ({secs['modes']:.0f} s)")
+    from .modes import screen as modes_screen
+    math_modes = modes_screen(dev, secs["modes"], seed=seed)
     prints.append(fp.run())
     left = max(0.05, (total - (time.time() - t_start) - 3) / 60)
     say(f"{name}: training and serving workload, every matmul checked ({left:.1f} min)")
@@ -429,11 +434,11 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
 
     wrong = {"workload_training": summary.get("corrupted_results_training") or 0,
              "workload_serving": summary.get("corrupted_results_serving") or 0,
-             "stress": stress["wrong"], "memory_words": mem.get("wrong_words") or 0}
+             "stress": stress["wrong"], "math_modes": math_modes["wrong"], "memory_words": mem.get("wrong_words") or 0}
     repeatable = all(p == prints[0] for p in prints)
     worst = max(summary.get("worst_clean_z") or 0.0, stress["worst_clean_score"])
     checked = (summary.get("matmuls_checked") or 0) + (summary.get("linear_layer_checks_while_serving") or 0) + \
-        stress["matmuls_checked"]
+        stress["matmuls_checked"] + math_modes["matmuls"]
     result = "FAIL" if any(wrong.values()) else ("SUSPECT" if not repeatable else "PASS")
     notes = _notes(static, before, after, live, speed, spec)
     if not repeatable:
@@ -453,7 +458,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         "wrong": wrong, "checked_results": checked, "repeatable": repeatable, "fingerprints": prints,
         "fingerprint_key": fp_key, "fingerprint_weights": fp.weights, "fingerprint_config": fp.config,
         "worst_clean_score": round(worst, 3), "alarm_line": 6.0,
-        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "datasheet": spec,
+        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "math_modes": math_modes, "datasheet": spec,
         "health_before": before, "health_after": after, "live": live, "notes": notes, "board": None,
         "workload": {k: summary.get(k) for k in ("size", "seed", "training_steps", "serving_passes", "matmuls_checked",
                                                   "linear_layer_checks_while_serving", "approx_matmul_tflop",
@@ -553,6 +558,14 @@ def public(full: dict) -> dict:
         "notes": full["notes"], "board": full.get("board"),
         "simulated_faults": full.get("simulated_faults", False),
     }
+    mm = full.get("math_modes")
+    if mm:
+        pub["math_modes"] = {"ran": list(mm.get("ran") or []), "matmuls": mm.get("matmuls") or 0,
+                             "wrong": mm.get("wrong") or 0,
+                             "not_checked": {k: str(v) for k, v in (mm.get("not_checked") or {}).items()},
+                             "smallest_error_caught": {k: r["smallest_error_caught"] for k, r in mm["modes"].items()
+                                                       if r.get("smallest_error_caught") is not None
+                                                       and k in (mm.get("ran") or [])}}
     pub["digest"] = digest(pub)
     return pub
 
@@ -607,8 +620,27 @@ def _n(x) -> str:
     return f"{int(x):,}"
 
 
+def _pct(x: float) -> str:
+    v = 100 * x
+    return f"{v:.2g}%" if v < 10 else f"{v:.0f}%"
+
+
+def _modes_row(mm: dict) -> Optional[str]:
+    if not mm or not mm.get("ran"):
+        return None
+    text = f"{' '.join(mm['ran'])} vs float64: {_n(mm['matmuls'])} matmuls, "
+    text += f"{mm['wrong']} WRONG" if mm.get("wrong") else "0 wrong"
+    rel = [v for v in (mm.get("smallest_error_caught") or {}).values() if isinstance(v, (int, float))]
+    if rel:
+        text += f", sees errors down to {_pct(max(rel))}"
+    if mm.get("not_checked"):
+        text += "; not run: " + " ".join(mm["not_checked"])
+    return text
+
+
 def lines(pub: dict) -> list:
-    """The card as (label, text) rows; the terminal, Markdown, SVG and PNG cards all use these."""
+    """The card as (label, text) rows; the terminal, Markdown, SVG and PNG cards all use these. Problems come
+    right after what was checked, so they're always on the card image (it shows the first CARD_ROWS)."""
     w, c, s, h = pub["wrong"], pub["checked"], pub["speed"], pub["health"]
     nwrong = sum(w.values())
     hr = pub["headroom"]
@@ -617,14 +649,18 @@ def lines(pub: dict) -> list:
     rows = [("checked", f"{_n(c['results'])} matmul results" + (f" ({tflop:,.0f} TFLOP of work)" if tflop else "")
              + (f", {wrong_mm} WRONG (" + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in w.items()
                                                     if v and k != "memory_words") + ")" if wrong_mm else ", 0 wrong"))]
+    modes = _modes_row(pub.get("math_modes") or {})
+    if modes:
+        rows.append(("math modes", modes))
     if c.get("memory_gib"):
         mw = w.get("memory_words") or 0
         rows.append(("memory test", f"{_n(c['memory_gib'])} GiB written and read back x{c['memory_passes']}, "
                      + (f"{mw} WORDS WRONG" if mw else "0 errors")))
-    rows += [("headroom", f"worst clean score {hr['worst_clean_score']:.2f} (alarm at {hr['alarm_line']:g})"
-             + (f": {hr['alarm_line'] / hr['worst_clean_score']:.1f}x margin" if hr["worst_clean_score"] else "")),
-            ("repeatable", ("3 of 3 runs bit-identical" if pub["repeatable"] else "NO: outputs changed between runs")
-             + f", fingerprint {pub['fingerprint']['output'][:12]}")]
+    order = {"bad": 0, "warn": 1}
+    notes = sorted(pub.get("notes") or [], key=lambda n: order.get(n[0], 2))
+    rows += [(level, text) for level, text in notes if level in order]
+    rows.append(("repeatable", ("3 of 3 runs bit-identical" if pub["repeatable"] else "NO: outputs changed between runs")
+                 + f", fingerprint {pub['fingerprint']['output'][:12]}"))
     if s.get("matmul_tflops"):
         rows.append(("speed", f"{s['dtype']} matmul {_n(s['matmul_tflops'])} TFLOPS"
                      + (f" ({s['pct_of_datasheet']:.0f}% of datasheet peak)" if s.get("pct_of_datasheet") else "")
@@ -642,6 +678,8 @@ def lines(pub: dict) -> list:
         hp.append("ECC " + {"enabled": "on", "disabled": "off"}.get(h["ecc"].lower(), h["ecc"].lower()))
     if hp:
         rows.append(("health", ", ".join(hp)))
+    rows.append(("headroom", f"worst clean score {hr['worst_clean_score']:.2f} (alarm at {hr['alarm_line']:g})"
+                 + (f": {hr['alarm_line'] / hr['worst_clean_score']:.1f}x margin" if hr["worst_clean_score"] else "")))
     b = pub.get("board") or {}
     if b.get("same_setup_runs"):
         rows.append(("board", f"fingerprint matches {b['same_fingerprint']} of {b['same_setup_runs']} runs of this exact "
@@ -649,9 +687,7 @@ def lines(pub: dict) -> list:
     if b.get("model_median_tflops") and s.get("matmul_tflops"):
         rows.append(("vs others", f"median {pub['gpu']['name']} on the board: {_n(b['model_median_tflops'])} TFLOPS "
                                   f"({b.get('model_runs')} runs)"))
-    order = {"bad": 0, "warn": 1}
-    for level, text in sorted(pub.get("notes") or [], key=lambda n: order.get(n[0], 2)):   # problems first
-        rows.append(("note" if level == "info" else level, text))
+    rows += [("note", text) for level, text in notes if level not in order]
     return rows
 
 
@@ -695,19 +731,20 @@ def markdown(pub: dict) -> str:
 
 
 _COLORS = {"PASS": "#22c55e", "FAIL": "#ef4444", "SUSPECT": "#f59e0b"}
+CARD_ROWS = 9
 
 
 def svg(pub: dict) -> str:
     e = html.escape
     g = pub["gpu"]
     col = _COLORS[pub["result"]]
-    rows = lines(pub)[:8]
+    rows = lines(pub)[:CARD_ROWS]
     body = []
-    y = 292
+    y = 288
     for k, v in rows:
         v = v if len(v) <= 90 else v[:87] + "..."
         body.append(f'<text x="64" y="{y}" class="k">{e(k)}</text><text x="210" y="{y}" class="v">{e(v)}</text>')
-        y += 34
+        y += 32
     sim = ('<text x="1136" y="120" text-anchor="end" class="sim">SIMULATED FAULTS (DEMO)</text>'
            if pub.get("simulated_faults") else "")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -755,12 +792,12 @@ def png(pub: dict, path: str) -> bool:
                                 fc=_COLORS[pub["result"]], ec="none"))
     ax.text(139, 222, pub["result"], color="#0c0a09", fontsize=21, fontweight="bold", ha="center", va="baseline")
     ax.text(236, 222, VERDICT[pub["result"]], color=fg, fontsize=17, va="baseline")
-    y = 292
-    for k, v in lines(pub)[:8]:
+    y = 288
+    for k, v in lines(pub)[:CARD_ROWS]:
         v = v if len(v) <= 90 else v[:87] + "..."
         ax.text(64, y, k, color=mute, fontsize=14, va="baseline")
         ax.text(210, y, v, color=fg, fontsize=14, va="baseline")
-        y += 34
+        y += 32
     ax.text(64, 596, f"digest {pub['digest']}  ·  pip install sdcguard  ·  sdcguard check", color="#78716c",
             fontsize=13, va="baseline")
     fig.savefig(path, facecolor=fig.get_facecolor())

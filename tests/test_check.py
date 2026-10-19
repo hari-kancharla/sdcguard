@@ -272,3 +272,37 @@ def test_triton_kernels_wait_for_validation_on_new_gpu_generations(monkeypatch):
 def test_cloud_names():
     assert [gpuinfo.cloud_name(x) for x in ("CLOUD_PROVIDER_UNSPECIFIED", "AZURE", "CLOUD_PROVIDER_GCP", None)] == \
         [None, "Azure", "GCP", None]
+
+
+def test_check_runs_every_math_mode(cpu_run):
+    from sdcguard import modes
+    full, _ = cpu_run
+    mm = full["math_modes"]
+    assert mm["ran"] == list(modes.MODES) and mm["wrong"] == 0 and full["wrong"]["math_modes"] == 0
+    pub = check.public(full)
+    assert pub["math_modes"]["matmuls"] == mm["matmuls"] and pub["math_modes"]["smallest_error_caught"]["int8"] == "exact"
+    assert "math modes" in check.terminal(pub) and board._shape_problem(pub) is None
+    bad = copy.deepcopy(pub)
+    bad["math_modes"]["ran"] = "all of them"
+    assert "math_modes" in board._shape_problem(bad)
+
+
+def test_a_wrong_math_mode_fails_the_gpu_and_problems_stay_on_the_card(monkeypatch, tmp_path):
+    from sdcguard import modes
+    real = modes.screen
+
+    def one_wrong(*a, **k):
+        r = real(*a, **k)
+        r["modes"]["fp32"]["wrong"] = 1
+        r["wrong"] = 1
+        return r
+    monkeypatch.setattr(modes, "screen", one_wrong)
+    full = check.check_one("cpu", minutes=0.06, out_root=str(tmp_path))
+    assert full["result"] == "FAIL" and full["wrong"]["math_modes"] == 1
+    pub = check.public(full)
+    assert board.validate(dict(pub, gpu=dict(pub["gpu"], name="NVIDIA L4"), minutes=5)) is not None   # digest
+    full["notes"] = [["info", "x"], ["bad", "something broke"], ["warn", "something else"]]
+    rows = check.lines(check.public(full))
+    labels = [k for k, _ in rows[:check.CARD_ROWS]]
+    assert labels[:5] == ["checked", "math modes", "memory test", "bad", "warn"] and rows[-1] == ("note", "x")
+    assert "1 WRONG" in dict(rows)["math modes"] and "math modes 1" in dict(rows)["checked"]

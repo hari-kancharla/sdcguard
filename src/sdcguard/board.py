@@ -77,6 +77,21 @@ def _shape_problem(r: dict) -> Optional[str]:
         for k, v in (r.get(part) or {}).items():
             if not _num_ok(v, -1e18, 1e18):
                 return f"{part}.{k} is not a number"
+    mm = r.get("math_modes")
+    if mm is not None:
+        if not isinstance(mm, dict):
+            return "math_modes is not an object"
+        if not all(_num_ok(mm.get(k), 0, 1e18) for k in ("matmuls", "wrong")):
+            return "math_modes counts are not numbers"
+        if not isinstance(mm.get("ran"), list) or not all(isinstance(x, str) for x in mm["ran"]):
+            return "math_modes.ran is malformed"
+        for k in ("not_checked", "smallest_error_caught"):
+            d = mm.get(k)
+            if not isinstance(d, dict) or not all(isinstance(x, str) for x in d):
+                return f"math_modes.{k} is malformed"
+        if not all(isinstance(v, str) for v in mm["not_checked"].values()) or \
+                not all(v == "exact" or _num_ok(v, 0, 1e6) for v in mm["smallest_error_caught"].values()):
+            return "math_modes values are malformed"
     notes = r.get("notes") or []
     if not isinstance(notes, list) or not all(isinstance(n, list) and len(n) == 2 and all(isinstance(x, str) for x in n)
                                               for n in notes):
