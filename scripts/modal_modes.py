@@ -4,10 +4,11 @@
 
 For each GPU: each of the six math modes, many times over every input distribution, to see how far clean
 results stay from the alarm (calibration); experiments/sensitivity.py (bf16 check vs fp32 check on the same
-matmuls); and the 20-second math-mode screen exactly as `sdcguard check` runs it. Results go to
+matmuls); the 20-second math-mode screen exactly as `sdcguard check` runs it; and experiments/precise_gpu.py
+(precise mode in training: false alarms, what the model sees, cost, injected faults caught). Results go to
 results/math_modes/.
 
-About 4 minutes per GPU, about $1 in total at Modal's prices on Oct 18, 2026 (per hour: B200 $6.25,
+About 7 minutes per GPU, about $2 in total at Modal's prices on Oct 18, 2026 (per hour: B200 $6.25,
 H100 $3.95, A100 80GB $2.50, L4 $0.80, T4 $0.59, plus about $0.38 per machine for CPU and memory). Every
 function stops at 15 minutes, so it can't cost more than about $4.
 """
@@ -109,6 +110,18 @@ def _work(label: str) -> dict:
     except Exception as e:  # noqa: BLE001
         out["screen_error"] = f"{type(e).__name__}: {str(e)[:300]}"
     print(label, "screen done", flush=True)
+
+    # 4. precise mode in training: false alarms, what the model sees, cost, injected faults caught
+    try:
+        import precise_gpu
+        t0 = time.time()
+        prec = precise_gpu.run(dev, clean_steps=30, fault_steps=20, rate=0.05, say=lambda s: None)
+        prec.update(gpu=out["gpu"], torch=out["torch"], seconds=round(time.time() - t0, 1))
+        out["precise"] = prec
+        out["precise_md"] = precise_gpu.markdown(prec)
+    except Exception as e:  # noqa: BLE001
+        out["precise_error"] = f"{type(e).__name__}: {str(e)[:300]}"
+    print(label, "precise mode done", flush=True)
     return out
 
 
@@ -163,7 +176,9 @@ def _summary(results: list) -> str:
     for r in results:
         if "sensitivity_md" in r:
             lines += ["", r["sensitivity_md"]]
-        for k in ("sensitivity_error", "screen_error"):
+        if "precise_md" in r:
+            lines += ["", r["precise_md"]]
+        for k in ("sensitivity_error", "screen_error", "precise_error"):
             if k in r:
                 lines += ["", f"{r['label']}: {k.replace('_', ' ')}: {r[k]}"]
     return "\n".join(lines) + "\n"
