@@ -8,15 +8,15 @@ and every forward pass only has to read the layer's input x and output y once mo
                                         parts on NVIDIA GPUs, so 6/128 = about 4.7% of the layer's work)
     actual   = block sums of y         (one pass over y)
 
-A mismatch beyond the rounding noise means the matmul came out wrong, or the weights changed in
-GPU memory since they were loaded (a bit flip in HBM or GDDR that ECC missed, or a GPU without
-ECC). verify_weights() tells the two apart.
+A mismatch beyond the estimated rounding noise reports a numerical disagreement. Causes to investigate
+include incorrect computation, changed weights, and a checker or numerical-model problem. verify_weights()
+compares weight fingerprints with their load-time values; it does not establish the cause by itself.
 
 Same math and noise model as the training check (checksum.py): two checksums per 128-output
 block (plain and fixed random +-1 signs), alarm at z > 6. One difference: a block the check can't judge
 (inputs that aren't finite, or a legitimate overflow) scores 0 here, because the per-layer state only holds
-non-negative scores; serving doesn't count such blocks separately (sdcguard screen and check count passes
-whose output isn't finite instead).
+non-negative scores. Separate execution and unjudged-checksum counts distinguish those cases from completed
+clean checks and from layers that never ran.
 
 Layers whose code might compute something other than x @ W^T + b are left alone and listed in
 guard.unsupported: a subclass with its own forward, and a forward set on the instance. The one exception is
@@ -25,8 +25,9 @@ _old_forward and calls it after moving the inputs to the weights' device: the ch
 hook. Layers whose weights are offloaded (on the meta device when attached) are listed too.
 
 Built for serving engines:
-  - Nothing ever waits for the GPU. Results go into a small state tensor on the GPU (worst z per
-    layer since the last poll, and where it was); poll() reads it back without stalling.
+  - The check's forward path does not explicitly wait for the GPU. Results go into a small state tensor
+    (worst z per layer and execution/unjudged counts); poll(wait=False) reads it back asynchronously.
+    Explicit snapshots, synchronous polls and detach() wait for queued work.
   - The check is a PyTorch custom op (sdcguard::check_static), so torch.compile treats it as one
     opaque call and CUDA graphs capture it like any other kernel.
   - On NVIDIA GPUs it costs one cuBLAS call and one Triton kernel per layer (_serve_fast.py), once
@@ -554,6 +555,10 @@ class ServeGuard:
                     else:
                         mod.__dict__[attr] = type(mod).forward.__get__(mod)
         mod.__dict__.pop("_sdcguard_slot", None)
+        # Engine plugins retain op arguments directly rather than taking over the module's forward.
+        # Drop those references too, or an engine can keep checking an orphaned state after detach().
+        mod.__dict__.pop("_sdcguard_args", None)
+        mod.__dict__.pop("_sdcguard_trace", None)
 
     def add_layer(self, mod: torch.nn.Module, name: str, weight: Optional[torch.Tensor] = None,
                   bias: Optional[torch.Tensor] = None) -> int:
@@ -669,16 +674,30 @@ class ServeGuard:
         return forward
 
     def detach(self) -> None:
-        if self._restore:
-            from .guard import _exact_reductions_off
-            _exact_reductions_off(self._restore)
-        self._restore = None
-        for lay in self.layers:
-            self._release(lay)
-        self.layers.clear()
-        self._state.clear()
-        self._host.clear()                 # (a read still in flight belongs to layers that are gone)
-        self.stats["layers"] = 0
+        """Collect outstanding results, then release the attached layers (waits for queued GPU work).
+
+        Aggregate stats and the event log remain available. Per-layer snapshots belong to this attachment,
+        so a later attach() cannot inherit execution evidence from a different model with the same names.
+        Captured/compiled model graphs must be discarded or rebuilt after changing their instrumentation.
+        """
+        try:
+            if self.layers:
+                self.poll(wait=True)
+        finally:
+            if self._restore:
+                from .guard import _exact_reductions_off
+                _exact_reductions_off(self._restore)
+            self._restore = None
+            for lay in self.layers:
+                self._release(lay)
+            self.layers.clear()
+            self._state.clear()
+            self._host.clear()
+            self.worst_seen.clear()
+            self.checks_seen.clear()
+            self.unjudged_seen.clear()
+            self.unsupported.clear()
+            self.stats["layers"] = 0
 
     # ---------------------------------------------------------------- results
     def counts(self) -> dict:
@@ -760,7 +779,7 @@ class ServeGuard:
                 buf.copy_(st[:n], non_blocking=True)
                 st[:n].zero_()                 # same stream: runs after the copy has read st
                 ev = torch.cuda.Event()
-                ev.record()
+                ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (buf, ev)
         return events
 
@@ -801,7 +820,7 @@ class ServeGuard:
                 self._identity[key] = device_identity(dev)
             # Did the weights change since their checksums were computed? Yes: memory corruption, or an
             # intended update nobody told the guard about (call refresh() after updating weights).
-            # No: the matmul itself came out wrong.
+            # No: the weight fingerprint is unchanged. A checksum alert still does not establish a cause.
             changed = None
             w = getattr(lay["module"], "weight", None)
             if isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k):
@@ -814,9 +833,10 @@ class ServeGuard:
                                   "row": row, "col_block": block, "noise": noise,
                                   "checksum": "plain" if int(flat) % 2 == 0 else "signed",
                                   "weights_changed_since_load": changed,
-                                  "reading": ("the layer's weights changed in GPU memory (or were updated "
-                                              "without calling refresh())" if changed else
-                                              "the matmul came out wrong (weights unchanged)" if changed is False
+                                  "reading": ("the weight fingerprint changed since load (weights changed "
+                                              "without refresh, or the fingerprint computation disagreed)" if changed else
+                                              "checksum disagreement with an unchanged weight fingerprint; "
+                                              "the cause is not established" if changed is False
                                               else None)},
                           identity=dict(self._identity[key]))
             self.stats["alerts"] += 1
@@ -878,6 +898,9 @@ class ServeGuard:
                 or w.device != lay["device"]:
             # shape, dtype or device changed: nothing captured can stay valid anyway; the layer's forward is
             # rebuilt around the new checksums
+            # Read existing rows while their device and checksum layout still describe the original checks.
+            # Otherwise a moved layer loses its counters, or old flat indices get decoded with the new shape.
+            self.poll(wait=True)
             lay["cs"], lay["device"] = new, w.device
             self._prepare(new, w)
             self._grow(w.device)
