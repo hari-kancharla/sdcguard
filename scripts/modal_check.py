@@ -299,7 +299,8 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     # -rfEs names failed, errored and skipped tests in the summary; --durations names the slowest tests, and a
     # test still running after 4 minutes gets every thread's stack printed (pytest's faulthandler_timeout)
     p = run([sys.executable, "-m", "pytest", "-q", "-rfEs", "--durations=25", "-o", "faulthandler_timeout=240",
-             "tests", "--ignore", "tests/test_fast.py"], TESTS_LIMIT[label] * 0.5, cwd=R)
+             "tests", "--ignore", "tests/test_fast.py"],
+            min(TESTS_LIMIT[label] * 0.5, left() - 11.5 * 60), cwd=R)   # (11.5 minutes kept for the mandatory steps after)
     stamp(f"{OUT}/pytest_{label}.txt", p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n")
     failed_tests = [ln for ln in p.stdout.splitlines() if ln.startswith(("FAILED", "ERROR"))]
     vol.commit()

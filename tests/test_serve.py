@@ -369,6 +369,23 @@ def test_gpu_compiled_cuda_graphs_catch_a_flip(fast, monkeypatch):
     cov = g.coverage_report()           # the counts are written inside the replayed graphs too
     assert cov["never_checked"] == [] and cov["unjudged_checksums"] == 0, cov
     assert all(v["checks"] >= 4 for v in g.counts().values()), g.counts()
+    # The graph path itself, not an eager fallback: the next calls replay a CUDA graph, and each replay runs every
+    # layer's check exactly once (outside review, Oct 20: a compiled call that silently ran eagerly passed before)
+    hook = getattr(torch.cuda.graphs, "register_graph_replay_start_hook", None)
+    if hook is not None:
+        replays = []
+        handle = hook(lambda graph: replays.append(1))
+        try:
+            before = {k: v["checks"] for k, v in g.counts().items()}
+            with torch.no_grad():
+                for _ in range(3):
+                    cm(x)
+            torch.cuda.synchronize()
+            after = {k: v["checks"] for k, v in g.counts().items()}
+        finally:
+            handle.remove()
+        assert len(replays) >= 3, f"the compiled model ran without replaying a CUDA graph ({len(replays)} replays)"
+        assert all(after[k] - before[k] == 3 for k in after), (before, after)
     with torch.no_grad():
         m[2].weight.view(torch.int16)[7, 9] ^= (1 << 14)
         for _ in range(2):
