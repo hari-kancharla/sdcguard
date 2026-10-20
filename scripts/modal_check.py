@@ -5,8 +5,9 @@
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
 
-Keep the terminal connected until it prints "Done.". If the client goes away, Modal only keeps the last
-started function alive (even with --detach), which would stop most of the sweep.
+Keep the terminal connected until it prints "Done.". This command uses an ordinary ephemeral app: exiting
+or disconnecting the client stops its functions. Detached execution has different app-lifetime semantics,
+but it does not replace this entrypoint's result collection.
 
 The sweep runs a 5-minute check on a B200, H200, two H100s (separate machines), A100 80GB, L40S, L4, an L4
 pair (2 GPUs in one machine) and a T4, all in parallel: 10 GPUs, the most a Modal Starter plan runs at once.
@@ -16,6 +17,8 @@ within an hour of its last start unless you pass --force.
 
 Cost estimates use Modal's GPU prices on Oct 18, 2026 (per hour: B200 $6.25, H200 $4.54, H100 $3.95,
 A100 80GB $2.50, L40S $1.95, L4 $0.80, T4 $0.59) plus about $0.38 an hour per machine for CPU and memory.
+They are estimates at the requested allocations, not spending caps: usage above the CPU/memory request,
+container startup/idle time and restarted execution attempts can add charges.
 """
 from __future__ import annotations
 
@@ -254,24 +257,31 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     Returns the output and each part's exit code: a finished run isn't a passed one. Every step has its own time
     limit inside the function's, and the optional steps at the end only start when there's time left (on Oct 19
     none of the three returned in time and nothing came back; the logs each step saves are on the volume)."""
-    t0 = time.time()
+    t0 = time.monotonic()
 
     def left() -> float:                     # seconds before the hard limit, keeping 2 minutes to save and return
-        return TESTS_LIMIT[label] - (time.time() - t0) - 120
+        return TESTS_LIMIT[label] - (time.monotonic() - t0) - 120
 
-    run = _step
+    def run(cmd, budget: float, **kw) -> subprocess.CompletedProcess:
+        # The initial volume commit and earlier timeout cleanups consume this function's limit too.
+        # A minimum per-step budget must never restart the clock or spend the final save/return reserve.
+        remaining = left()
+        if remaining < 30.0:
+            return subprocess.CompletedProcess(cmd, 125, "", "not started: insufficient time before the "
+                                               "function's save/return reserve")
+        return _step(cmd, min(max(30.0, budget), remaining), floor=0.0, **kw)
 
     def stamp(path: str, text: str) -> None:
         """Write a step's log with the code fingerprint and the time it was written on top (an old log left on the
         volume can't pass for this run's)."""
         with open(path, "w") as f:
             f.write(f"code fingerprint {fingerprint}, written {time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
-                    f"{(time.time() - t0) / 60:.1f} minutes in\n" + text)
+                    f"{(time.monotonic() - t0) / 60:.1f} minutes in\n" + text)
 
     fingerprint = _fingerprint(Path(R))
 
     os.makedirs(OUT, exist_ok=True)
-    for name in ("pytest", "fast_compare", "serve_compare", "bench", "wheel", "tests_cli_output"):
+    for name in ("pytest", "fast_compare", "serve_compare", "bench", "wheel", "tests_cli_output", "attention_output"):
         try:                                   # an earlier run's logs must not be read as this run's
             os.remove(f"{OUT}/{name}_{label}.txt")
         except OSError:
@@ -279,7 +289,8 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     shutil.rmtree(f"{OUT}/attention_{label}", ignore_errors=True)
     stamp(f"{OUT}/started_{label}.txt", "started\n")
     vol.commit()
-    # the suite gets at most half the function's time, so the comparisons, the wheel and `check` always run;
+    # The suite normally gets at most half the function's time, reserving time for comparisons, the wheel and
+    # `check`. If setup or an earlier cleanup exhausts that allocation, unstarted mandatory steps fail visibly.
     # -rfEs names failed, errored and skipped tests in the summary; --durations names the slowest tests, and a
     # test still running after 4 minutes gets every thread's stack printed (pytest's faulthandler_timeout)
     p = run([sys.executable, "-m", "pytest", "-q", "-rfEs", "--durations=25", "-o", "faulthandler_timeout=240",
@@ -518,7 +529,8 @@ def _passed(result: dict) -> bool:
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
         print("Tests on an L4, an H100 and a B200 at once: about 30 to 35 minutes once they have GPUs, about $5 "
-              "(hard limits 45 minutes for the L4 and 30 for the others, about $6.40 in all).", flush=True)
+              "(function limits 45 minutes for the L4 and 30 for the others; about $6.40 at requested resources "
+              "for one full-length attempt, not a spending cap).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
@@ -557,8 +569,8 @@ def main(phase: str = "sweep", force: bool = False):
         print("\nDone.", flush=True)
         return
     if phase == "b200":
-        print("B200 again, with a diagnostic first: about 10 minutes, about $1.10 (hard limit 20 minutes, about "
-              "$2.20).", flush=True)
+        print("B200 again, with a diagnostic first: about 10 minutes, about $1.10 (20-minute function limit, "
+              "about $2.20 at requested resources for one attempt, not a spending cap).", flush=True)
         msg = lock.remote(force, "b200")
         if msg:
             print(msg)
@@ -580,7 +592,8 @@ def main(phase: str = "sweep", force: bool = False):
         return
     if phase != "sweep":
         raise SystemExit("--phase must be sweep, tests, b200 or fetch")
-    print("Sweep: 10 GPUs on 9 machines in parallel, about 12 minutes, about $4.40 (hard cap about $7.40). "
+    print("Sweep: 10 GPUs on 9 machines in parallel, about 12 minutes, about $4.40 (about $7.40 at requested "
+          "resources for one full-length attempt, not a spending cap). "
           "Everything shuts down by itself.", flush=True)
     msg = lock.remote(force)
     if msg:
