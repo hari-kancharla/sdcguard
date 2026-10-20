@@ -217,35 +217,46 @@ def overhead(dev: torch.device, cfg: dict, steps: int = 6) -> dict:
     default check, and by precise mode (both through protect(), the fast mode). Warm-up steps not timed."""
     import time as _t
     low = torch.bfloat16 if dev.type != "cuda" or torch.cuda.get_device_capability(dev)[0] >= 8 else torch.float16
-    out = {}
-    for label, make in (("unchecked", lambda: None), ("default check, every step", lambda: SDCGuard(every=1)),
-                        ("precise mode, every step", lambda: SDCGuard(every=1, precise=True))):
+
+    def measure(make):
+        # Keep each mode's model, optimizer and autograd outputs in a separate scope. In addition to the
+        # guard/module cycle, the previous optimizer and final loss can otherwise keep parameters alive
+        # while the next mode allocates its model on a small GPU.
         torch.manual_seed(0)
         model = ScreenModel(cfg["vocab"], cfg["layers"], cfg["width"], cfg["heads"], cfg["seq"]).to(dev)
         opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
         g = make()
-        if g is not None:
-            g.protect(model)
-        gen = torch.Generator().manual_seed(1)
         times = []
-        for n in range(steps + 2):
-            idx = torch.randint(0, cfg["vocab"], (cfg["batch"], cfg["seq"] + 1), generator=gen).to(dev)
-            if dev.type == "cuda":
-                torch.cuda.synchronize()
-            t0 = _t.perf_counter()
-            with (g.on_step(n) if g is not None else torch.autograd.set_grad_enabled(True)):
-                with torch.autocast(dev.type, dtype=low):
-                    logits = model(idx[:, :-1])
-                    loss = F.cross_entropy(logits.float().view(-1, logits.shape[-1]), idx[:, 1:].reshape(-1))
-                loss.backward()
-            opt.step()
-            opt.zero_grad(set_to_none=True)
-            if dev.type == "cuda":
-                torch.cuda.synchronize()
-            if n >= 2:
-                times.append(_t.perf_counter() - t0)
+        try:
+            if g is not None:
+                g.protect(model)
+            gen = torch.Generator().manual_seed(1)
+            for n in range(steps + 2):
+                idx = torch.randint(0, cfg["vocab"], (cfg["batch"], cfg["seq"] + 1), generator=gen).to(dev)
+                if dev.type == "cuda":
+                    torch.cuda.synchronize()
+                t0 = _t.perf_counter()
+                with (g.on_step(n) if g is not None else torch.autograd.set_grad_enabled(True)):
+                    with torch.autocast(dev.type, dtype=low):
+                        logits = model(idx[:, :-1])
+                        loss = F.cross_entropy(logits.float().view(-1, logits.shape[-1]), idx[:, 1:].reshape(-1))
+                    loss.backward()
+                opt.step()
+                opt.zero_grad(set_to_none=True)
+                if dev.type == "cuda":
+                    torch.cuda.synchronize()
+                if n >= 2:
+                    times.append(_t.perf_counter() - t0)
+        finally:
+            if g is not None:
+                g.unprotect()
         times.sort()
-        out[label] = round(times[len(times) // 2], 4)
+        return round(times[len(times) // 2], 4)
+
+    out = {}
+    for label, make in (("unchecked", lambda: None), ("default check, every step", lambda: SDCGuard(every=1)),
+                        ("precise mode, every step", lambda: SDCGuard(every=1, precise=True))):
+        out[label] = measure(make)
     base = out["unchecked"]
     return {"seconds_per_step": out, "overhead_pct": {k: round(100 * (v / base - 1), 1) for k, v in out.items()
                                                       if k != "unchecked"}}
