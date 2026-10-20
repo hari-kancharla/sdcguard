@@ -42,7 +42,7 @@ CHUNK = 1024                # tile results reduced per iteration in _worst
 PART_FLOATS = 1 << 20       # size of each tile-result buffer (floats); more are added as needed
 
 _BROKEN: dict = {}          # (device type, dtype) -> True after a compile/launch error
-_SIGNS: dict = {}           # device -> (sign table on the device, pinned host copy)
+_SIGNS: dict = {}           # (device, epoch) -> (sign table on the device, pinned host copy)
 _PREC: dict = {}
 FALLBACKS = [0]             # compile/launch problems (the plain check took over)
 WHY: list = []              # what went wrong, for each of those (the last 10)
@@ -63,20 +63,42 @@ def enabled() -> bool:
     return HAVE_TRITON and os.environ.get("SDCGUARD_FAST", "1") != "0"
 
 
+def _major(device: torch.device) -> int:
+    idx = device.index if device.index is not None else torch.cuda.current_device()
+    return torch.cuda.get_device_capability(idx)[0]
+
+
 def arch_ok(device: torch.device) -> bool:
-    """The Triton kernels run on GPU generations they were validated on (Turing through Hopper: T4, A100,
-    L4, L40S, H100, H200 on Oct 18, 2026). On newer ones (compute capability 10 and up, Blackwell) the
-    plain PyTorch checks run instead: a B200 hit a "misaligned address" fault in the first-use comparison,
-    and a fault like that ends the process instead of falling back. SDCGUARD_TRITON_NEW_ARCH=1 opts in."""
+    """The Triton kernels run on GPU generations they were validated on: Turing through Hopper (T4, A100, L4,
+    L40S, H100, H200 on Oct 18, 2026) and data-center Blackwell (compute capability 10, B200) without software
+    pipelining (see pipeline_stages). Newer generations (capability 11 and up, including the consumer
+    Blackwell cards at 12) run the plain PyTorch checks: a fault in an unvalidated kernel ends the process
+    instead of falling back. SDCGUARD_TRITON_NEW_ARCH=1 opts in on any GPU, =0 keeps Blackwell on the plain
+    checks."""
     if device.type != "cuda":
         return True
-    if os.environ.get("SDCGUARD_TRITON_NEW_ARCH") == "1":
+    flag = os.environ.get("SDCGUARD_TRITON_NEW_ARCH")
+    if flag == "1":
         return True
     try:
-        idx = device.index if device.index is not None else torch.cuda.current_device()
-        return torch.cuda.get_device_capability(idx)[0] < 10
+        major = _major(device)
     except Exception:  # noqa: BLE001
         return False
+    return major < 10 or (major == 10 and flag != "0")
+
+
+def pipeline_stages(device, default: int):
+    """Software-pipeline depth for a kernel launch. On Blackwell (capability 10 and up) 1: with Triton 3.8's
+    pipelining (num_stages 2 or 3) the comparison kernel's bf16 three-part path hit "misaligned address" on
+    a B200; without it, all 364 launches of the Triton-vs-plain comparison ran and agreed, as did the fp32
+    and plain-fp32 variants (results/blackwell_triton/b200_20261019_125534.json). The root cause is not
+    known; this avoids it. Elsewhere `default` (None: Triton's own default)."""
+    if device is None or getattr(device, "type", None) != "cuda":
+        return default
+    try:
+        return 1 if _major(device) >= 10 else default
+    except Exception:  # noqa: BLE001
+        return default
 
 
 def available(C: torch.Tensor) -> bool:
@@ -190,23 +212,36 @@ def _sign_offset(width: int) -> int:
     return (width - 1) * 128                 # widths 1..128, one row of 128 each (aligned loads)
 
 
-def _sign_table(device: torch.device) -> torch.Tensor:
+def _sign_table(device: torch.device, epoch: int = 0) -> torch.Tensor:
     """The plain check's +-1 pattern for every block width 1..128 (checksum._signs), on the device.
-    Built once per device and copied without making the CPU wait for the GPU."""
-    key = str(device)
-    if key not in _SIGNS:
-        from .checksum import _signs
-        host = torch.zeros(128, 128, dtype=torch.float32)   # (explicit: vLLM loads under bf16 default)
-        for w in range(1, 129):
-            host[w - 1, :w] = _signs(w, "cpu")
+    Built once per device and epoch, and copied without making the CPU wait for the GPU. Serving uses
+    epoch 0; training checks move to a new epoch every checked step (see checksum._signs)."""
+    key = (str(device), epoch)
+    hit = _SIGNS.get(key)
+    if hit is not None:
+        return hit[0]
+    from .checksum import _CACHE_LOCK, _signs
+    with _CACHE_LOCK:
+        hit = _SIGNS.get(key)
+        if hit is not None:
+            return hit[0]
+        if epoch:                                           # keep epoch 0 (serving) and this one
+            for k in [k for k in list(_SIGNS) if k[1] not in (0, epoch)]:
+                _SIGNS.pop(k, None)
+            # every width starts the same 128-wide pattern: one table in one operation
+            host = torch.tril(_signs(128, "cpu", epoch).view(1, 128).expand(128, 128)).contiguous()
+        else:
+            host = torch.zeros(128, 128, dtype=torch.float32)   # (explicit: vLLM loads under bf16 default)
+            for w in range(1, 129):
+                host[w - 1, :w] = _signs(w, "cpu")
         host = host.reshape(-1)
         if device.type == "cuda":
             host = host.pin_memory()
             dev = host.to(device, non_blocking=True)
         else:
             dev = host.to(device)
-        _SIGNS[key] = (dev, host)
-    return _SIGNS[key][0]
+        hit = _SIGNS[key] = (dev, host)
+    return hit[0]
 
 
 def _precision(device: torch.device) -> str:
@@ -244,14 +279,16 @@ def _bj(J: int) -> int:
     return 16 if J <= 16 else 32 if J <= 32 else 64 if J <= 64 else 128
 
 
-def _cfg(bj: int):
+def _cfg(bj: int, device=None):
     """(depth per step, pipeline stages, warps) of a comparison tile. Wider tiles take smaller
     steps so the tile fits in the shared memory of every NVIDIA GPU from T4 (64 KB) on."""
     if bj <= 32:
-        return 64, 3, 4
-    if bj == 64:
-        return 32, 3, 4
-    return 32, 2, 8
+        bk, stages, warps = 64, 3, 4
+    elif bj == 64:
+        bk, stages, warps = 32, 3, 4
+    else:
+        bk, stages, warps = 32, 2, 8
+    return bk, pipeline_stages(device, stages), warps
 
 
 _SMS: dict = {}
@@ -514,10 +551,14 @@ if HAVE_TRITON:
         e_bad = ~(tl.abs(expected) < float("inf"))
         a_bad = (~e_bad) & ~(tl.abs(actual) < float("inf"))
         big = (~e_bad) & (~a_bad) & ~(sq < float("inf"))
-        z = tl.where(z == z, z, 0.0)              # inf/inf (both sides huge): nothing to judge
-        z = tl.where(e_bad, 0.0, z)
-        z = tl.where(a_bad, tl.where(lim < out_max, float("inf"), 0.0), z)
-        z = tl.where(big, tl.where(lim < 1e18, float("inf"), 0.0), z)
+        z = tl.where(z == z, z, -1.0)             # inf/inf (both sides huge): nothing to judge (-1, as in checksum.py)
+        z = tl.where(e_bad, -1.0, z)
+        # finite outputs too large for the inputs (checksum._judge_nonfinite explains); lim is 1.01 x the bound
+        cap = lim / 1.01 * (1.02 + k * 2.384185791015625e-07) + 2.0 * half_tiny
+        imposs = (~e_bad) & (~a_bad) & (~big) & (lim < 1e18) & (tl.sqrt(sq) > cap * tl.sqrt(wblk)[None, :])
+        z = tl.where(imposs, float("inf"), z)
+        z = tl.where(a_bad, tl.where(lim < out_max, float("inf"), -1.0), z)
+        z = tl.where(big, tl.where(lim < 1e18, float("inf"), -1.0), z)
         z = tl.where(both, z, -1.0)
         # Worst element of the tile, first in row-major order on ties. No tl.reshape here: Triton
         # lets a reshape that feeds a reduction reorder elements, which scrambles the index that
@@ -531,6 +572,10 @@ if HAVE_TRITON:
         tl.store(out + pid, mx)
         tl.store(out + n2 + pid, d)
         tl.store(out + 2 * n2 + pid, (r * BJ + c).to(tl.float32))
+        # Preserve unjudged checksums independently of the maximum. A clean row must not hide a
+        # different row or block that could not be judged; padded lanes are not actual checksums.
+        unknown = tl.max(tl.max(((z < 0) & both).to(tl.int32), axis=1), axis=0)
+        tl.store(out + 3 * n2 + pid, unknown.to(tl.float32))
 
     @triton.jit
     def _tile(pid, m, nblk, ntm, ntj, BM: tl.constexpr, BJ: tl.constexpr):
@@ -611,12 +656,13 @@ if HAVE_TRITON:
 
     @triton.jit
     def _worst(T_ptr, OUT_ptr, CH: tl.constexpr):
-        """Check p: worst z over its tiles, which tile, where in the tile, and the noise there."""
+        """Check p: worst z, its location/noise, and whether any tile had unjudged checksums."""
         p = tl.program_id(0)
         P = tl.load(T_ptr + 2 * p).to(tl.pointer_type(tl.float32), bitcast=True)
         n2 = tl.load(T_ptr + 2 * p + 1)
         best = n2 * 0.0 - 2.0
         best_i = n2 * 0
+        unknown = n2 * 0.0
         for s0 in range(0, n2, CH):
             offs = s0 + tl.arange(0, CH)
             zz = tl.load(P + offs, mask=offs < n2, other=-3.0)
@@ -624,26 +670,30 @@ if HAVE_TRITON:
             take = mx > best
             best_i = tl.where(take, s0 + ix, best_i)
             best = tl.where(take, mx, best)
-        o = OUT_ptr + p * 4
+            unknown = tl.maximum(unknown, tl.max(tl.load(P + 3 * n2 + offs, mask=offs < n2, other=0.0), axis=0))
+        o = OUT_ptr + p * 5
         tl.store(o, best.to(tl.float64))
         tl.store(o + 1, best_i.to(tl.float64))
         tl.store(o + 2, tl.load(P + 2 * n2 + best_i).to(tl.float64))
         tl.store(o + 3, tl.load(P + n2 + best_i).to(tl.float64))
+        tl.store(o + 4, unknown.to(tl.float64))
 
 
 class Group:
     """Checks of one step on one device in one dtype. add() does the work of a check right away;
     launch() queues the search for each check's worst z; row() decodes the read-back."""
 
-    def __init__(self, device: torch.device, dtype: torch.dtype, block: int, abs_floor: float, z: float = 6.0):
+    def __init__(self, device: torch.device, dtype: torch.dtype, block: int, abs_floor: float, z: float = 6.0,
+                 epoch: int = 0):
         from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF
         self.device, self.dtype, self.block, self.abs_floor, self.z = device, dtype, block, abs_floor, z
+        self.epoch = epoch            # which +-1 pattern the signed checksums use (see _sign_table)
         self.u = float(UNIT_ROUNDOFF[dtype])
         self.half_tiny = float(HALF_TINY_STEP[dtype])
         self.out_max = float(min(DTYPE_MAX[dtype], BIG))   # Inf/NaN outputs: see checksum.py
         self.meta: list = []          # per check: (tiles per batch row, tiles per row, BJ, buffer, offset, tiles)
         self.tab: list = []           # per check: address of its tile results, number of tiles
-        self.result: Optional[torch.Tensor] = None      # (checks, 4) float64 after launch()
+        self.result: Optional[torch.Tensor] = None      # (checks, 5) float64 after launch()
         self._bufs: list = []         # tile-result buffers, alive until the read-back
         self._buf: Optional[torch.Tensor] = None
         self._used = 0
@@ -651,6 +701,10 @@ class Group:
 
     def __len__(self) -> int:
         return len(self.meta)
+
+    def _signs(self) -> torch.Tensor:
+        self._sign_ref = _sign_table(self.device, self.epoch)   # alive as long as this group, whatever the cache does
+        return self._sign_ref
 
     def _space(self, n: int) -> int:
         if self._buf is None or self._used + n > self._buf.numel():
@@ -690,7 +744,8 @@ class Group:
         # bf16 tensor cores (sm80+). Tests can run the same math in Triton's CPU interpreter,
         # which gets bf16 dots wrong, with fp32 products instead (emulate).
         emulate = self.device.type == "cpu" and os.environ.get("SDCGUARD_TEST_NATIVE") == "1"
-        native = self.dtype == torch.bfloat16 and (prec != "ieee" or emulate)
+        native = self.dtype == torch.bfloat16 and (prec != "ieee" or emulate) and \
+            os.environ.get("SDCGUARD_TRITON_NATIVE", "1") != "0"     # (=0: experiments/triton_blackwell.py)
         pst = bB * kb * JS
         P16 = torch.empty(3 * pst, device=self.device, dtype=torch.bfloat16) if native else W
         bj = _bj(J)
@@ -703,12 +758,12 @@ class Group:
         mx_step = (nkb + 1) * nblk if bB > 1 else 0
         with _on(self.device):
             _stage[(n_c + n_b,)](
-                C, B, bias if hb else B, _sign_table(self.device), W, P16, m, n, k, kb, bs, nblk, rem,
+                C, B, bias if hb else B, self._signs(), W, P16, m, n, k, kb, bs, nblk, rem,
                 _sign_offset(bs), _sign_offset(rem) if rem else 0, c[1], c[4], c[5], b[1], b[4], b[5],
                 bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, mx_off, JS, pst, BR=BR,
                 BW=128 if bs > 64 else 64, NATIVE=native)
-            off = self._space(3 * n2)
-            bk, stages, warps = _cfg(bj)
+            off = self._space(4 * n2)
+            bk, stages, warps = _cfg(bj, self.device)
             s_ab = a[1] if a[0] > 1 else 0
             splits, steps = _splits(n2, k, bk, self.device)
             judge = (hb, float(alpha), float(beta), self.u, float(self.abs_floor), self.half_tiny, self.out_max,
@@ -745,7 +800,7 @@ class Group:
         else:
             T = host
         self._keep = [host, T]                   # alive until the read-back
-        out = torch.empty((P, 4), device=self.device, dtype=torch.float64)
+        out = torch.empty((P, 5), device=self.device, dtype=torch.float64)
         try:
             with _on(self.device):
                 _worst[(P,)](T, out, CH=CHUNK)
@@ -762,22 +817,24 @@ class Group:
             z = buf[off:off + n2]
             i = torch.argmax(z)
             rows.append(torch.stack([z[i].double(), i.double(), buf[off + 2 * n2 + i].double(),
-                                     buf[off + n2 + i].double()]))
+                                     buf[off + n2 + i].double(), buf[off + 3 * n2:off + 4 * n2].max().double()]))
         return torch.stack(rows)
 
     def row(self, idx: int, r) -> tuple:
         """Decode read-back row r of check idx: (max_z, batch, row, col_block, noise)."""
         per_b, ntj, bj = self.meta[idx][:3]
-        z, t, li, den = r
+        z, t, li, den, unknown = r
+        if unknown and z <= self.z:
+            z = -1.0                 # no alarm, but an incomplete check must not become a clean result
         bi, t2 = divmod(int(t), per_b)
         tm, tj = divmod(t2, ntj)
         li = int(li)
         return z, bi, tm * BM + li // bj, (tj * bj + li % bj) // 2, den
 
 
-def check_now(A, B, C, bias=None, alpha=1.0, beta=1.0, block=128, abs_floor=1e-20, z=6.0):
+def check_now(A, B, C, bias=None, alpha=1.0, beta=1.0, block=128, abs_floor=1e-20, z=6.0, epoch=0):
     """One check answered right away: (max_z, batch, row, col_block, noise)."""
-    g = Group(C.device, C.dtype, block, abs_floor, z)
+    g = Group(C.device, C.dtype, block, abs_floor, z, epoch=epoch)
     g.add(A, B, C, bias, alpha, beta)
     g.launch()
     return g.row(0, g.result[0].tolist())

@@ -1,0 +1,487 @@
+{
+  "workloads": [
+    {
+      "config": {
+        "name": "wide, 8,192 tokens, Zipf tokens",
+        "vocab": 50257,
+        "layers": 4,
+        "width": 2048,
+        "heads": 16,
+        "seq": 1024,
+        "batch": 8,
+        "seed": 7,
+        "lr": 0.001,
+        "zipf": true,
+        "steps": 12
+      },
+      "dtype": "bfloat16",
+      "steps": 12,
+      "models": {
+        "current_as_shipped": {
+          "checks": 612,
+          "alarms": 0,
+          "worst": 4.26,
+          "p99_9": 3.441,
+          "typical_error_caught_median": 0.00641,
+          "typical_error_caught_p90": 0.0215
+        },
+        "current": {
+          "checks": 612,
+          "alarms": 15,
+          "worst": 17.254,
+          "p99_9": 15.54,
+          "typical_error_caught_median": 0.00456,
+          "typical_error_caught_p90": 0.00487
+        },
+        "sqrt_steps": {
+          "checks": 612,
+          "alarms": 0,
+          "worst": 5.204,
+          "p99_9": 4.715,
+          "typical_error_caught_median": 0.00524,
+          "typical_error_caught_p90": 0.0145
+        },
+        "shipped": {
+          "checks": 612,
+          "alarms": 0,
+          "worst": 5.075,
+          "p99_9": 4.606,
+          "typical_error_caught_median": 0.00642,
+          "typical_error_caught_p90": 0.0213
+        }
+      },
+      "lr": 0.001,
+      "worst_by_layer_and_pass": {
+        "head backward dW": {
+          "current_as_shipped": 3.0715696811676025,
+          "current": 17.253634918221117,
+          "sqrt_steps": 3.1325413595129534,
+          "shipped": 3.07156955758438
+        },
+        "qkv backward dW": {
+          "current_as_shipped": 0.9369524121284485,
+          "current": 9.61801870779847,
+          "sqrt_steps": 1.2548029467641009,
+          "shipped": 0.9369523202874072
+        },
+        "down backward dW": {
+          "current_as_shipped": 4.259644508361816,
+          "current": 9.446695214000915,
+          "sqrt_steps": 5.204139288593151,
+          "shipped": 5.075285318546365
+        },
+        "up backward dW": {
+          "current_as_shipped": 1.7407119274139404,
+          "current": 8.028628980848488,
+          "sqrt_steps": 1.7846261753815513,
+          "shipped": 1.7407118767890726
+        },
+        "proj backward dW": {
+          "current_as_shipped": 1.0148732662200928,
+          "current": 2.683046435860612,
+          "sqrt_steps": 1.04318368245625,
+          "shipped": 1.0172438275159437
+        },
+        "down backward dX": {
+          "current_as_shipped": 1.000218391418457,
+          "current": 1.85761133502985,
+          "sqrt_steps": 1.6171454106170213,
+          "shipped": 1.4751627851834637
+        },
+        "head forward": {
+          "current_as_shipped": 0.8757375478744507,
+          "current": 1.6638446335048949,
+          "sqrt_steps": 1.376359330026098,
+          "shipped": 1.2286233938007387
+        },
+        "qkv backward dX": {
+          "current_as_shipped": 0.6066797971725464,
+          "current": 1.601869447732936,
+          "sqrt_steps": 0.7434626547444526,
+          "shipped": 0.6066798005407907
+        },
+        "up forward": {
+          "current_as_shipped": 0.8665883541107178,
+          "current": 1.5755631371502288,
+          "sqrt_steps": 1.209628641431264,
+          "shipped": 1.0324021514633244
+        },
+        "down forward": {
+          "current_as_shipped": 0.7743737101554871,
+          "current": 1.4913667438784945,
+          "sqrt_steps": 0.8741629304679454,
+          "shipped": 0.774373684826582
+        },
+        "head backward dX": {
+          "current_as_shipped": 0.18210341036319733,
+          "current": 0.990446138128636,
+          "sqrt_steps": 0.27274555993397487,
+          "shipped": 0.18210342146633957
+        },
+        "up backward dX": {
+          "current_as_shipped": 0.46952947974205017,
+          "current": 0.9704209952988117,
+          "sqrt_steps": 0.5227186358144447,
+          "shipped": 0.4695294750813586
+        },
+        "proj forward": {
+          "current_as_shipped": 0.41493353247642517,
+          "current": 0.743880016008028,
+          "sqrt_steps": 0.5113656564078174,
+          "shipped": 0.4149334868640552
+        },
+        "qkv forward": {
+          "current_as_shipped": 0.313851922750473,
+          "current": 0.5537377994254803,
+          "sqrt_steps": 0.36888122964601544,
+          "shipped": 0.3138519372166128
+        },
+        "proj backward dX": {
+          "current_as_shipped": 0.29652857780456543,
+          "current": 0.5058052101216277,
+          "sqrt_steps": 0.34983453182747853,
+          "shipped": 0.2965285866092475
+        }
+      },
+      "gpu": "NVIDIA L4",
+      "cc": [
+        8,
+        9
+      ],
+      "torch": "2.14.1+cu130",
+      "name": "wide, 8,192 tokens, Zipf tokens"
+    },
+    {
+      "config": {
+        "name": "calibration shape, new seed, Zipf tokens",
+        "vocab": 32000,
+        "layers": 8,
+        "width": 1024,
+        "heads": 16,
+        "seq": 512,
+        "batch": 8,
+        "seed": 11,
+        "lr": 0.0003,
+        "zipf": true,
+        "steps": 20
+      },
+      "dtype": "bfloat16",
+      "steps": 20,
+      "models": {
+        "current_as_shipped": {
+          "checks": 1980,
+          "alarms": 0,
+          "worst": 1.112,
+          "p99_9": 0.973,
+          "typical_error_caught_median": 0.00399,
+          "typical_error_caught_p90": 0.0121
+        },
+        "current": {
+          "checks": 1980,
+          "alarms": 37,
+          "worst": 18.465,
+          "p99_9": 13.33,
+          "typical_error_caught_median": 0.00238,
+          "typical_error_caught_p90": 0.00263
+        },
+        "sqrt_steps": {
+          "checks": 1980,
+          "alarms": 0,
+          "worst": 1.778,
+          "p99_9": 1.567,
+          "typical_error_caught_median": 0.00334,
+          "typical_error_caught_p90": 0.0081
+        },
+        "shipped": {
+          "checks": 1980,
+          "alarms": 0,
+          "worst": 1.112,
+          "p99_9": 1.005,
+          "typical_error_caught_median": 0.00404,
+          "typical_error_caught_p90": 0.0121
+        }
+      },
+      "lr": 0.0003,
+      "worst_by_layer_and_pass": {
+        "qkv backward dW": {
+          "current_as_shipped": 1.111794352531433,
+          "current": 18.46495561636613,
+          "sqrt_steps": 1.778195649121007,
+          "shipped": 1.1117942384778767
+        },
+        "head backward dW": {
+          "current_as_shipped": 0.9219837188720703,
+          "current": 8.958001190983433,
+          "sqrt_steps": 1.2527499418573547,
+          "shipped": 1.0053739071403947
+        },
+        "down backward dW": {
+          "current_as_shipped": 0.5367856621742249,
+          "current": 3.9256174102178663,
+          "sqrt_steps": 0.755814356237402,
+          "shipped": 0.6548636562519482
+        },
+        "head forward": {
+          "current_as_shipped": 0.7398496866226196,
+          "current": 1.3831719238656357,
+          "sqrt_steps": 1.084331155657184,
+          "shipped": 0.9305930707058602
+        },
+        "up backward dW": {
+          "current_as_shipped": 0.2622430622577667,
+          "current": 1.270026507467689,
+          "sqrt_steps": 0.3378718871512834,
+          "shipped": 0.3170666190290456
+        },
+        "down backward dX": {
+          "current_as_shipped": 0.2789762318134308,
+          "current": 0.7866080379922233,
+          "sqrt_steps": 0.3872707979152597,
+          "shipped": 0.27897624192360954
+        },
+        "head backward dX": {
+          "current_as_shipped": 0.13554248213768005,
+          "current": 0.734295744183799,
+          "sqrt_steps": 0.204770314892753,
+          "shipped": 0.13554248064803084
+        },
+        "up forward": {
+          "current_as_shipped": 0.22473879158496857,
+          "current": 0.571177827969023,
+          "sqrt_steps": 0.3048624841147829,
+          "shipped": 0.22473880416562259
+        },
+        "qkv forward": {
+          "current_as_shipped": 0.1382877081632614,
+          "current": 0.454856388948414,
+          "sqrt_steps": 0.19091655837257054,
+          "shipped": 0.13828770371745092
+        },
+        "proj backward dW": {
+          "current_as_shipped": 0.0804349035024643,
+          "current": 0.38447856539988534,
+          "sqrt_steps": 0.08929193513060583,
+          "shipped": 0.08043491075638831
+        },
+        "up backward dX": {
+          "current_as_shipped": 0.10464294254779816,
+          "current": 0.3707473877478712,
+          "sqrt_steps": 0.140752778449346,
+          "shipped": 0.10464294035423675
+        },
+        "qkv backward dX": {
+          "current_as_shipped": 0.07991976290941238,
+          "current": 0.34353829905334315,
+          "sqrt_steps": 0.1183929228452104,
+          "shipped": 0.07991976097519625
+        },
+        "down forward": {
+          "current_as_shipped": 0.14225952327251434,
+          "current": 0.3281946009862959,
+          "sqrt_steps": 0.1774761952824878,
+          "shipped": 0.14225952080339857
+        },
+        "proj forward": {
+          "current_as_shipped": 0.0689280554652214,
+          "current": 0.17881307670499152,
+          "sqrt_steps": 0.09232148653058282,
+          "shipped": 0.06892805255610308
+        },
+        "proj backward dX": {
+          "current_as_shipped": 0.04622766003012657,
+          "current": 0.17118668271044876,
+          "sqrt_steps": 0.06761394616943196,
+          "shipped": 0.04622766051152996
+        }
+      },
+      "gpu": "NVIDIA L4",
+      "cc": [
+        8,
+        9
+      ],
+      "torch": "2.14.1+cu130",
+      "name": "calibration shape, new seed, Zipf tokens"
+    },
+    {
+      "config": {
+        "name": "narrow and deep, 8,192 tokens",
+        "vocab": 8192,
+        "layers": 12,
+        "width": 512,
+        "heads": 8,
+        "seq": 256,
+        "batch": 32,
+        "seed": 23,
+        "lr": 0.002,
+        "zipf": false,
+        "steps": 12
+      },
+      "dtype": "bfloat16",
+      "steps": 12,
+      "models": {
+        "current_as_shipped": {
+          "checks": 1764,
+          "alarms": 0,
+          "worst": 0.429,
+          "p99_9": 0.345,
+          "typical_error_caught_median": 0.00468,
+          "typical_error_caught_p90": 0.0266
+        },
+        "current": {
+          "checks": 1764,
+          "alarms": 5,
+          "worst": 9.573,
+          "p99_9": 7.626,
+          "typical_error_caught_median": 0.00115,
+          "typical_error_caught_p90": 0.00496
+        },
+        "sqrt_steps": {
+          "checks": 1764,
+          "alarms": 0,
+          "worst": 0.665,
+          "p99_9": 0.505,
+          "typical_error_caught_median": 0.00316,
+          "typical_error_caught_p90": 0.0176
+        },
+        "shipped": {
+          "checks": 1764,
+          "alarms": 0,
+          "worst": 0.429,
+          "p99_9": 0.345,
+          "typical_error_caught_median": 0.00467,
+          "typical_error_caught_p90": 0.0266
+        }
+      },
+      "lr": 0.002,
+      "worst_by_layer_and_pass": {
+        "head backward dW": {
+          "current_as_shipped": 0.4287180006504059,
+          "current": 9.573127297097649,
+          "sqrt_steps": 0.6651711577818005,
+          "shipped": 0.42871791430003753
+        },
+        "qkv backward dW": {
+          "current_as_shipped": 0.2639765739440918,
+          "current": 4.979999131196158,
+          "sqrt_steps": 0.3985111135732225,
+          "shipped": 0.2639765610979292
+        },
+        "down backward dX": {
+          "current_as_shipped": 0.3450392484664917,
+          "current": 0.8655279898916797,
+          "sqrt_steps": 0.4607165216973816,
+          "shipped": 0.3450392449863873
+        },
+        "head backward dX": {
+          "current_as_shipped": 0.09602892398834229,
+          "current": 0.48424048053760704,
+          "sqrt_steps": 0.14450601981230352,
+          "shipped": 0.09602891630666721
+        },
+        "up backward dW": {
+          "current_as_shipped": 0.03791775554418564,
+          "current": 0.43244236563495053,
+          "sqrt_steps": 0.05271528471352565,
+          "shipped": 0.03791775775079116
+        },
+        "down backward dW": {
+          "current_as_shipped": 0.07641830295324326,
+          "current": 0.42850474548777495,
+          "sqrt_steps": 0.10197742214997389,
+          "shipped": 0.07641829932513565
+        },
+        "proj forward": {
+          "current_as_shipped": 0.2090497463941574,
+          "current": 0.3751164309920023,
+          "sqrt_steps": 0.26010857952428396,
+          "shipped": 0.20904975111020255
+        },
+        "up backward dX": {
+          "current_as_shipped": 0.10381416976451874,
+          "current": 0.365869210229327,
+          "sqrt_steps": 0.1460055387218989,
+          "shipped": 0.10381416434303953
+        },
+        "up forward": {
+          "current_as_shipped": 0.11913250386714935,
+          "current": 0.36154489592384753,
+          "sqrt_steps": 0.16953494412994882,
+          "shipped": 0.11913250403898658
+        },
+        "qkv forward": {
+          "current_as_shipped": 0.1385822296142578,
+          "current": 0.3434478642923561,
+          "sqrt_steps": 0.1798593236793101,
+          "shipped": 0.13858220910169441
+        },
+        "head forward": {
+          "current_as_shipped": 0.11029073596000671,
+          "current": 0.3343089694967085,
+          "sqrt_steps": 0.15689226368708858,
+          "shipped": 0.11029073903491063
+        },
+        "proj backward dX": {
+          "current_as_shipped": 0.09482096135616302,
+          "current": 0.3169148431564758,
+          "sqrt_steps": 0.13659467523570953,
+          "shipped": 0.094820950135265
+        },
+        "qkv backward dX": {
+          "current_as_shipped": 0.075338214635849,
+          "current": 0.30417424659442,
+          "sqrt_steps": 0.11123895860948993,
+          "shipped": 0.07533821669999571
+        },
+        "proj backward dW": {
+          "current_as_shipped": 0.02621764875948429,
+          "current": 0.28229100669434887,
+          "sqrt_steps": 0.03311615666749575,
+          "shipped": 0.02621764750257958
+        },
+        "down forward": {
+          "current_as_shipped": 0.15060754120349884,
+          "current": 0.2678340130961973,
+          "sqrt_steps": 0.18516939523866807,
+          "shipped": 0.15060752922345524
+        }
+      },
+      "gpu": "NVIDIA L4",
+      "cc": [
+        8,
+        9
+      ],
+      "torch": "2.14.1+cu130",
+      "name": "narrow and deep, 8,192 tokens"
+    }
+  ],
+  "as_shipped": {
+    "alarms": 0,
+    "worst": 4.26,
+    "checks": 4356,
+    "criteria_met": false
+  },
+  "overhead": {
+    "seconds_per_step": {
+      "unchecked": 0.2664,
+      "default check, every step": 0.2896,
+      "precise mode, every step": 0.9607
+    },
+    "overhead_pct": {
+      "default check, every step": 8.7,
+      "precise mode, every step": 260.6
+    }
+  },
+  "gpu": "NVIDIA L4",
+  "cc": [
+    8,
+    9
+  ],
+  "torch": "2.14.1+cu130",
+  "label": "l4",
+  "seconds": 226.8,
+  "markdown": "## NVIDIA L4: 4356 held-out checks, 0 alarms, worst 4.26 (criteria NOT MET: 0 alarms, worst at most 4)\n\n### wide, 8,192 tokens, Zipf tokens: NVIDIA L4 (bfloat16), 12 clean training steps\n\n| model | checks | alarms | worst | 99.9th pct | typical error caught (median, 90th pct) |\n|---|---|---|---|---|---|\n| current_as_shipped | 612 | 0 | 4.26 | 3.441 | 0.641%, 2.15% |\n| current | 612 | 15 | 17.254 | 15.54 | 0.456%, 0.487% |\n| sqrt_steps | 612 | 0 | 5.204 | 4.715 | 0.524%, 1.45% |\n| shipped | 612 | 0 | 5.075 | 4.606 | 0.642%, 2.13% |\n\nWorst score by layer and pass:\n\n| layer, pass | current_as_shipped | current | sqrt_steps | shipped |\n|---|---|---|---|---|\n| head backward dW | 3.07 | 17.25 | 3.13 | 3.07 |\n| qkv backward dW | 0.94 | 9.62 | 1.25 | 0.94 |\n| down backward dW | 4.26 | 9.45 | 5.20 | 5.08 |\n| up backward dW | 1.74 | 8.03 | 1.78 | 1.74 |\n| proj backward dW | 1.01 | 2.68 | 1.04 | 1.02 |\n| down backward dX | 1.00 | 1.86 | 1.62 | 1.48 |\n| head forward | 0.88 | 1.66 | 1.38 | 1.23 |\n| qkv backward dX | 0.61 | 1.60 | 0.74 | 0.61 |\n| up forward | 0.87 | 1.58 | 1.21 | 1.03 |\n| down forward | 0.77 | 1.49 | 0.87 | 0.77 |\n| head backward dX | 0.18 | 0.99 | 0.27 | 0.18 |\n| up backward dX | 0.47 | 0.97 | 0.52 | 0.47 |\n| proj forward | 0.41 | 0.74 | 0.51 | 0.41 |\n| qkv forward | 0.31 | 0.55 | 0.37 | 0.31 |\n| proj backward dX | 0.30 | 0.51 | 0.35 | 0.30 |\n\n### calibration shape, new seed, Zipf tokens: NVIDIA L4 (bfloat16), 20 clean training steps\n\n| model | checks | alarms | worst | 99.9th pct | typical error caught (median, 90th pct) |\n|---|---|---|---|---|---|\n| current_as_shipped | 1980 | 0 | 1.112 | 0.973 | 0.399%, 1.21% |\n| current | 1980 | 37 | 18.465 | 13.33 | 0.238%, 0.263% |\n| sqrt_steps | 1980 | 0 | 1.778 | 1.567 | 0.334%, 0.81% |\n| shipped | 1980 | 0 | 1.112 | 1.005 | 0.404%, 1.21% |\n\nWorst score by layer and pass:\n\n| layer, pass | current_as_shipped | current | sqrt_steps | shipped |\n|---|---|---|---|---|\n| qkv backward dW | 1.11 | 18.46 | 1.78 | 1.11 |\n| head backward dW | 0.92 | 8.96 | 1.25 | 1.01 |\n| down backward dW | 0.54 | 3.93 | 0.76 | 0.65 |\n| head forward | 0.74 | 1.38 | 1.08 | 0.93 |\n| up backward dW | 0.26 | 1.27 | 0.34 | 0.32 |\n| down backward dX | 0.28 | 0.79 | 0.39 | 0.28 |\n| head backward dX | 0.14 | 0.73 | 0.20 | 0.14 |\n| up forward | 0.22 | 0.57 | 0.30 | 0.22 |\n| qkv forward | 0.14 | 0.45 | 0.19 | 0.14 |\n| proj backward dW | 0.08 | 0.38 | 0.09 | 0.08 |\n| up backward dX | 0.10 | 0.37 | 0.14 | 0.10 |\n| qkv backward dX | 0.08 | 0.34 | 0.12 | 0.08 |\n| down forward | 0.14 | 0.33 | 0.18 | 0.14 |\n| proj forward | 0.07 | 0.18 | 0.09 | 0.07 |\n| proj backward dX | 0.05 | 0.17 | 0.07 | 0.05 |\n\n### narrow and deep, 8,192 tokens: NVIDIA L4 (bfloat16), 12 clean training steps\n\n| model | checks | alarms | worst | 99.9th pct | typical error caught (median, 90th pct) |\n|---|---|---|---|---|---|\n| current_as_shipped | 1764 | 0 | 0.429 | 0.345 | 0.468%, 2.66% |\n| current | 1764 | 5 | 9.573 | 7.626 | 0.115%, 0.496% |\n| sqrt_steps | 1764 | 0 | 0.665 | 0.505 | 0.316%, 1.76% |\n| shipped | 1764 | 0 | 0.429 | 0.345 | 0.467%, 2.66% |\n\nWorst score by layer and pass:\n\n| layer, pass | current_as_shipped | current | sqrt_steps | shipped |\n|---|---|---|---|---|\n| head backward dW | 0.43 | 9.57 | 0.67 | 0.43 |\n| qkv backward dW | 0.26 | 4.98 | 0.40 | 0.26 |\n| down backward dX | 0.35 | 0.87 | 0.46 | 0.35 |\n| head backward dX | 0.10 | 0.48 | 0.14 | 0.10 |\n| up backward dW | 0.04 | 0.43 | 0.05 | 0.04 |\n| down backward dW | 0.08 | 0.43 | 0.10 | 0.08 |\n| proj forward | 0.21 | 0.38 | 0.26 | 0.21 |\n| up backward dX | 0.10 | 0.37 | 0.15 | 0.10 |\n| up forward | 0.12 | 0.36 | 0.17 | 0.12 |\n| qkv forward | 0.14 | 0.34 | 0.18 | 0.14 |\n| head forward | 0.11 | 0.33 | 0.16 | 0.11 |\n| proj backward dX | 0.09 | 0.32 | 0.14 | 0.09 |\n| qkv backward dX | 0.08 | 0.30 | 0.11 | 0.08 |\n| proj backward dW | 0.03 | 0.28 | 0.03 | 0.03 |\n| down forward | 0.15 | 0.27 | 0.19 | 0.15 |\n\nOverhead (median seconds per step, same model): {\"seconds_per_step\": {\"unchecked\": 0.2664, \"default check, every step\": 0.2896, \"precise mode, every step\": 0.9607}, \"overhead_pct\": {\"default check, every step\": 8.7, \"precise mode, every step\": 260.6}}\n",
+  "source": {
+    "sha256": "1265b3e0a38589060c14c399d072cb6fda5985849bac282bb54e8b88a494ccfb",
+    "files": 77
+  }
+}

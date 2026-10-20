@@ -10,15 +10,19 @@ What it does, per GPU (all GPUs at once, so a machine is tested the way it's use
   speed       big matmuls in bf16 (fp16 on GPUs without bf16): sustained TFLOPS, and how much the speed
               drops while the GPU heats up; memory bandwidth
   stress      big matmuls at full power with every output checked against its checksums
+  math modes  matmuls in BF16, FP16, TF32, FP32, FP64 and INT8 (whichever the GPU supports), each result kept
+              in full precision and compared with a float64 answer computed on the CPU
   workload    a GPT-style model training and serving with every matrix multiply checked (sdcguard screen)
   repeatable  the same fixed model and input run three times (start, hot, end); a healthy GPU gives
               bit-identical outputs every time. The output fingerprint can also be compared with other
               GPUs of the same model running the same software (here, and on the public board)
   health      temperature, power, clocks, throttling, PCIe link, ECC and memory-repair counters
 
-Verdict: PASS (every check passed), FAIL (results were wrong: evidence saved, replayable), SUSPECT
-(no checksum failed, but outputs that should be bit-identical weren't). Exit code 0 / 1 / 1, 2 if it
-couldn't run.
+Verdict: PASS (no failure detected under the completed checks), FAIL (a failure criterion was met;
+the failed matmuls of the workload, stress and math-mode checks are saved for `sdcguard replay`), SUSPECT
+(no checksum failed, but outputs that should be bit-identical weren't), INCOMPLETE (nothing wrong was found,
+but part of the check couldn't run or couldn't judge its results). Exit code 0 PASS, 1 FAIL or SUSPECT,
+2 INCOMPLETE or couldn't run.
 
 Files, per GPU, in sdcguard_check/<GPU UUID>/: check.json (everything), result.json (shareable: no
 serial number, hostname or full UUID), card.svg / card.png / card.md (the result card), plus the
@@ -37,8 +41,10 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Optional
 
+from . import verdict
 from .board import SCHEMA, digest
 FP_VERSION = 2
 FP_CONFIG = {"gpu": (6, 1024, 16, 256, 2), "cpu": (2, 128, 4, 64, 2)}   # layers, width, heads, seq, batch
@@ -125,6 +131,8 @@ def memory_test(dev, seconds: float, share: float = 0.8) -> dict:
         if blocks:
             blocks.pop()
         torch.cuda.empty_cache()
+    if not blocks:
+        return {"skipped": "no memory block could be allocated"}
 
     def pattern(out, j, p):
         torch.mul(idx, -1640531535, out=out)                        # Knuth's multiplicative hash, wraps
@@ -134,22 +142,31 @@ def memory_test(dev, seconds: float, share: float = 0.8) -> dict:
         return out
 
     t_end, passes, bad, words = time.time() + seconds, 0, 0, 0
-    while True:
-        for j, b in enumerate(blocks):
-            pattern(b, j, passes)
-        _sync(dev)
-        for j, b in enumerate(blocks):
-            bad += int(torch.ne(b, pattern(scratch, j, passes)).sum())
-            words += n
-        passes += 1
-        if time.time() >= t_end and passes >= 2:
-            break
+    error = None
+    try:
+        while True:
+            for j, b in enumerate(blocks):
+                pattern(b, j, passes)
+            _sync(dev)
+            for j, b in enumerate(blocks):
+                bad += int(torch.ne(b, pattern(scratch, j, passes)).sum())
+                words += n
+            passes += 1
+            if time.time() >= t_end and passes >= 2:
+                break
+    except Exception as e:  # noqa: BLE001
+        from .screen import error_text
+        error = error_text(e)
     gib = len(blocks) * chunk / 2**30
     blocks.clear()
-    if dev.type == "cuda":
-        torch.cuda.empty_cache()
+    if dev.type == "cuda" and error is None:
+        try:
+            torch.cuda.empty_cache()
+        except Exception as e:  # noqa: BLE001
+            from .screen import error_text
+            error = error_text(e)
     return {"gib_tested": round(gib, 2), "of_gib": round(total / 2**30, 1) if total else None, "passes": passes,
-            "words_checked": words, "wrong_words": bad}
+            "words_checked": words, "wrong_words": bad, "error": error}
 
 
 def matmul_speed(dev, dtype, seconds: float) -> dict:
@@ -174,7 +191,9 @@ def matmul_speed(dev, dtype, seconds: float) -> dict:
     while time.time() < t_end or len(rates) < 3:
         rates.append(2 * n ** 3 * k / _elapsed(dev, burst) / 1e12)
     head, tail = _median(rates[:3]), _median(rates[-3:])
-    return {"tflops": round(_median(rates), 2), "first_tflops": round(head, 2), "last_tflops": round(tail, 2),
+    # Keep measurements in the record. Decimal-place rounding can turn a slow
+    # positive CPU result into zero, removing it from cards and certificates.
+    return {"tflops": _median(rates), "first_tflops": head, "last_tflops": tail,
             "drop_pct": round(max(0.0, (head - tail) / head * 100), 1) if head else None, "size": n,
             "dtype": {"bfloat16": "bf16", "float16": "fp16"}.get(str(dtype).replace("torch.", ""), str(dtype)),
             "windows": len(rates)}
@@ -214,11 +233,12 @@ def stress_check(dev, dtype, seconds: float) -> dict:
     g = torch.Generator(device="cpu").manual_seed(12)
     B = torch.randn(n, n, generator=g).to(dev, dtype)
     restore = _exact_reductions_on()
-    checked = wrong = 0
+    checked = wrong = unjudged = 0
     worst = 0.0
+    failures = []                                   # (result, operands) of the first wrong ones, for evidence
 
     def one():
-        nonlocal checked, wrong, worst
+        nonlocal checked, wrong, unjudged, worst
         A = torch.randn(n, n, device=dev, dtype=torch.float32).to(dtype)    # new data every time
         C = A @ B
         r = check_matmul(A, B, C)
@@ -226,18 +246,32 @@ def stress_check(dev, dtype, seconds: float) -> dict:
         if r is not None:
             if not r.ok:
                 wrong += 1
+                if len(failures) < 2:
+                    failures.append((r, (A.detach().cpu(), B.detach().cpu(), C.detach().cpu(), None, 1.0, 1.0,
+                                         "aten::mm", "stress check")))
+            elif not r.judged:
+                unjudged += 1
             elif math.isfinite(r.max_z):
                 worst = max(worst, r.max_z)
+        else:
+            unjudged += 1
 
+    error = None
     try:
         one()                                   # the first check compiles the GPU kernels: not timed
         _sync(dev)
         t_end = time.time() + seconds
         while time.time() < t_end or checked < 3:
             one()
+    except Exception as e:  # noqa: BLE001
+        # Preserve completed checks and CPU evidence when this same phase later
+        # crashes. The caller stops subsequent GPU work and reports these counts.
+        from .screen import error_text
+        error = error_text(e)
     finally:
         _exact_reductions_off(restore)
-    return {"matmuls_checked": checked, "wrong": wrong, "worst_clean_score": round(worst, 3), "size": n}
+    return {"matmuls_checked": checked, "wrong": wrong, "unjudged": unjudged, "worst_clean_score": round(worst, 3),
+            "size": n, "failures": failures, "error": error}
 
 
 def software() -> dict:
@@ -254,7 +288,18 @@ def software() -> dict:
         except md.PackageNotFoundError:
             pass
     from . import __version__
-    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas}
+    # what decides which units a "fp32" matmul really runs on: TF32, and (CUDA 12.9 and later) cuBLAS emulation
+    # of FP32/FP64 on lower-precision tensor cores, which environment variables can switch on
+    mm = {"allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32)}
+    fp32p = getattr(torch.backends.cuda.matmul, "fp32_precision", None)
+    if fp32p is not None:
+        mm["fp32_precision"] = str(fp32p)
+    env = {k: v[:40] for k, v in sorted(os.environ.items()) if k.startswith(("CUBLAS_", "CUBLASLT_", "NVIDIA_TF32"))
+           and k != "CUBLAS_WORKSPACE_CONFIG"}
+    if env:
+        mm["env"] = env
+    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas,
+            "matmul": mm}
 
 
 class Fingerprinter:
@@ -343,12 +388,7 @@ def fetch_reference(timeout: float = 4.0) -> Optional[dict]:
 
 def _notes(static: dict, before: dict, after: dict, live: dict, speed: dict, spec: dict) -> list:
     from .gpuinfo import BAD_THROTTLE, _num
-    notes = []
-    eu0, eu1 = _num(before.get("ecc.errors.uncorrected.volatile.total")), _num(after.get("ecc.errors.uncorrected.volatile.total"))
-    if eu0 is not None and eu1 is not None and eu1 > eu0:
-        notes.append(["bad", f"{int(eu1 - eu0)} new uncorrectable ECC memory errors during the check"])
-    if (after.get("remapped_rows.failure") or "").lower() in ("yes", "1", "true"):
-        notes.append(["bad", "the driver reports a memory row-remapping failure (errors it could not repair)"])
+    notes = []          # (uncorrectable ECC errors and row-remapping failures: hardware_errors(), which fail the check)
     if (after.get("remapped_rows.pending") or "").lower() in ("yes", "1", "true") or \
             (after.get("retired_pages.pending") or "").lower() in ("yes", "1", "true"):
         notes.append(["warn", "a memory repair is pending (it takes effect after a GPU reset)"])
@@ -384,7 +424,7 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         torch.cuda.set_device(dev)
     t_start = time.time()
     total = 60.0 * minutes
-    budget = {"memory": 0.04, "speed": 0.08, "bandwidth": 0.02, "stress": 0.06}
+    budget = {"memory": 0.04, "speed": 0.08, "bandwidth": 0.02, "stress": 0.06, "modes": 0.05}
     secs = {k: max(0.2, v * total) for k, v in budget.items()}
     idx = None
     if dev.type == "cuda":                        # nvidia-smi by UUID: its index order isn't CUDA's
@@ -402,63 +442,188 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     if size not in SIZES:
         raise ValueError(f"--size must be one of {', '.join(SIZES)}")
     sw = software()
+    from .modes import MODES, screen as modes_screen
+    from .screen import _save_evidence, device_dir, error_text
+    from .modes import save_evidence as save_mode_evidence
+    out_dir, ident = device_dir(dev, out_root, tag)
+    run_id = uuid.uuid4().hex
+    if tag is not None:          # (a child of a multi-GPU check: tell the parent where this GPU's results go now,
+        with open(os.path.join(out_root, f".child_{tag}.json"), "w") as f:     # in case this process dies)
+            json.dump({"out_dir": out_dir, "run_id": run_id}, f)
+    ev_meta = {"sdcguard": sw.get("sdcguard"), "torch": sw.get("torch"), "seed": seed, "run_id": run_id}
+    evidence: list = []
+    stopped: dict = {}
+
+    def phase(label: str, fn):
+        """Run one part of the check. A failing GPU often computes wrong results and then raises a CUDA error
+        (which usually ends the CUDA context): after the first error nothing more runs on the GPU, but what
+        was found so far is kept and reported, and the result is never PASS."""
+        if stopped:
+            return None
+        try:
+            value = fn()
+            if isinstance(value, dict) and value.get("error"):
+                stopped.update(phase=label, error=value["error"])
+                say(f"{name}: {label} stopped with an error ({stopped['error']}); reporting what was found so far")
+            return value
+        except Exception as e:  # noqa: BLE001
+            stopped.update(phase=label, error=error_text(e))
+            say(f"{name}: {label} stopped with an error ({stopped['error']}); reporting what was found so far")
+            return None
+
     say(f"{name}: fingerprint run 1 of 3")
-    fp = Fingerprinter(dev, dtype, seed)
-    prints = [fp.run()]
+    fp = phase("fingerprint", lambda: Fingerprinter(dev, dtype, seed))
+    prints = []
+    if fp is not None:
+        p0 = phase("fingerprint", fp.run)
+        if p0 is not None:
+            prints.append(p0)
     say(f"{name}: memory patterns ({secs['memory']:.0f} s)")
-    mem = memory_test(dev, secs["memory"])
+    mem = phase("memory test", lambda: memory_test(dev, secs["memory"])) or {"skipped": "not run"}
     say(f"{name}: matmul speed ({secs['speed']:.0f} s) and memory bandwidth")
-    speed = matmul_speed(dev, dtype, secs["speed"])
-    bw = bandwidth(dev, secs["bandwidth"])
+    speed = phase("speed", lambda: matmul_speed(dev, dtype, secs["speed"])) or {}
+    bw = phase("bandwidth", lambda: bandwidth(dev, secs["bandwidth"])) or {}
     say(f"{name}: checked matmuls at full power ({secs['stress']:.0f} s)")
-    stress = stress_check(dev, dtype, secs["stress"])
-    prints.append(fp.run())
+    stress = phase("stress", lambda: stress_check(dev, dtype, secs["stress"])) or \
+        {"matmuls_checked": 0, "wrong": 0, "unjudged": 0, "worst_clean_score": 0.0, "not_run": True}
+    # evidence is saved as soon as each part finishes, so a later crash can't lose it
+    for res, ops in stress.pop("failures", []):
+        evidence.append(_save_evidence(out_dir, len(evidence), res, ops, ident, {**ev_meta, "phase": "stress"}))
+    say(f"{name}: matmuls in {len(MODES)} math modes against a float64 reference ({secs['modes']:.0f} s)")
+    math_modes = phase("math modes", lambda: modes_screen(dev, secs["modes"], seed=seed)) or \
+        {"matmuls": 0, "wrong": 0, "modes": {}, "ran": [], "not_checked": {}, "errors": {}, "not_run": True}
+    for i, fail in enumerate(math_modes.pop("failures", [])):
+        evidence.append(save_mode_evidence(out_dir, i, fail, ident, {**ev_meta, "phase": "math modes"}))
+    if fp is not None and prints:
+        p1 = phase("fingerprint", fp.run)
+        if p1 is not None:
+            prints.append(p1)
     left = max(0.05, (total - (time.time() - t_start) - 3) / 60)
-    say(f"{name}: training and serving workload, every matmul checked ({left:.1f} min)")
-    summary = screen_one(dev, left, size, out_root, seed, simulate_faults=simulate_faults, tag=tag)
-    prints.append(fp.run())
-    sampler.stop()
+    summary: dict = {}
+    if not stopped:
+        say(f"{name}: training and serving workload, every matmul checked ({left:.1f} min)")
+        # screen_one reports a workload that stops on an error itself (with what it found before the error)
+        summary = phase("workload", lambda: screen_one(dev, left, size, out_root, seed,
+                                                       simulate_faults=simulate_faults, tag=tag, run_id=run_id)) or {}
+        if summary.get("error"):
+            stopped.update(phase="workload", error=summary["error"])
+    if fp is not None and len(prints) == 2:
+        p2 = phase("fingerprint", fp.run)
+        if p2 is not None:
+            prints.append(p2)
+    try:
+        sampler.stop()
+        live = sampler.summary()
+    except Exception:  # noqa: BLE001
+        live = {}
     after = gpuinfo.health(idx)
-    live = sampler.summary()
     spec = gpuinfo.datasheet(name)
-    out_dir = summary.get("out_dir") or os.path.join(out_root, "cpu")
+    out_dir = summary.get("out_dir") or out_dir
     os.makedirs(out_dir, exist_ok=True)
 
     wrong = {"workload_training": summary.get("corrupted_results_training") or 0,
              "workload_serving": summary.get("corrupted_results_serving") or 0,
-             "stress": stress["wrong"], "memory_words": mem.get("wrong_words") or 0}
-    repeatable = all(p == prints[0] for p in prints)
+             "stress": stress["wrong"], "math_modes": math_modes["wrong"], "memory_words": mem.get("wrong_words") or 0}
+    # repeatability needs at least two fingerprint runs: with fewer it wasn't checked (None)
+    repeatable = all(p == prints[0] for p in prints) if len(prints) >= 2 else None
     worst = max(summary.get("worst_clean_z") or 0.0, stress["worst_clean_score"])
     checked = (summary.get("matmuls_checked") or 0) + (summary.get("linear_layer_checks_while_serving") or 0) + \
-        stress["matmuls_checked"]
-    result = "FAIL" if any(wrong.values()) else ("SUSPECT" if not repeatable else "PASS")
+        stress["matmuls_checked"] + math_modes["matmuls"]
+    evidence[:0] = list(summary.get("evidence") or [])
+    unj_train = summary.get("unjudged_training_checks") or 0
+    skipped_train = summary.get("skipped_training_checks") or 0
+    serve_nf = summary.get("serving_passes_with_nonfinite_output") or 0
+    mem_ran = bool(mem.get("gib_tested")) and bool(mem.get("words_checked"))
+    hw_errors = hardware_errors(before, after)
+    incomplete = (bool(stopped) or not summary or summary.get("result") == "INCOMPLETE"
+                  or verdict.from_counts(0, stress["matmuls_checked"], stress["unjudged"]) == "INCOMPLETE"
+                  or bool(math_modes.get("errors")) or not math_modes.get("ran") and not math_modes.get("unsupported")
+                  or not mem_ran or repeatable is None)
+    result = ("FAIL" if any(wrong.values()) or hw_errors else "SUSPECT" if repeatable is False else
+              "INCOMPLETE" if incomplete else "PASS")
     notes = _notes(static, before, after, live, speed, spec)
-    if not repeatable:
+    for m, err in (math_modes.get("errors") or {}).items():
+        notes.insert(0, ["bad", f"the {m} math-mode check couldn't run ({err[:80]}): that part wasn't checked"])
+    notes[:0] = verdict.unjudged_note(unj_train, summary.get("matmuls_checked") or 0, "workload training")
+    notes[:0] = verdict.unjudged_note(stress["unjudged"], stress["matmuls_checked"], "stress")
+    if skipped_train:
+        notes.insert(0, ["bad", f"{skipped_train:,} workload training checks were skipped (not enough GPU memory "
+                                "for the check): those results weren't checked"])
+    if serve_nf:
+        notes.insert(0, ["bad", f"{serve_nf} serving passes gave output that wasn't finite (the serving check can't "
+                                "judge those)"])
+    serve_unj = summary.get("unjudged_serving_checksums") or 0
+    if serve_unj:
+        notes.insert(0, ["bad", f"{serve_unj:,} serving checksums couldn't be judged (outputs or sums too large or not "
+                                "finite, in a way the inputs can explain): those results weren't checked"])
+    never = summary.get("serving_layers_never_checked") or []
+    if never:
+        notes.insert(0, ["bad", f"{len(never)} serving layers never ran their check ({', '.join(never[:3])}"
+                                f"{' ...' if len(never) > 3 else ''}): those layers weren't checked"])
+    if not mem_ran and not stopped:
+        why = mem.get("skipped") or "no memory could be allocated for it"
+        notes.insert(0, ["bad", f"the memory pattern test didn't run ({why}): GPU memory wasn't tested"])
+    if repeatable is False:
         first = next(i for i, p in enumerate(prints) if p != prints[0])
         lay = next((j for j, (a, b) in enumerate(zip(prints[0]["layers"], prints[first]["layers"])) if a != b), None)
         where = (f" (first difference after layer {lay})" if lay is not None else
                  " (in fused attention)" if prints[0].get("sdpa") != prints[first].get("sdpa") else "")
         notes.insert(0, ["bad", "the same model on the same input gave different outputs on this GPU" + where])
-    fp_key = fp.key(name, sw)
+    for text in hw_errors:
+        notes.insert(0, ["bad", text])
+    if stopped:
+        notes.insert(0, ["bad", f"the check stopped in the {stopped['phase']} part with an error ({stopped['error']}); "
+                                "the parts after it didn't run"])
+    fp_key = fp.key(name, sw) if fp is not None and prints else None
     prov = gpuinfo.detect_provider()
     if provider:
         prov = {"name": provider, "detected_from": "--provider"}
     full = {
         "schema": SCHEMA.replace("check/", "check-full/"), "result": result, "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "minutes": round((time.time() - t_start) / 60, 2), "device": str(dev),
-        "gpu": {**summary.get("gpu", {}), **{k: static.get(k) for k in static}}, "software": sw, "provider": prov,
-        "wrong": wrong, "checked_results": checked, "repeatable": repeatable, "fingerprints": prints,
-        "fingerprint_key": fp_key, "fingerprint_weights": fp.weights, "fingerprint_config": fp.config,
+        "minutes": round((time.time() - t_start) / 60, 2), "device": str(dev), "run_id": run_id,
+        "gpu": {**(summary.get("gpu") or ident), **{k: static.get(k) for k in static}}, "software": sw, "provider": prov,
+        "wrong": wrong, "hardware_errors": hw_errors, "checked_results": checked, "repeatable": repeatable,
+        "fingerprints": prints, "fingerprint_key": fp_key, "fingerprint_weights": fp.weights if fp else None,
+        "fingerprint_config": fp.config if fp else None,
         "worst_clean_score": round(worst, 3), "alarm_line": 6.0,
-        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "datasheet": spec,
+        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "math_modes": math_modes, "datasheet": spec,
         "health_before": before, "health_after": after, "live": live, "notes": notes, "board": None,
         "workload": {k: summary.get(k) for k in ("size", "seed", "training_steps", "serving_passes", "matmuls_checked",
                                                   "linear_layer_checks_while_serving", "approx_matmul_tflop",
-                                                  "evidence", "dtype")},
-        "simulated_faults": bool(summary.get("SIMULATED_FAULTS")), "out_dir": out_dir,
+                                                  "evidence", "dtype", "unjudged_training_checks",
+                                                  "skipped_training_checks", "serving_passes_with_nonfinite_output",
+                                                  "serving_linear_layers", "serving_layers_never_checked",
+                                                  "unjudged_serving_checksums", "error")},
+        "evidence": evidence, "unjudged": unj_train + stress["unjudged"] + skipped_train,
+        "stopped": stopped or None,
+        "simulated_faults": bool(summary.get("SIMULATED_FAULTS")) or simulate_faults > 0, "out_dir": out_dir,
     }
     if reference:
-        apply_board(full, reference)
+        try:
+            apply_board(full, reference)
+        except Exception as e:  # noqa: BLE001  (a malformed reference file mustn't lose the result)
+            full["notes"].append(["info", f"couldn't compare with the public board's data ({error_text(e)})"])
+    write_result(full, key_path, issuer)
+    return full
+
+
+def hardware_errors(before: dict, after: dict) -> list:
+    """Memory faults the driver itself reported during the check. NVIDIA's guidance treats an uncorrectable ECC
+    error as an event that needs action and a row-remapping failure as grounds to replace the GPU, so either
+    one fails the check even when no numerical mismatch was detected."""
+    from .gpuinfo import _num
+    out = []
+    eu0, eu1 = _num(before.get("ecc.errors.uncorrected.volatile.total")), _num(after.get("ecc.errors.uncorrected.volatile.total"))
+    if eu0 is not None and eu1 is not None and eu1 > eu0:
+        out.append(f"the driver reported {int(eu1 - eu0)} new uncorrectable ECC memory errors during the check")
+    if (after.get("remapped_rows.failure") or "").lower() in ("yes", "1", "true"):
+        out.append("the driver reports a memory row-remapping failure (errors it could not repair)")
+    return out
+
+
+def write_result(full: dict, key_path: Optional[str] = None, issuer: str = "") -> dict:
+    """check.json, result.json, the cards and (with a key or issuer) the certificate, for one GPU."""
+    out_dir = full["out_dir"]
     pub = public(full)
     with open(os.path.join(out_dir, "check.json"), "w") as f:
         json.dump(full, f, indent=2, default=str)
@@ -467,18 +632,39 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     write_cards(pub, out_dir)
     if key_path is not None or issuer:
         from . import certify
-        certify.write(summary, out_dir, key_path=key_path, issuer=issuer, check=pub)
-    return full
+        try:
+            certify.write(_summary_of(full), out_dir, key_path=key_path, issuer=issuer, check=pub, full=full)
+        except Exception as e:  # noqa: BLE001  (the result stands; the missing certificate is reported)
+            from .screen import error_text
+            full["certificate_error"] = error_text(e)
+            full["notes"].insert(0, ["warn", f"the certificate couldn't be written ({full['certificate_error']})"])
+            return write_result(full)
+    return pub
+
+
+def _summary_of(full: dict) -> dict:
+    """The workload's summary.json for a GPU (what certify.write reads the GPU's identity from), or what
+    check.json knows when the workload didn't get to write one."""
+    try:
+        with open(os.path.join(full["out_dir"], "summary.json")) as f:
+            summary = json.load(f)
+        if full.get("run_id") and summary.get("run_id") != full["run_id"]:
+            raise ValueError("summary belongs to a previous run")
+        return summary
+    except (OSError, ValueError):
+        return {"gpu": full.get("gpu") or {}, "device": full.get("device"), "result": full["result"]}
 
 
 def apply_board(full: dict, reference: dict) -> None:
     """Compare a result with the public board's reference data (fingerprints of the identical setup,
     medians for the GPU model). It only turns a PASS into SUSPECT when at least 3 distinct GPUs, shared by
     at least 2 different people, all agree on one other fingerprint; any other disagreement is a note."""
+    if not isinstance(reference, dict) or not full.get("fingerprints") or not full.get("fingerprint_key"):
+        return
     b = _compare(reference, full["fingerprint_key"], full["fingerprints"][0]["output"],
                  (full.get("gpu") or {}).get("gpu_name"))
     full["board"] = b
-    if b.get("disagrees_with_majority") and full["result"] == "PASS":
+    if b.get("disagrees_with_majority") and full["result"] in ("PASS", "INCOMPLETE"):
         full["result"] = "SUSPECT"
         full["notes"].insert(0, ["bad", f"this GPU's output fingerprint differs from {b['other_gpus']} other GPUs "
                                         "of the identical setup on the public board"])
@@ -531,14 +717,21 @@ def public(full: dict) -> dict:
                 "compute_cap": g.get("compute_cap"), "driver": g.get("driver") or g.get("driver_version"),
                 "id_hash": hashlib.sha256(uuid.encode()).hexdigest()[:12] if uuid else None},
         "software": full.get("software"), "provider": _provider(full.get("provider")),
-        "checked": {"results": full["checked_results"],
+        "checked": {"results": full["checked_results"], "unjudged": full.get("unjudged", 0),
+                    "serving_nonfinite": (full.get("workload") or {}).get("serving_passes_with_nonfinite_output") or 0,
                     "workload_tflop": (full.get("workload") or {}).get("approx_matmul_tflop"),
                     "memory_gib": (full.get("memory") or {}).get("gib_tested"),
-                    "memory_passes": (full.get("memory") or {}).get("passes")},
+                    "memory_passes": (full.get("memory") or {}).get("passes"),
+                    "memory_skipped": None if (full.get("memory") or {}).get("words_checked") else
+                    ((full.get("memory") or {}).get("skipped") or "no memory could be allocated for it")},
         "wrong": full["wrong"],
+        "hardware_errors": list(full.get("hardware_errors") or []),
+        "stopped": full.get("stopped"),
         "headroom": {"worst_clean_score": full["worst_clean_score"], "alarm_line": full["alarm_line"]},
         "repeatable": full["repeatable"],
-        "fingerprint": {"key": full["fingerprint_key"], "output": full["fingerprints"][0]["output"]},
+        "fingerprint": {"key": full.get("fingerprint_key"),
+                        "output": (full.get("fingerprints") or [{}])[0].get("output"),
+                        "runs": len(full.get("fingerprints") or [])},
         "speed": {"matmul_tflops": sp.get("tflops"), "dtype": sp.get("dtype"),
                   "pct_of_datasheet": pct(sp.get("tflops"), spec.get("matmul_tflops")),
                   "drop_pct": sp.get("drop_pct"), "bandwidth_gbs": bw.get("gbs"),
@@ -550,6 +743,15 @@ def public(full: dict) -> dict:
         "notes": full["notes"], "board": full.get("board"),
         "simulated_faults": full.get("simulated_faults", False),
     }
+    mm = full.get("math_modes")
+    if mm:
+        pub["math_modes"] = {"ran": list(mm.get("ran") or []), "matmuls": mm.get("matmuls") or 0,
+                             "wrong": mm.get("wrong") or 0,
+                             "not_checked": {k: str(v) for k, v in (mm.get("not_checked") or {}).items()},
+                             "errors": {k: str(v) for k, v in (mm.get("errors") or {}).items()},
+                             "typical_error_caught": {k: r["typical_error_caught"] for k, r in mm["modes"].items()
+                                                      if r.get("typical_error_caught") is not None
+                                                      and k in (mm.get("ran") or [])}}
     pub["digest"] = digest(pub)
     return pub
 
@@ -592,20 +794,62 @@ def _pcie(g, live):
     return f"Gen{gen} x{width}{mx}"
 
 
-VERDICT = {"PASS": "every checked result was correct", "FAIL": "this GPU computed wrong results",
-           "SUSPECT": "outputs that should be identical were not"}
+VERDICT = {"PASS": "no failure detected in completed checks", "FAIL": "a numerical, memory or hardware-error criterion failed",
+           "SUSPECT": "outputs that should be identical were not",
+           "INCOMPLETE": "part of the check couldn't run or couldn't judge its results"}
+
+
+def headline(pub: dict) -> str:
+    """The one-line meaning of the result. A FAIL with no wrong result is a hardware error the driver reported."""
+    if pub["result"] == "FAIL" and not sum((pub.get("wrong") or {}).values()) and pub.get("hardware_errors"):
+        return "the driver reported a hardware error"
+    return VERDICT[pub["result"]]
 
 
 def _n(x) -> str:
     if x is None:
         return "?"
     if isinstance(x, float) and not x.is_integer():
+        if abs(x) < 1:
+            return f"{x:.3g}"
         return f"{x:,.1f}"
     return f"{int(x):,}"
 
 
+def _pct(x: float) -> str:
+    v = 100 * x
+    return f"{v:.2g}%" if v < 10 else f"{v:.0f}%"
+
+
+def _modes_row(mm: dict) -> Optional[str]:
+    """Always shown when the math modes were attempted, including when none of them ran."""
+    if not mm:
+        return None
+    ran = mm.get("ran") or []
+    errors = mm.get("errors") or {}
+    unsupported = [k for k in (mm.get("not_checked") or {}) if k not in errors]
+    if ran:
+        names = f"all {len(ran)} modes" if not unsupported and not errors else " ".join(ran)
+        text = f"{names} vs float64: {_n(mm['matmuls'])} matmuls, " + (
+            f"{mm['wrong']} WRONG" if mm.get("wrong") else "0 wrong")
+        sens = {k: v for k, v in (mm.get("typical_error_caught") or {}).items() if isinstance(v, (int, float))}
+        rel = [v for k, v in sens.items() if k != "fp8"]
+        if rel:
+            text += f", typical sensitivity {_pct(max(rel))}"
+        if "fp8" in sens:            # FP8 tensor cores round much more coarsely: shown on its own
+            text += f" (fp8 {_pct(sens['fp8'])})" if rel else f", typical sensitivity {_pct(sens['fp8'])} (fp8)"
+    else:
+        text = "none ran"
+    if errors:
+        text += "; ERROR in " + " ".join(errors)
+    if unsupported:
+        text += "; unsupported: " + " ".join(unsupported)
+    return text
+
+
 def lines(pub: dict) -> list:
-    """The card as (label, text) rows; the terminal, Markdown, SVG and PNG cards all use these."""
+    """The card as (label, text) rows; the terminal, Markdown, SVG and PNG cards all use these. Problems come
+    right after what was checked, so they're always on the card image (it shows the first CARD_ROWS)."""
     w, c, s, h = pub["wrong"], pub["checked"], pub["speed"], pub["health"]
     nwrong = sum(w.values())
     hr = pub["headroom"]
@@ -614,14 +858,26 @@ def lines(pub: dict) -> list:
     rows = [("checked", f"{_n(c['results'])} matmul results" + (f" ({tflop:,.0f} TFLOP of work)" if tflop else "")
              + (f", {wrong_mm} WRONG (" + ", ".join(f"{k.replace('_', ' ')} {v}" for k, v in w.items()
                                                     if v and k != "memory_words") + ")" if wrong_mm else ", 0 wrong"))]
+    modes = _modes_row(pub.get("math_modes") or {})
+    if modes:
+        rows.append(("math modes", modes))
     if c.get("memory_gib"):
         mw = w.get("memory_words") or 0
         rows.append(("memory test", f"{_n(c['memory_gib'])} GiB written and read back x{c['memory_passes']}, "
                      + (f"{mw} WORDS WRONG" if mw else "0 errors")))
-    rows += [("headroom", f"worst clean score {hr['worst_clean_score']:.2f} (alarm at {hr['alarm_line']:g})"
-             + (f": {hr['alarm_line'] / hr['worst_clean_score']:.1f}x margin" if hr["worst_clean_score"] else "")),
-            ("repeatable", ("3 of 3 runs bit-identical" if pub["repeatable"] else "NO: outputs changed between runs")
-             + f", fingerprint {pub['fingerprint']['output'][:12]}")]
+    elif "memory_skipped" in c:          # (cards from before this field existed have no row)
+        rows.append(("memory test", f"NOT RUN ({c.get('memory_skipped') or 'unknown reason'})"))
+    order = {"bad": 0, "warn": 1}
+    notes = sorted(pub.get("notes") or [], key=lambda n: order.get(n[0], 2))
+    rows += [(level, text) for level, text in notes if level in order]
+    fpo = (pub.get("fingerprint") or {}).get("output")
+    if pub["repeatable"] is None:
+        rows.append(("repeatable", "not checked (the check stopped before the second fingerprint run)"))
+    else:
+        runs = (pub.get("fingerprint") or {}).get("runs")
+        recorded = f"{runs} recorded runs" if isinstance(runs, int) and not isinstance(runs, bool) else "recorded runs"
+        rows.append(("repeatable", (f"{recorded} bit-identical" if pub["repeatable"] else
+                                    "NO: outputs changed between runs") + (f", fingerprint {fpo[:12]}" if fpo else "")))
     if s.get("matmul_tflops"):
         rows.append(("speed", f"{s['dtype']} matmul {_n(s['matmul_tflops'])} TFLOPS"
                      + (f" ({s['pct_of_datasheet']:.0f}% of datasheet peak)" if s.get("pct_of_datasheet") else "")
@@ -639,6 +895,8 @@ def lines(pub: dict) -> list:
         hp.append("ECC " + {"enabled": "on", "disabled": "off"}.get(h["ecc"].lower(), h["ecc"].lower()))
     if hp:
         rows.append(("health", ", ".join(hp)))
+    rows.append(("headroom", f"worst clean score {hr['worst_clean_score']:.2f} (alarm at {hr['alarm_line']:g})"
+                 + (f": {hr['alarm_line'] / hr['worst_clean_score']:.1f}x margin" if hr["worst_clean_score"] else "")))
     b = pub.get("board") or {}
     if b.get("same_setup_runs"):
         rows.append(("board", f"fingerprint matches {b['same_fingerprint']} of {b['same_setup_runs']} runs of this exact "
@@ -646,9 +904,7 @@ def lines(pub: dict) -> list:
     if b.get("model_median_tflops") and s.get("matmul_tflops"):
         rows.append(("vs others", f"median {pub['gpu']['name']} on the board: {_n(b['model_median_tflops'])} TFLOPS "
                                   f"({b.get('model_runs')} runs)"))
-    order = {"bad": 0, "warn": 1}
-    for level, text in sorted(pub.get("notes") or [], key=lambda n: order.get(n[0], 2)):   # problems first
-        rows.append(("note" if level == "info" else level, text))
+    rows += [("note", text) for level, text in notes if level not in order]
     return rows
 
 
@@ -672,39 +928,70 @@ def _subtitle(pub) -> str:
 def terminal(pub: dict, out_dir: str = "") -> str:
     g = pub["gpu"]
     head = f"sdcguard check  {g['name']}" + (f"  {_where(pub)}" if _where(pub) else "") + f"  {pub['date']}"
-    out = [head, f"  {pub['result']}  {VERDICT[pub['result']]}"]
+    out = [head, f"  {pub['result']}  {headline(pub)}"]
     if pub.get("simulated_faults"):
         out.append("  (SIMULATED faults were injected in software: a demo, not a real GPU fault)")
     out += [f"  {k:<11} {v}" for k, v in lines(pub)]
     if out_dir:
         out.append(f"  {'files':<11} {out_dir}/ (result.json, card.svg, card.md)")
+    nxt = next_steps(pub, out_dir)
+    if nxt:
+        out.append(f"  {'next':<11} {nxt}")
     return "\n".join(out)
+
+
+def next_steps(pub: dict, out_dir: str = "") -> str:
+    """What to do about a result that isn't a PASS (the terminal output; not on the shared card)."""
+    where = out_dir or "the output folder"
+    if pub["result"] == "FAIL":
+        if pub.get("simulated_faults"):
+            return "(a demo: the faults were simulated in software) try `sdcguard replay` on an evidence .pt file"
+        return (f"stop scheduling work on this GPU. To show the failure follows the board, run `sdcguard replay "
+                f"<evidence>.pt` from {where} on this GPU and on a healthy one; `sdcguard report {where}` bundles "
+                f"the evidence for an RMA")
+    if pub["result"] == "SUSPECT":
+        return "run `sdcguard check` again; if outputs differ again, take the card to your provider"
+    if pub["result"] == "INCOMPLETE":
+        return "the notes above say what didn't run or couldn't be judged; fix that (often free GPU memory) and rerun"
+    return ""
+
+
+def _md(x) -> str:
+    """Text from a card (which anyone can edit) made inert in Markdown: no HTML, links, emphasis or tables."""
+    s = str(x)
+    for ch in "\\`*_[]()|#!~":
+        s = s.replace(ch, "\\" + ch)
+    return html.escape(s, quote=False).replace("\n", " ")
 
 
 def markdown(pub: dict) -> str:
     g, sw = pub["gpu"], pub.get("software") or {}
-    where = f" ({_where(pub)})" if _where(pub) else ""
-    rows = "\n".join(f"| {k} | {html.escape(str(v))} |" for k, v in lines(pub))
+    where = f" ({_md(_where(pub))})" if _where(pub) else ""
+    rows = "\n".join(f"| {_md(k)} | {_md(v)} |" for k, v in lines(pub))
     sim = "\n\n**SIMULATED faults (demo), not a real result.**" if pub.get("simulated_faults") else ""
-    return (f"**sdcguard check: {pub['result']}** on {g['name']}{where}, {pub['date']}{sim}\n\n| | |\n|---|---|\n{rows}\n\n"
-            f"`sdcguard {sw.get('sdcguard')} · torch {sw.get('torch')} · digest {pub['digest']}`  \n"
+    tick = lambda v: str(v).replace("`", "'").replace("\n", " ")       # noqa: E731  (inside a code span)
+    return (f"**sdcguard check: {_md(pub['result'])}** on {_md(g['name'])}{where}, {_md(pub['date'])}{sim}\n\n"
+            f"| | |\n|---|---|\n{rows}\n\n"
+            f"`sdcguard {tick(sw.get('sdcguard'))} · torch {tick(sw.get('torch'))} · digest {tick(pub['digest'])}`  \n"
             f"Check yours: `pip install sdcguard && sdcguard check`\n")
 
 
-_COLORS = {"PASS": "#22c55e", "FAIL": "#ef4444", "SUSPECT": "#f59e0b"}
+_COLORS = {"PASS": "#22c55e", "FAIL": "#ef4444", "SUSPECT": "#f59e0b", "INCOMPLETE": "#94a3b8"}
+CARD_ROWS = 9
 
 
 def svg(pub: dict) -> str:
     e = html.escape
     g = pub["gpu"]
     col = _COLORS[pub["result"]]
-    rows = lines(pub)[:8]
+    pw = 150 if len(pub["result"]) <= 7 else 236          # the verdict pill fits its word
+    rows = lines(pub)[:CARD_ROWS]
     body = []
-    y = 292
+    y = 288
     for k, v in rows:
         v = v if len(v) <= 90 else v[:87] + "..."
         body.append(f'<text x="64" y="{y}" class="k">{e(k)}</text><text x="210" y="{y}" class="v">{e(v)}</text>')
-        y += 34
+        y += 32
     sim = ('<text x="1136" y="120" text-anchor="end" class="sim">SIMULATED FAULTS (DEMO)</text>'
            if pub.get("simulated_faults") else "")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
@@ -718,8 +1005,8 @@ text{{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;fil
 <text x="64" y="72" class="t">sdcguard check</text><text x="1136" y="72" text-anchor="end" class="t">{e(pub['date'])}</text>
 <text x="64" y="132" class="g">{e(str(g['name']))}</text>{sim}
 <text x="64" y="168" class="w">{e(_subtitle(pub))}</text>
-<rect x="64" y="190" width="150" height="48" rx="24" fill="{col}"/><text x="139" y="225" text-anchor="middle" class="p">{e(pub['result'])}</text>
-<text x="236" y="223" class="vd">{e(VERDICT[pub['result']])}</text>
+<rect x="64" y="190" width="{pw}" height="48" rx="24" fill="{col}"/><text x="{64 + pw // 2}" y="225" text-anchor="middle" class="p">{e(pub['result'])}</text>
+<text x="{86 + pw}" y="223" class="vd">{e(headline(pub))}</text>
 {''.join(body)}
 <text x="64" y="596" class="f">digest {e(pub['digest'])}  ·  pip install sdcguard  ·  sdcguard check</text>
 </svg>
@@ -735,6 +1022,11 @@ def png(pub: dict, path: str) -> bool:
         from matplotlib.patches import FancyBboxPatch
     except Exception:  # noqa: BLE001
         return False
+    with matplotlib.rc_context({"text.parse_math": False, "text.usetex": False}):   # card text is never math
+        return _png(pub, path, plt, FancyBboxPatch)
+
+
+def _png(pub: dict, path: str, plt, FancyBboxPatch) -> bool:
     fig = plt.figure(figsize=(12, 6.3), dpi=100)
     fig.patch.set_facecolor("#0c0a09")
     ax = fig.add_axes([0, 0, 1, 1])
@@ -748,16 +1040,18 @@ def png(pub: dict, path: str) -> bool:
     ax.text(64, 168, _subtitle(pub), color=mute, fontsize=15, va="baseline")
     if pub.get("simulated_faults"):
         ax.text(1136, 120, "SIMULATED FAULTS (DEMO)", color="#f59e0b", fontsize=14, ha="right", fontweight="bold")
-    ax.add_patch(FancyBboxPatch((64, 190), 150, 48, boxstyle="round,pad=0,rounding_size=24",
+    pw = 150 if len(pub["result"]) <= 7 else 236
+    ax.add_patch(FancyBboxPatch((64, 190), pw, 48, boxstyle="round,pad=0,rounding_size=24",
                                 fc=_COLORS[pub["result"]], ec="none"))
-    ax.text(139, 222, pub["result"], color="#0c0a09", fontsize=21, fontweight="bold", ha="center", va="baseline")
-    ax.text(236, 222, VERDICT[pub["result"]], color=fg, fontsize=17, va="baseline")
-    y = 292
-    for k, v in lines(pub)[:8]:
+    ax.text(64 + pw / 2, 222, pub["result"], color="#0c0a09", fontsize=21, fontweight="bold", ha="center",
+            va="baseline")
+    ax.text(86 + pw, 222, headline(pub), color=fg, fontsize=17, va="baseline")
+    y = 288
+    for k, v in lines(pub)[:CARD_ROWS]:
         v = v if len(v) <= 90 else v[:87] + "..."
         ax.text(64, y, k, color=mute, fontsize=14, va="baseline")
         ax.text(210, y, v, color=fg, fontsize=14, va="baseline")
-        y += 34
+        y += 32
     ax.text(64, 596, f"digest {pub['digest']}  ·  pip install sdcguard  ·  sdcguard check", color="#78716c",
             fontsize=13, va="baseline")
     fig.savefig(path, facecolor=fig.get_facecolor())
@@ -793,7 +1087,8 @@ def cross_compare(results: list) -> None:
     With three or more, a GPU that differs from all the others is the odd one out. Updates results."""
     groups: dict = {}
     for r in results:
-        groups.setdefault(r["fingerprint_key"], []).append(r)
+        if r.get("fingerprint_key") and r.get("fingerprints"):      # (a check that stopped early may have none)
+            groups.setdefault(r["fingerprint_key"], []).append(r)
     for rs in groups.values():
         if len(rs) < 2:
             continue
@@ -810,7 +1105,7 @@ def cross_compare(results: list) -> None:
             if len(rs) >= 3 and n_top > len(rs) / 2 and mine != top:
                 r["cross_gpu"] = f"differs from the other {n_top} GPUs of this model here (odd one out)"
                 r["notes"].insert(0, ["bad", r["cross_gpu"]])
-                if r["result"] == "PASS":
+                if r["result"] in ("PASS", "INCOMPLETE"):          # FAIL > SUSPECT > INCOMPLETE > PASS
                     r["result"] = "SUSPECT"
             elif len(rs) >= 3 and n_top > len(rs) / 2:
                 r["cross_gpu"] = f"matches {n_top - 1} other GPUs of this model here"
@@ -854,28 +1149,59 @@ def _children(args) -> tuple:
             codes.append("timeout")
     for f in logs:
         f.close()
-    found, problems = [], []
+    found, problems, failed = [], [], 0
     for i, code in enumerate(codes):
-        marker = os.path.join(args.out, f".child_{i}.json")
+        log = os.path.join(args.out, f"child_{i}.log")
+        out_dir = None
+        run_id = None
         try:
-            with open(marker) as f:
-                out_dir = json.load(f)["out_dir"]
+            with open(os.path.join(args.out, f".child_{i}.json")) as f:
+                marker = json.load(f)
+                out_dir, run_id = marker["out_dir"], marker.get("run_id")
             with open(os.path.join(out_dir, "check.json")) as f:
-                found.append(json.load(f))
-        except (OSError, ValueError, KeyError):
-            problems.append(f"GPU {ids[i]}: could not be checked (exit {code}); see {os.path.join(args.out, f'child_{i}.log')}")
-    return found, problems
-
-
-def _certify(results: list, pubs: list, key: Optional[str], issuer: str) -> None:
-    from . import certify
-    for r, pub in zip(results, pubs):
-        try:
-            with open(os.path.join(r["out_dir"], "summary.json")) as f:
-                summary = json.load(f)
-            certify.write(summary, r["out_dir"], key_path=key, issuer=issuer, check=pub)
-        except OSError as e:
-            print(f"  certificate not written for {r['out_dir']}: {e}")
+                r = json.load(f)
+            if not isinstance(r, dict) or "result" not in r:
+                raise ValueError("check.json without a result")
+            if not run_id or r.get("run_id") != run_id:
+                raise ValueError("check.json belongs to a previous run")
+            if code != 0:
+                r.setdefault("notes", []).insert(0, ["bad", f"the GPU worker exited unexpectedly ({code}); "
+                                                      "the saved result may be incomplete"])
+                if r["result"] == "PASS":
+                    r["result"] = "INCOMPLETE"
+            found.append(r)
+            continue
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        # the child process died (or hung) before writing its result: whatever it saved still counts
+        bad = 0
+        if out_dir:
+            try:
+                with open(os.path.join(out_dir, "summary.json")) as f:
+                    s = json.load(f)
+                if run_id and s.get("run_id") == run_id:
+                    bad = (s.get("corrupted_results_training") or 0) + (s.get("corrupted_results_serving") or 0)
+            except (OSError, ValueError, AttributeError):
+                pass
+            # Old evidence can remain beside this run after a rerun. Only count
+            # an incident explicitly tagged with this worker's run identifier.
+            for name in os.listdir(out_dir):
+                if not name.startswith(("evidence_", "math_mode_evidence_")) or not name.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(out_dir, name)) as f:
+                        ev = json.load(f)
+                    if run_id and ev.get("run_id") == run_id:
+                        bad += 1
+                except (OSError, ValueError, AttributeError):
+                    pass
+        if bad:
+            failed += 1
+            problems.append(f"GPU {ids[i]}: FAIL: it computed wrong results and then its check died (exit {code}); "
+                            f"evidence in {out_dir}; see {log}")
+        else:
+            problems.append(f"GPU {ids[i]}: could not be checked (exit {code}); see {log}")
+    return found, problems, failed
 
 
 def main(argv=None) -> int:
@@ -901,14 +1227,30 @@ def main(argv=None) -> int:
     p.add_argument("--child", default=None, help=argparse.SUPPRESS)
     a = p.parse_args(argv)
     torch = _torch()
+    if a.key and a.child is None:              # a key that can't sign is found now, not after the whole check
+        try:
+            from . import certify
+            certify.load_private(a.key)
+        except Exception as e:  # noqa: BLE001
+            print(f"sdcguard check: can't sign with --key {a.key}: {type(e).__name__}: {e}")
+            return 2
     ref = None if (a.offline or a.child is not None) else fetch_reference()
     problems: list = []
-    if a.device is None and a.child is None and torch.cuda.is_available() and torch.cuda.device_count() > 1:
-        results, problems = _children(a)
+    died_failed = 0
+    multi = a.device is None and a.child is None and torch.cuda.is_available() and torch.cuda.device_count() > 1
+    if multi:
+        results, problems, died_failed = _children(a)
         if not results:
             print("sdcguard check: could not run\n  " + "\n  ".join(problems))
-            return 2
+            return 1 if died_failed else 2
         cross_compare(results)
+        for r in results:
+            if ref and r.get("board") is None:
+                try:
+                    apply_board(r, ref)
+                except Exception as e:  # noqa: BLE001
+                    r["notes"].append(["info", f"couldn't compare with the public board's data ({type(e).__name__})"])
+            write_result(r, a.key, a.issuer)
     else:
         dev = a.device or ("cuda" if torch.cuda.is_available() else "cpu")
         if a.child is None and not torch.cuda.is_available():
@@ -922,21 +1264,10 @@ def main(argv=None) -> int:
             print(f"sdcguard check: could not run on {dev}: {type(e).__name__}: {e}")
             return 2
         if a.child is not None:
-            with open(os.path.join(a.out, f".child_{a.child}.json"), "w") as f:
-                json.dump({"out_dir": results[0]["out_dir"]}, f)
             return 0
-    if ref:
-        for r in results:
-            if r.get("board") is None:
-                apply_board(r, ref)
     pubs = []
     for r in results:
         pub = public(r)
-        with open(os.path.join(r["out_dir"], "result.json"), "w") as f:
-            json.dump(pub, f, indent=2)
-        with open(os.path.join(r["out_dir"], "check.json"), "w") as f:
-            json.dump(r, f, indent=2, default=str)
-        write_cards(pub, r["out_dir"])
         pubs.append(pub)
         if a.json:
             print(json.dumps(pub, indent=2))
@@ -947,19 +1278,20 @@ def main(argv=None) -> int:
             print()
         if a.share:
             print(f"Post this card to the public board ({BOARD_URL}):\n{share_url(pub)}\n")
-    if len(results) > 1 and (a.key or a.issuer):
-        _certify(results, pubs, a.key, a.issuer)
     for pr in problems:
         print(f"sdcguard check: {pr}")
     if (len(pubs) > 1 or problems) and not a.json:
-        c = {k: sum(x["result"] == k for x in pubs) for k in ("PASS", "FAIL", "SUSPECT")}
-        print(f"sdcguard check: {len(pubs) + len(problems)} GPUs, {c['PASS']} PASS, {c['FAIL']} FAIL, "
-              f"{c['SUSPECT']} SUSPECT" + (f", {len(problems)} could not be checked" if problems else ""))
+        c = {k: sum(x["result"] == k for x in pubs) for k in ("PASS", "FAIL", "SUSPECT", "INCOMPLETE")}
+        print(f"sdcguard check: {len(pubs) + len(problems)} GPUs, {c['PASS']} PASS, {c['FAIL'] + died_failed} FAIL, "
+              f"{c['SUSPECT']} SUSPECT, {c['INCOMPLETE']} INCOMPLETE"
+              + (f", {len(problems) - died_failed} could not be checked" if len(problems) > died_failed else ""))
     if not a.share and not a.json:
         print("Share it: sdcguard check --share prints a link that posts your card to the public board.")
-    if any(x["result"] != "PASS" for x in pubs):
+    if died_failed or any(x["result"] in ("FAIL", "SUSPECT") for x in pubs):
         return 1
-    return 2 if problems else 0
+    if any(r.get("certificate_error") for r in results):
+        return 2          # a certificate was asked for and couldn't be written
+    return 2 if problems or any(x["result"] == "INCOMPLETE" for x in pubs) else 0
 
 
 if __name__ == "__main__":

@@ -1,98 +1,100 @@
 # sdcguard
 
-Catch GPUs that silently compute wrong answers.
+Catch GPUs that compute wrong answers, inside your own PyTorch training and vLLM serving.
 
-Some GPUs go bad without crashing. They keep running and return wrong numbers, and nothing in the logs
-tells you. Meta sees this at "about one fault per thousand devices"
-([Meta, 2025](https://engineering.fb.com/2025/07/22/data-infrastructure/how-meta-keeps-its-ai-hardware-reliable/)).
-In ByteDance's 35 million GPU-hour training deployment, 15 of the 18 incidents they found caused no visible
-failure, and the vendor's offline diagnostics caught 2 of 8 known-bad machines
-([AEGIS, OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf)).
+A GPU can return wrong numbers without crashing. Sometimes the hardware is at fault, sometimes a library, and
+from the outside the two look the same. ByteDance found 18 such incidents over 3.5 x 10^7 GPU-hours, and 15 of
+them were silent ([AEGIS, OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf)). The usual health
+checks run a test on an idle GPU. sdcguard checks the math of your actual job while it runs, with the kernels,
+precisions and settings you really use.
 
-sdcguard checks the math while it runs. Every matrix multiply it checks has to satisfy a cheap checksum
-identity, with a noise model so normal bf16/fp16 rounding never trips it. When a result is wrong you get the
-GPU (UUID, PCI slot), the layer and where in the output. No replay, no deterministic mode, no framework fork.
+## A real bug the usual tools missed
+
+NVIDIA lists cuBLAS known issue 6862950 in the
+[CUDA 13.4 Update 2 release notes](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html): on
+Hopper GPUs, a process running under MPS with less than 100% of the SMs can get wrong FP16, BF16 and FP8
+matmul results. On October 20 we ran a head-to-head on an H200, with the rules written before the run:
+
+| MPS share | `sdcguard check` | DCGM diagnostic | gpu-burn |
+|---|---|---|---|
+| 100% | PASS | pass | pass |
+| 40% | **FAIL** | pass | pass |
+| 75% | **FAIL** | pass | pass |
+| 14% | **FAIL** | pass | pass |
+
+DCGM and gpu-burn didn't malfunction. Their own test matmuls came out right at every share, so the bug never
+reached them. A test of the GPU isn't a test of your job. Rules, predictions and raw logs:
+[METHOD.md](docs/METHOD.md#head-to-head-on-a-real-cublas-bug-written-october-20-2026-before-any-run),
+[results/h2h](results/h2h/h200_20261020_060928.md).
+
+## Install
+
+```bash
+pip install "sdcguard[all]"
+```
+
+Python 3.10+, PyTorch 2.5+, an NVIDIA GPU. The demo and self-test also run on a CPU.
 
 ## Check a GPU
 
 ```bash
-pip install sdcguard
 sdcguard check            # every GPU on this machine, about 5 minutes
-sdcguard check --share    # same, plus a link that posts your result to the public board
+sdcguard check --share    # same, plus a link to add your result to the public board
 ```
+
+It trains and serves a small model with checks on, runs matmuls in every precision the GPU supports (BF16,
+FP16, TF32, FP32, FP64, INT8, FP8) checked in float64, pattern-tests most of the memory, measures speed, and
+runs a fixed model three times to see that the output stays bit-identical. The precisions matter: in
+ByteDance's study, four GPUs with bad matmuls all got BF16 and FP16 right
+([SDCs in the Wild, OSDI '26](https://www.usenix.org/system/files/osdi26-zheng.pdf)).
+
+Each GPU gets PASS, FAIL, SUSPECT (output that should repeat didn't) or INCOMPLETE (part of the check couldn't
+run or couldn't judge its results). A FAIL saves the inputs and the wrong output, so `sdcguard replay` can
+recompute them on another GPU. PASS means these checks found nothing, not that the GPU is flawless. Shared
+results go on the [board](https://hari-kancharla.github.io/sdcguard/board/).
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
-
-It trains and serves a small GPT-style model with every matmul checked, runs big matmuls at full power,
-pattern-tests most of the free memory, measures speed against the datasheet, and runs one fixed model three
-times to see if the output stays bit-identical. The verdict is PASS, FAIL (wrong results; inputs and outputs
-are saved so `sdcguard replay` can recompute them on another GPU) or SUSPECT (no checksum failed, but output
-that should repeat exactly didn't). Handy before a long run on a rented GPU, before buying a used one, or
-after overclocking.
-
-Shared results go on the [board](https://hari-kancharla.github.io/sdcguard/board/), by GPU model and
-provider. It starts with 10 cloud GPUs (B200, H200, two H100s, A100, L40S, three L4s, T4 on AWS, Google
-Cloud, Azure and Oracle machines): all PASS, 1.68 million results checked, and GPUs of the same model gave
-bit-identical output on different machines and clouds.
-
-## No GPU? Try the demo
-
-```bash
-python -m sdcguard.demo       # a device goes bad mid-training and gets caught
-python -m sdcguard.selftest   # checks that sdcguard works on this machine
-```
-
-Or run it in [Colab](https://colab.research.google.com/github/hari-kancharla/sdcguard/blob/main/examples/colab_demo.ipynb).
-Here's what it looks like on 4 H100s:
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/demo_zoom_dark.png">
-  <img alt="Two training runs on 4 H100s where GPU 2 starts corrupting results at step 205. Without sdcguard the loss looks normal, then turns NaN at step 215, and restarting from the checkpoint crashes again at 215. With sdcguard, the check at step 210 names GPU 2 by UUID and PCI slot, the run evicts it, rolls back to step 200 and finishes all 1,000 steps on 3 GPUs." src="docs/img/demo_zoom.png">
-</picture>
-
-4 H100s training a small GPT. From step 205, GPU 2 corrupts some matmul outputs (simulated in software,
-using NVIDIA's published fault patterns). Without sdcguard the loss looks fine until it goes NaN, and
-restarting from the checkpoint hits the same wall. With it, the run drops GPU 2, rolls back and finishes on
-3 GPUs. Logs: [results/demo_4gpu](results/demo_4gpu).
 
 ## In training
 
 ```python
 from sdcguard import SDCGuard
 
-guard = SDCGuard(every=20).protect(model)    # checks every nn.Linear: forward, dX and dW
+guard = SDCGuard(every=20).protect(model)    # checks nn.Linear layers: forward, dX and dW
 for step, (x, y) in enumerate(loader):
     with guard.on_step(step):                # only every 20th step is checked
         loss = model(x, y); loss.backward()
     optimizer.step(); optimizer.zero_grad()
-    if guard.log.events:                     # pull the GPU, roll back
+    if guard.log.events:                     # stop and look at the evidence
         print(guard.log.events[0].to_json()); break
 ```
 
-On an H100, checking every 20th step costs 1.7% on GPT-2 small and 1.3% on a 0.9B model. The checks only
-read; with `exact_reductions=False` the gradients are bit-identical to a run without sdcguard.
+Checking every 20th step cost 1.7% on GPT-2 small and 1.3% on a 0.9B model (H100). With
+`exact_reductions=False` the gradients are bit-identical to a run without sdcguard.
 
-## In serving (vLLM, Hugging Face)
+## In serving
 
 ```bash
 SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
 ```
 
-`SDCGUARD_SHARE=0.125` checks one linear layer in eight, spread over every kind of layer and depth. With
-Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
-word for word the same as plain vLLM's. Checking every layer costs 28% for now. Weight checksums are computed
-once at load, so weights that get corrupted in GPU memory later are caught too.
+This checks one linear layer in eight. With Qwen2.5-7B on an H100 (vLLM 0.31, compiled mode) it cost about 4%
+of throughput, every compared answer was word for word the same, and a weight bit flipped in a checked layer
+was caught and named. Checking every layer costs about 23% for now
+([details](docs/METHOD.md#vllm-again-october-20-2026-with-the-executed-count-gate)).
 
-Any PyTorch model:
+Any other PyTorch model:
 
 ```python
 from sdcguard.serve import ServeGuard
 
 guard = ServeGuard().attach(model, share=0.125)   # bf16 or fp16 model on its GPU
 ...                                                # serve as usual, eager or torch.compile
-for event in guard.poll():                         # never stalls the GPU
+for event in guard.poll():                         # doesn't stall the GPU
     print(event.to_json())
 ```
+
+`guard.coverage_report()` shows which layers actually ran their check and how many times.
 
 ## Across a fleet
 
@@ -102,49 +104,89 @@ sdcguard replay screen_out/GPU-.../evidence_0.pt     # recompute a failure on an
 sdcguard report node*/sdcguard_check --out fleet_report
 ```
 
-A failed check saves the matmul's inputs and the wrong output with the GPU's UUID, serial and PCI slot,
-which is the "failure follows the board" evidence NVIDIA's RMA process asks for. `sdcguard nhc` is a node
-health check for Kubernetes node-problem-detector and Slurm ([deploy/](deploy/)). `sdcguard keygen` plus
-`sdcguard check --key` gives each GPU a signed certificate, for handing GPUs between a provider and a
-customer. While serving, alerts can go to a Slack or Discord webhook or to Prometheus.
+There's also `sdcguard nhc`, a node health check for Kubernetes and Slurm ([deploy/](deploy/)), signed
+per-GPU certificates (`sdcguard keygen`, `sdcguard check --key`, `sdcguard verify`), and alerts to Slack,
+Discord or Prometheus. An alert is where an investigation starts. It doesn't prove the board is bad.
 
 ## How it works
 
 For `C = A @ B`, the sum of each block of 128 output columns has to equal `A` times the matching column sums
-of `B`. Both sides are cheap, so a wrong value in `C` shows up as a mismatch. This is algorithm-based fault
-tolerance (Huang and Abraham, 1984). Each block gets a plain sum and a randomly signed one, so errors that
-cancel in one still show in the other.
+of `B`. Both sides are cheap to compute, so a wrong value in `C` shows up as a mismatch. This is
+algorithm-based fault tolerance (Huang and Abraham, 1984). Each block also gets a randomly signed sum, so most
+errors can't cancel out. Normal bf16 rounding makes the two sides differ a little, so sdcguard estimates each
+block's rounding noise and alarms only past 6 times that. On NVIDIA GPUs the checks run as Triton kernels.
 
-bf16 results are rounded, so the two sides never match exactly. sdcguard estimates each block's rounding
-noise and only alarms past 6 times that. In 24.6 million checks over 5 GPU-hours of clean training it never
-false-alarmed (worst score 3.54). The trade-off: errors under about 1% of a block hide in the noise. On NVIDIA
-GPUs the checks run as Triton kernels, which first have to match the plain PyTorch check or the plain check
-is used instead. Results are read back without stalling the GPU.
+## What it catches, and what it misses
 
-It also holds up against faults injected into real hardware. Flipping a mantissa bit in every tensor-core
-instruction on one lane of an L4 (about a 10% error in one input) left the loss untouched, and sdcguard
-flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit)).
+It catches:
 
-## What it covers
+- wrong results in the matmuls it checks, during real training and serving, on one GPU, with no replicas or
+  replay
+- errors that repeat exactly every time, because each result is checked against the math, not an earlier run
+- in a fault-injection study on GPT-2, 99% of faults that moved a 128-column block by 10% or more, and 70% of
+  those between 1% and 10% ([harm study](results/harm_study_gpt2/REPORT.md))
+- a mantissa bit flip injected into real L4 tensor-core instructions with NVBit: the loss looked normal, and
+  sdcguard flagged 30 of 30 steps ([results](results/round3_oct18/nvbit))
 
-| | |
-|---|---|
-| Works | PyTorch training in bf16/fp16 (DDP tested on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, Apple GPUs (training checks), `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4 |
-| Not checked | fp32/TF32 matmuls, quantized layers (FP8, INT4), fused MoE experts, the inside of fused attention (only `check`'s repeatability test covers it) |
-| Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD |
+It misses:
 
-On Blackwell (B200) sdcguard uses the plain PyTorch checks; the faster Triton kernels cover Turing through
-Hopper for now.
+- small errors: nothing under about 1% of a block. ByteDance found that checksums of bf16 outputs located none
+  of their incidents and fp32 accumulators found them (AEGIS, section 8). sdcguard's fp32 check (precise
+  mode) is still experimental.
+- anything outside the checked matmuls: attention internals, normalization, MoE experts, the optimizer,
+  communication
+- correct math on wrong inputs, like the wrong weights or a broken quantization
+- steps and layers that sampling skips
+
+No naturally defective GPU has been caught yet. The evidence so far is injected faults and a real library bug.
+On clean GPUs it raised no false alarm in 24.6 million checks of GPT-2 training on an H100 or in 1.68 million
+checks across 10 cloud GPUs.
+
+## Compared with what you may already run
+
+| Tool | What it does | What it can't see |
+|---|---|---|
+| DCGM diagnostic, gpu-burn | Run the same test matmul many times on an idle GPU and compare the results with each other | An error that repeats exactly; BF16 and FP8; your job's own kernels and settings |
+| Megatron Core rerun state machine | Reruns a step when a check rejects it; built in: NaN or Inf in the loss or gradient norms, opt-in spikes | Wrong results that leave the loss and gradients looking normal; jobs outside Megatron |
+| TorchTitan's replayer, SCOUT | Bitwise replay of a step, or exact comparison across 3 or more replicas | An error every replica shares, like a library bug; serving |
+
+Sources for each row are in [WHY.md](docs/WHY.md).
+
+## Coverage
+
+- Tested: PyTorch training in bf16 and fp16 (DDP on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving,
+  `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4.
+- Not checked: fp32, TF32 and quantized matmuls in training and serving (`check` tests them one matmul at a
+  time), convolutions, fused MoE experts, vLLM's LM head, the inside of fused attention.
+- Not tested yet: Megatron tensor and pipeline parallel, DeepSpeed, multi-node, AMD.
+
+## No GPU? Try the demo
+
+```bash
+python -m sdcguard.demo       # simulated corruption during training, clearly labeled as a demo
+python -m sdcguard.selftest   # checks that sdcguard works on this machine
+```
+
+Or run it in [Colab](https://colab.research.google.com/github/hari-kancharla/sdcguard/blob/main/examples/colab_demo.ipynb).
+The same kind of simulation on 4 H100s:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/demo_zoom_dark.png">
+  <img alt="Training loss of the same run on 4 H100s with and without sdcguard. GPU 2 starts returning wrong results at step 205. sdcguard flags it at step 210 and the run finishes all 1,000 steps on GPUs 0, 1 and 3. Without sdcguard the loss looks normal until it turns NaN at step 215, and restarting crashes again." src="docs/img/demo_zoom.png">
+</picture>
+
+Logs and raw numbers: [results/demo_4gpu](results/demo_4gpu).
 
 ## More
 
-- [docs/METHOD.md](docs/METHOD.md): how every number here was measured, with the pass/fail criteria written
-  before the GPU runs
-- [docs/WHY.md](docs/WHY.md): what already exists (DCGM, gpu-burn, TorchTitan's replayer, AEGIS and others)
-  and what it misses
-- [results/](results/): raw output of every GPU run
+- [docs/METHOD.md](docs/METHOD.md): how every number was measured, with pass/fail criteria written before the
+  GPU runs
+- [docs/EVIDENCE.md](docs/EVIDENCE.md): what others published and what sdcguard measured, kept apart,
+  negative results included
+- [docs/WHY.md](docs/WHY.md): what already exists and what it misses
+- [results/](results/): raw output of the GPU runs
 - To reproduce: `pip install -e ".[experiments,dev]" && pytest -q`, then the Modal scripts in
-  [scripts/](scripts/). The full `check` sweep over 7 GPU types costs about $4.40.
+  [scripts/](scripts/)
 
 ## Status
 

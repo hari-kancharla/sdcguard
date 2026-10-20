@@ -93,20 +93,77 @@ def _sha256(path: str) -> Optional[str]:
     return h.hexdigest()
 
 
+def artifact_problems(cert: dict, out_dir: str) -> dict:
+    """Check every artifact declared by a certificate, including absent files.
+
+    Signature validity and artifact availability are different facts: a detached
+    certificate can have a valid signature without supplying its evidence.
+    """
+    problems = {}
+    manifest = {}
+    for field in ("evidence_sha256", "files_sha256"):
+        entries = cert.get(field) or {}
+        if not isinstance(entries, dict):
+            problems[field] = "malformed artifact manifest"
+            continue
+        for name, digest in entries.items():
+            if not isinstance(name, str) or os.path.basename(name) != name or name in ("", ".", ".."):
+                problems[str(name)] = "invalid artifact name"
+                continue
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                problems[name] = "invalid SHA-256 digest"
+                continue
+            if name in manifest and manifest[name] != digest:
+                problems[name] = "conflicting artifact digests"
+            manifest[name] = digest
+    for name, digest in manifest.items():
+        actual = _sha256(os.path.join(out_dir, name))
+        if actual is None:
+            problems[name] = "missing or unreadable since the certificate was issued"
+        elif actual != digest:
+            problems[name] = "changed since the certificate was issued"
+    return problems
+
+
 def _now() -> _dt.datetime:
     return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
 
 
 def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optional[_dt.datetime] = None,
-         check: Optional[dict] = None) -> dict:
-    """An unsigned certificate from a screen summary (screen.screen_one's return value)."""
+         check: Optional[dict] = None, full: Optional[dict] = None) -> dict:
+    """An unsigned certificate from a screen summary (screen.screen_one's return value). full: `sdcguard
+    check`'s complete result (check.json), whose evidence and wrong-result counts cover every phase (the
+    workload, the stress check and the math modes), not only the workload."""
     now = now or _now()
     g = summary.get("gpu", {})
     evidence = {}
-    for e in summary.get("evidence", []):
+    for e in (full or {}).get("evidence", summary.get("evidence", [])):
         for ext in (".json", ".pt"):
-            evidence[os.path.basename(e) + ext] = _sha256(e + ext)
-    simulated = bool(summary.get("SIMULATED_FAULTS"))
+            digest = _sha256(e + ext)
+            if digest is None:
+                raise FileNotFoundError(f"cannot certify missing evidence: {e + ext}")
+            name = os.path.basename(e) + ext
+            if name in evidence and evidence[name] != digest:
+                raise ValueError(f"evidence files have the same name and different contents: {name}")
+            evidence[name] = digest
+    corrupted = {"training": summary.get("corrupted_results_training"),
+                 "serving": summary.get("corrupted_results_serving")}
+    if full and full.get("wrong"):
+        w = full["wrong"]
+        corrupted.update(stress=w.get("stress", 0), math_modes=w.get("math_modes", 0),
+                         memory_words=w.get("memory_words", 0))
+    simulated = bool(summary.get("SIMULATED_FAULTS")) or bool((full or {}).get("simulated_faults"))
+    # the files a fleet report or a person reads the result from: a change to them after signing is detected
+    files = {}
+    out_dir = (full or {}).get("out_dir") or summary.get("out_dir")
+    if out_dir:
+        required = ("check.json", "result.json") if full else ("summary.json",)
+        for name in ("summary.json", "check.json", "result.json"):
+            digest = _sha256(os.path.join(out_dir, name))
+            if digest is not None:
+                files[name] = digest
+            elif name in required:
+                raise FileNotFoundError(f"cannot certify missing result: {os.path.join(out_dir, name)}")
     cert = {
         "format": FORMAT,
         "issued_at": now.isoformat(),
@@ -118,22 +175,28 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
                      "training_steps": summary.get("training_steps"), "serving_passes": summary.get("serving_passes"),
                      "matmuls_checked": summary.get("matmuls_checked"),
                      "linear_layer_checks_while_serving": summary.get("linear_layer_checks_while_serving"),
-                     "approx_matmul_tflop": summary.get("approx_matmul_tflop")},
+                     "approx_matmul_tflop": summary.get("approx_matmul_tflop"),
+                     "unjudged_training_checks": summary.get("unjudged_training_checks", 0),
+                     "serving_passes_with_nonfinite_output": summary.get("serving_passes_with_nonfinite_output", 0)},
         "result": summary.get("result"),
-        "corrupted_results": {"training": summary.get("corrupted_results_training"),
-                              "serving": summary.get("corrupted_results_serving")},
+        "corrupted_results": corrupted,
         "worst_clean_score": summary.get("worst_clean_z"),
         "alarm_line": summary.get("alarm_line", 6.0),
         "evidence_sha256": evidence,
+        "files_sha256": files,
+        "hardware_errors": list((full or {}).get("hardware_errors") or []),
         "simulated_faults": simulated,
-        "meaning": ("PASS: every checked matrix multiply on this GPU matched its checksums during this workload. "
-                    "FAIL: some did not; the evidence files hold the inputs and wrong outputs, and "
-                    "`sdcguard replay <evidence>.pt` recomputes them on any GPU."),
+        "meaning": ("PASS: every matrix multiply checked on this GPU matched its checksums, and every check could "
+                    "be judged (counts above). It says what was checked, not that the GPU has no defect. INCOMPLETE: "
+                    "nothing wrong was found, but part of the check couldn't run or couldn't judge its results; this certificate doesn't vouch for the GPU. "
+                    "FAIL: some results were wrong (the evidence files hold the failed matmuls' inputs and outputs, "
+                    "and `sdcguard replay <evidence>.pt` recomputes them on any GPU), or the driver reported memory "
+                    "errors it couldn't correct (hardware_errors)."),
     }
     if check:   # from `sdcguard check`: speed, memory test, repeatability, health, and its overall verdict
         cert["check"] = {k: check.get(k) for k in ("result", "checked", "wrong", "headroom", "repeatable",
                                                     "fingerprint", "speed", "health", "notes", "digest")}
-        if check.get("result") in ("FAIL", "SUSPECT"):
+        if check.get("result") in ("FAIL", "SUSPECT", "INCOMPLETE") and cert["result"] != "FAIL":
             cert["result"] = check["result"]
     return cert
 
@@ -149,9 +212,9 @@ def sign(cert: dict, key_path: str) -> dict:
 
 
 def write(summary: dict, out_dir: str, key_path: Optional[str] = None, issuer: str = "",
-          valid_days: float = 30.0, check: Optional[dict] = None) -> str:
+          valid_days: float = 30.0, check: Optional[dict] = None, full: Optional[dict] = None) -> str:
     """Certificate for one screened GPU, written next to its summary as certificate.json."""
-    cert = make(summary, issuer=issuer, valid_days=valid_days, check=check)
+    cert = make({**summary, "out_dir": out_dir}, issuer=issuer, valid_days=valid_days, check=check, full=full)
     if key_path:
         cert = sign(cert, key_path)
     else:
@@ -165,7 +228,10 @@ def write(summary: dict, out_dir: str, key_path: Optional[str] = None, issuer: s
 def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datetime] = None) -> dict:
     """Check a certificate. Returns {"ok", "signed", "signature_valid", "trusted_key", "expired",
     "evidence_files_match", "result", "gpu", "problems"}. ok means: signature valid, signed by the given
-    public key (when one is given), not expired, evidence files (if present next to it) unchanged."""
+    public key (when one is given), not expired, evidence files and the check's result files (check.json,
+    result.json) present and unchanged. ok says the certificate is authentic and its declared artifacts are
+    available, not that the GPU
+    passed: read "result" (or use `sdcguard verify --require-pass`)."""
     with open(path) as f:
         cert = json.load(f)
     problems = []
@@ -206,16 +272,14 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     if out["expired"]:
         problems.append(f"expired on {cert.get('valid_until')}")
     here = os.path.dirname(os.path.abspath(path))
-    match = True
-    for name, digest in (cert.get("evidence_sha256") or {}).items():
-        p = os.path.join(here, name)
-        if os.path.exists(p) and _sha256(p) != digest:
-            match = False
-            problems.append(f"evidence file {name} changed since the certificate was issued")
+    artifacts = artifact_problems(cert, here)
+    match = not artifacts
+    problems.extend(f"{name} {why}" for name, why in artifacts.items())
+    out["artifact_problems"] = artifacts
     out["evidence_files_match"] = match
     if cert.get("simulated_faults"):
         problems.append("this screen injected SIMULATED faults (a demo, not a real result)")
     out["problems"] = problems
-    out["ok"] = (out["signature_valid"] and out["trusted_key"] is not False and not out["expired"] and match
+    out["ok"] = (out["signature_valid"] and out["trusted_key"] is not False and out["expired"] is False and match
                  and not cert.get("simulated_faults") and cert.get("format") == FORMAT)
     return out

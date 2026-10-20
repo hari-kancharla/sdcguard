@@ -90,10 +90,11 @@ if HAVE_TRITON:
 
     # m (rows: tokens in the batch) changes with every batch, so nothing may depend on its value: then the
     # variants compiled by warm() at load time cover every batch size (no compile while serving)
-    @triton.jit(do_not_specialize=["slot", "jbp", "nb", "rem", "s_last", "m"])
-    def _check(X, Y, E, S, SCALE, B2N, BMAX, BMB, BSUM, STATE, slot, m, k, n, nb, bs, rem, s_full, s_last,
+    @triton.jit(do_not_specialize=["slot", "jbp", "nb", "rem", "s_last", "m", "sc"])
+    def _check(X, Y, E, S, SCALE, B2N, BMAX, BMB, BSUM, STATE, slot, sc, m, k, n, nb, bs, rem, s_full, s_last,
                sxm, sxk, sym, syn, es, two_nb, jbp, u, h, abs_floor, zt, lim_a, lim_big,
-               BM: tl.constexpr, BKX: tl.constexpr, CB: tl.constexpr, BW: tl.constexpr, NPARTS: tl.constexpr):
+               BM: tl.constexpr, BKX: tl.constexpr, CB: tl.constexpr, BW: tl.constexpr, NPARTS: tl.constexpr,
+               COUNTS: tl.constexpr):
         pm = tl.program_id(0)
         pj = tl.program_id(1)
         rm = pm.to(tl.int64) * BM + tl.arange(0, BM)
@@ -111,6 +112,7 @@ if HAVE_TRITON:
         best = tl.sum(tl.zeros((BM,), dtype=tl.float32), axis=0) - 1.0
         best_i = tl.sum(tl.zeros((BM,), dtype=tl.int64), axis=0)
         best_d = tl.sum(tl.zeros((BM,), dtype=tl.float32), axis=0)
+        unk_n = tl.sum(tl.zeros((BM,), dtype=tl.int32), axis=0)          # checksums that couldn't be judged
         j_lo = pj * jbp
         j_hi = tl.minimum(j_lo + jbp, nb)
         w = tl.arange(0, BW)
@@ -169,17 +171,30 @@ if HAVE_TRITON:
             e_bad0 = ~(tl.abs(exp0) < float("inf"))
             a_bad0 = (~e_bad0) & ~(tl.abs(plain) < float("inf"))
             big0 = nfin & (~e_bad0) & (~a_bad0)
+            nan0 = ~(z0 == z0)
             z0 = tl.where(z0 == z0, z0, 0.0)
             z0 = tl.where(e_bad0, 0.0, z0)
+            # finite outputs too large for the inputs (checksum._judge_nonfinite explains)
+            cap = bound * (1.02 + k * 2.384185791015625e-07) + 2.0 * h
+            imposs = (~nfin) & (lim < lim_big) & (tl.sqrt(sq) > cap * tl.sqrt(wf)[None, :])
+            z0 = tl.where(imposs & (~e_bad0) & (~a_bad0), float("inf"), z0)
             z0 = tl.where(a_bad0, tl.where(lim < lim_a, float("inf"), 0.0), z0)
             z0 = tl.where(big0, tl.where(lim < lim_big, float("inf"), 0.0), z0)
             e_bad1 = ~(tl.abs(exp1) < float("inf"))
             a_bad1 = (~e_bad1) & ~(tl.abs(signed) < float("inf"))
             big1 = nfin & (~e_bad1) & (~a_bad1)
+            nan1 = ~(z1 == z1)
             z1 = tl.where(z1 == z1, z1, 0.0)
             z1 = tl.where(e_bad1, 0.0, z1)
+            z1 = tl.where(imposs & (~e_bad1) & (~a_bad1), float("inf"), z1)
             z1 = tl.where(a_bad1, tl.where(lim < lim_a, float("inf"), 0.0), z1)
             z1 = tl.where(big1, tl.where(lim < lim_big, float("inf"), 0.0), z1)
+            # unjudged (they score 0 above), as in serve.check_static_impl and checksum._judge_nonfinite
+            ok_a = lim < lim_a
+            ok_big = lim < lim_big
+            unk0 = (nan0 & (~imposs) & (~a_bad0) & (~big0)) | e_bad0 | (a_bad0 & (~ok_a)) | (big0 & (~ok_big))
+            unk1 = (nan1 & (~imposs) & (~a_bad1) & (~big1)) | e_bad1 | (a_bad1 & (~ok_a)) | (big1 & (~ok_big))
+            unk_n += tl.sum(tl.sum(tl.where(both & unk0, 1, 0) + tl.where(both & unk1, 1, 0), axis=1), axis=0)
             z0 = tl.where(both, z0, -1.0)
             z1 = tl.where(both, z1, -1.0)
             # worst of this chunk (the plain checksum on ties), its position and noise
@@ -199,18 +214,25 @@ if HAVE_TRITON:
             best_d = tl.where(take, dsel, best_d)
         zbits = tl.maximum(best, 0.0).to(tl.int32, bitcast=True).to(tl.int64)
         dbits = best_d.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF
-        tl.atomic_max(STATE + slot * 2, (zbits << 32) | (best_i & 0xFFFFFFFF))
-        tl.atomic_max(STATE + slot * 2 + 1, (zbits << 32) | dbits)
+        tl.atomic_max(STATE + slot * sc, (zbits << 32) | (best_i & 0xFFFFFFFF))
+        tl.atomic_max(STATE + slot * sc + 1, (zbits << 32) | dbits)
+        if COUNTS:           # (serve.STATE_COLS: one check executed, from one program, and the unjudged count)
+            first = (pm == 0) & (pj == 0)
+            tl.atomic_add(STATE + slot * sc + 2, tl.where(first, 1, 0).to(tl.int64), mask=first)
+            tl.atomic_add(STATE + slot * sc + 3, unk_n.to(tl.int64), mask=unk_n > 0)
 
 
 def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor,
           scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor, bmax_bias: torch.Tensor, bsum: torch.Tensor,
           wsq: torch.Tensor, width: torch.Tensor, state: torch.Tensor, slot: int, z: float, abs_floor: float,
           _bm: Optional[int] = None) -> None:
-    """Same arguments and result as serve.check_static_impl (the state row gets the worst z)."""
+    """Same arguments and result as serve.check_static_impl (the state row gets the worst z, and with
+    serve.STATE_COLS columns the counts of checks executed and checksums that couldn't be judged)."""
     from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF
+    from .serve import STATE_COLS
+    counts = state.dim() == 2 and state.shape[1] >= STATE_COLS
     m, n = y2.shape
-    if m == 0 or n == 0:
+    if m == 0 or n == 0:     # nothing to check (and not counted as a check, as in the plain check)
         return
     dt = y2.dtype
     if x2.dtype != dt:
@@ -218,6 +240,8 @@ def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: to
     k = x2.shape[1]
     nb = b2n.shape[0]
     bs = pair_full.shape[0]
+    if bs > 128:            # the sign table holds widths 1..128 (serve.check_static_any routes wider blocks away)
+        raise ValueError(f"the Triton serving check takes blocks up to 128 wide, not {bs}")
     rem = n - (n // bs) * bs
     if parts.shape[1] == 6 * nb:                      # three low-precision parts (NVIDIA)
         if parts.dtype == dt and x2.is_cuda:
@@ -229,13 +253,16 @@ def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: to
         E = x2.float() @ parts.float()
         nparts = 1
     BM, BKX, CB, BW, jbp, rows_p, col_p, warps = config(m, k, nb, bs, y2.device, _bm)
+    st = _group.pipeline_stages(y2.device, None)          # 1 on Blackwell (_group.pipeline_stages explains)
+    stages = {} if st is None else {"num_stages": st}
     with _group._on(y2.device):
         _check[(rows_p, col_p)](
-            x2, y2, E, _group._sign_table(y2.device), scale, b2n, bmax, bmax_bias, bsum, state, slot, m, k, n, nb,
+            x2, y2, E, _group._sign_table(y2.device), scale, b2n, bmax, bmax_bias, bsum, state, slot,
+            state.stride(0), m, k, n, nb,
             bs, rem, _group._sign_offset(bs), _group._sign_offset(rem) if rem else 0, x2.stride(0), x2.stride(1),
             y2.stride(0), y2.stride(1), E.stride(0), 2 * nb, jbp, float(UNIT_ROUNDOFF[dt]), float(HALF_TINY_STEP[dt]),
             float(abs_floor), float(z), float(min(DTYPE_MAX[dt], BIG)), float(BIG),
-            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, num_warps=warps)
+            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, COUNTS=counts, num_warps=warps, **stages)
 
 
 def verified(device: torch.device, dtype: torch.dtype) -> bool:
@@ -263,8 +290,8 @@ def verified(device: torch.device, dtype: torch.dtype) -> bool:
     return STATUS[key][0]
 
 
-def decode(key_i: int, key_d: int):
-    """(z, flat position, noise) from a state row."""
+def decode(key_i: int, key_d: int, *counts: int):
+    """(z, flat position, noise) from a state row (its count columns, if any, are ignored here)."""
     import struct
     zb = (int(key_i) >> 32) & 0xFFFFFFFF
     z = struct.unpack("<f", struct.pack("<I", zb))[0]
@@ -275,7 +302,7 @@ def decode(key_i: int, key_d: int):
 def _probe(device: torch.device, dtype: torch.dtype):
     """Clean and corrupted layers: shapes with a partial last block, a bias, one row, narrow layers, and
     every number of rows per program (1 to 16; the corrupted row lands inside a multi-row tile)."""
-    from .serve import LayerChecksums, check_static_impl
+    from .serve import STATE_COLS, LayerChecksums, check_static_impl
     g = torch.Generator().manual_seed(11)
     T = _group._target_programs(device)
     shapes = [(64, 256, 300, True, None), (1, 512, 1000, False, None), (200, 96, 40, True, None),
@@ -293,12 +320,15 @@ def _probe(device: torch.device, dtype: torch.dtype):
             if corrupted:
                 r, c = (m * 2) // 3, (n * 3) // 5
                 yy[r, c] = yy[r, c] + 50.0 if n % 2 else float("nan")
-            ref = torch.zeros(1, 2, dtype=torch.int64, device=device)
-            fast = torch.zeros(1, 2, dtype=torch.int64, device=device)
+            ref = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=device)
+            fast = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=device)
             check_static_impl(x, yy, *cs.tensors(True), ref, 0, 6.0, 1e-20)
             check(x, yy, *cs.tensors(True), fast, 0, 6.0, 1e-20, _bm=bm)
-            rz, rf, _ = decode(*ref[0].tolist())
-            fz, ff, _ = decode(*fast[0].tolist())
+            rz, rf, _ = decode(*ref[0, :2].tolist())
+            fz, ff, _ = decode(*fast[0, :2].tolist())
+            if ref[0, 2:].tolist() != fast[0, 2:].tolist():
+                return False, (f"({m}, {k}, {n}, rows per program {bm}) {'corrupted' if corrupted else 'clean'}: "
+                               f"fast counts {fast[0, 2:].tolist()}, plain counts {ref[0, 2:].tolist()}")
             if not corrupted:
                 ok = rz <= 6.0 and fz <= 6.0 and abs(fz - rz) <= 0.05 + 0.02 * rz
             else:
@@ -326,7 +356,8 @@ def warm(parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor, s
     with _disable_current_modes(), torch.no_grad(), torch.autocast(dev.type, enabled=False):
         x = torch.zeros(16, k, device=dev, dtype=dtype)
         y = torch.zeros(16, n, device=dev, dtype=dtype)
-        st = torch.zeros(1, 2, dtype=torch.int64, device=dev)
+        from .serve import STATE_COLS
+        st = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=dev)    # (the layout the guard's state has)
         for bm in (1, 2, 4, 8, 16):
             check(x, y, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum, wsq, width, st, 0, 6.0, 1e-20,
                   _bm=bm)

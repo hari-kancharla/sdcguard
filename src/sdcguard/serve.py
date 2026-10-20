@@ -8,16 +8,26 @@ and every forward pass only has to read the layer's input x and output y once mo
                                         parts on NVIDIA GPUs, so 6/128 = about 4.7% of the layer's work)
     actual   = block sums of y         (one pass over y)
 
-A mismatch beyond the rounding noise means the matmul came out wrong, or the weights changed in
-GPU memory since they were loaded (a bit flip in HBM or GDDR that ECC missed, or a GPU without
-ECC). verify_weights() tells the two apart.
+A mismatch beyond the estimated rounding noise reports a numerical disagreement. Causes to investigate
+include incorrect computation, changed weights, and a checker or numerical-model problem. verify_weights()
+compares weight fingerprints with their load-time values; it does not establish the cause by itself.
 
 Same math and noise model as the training check (checksum.py): two checksums per 128-output
-block (plain and fixed random +-1 signs), alarm at z > 6.
+block (plain and fixed random +-1 signs), alarm at z > 6. One difference: a block the check can't judge
+(inputs that aren't finite, or a legitimate overflow) scores 0 here, because the per-layer state only holds
+non-negative scores. Separate execution and unjudged-checksum counts distinguish those cases from completed
+clean checks and from layers that never ran.
+
+Layers whose code might compute something other than x @ W^T + b are left alone and listed in
+guard.unsupported: a subclass with its own forward, and a forward set on the instance. The one exception is
+accelerate's device hook (dispatch_model, from_pretrained(device_map=...)), which keeps nn.Linear.forward as
+_old_forward and calls it after moving the inputs to the weights' device: the check runs there, underneath the
+hook. Layers whose weights are offloaded (on the meta device when attached) are listed too.
 
 Built for serving engines:
-  - Nothing ever waits for the GPU. Results go into a small state tensor on the GPU (worst z per
-    layer since the last poll, and where it was); poll() reads it back without stalling.
+  - The check's forward path does not explicitly wait for the GPU. Results go into a small state tensor
+    (worst z per layer and execution/unjudged counts); poll(wait=False) reads it back asynchronously.
+    Explicit snapshots, synchronous polls and detach() wait for queued work.
   - The check is a PyTorch custom op (sdcguard::check_static), so torch.compile treats it as one
     opaque call and CUDA graphs capture it like any other kernel.
   - On NVIDIA GPUs it costs one cuBLAS call and one Triton kernel per layer (_serve_fast.py), once
@@ -34,6 +44,7 @@ from __future__ import annotations
 
 import math
 import threading
+import weakref
 from typing import Callable, Optional
 
 import torch
@@ -44,7 +55,13 @@ from .events import EventLog, SDCEvent, device_identity
 # Per layer, two int64 keys: (bits of the worst z << 32) | flat index of that checksum, and
 # (bits of the worst z << 32) | bits of its noise. z >= 0 and the bits of non-negative floats sort like
 # the floats, so the largest key holds the worst z (an integer maximum, also usable as an atomic).
-STATE_COLS = 2
+# Then two counts since the last poll: checks executed (calls of the check for that layer, empty batches
+# excluded) and checksums
+# that couldn't be judged (Inf/NaN the inputs explain: score 0, but not evidence of a clean result). A worst
+# score of 0 alone can't tell a clean layer from one never checked; the counts can. State tensors with only
+# the two key columns (older callers, tests) still work: the counts are then skipped.
+STATE_COLS = 4
+COL_CHECKS, COL_UNJUDGED = 2, 3
 
 
 _PHI = (math.sqrt(5.0) - 1.0) / 2.0
@@ -53,12 +70,16 @@ _PHI = (math.sqrt(5.0) - 1.0) / 2.0
 def select_layer(i: int, share: float, offset: int = 0) -> bool:
     """Is linear layer number i (in model order) one of the checked share? Golden-ratio spacing: a
     share spreads over every kind of layer and every depth (every 4th layer would pick the same
-    projection in every transformer block). Different offsets pick different layers."""
+    projection in every transformer block). Layer i sits at the point i x 0.618... (mod 1) and is taken
+    when that point falls in a window of width `share` starting at offset x share: with share 1/R, offsets
+    0 to R-1 split the layers between R replicas, every layer checked by exactly one. (Until Oct 19, 2026
+    the offset shifted the layer number instead, and offsets 0 to 7 at share 0.125 left 10% of the layers
+    unchecked everywhere; an independent review found it.)"""
     if share >= 1.0:
         return True
     if share <= 0.0:
         return False
-    return ((i + offset) * _PHI) % 1.0 < share
+    return ((i * _PHI) % 1.0 - offset * share) % 1.0 < share
 
 
 def _static(t: torch.Tensor) -> None:
@@ -86,6 +107,12 @@ class LayerChecksums:
     """Everything the check needs about one weight matrix W (n outputs x k inputs), computed once."""
 
     def __init__(self, weight: torch.Tensor, bias: Optional[torch.Tensor], block: int = 128):
+        # A caller may attach or refresh under autocast. The cached reference must still be computed in
+        # its declared precision; otherwise even healthy outputs can fail, particularly with bias cancellation.
+        with torch.autocast(device_type=weight.device.type, enabled=False):
+            self._initialize(weight, bias, block)
+
+    def _initialize(self, weight: torch.Tensor, bias: Optional[torch.Tensor], block: int) -> None:
         # (every tensor here is created with an explicit dtype: vLLM processes weights under a bf16
         # default dtype, set_default_torch_dtype in its model loader)
         W = weight.detach()
@@ -198,6 +225,15 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     """Check y2 = x2 @ W^T (+ bias) for one layer and fold the worst z into state[slot].
 
     No host sync and no data-dependent Python control flow, so it is safe inside CUDA graphs."""
+    with torch.autocast(device_type=x2.device.type, enabled=False):
+        _check_static_impl(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum,
+                           wsq, width, state, slot, z, abs_floor)
+
+
+def _check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
+                       pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor,
+                       bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
+                       state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     dt = y2.dtype
     u = UNIT_ROUNDOFF[dt]
     h = HALF_TINY_STEP[dt]
@@ -237,23 +273,40 @@ def check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, p
     zs = diff / den
     worst = (l1 * (1.25 * u) + 1.25 * h * width).unsqueeze(-1) + floor[..., :1] + abs_floor
     zs = torch.cat([torch.minimum(zs[..., :1], diff[..., :1] / worst * z), zs[..., 1:]], dim=-1)
-    # Inf/NaN, judged against what the inputs allow (see checksum.py)
+    # Inf/NaN, judged against what the inputs allow (see checksum.py). Blocks that can't be judged score 0
+    # here, not -1 as in training: the per-layer state only holds non-negative scores.
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad
     lim = bound * 1.01
     inf = torch.full_like(zs, float("inf"))
     zero = torch.zeros_like(zs)
+    nan = zs != zs                              # inf/inf (both sides huge): nothing to judge
     zs = torch.where(zs == zs, zs, zero)
     zs = torch.where(e_bad, zero, zs)
-    zs = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dt], BIG), inf, zero), zs)
+    # finite outputs too large for the inputs (checksum._judge_nonfinite explains)
+    cap = bound * (1.02 + x2.shape[1] * 2.0 ** -22) + 2 * h
+    imposs = ~e_bad & ~a_bad & ~big & (lim < BIG) & (noise / u > cap * wsq.view(1, nb, 1))
+    zs = torch.where(imposs, inf, zs)
+    lim_a = min(DTYPE_MAX[dt], BIG)
+    zs = torch.where(a_bad, torch.where(lim < lim_a, inf, zero), zs)
     zs = torch.where(big, torch.where(lim < BIG, inf, zero), zs)
-    flat = zs.reshape(-1)
+    # checksums that couldn't be judged (they score 0 above; training scores them UNJUDGED, see
+    # checksum._judge_nonfinite): nothing to compare, the expected side isn't finite, or a non-finite or
+    # too-large output the inputs can explain
+    unjudged = ((nan & ~imposs & ~a_bad & ~big) | e_bad | (a_bad & ~(lim < lim_a)) | (big & ~(lim < BIG))).sum()
+    # one extra 0 at the end: an empty batch (m = 0) then scores 0 instead of failing the reduction, with no
+    # data-dependent branch (this also runs traced into vLLM's compiled graph)
+    flat = torch.cat([zs.reshape(-1), zs.new_zeros(1)])
     mz, arg = torch.max(flat, 0)
-    nz = den.expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0)
+    nz = torch.cat([den.expand_as(zs).reshape(-1), den.new_ones(1)]).gather(0, arg.view(1)).squeeze(0)
     zb = mz.float().clamp_min(0).view(torch.int32).to(torch.int64) << 32
     keys = torch.stack([zb | arg.to(torch.int64), zb | (nz.float().view(torch.int32).to(torch.int64) & 0xFFFFFFFF)])
-    state[slot] = torch.maximum(state[slot], keys)
+    state[slot, :2] = torch.maximum(state[slot, :2], keys)
+    if state.shape[1] >= STATE_COLS:            # (a shape, not a value: no host sync, safe in CUDA graphs)
+        # one check executed, unless the batch was empty (counted without a branch on the batch size)
+        executed = torch.ones_like(y2[:, 0], dtype=torch.int64).sum().clamp(max=1)
+        state[slot, COL_CHECKS:COL_UNJUDGED + 1] += torch.stack([executed, unjudged.to(torch.int64)])
 
 
 def decode_state(rows: torch.Tensor):
@@ -264,13 +317,32 @@ def decode_state(rows: torch.Tensor):
     return list(zip(zs, flats, nzs))
 
 
+def decode_counts(rows: torch.Tensor):
+    """(checks executed, unjudged checksums) per row of a state tensor (on the CPU); (0, 0) for a state without
+    the count columns."""
+    if rows.dim() != 2 or rows.shape[1] < STATE_COLS:
+        return [(0, 0)] * rows.shape[0]
+    return list(zip(rows[:, COL_CHECKS].tolist(), rows[:, COL_UNJUDGED].tolist()))
+
+
 def check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
                      pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor,
                      bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
                      state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
     """The Triton check where it has passed its first-use comparison, else the PyTorch one."""
+    with torch.autocast(device_type=x2.device.type, enabled=False):
+        _check_static_any(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum,
+                          wsq, width, state, slot, z, abs_floor)
+
+
+def _check_static_any(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor,
+                      pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor,
+                      bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
+                      state: torch.Tensor, slot: int, z: float, abs_floor: float) -> None:
+    if x2.shape[0] == 0:                       # empty batch: nothing to check
+        return
     from . import _serve_fast
-    if _serve_fast.ready(y2.device, y2.dtype):
+    if pair_full.shape[0] <= 128 and _serve_fast.ready(y2.device, y2.dtype):     # (its sign table holds 128)
         try:
             _serve_fast.check(x2, y2, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum, wsq, width,
                               state, slot, z, abs_floor)
@@ -320,6 +392,17 @@ def _op():
         return _OP[0]
 
 
+def _is_linear_forward(f, mod: torch.nn.Module) -> bool:
+    """f is mod's own nn.Linear.forward, bound to mod (what accelerate leaves on the instance after removing a hook)."""
+    return getattr(f, "__func__", None) is torch.nn.Linear.forward and getattr(f, "__self__", None) is mod
+
+
+def _accelerate_hooked(mod: torch.nn.Module) -> bool:
+    """Is mod's instance forward accelerate's hook wrapper (add_hook_to_module), with nn.Linear.forward kept as
+    mod._old_forward? Only then does the hook call the plain linear underneath."""
+    return getattr(mod, "_hf_hook", None) is not None and _is_linear_forward(mod.__dict__.get("_old_forward"), mod)
+
+
 class ServeGuard:
     """Always-on checks for inference. See the module docstring.
 
@@ -354,7 +437,11 @@ class ServeGuard:
         self._host: dict = {}                      # device -> (pinned copy, CUDA event) of a pending read
         self._identity: dict = {}
         self.worst_seen: dict = {}                 # layer name -> worst score ever read back (clean or not)
-        self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0}
+        self.checks_seen: dict = {}                # layer name -> checks executed, read back so far
+        self.unjudged_seen: dict = {}              # layer name -> checksums that couldn't be judged, so far
+        self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0, "checks_executed": 0,
+                      "unjudged_checksums": 0}
+        self.unsupported: dict = {}                # layer name -> why it isn't checked
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -362,26 +449,116 @@ class ServeGuard:
         in its serving dtype, and before torch.compile / CUDA graph capture.
 
         share < 1 checks only that share of the linear layers (spread over layer kinds and depths, see
-        select_layer), for a lower cost. A defective GPU unit corrupts every matmul that runs on it
-        (round 3, NVBit: all layers flagged at once), so a share still catches it in the same pass;
-        give replicas different offsets to cover every layer across a fleet."""
+        select_layer), for a lower cost and less coverage. Detection then depends on whether a faulty
+        computation reaches one of the selected layers. With share 1/R, replicas with offsets 0 to R-1
+        select every layer between them, each exactly once; each replica/request still checks its own share."""
+        from . import _swap
+        took_flags = False
         if self.exact_reductions and self._restore is None:
-            from .guard import _exact_reductions_on
+            from .guard import _exact_reductions_off, _exact_reductions_on
             self._restore = _exact_reductions_on() or ()
+            took_flags = True
+            if self._restore:
+                # a guard dropped without detach() lets go of the settings when it's collected, so they don't
+                # stay changed for the rest of the process (letting go twice is a no-op)
+                weakref.finalize(self, _exact_reductions_off, self._restore)
+        first = len(self.layers)
+        try:
+            self._attach(model, share, offset)
+        except BaseException:
+            # nothing half-done: the layers this call took over go back, and so do the settings
+            for lay in self.layers[first:]:
+                self._release(lay)
+            del self.layers[first:]
+            self.stats["layers"] = len(self.layers)
+            if took_flags:
+                from .guard import _exact_reductions_off
+                _exact_reductions_off(self._restore)
+                self._restore = None
+            raise
+        return self
+
+    def _attach(self, model: torch.nn.Module, share: float, offset: int) -> None:
+        from . import _swap
+        bypassed = {**_swap.multihead_out_projs(model), **_swap.fused_encoder_linears(model)}
+        mine = {id(lay["module"]) for lay in self.layers}
         i = 0
         for name, mod in model.named_modules():
-            if isinstance(mod, torch.nn.Linear) and not getattr(mod, "_sdcguard_slot", None):
-                if mod.weight.dtype not in UNIT_ROUNDOFF:
+            if not isinstance(mod, torch.nn.Linear):
+                continue
+            label = name or type(mod).__name__
+            if id(mod) in mine:
+                continue
+            if getattr(mod, "_sdcguard_slot", None) or _swap.is_guarded(mod):
+                # (a second ServeGuard, or a training guard's protect(), has it: listed, never doubled)
+                self.unsupported[label] = ("already checked by another ServeGuard" if getattr(mod, "_sdcguard_slot", None)
+                                           else "already checked by a training guard (protect)")
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.dtype not in UNIT_ROUNDOFF:
+                # listed, so coverage_report() shows it (an fp32 router kept in a bf16 model, say)
+                self.unsupported[label] = (f"{str(mod.weight.dtype).replace('torch.', '')} weights: the serving "
+                                           "check takes bf16 and fp16; not checked")
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.numel() == 0:
+                self.unsupported[label] = "no weights (a layer with 0 inputs or outputs): nothing to check"
+                self.stats["skipped_layers"] += 1
+                continue
+            if type(mod).forward is not torch.nn.Linear.forward:
+                # its output isn't x @ W^T + b, so the check would misfire: leave it alone, say so
+                self.unsupported[label] = f"{type(mod).__name__} has its own forward"
+                self.stats["skipped_layers"] += 1
+                continue
+            if id(mod) in bypassed:
+                self.unsupported[label] = bypassed[id(mod)]
+                self.stats["skipped_layers"] += 1
+                continue
+            if mod.weight.device.type == "meta":
+                self.unsupported[label] = "weights not on a device when attached (offloaded); not checked"
+                self.stats["skipped_layers"] += 1
+                continue
+            # A forward set on the instance runs instead of the class's. accelerate's device hooks (dispatch_model,
+            # device_map=...) keep the real forward as _old_forward and call it after moving the inputs to the
+            # weights' device: the check goes there, underneath the hook. Any other instance forward could compute
+            # something else, so it's left alone and listed (a check of one sample can't prove it's a plain linear
+            # layer for every input).
+            hooked = False
+            if "forward" in mod.__dict__ and not _is_linear_forward(mod.__dict__["forward"], mod):
+                if not _accelerate_hooked(mod):
+                    self.unsupported[label] = "forward replaced on the instance (not an accelerate device hook); not checked"
                     self.stats["skipped_layers"] += 1
                     continue
-                take = select_layer(i, share, offset)
-                i += 1
-                if not take:
-                    self.stats["skipped_layers"] += 1
-                    continue
-                self.add_layer(mod, name or type(mod).__name__)
-                mod.forward = self._make_forward(mod)
-        return self
+                hooked = True
+            take = select_layer(i, share, offset)
+            i += 1
+            if not take:
+                self.stats["skipped_layers"] += 1
+                continue
+            slot = self.add_layer(mod, label)
+            _swap.take_over(mod, self._make_forward(mod))
+            if hooked:          # accelerate's hook calls _old_forward: the subclass's forward, bound to this layer
+                mod.__dict__["_old_forward"] = type(mod).forward.__get__(mod)
+            self.layers[slot]["took_over"] = True
+
+    def _release(self, lay: dict) -> None:
+        """Give one layer its own forward back (whatever hooks were added or removed while it was attached)."""
+        from . import _swap
+        mod = lay["module"]
+        if lay.get("took_over"):
+            _swap.give_back(mod)
+            for attr in ("forward", "_old_forward"):
+                f = mod.__dict__.get(attr)
+                if getattr(f, "__func__", None) in _swap.forwards():
+                    if attr == "forward":            # (a hook removed meanwhile left the bound forward behind)
+                        del mod.__dict__[attr]
+                    else:
+                        mod.__dict__[attr] = type(mod).forward.__get__(mod)
+        mod.__dict__.pop("_sdcguard_slot", None)
+        # Engine plugins retain op arguments directly rather than taking over the module's forward.
+        # Drop those references too, or an engine can keep checking an orphaned state after detach().
+        mod.__dict__.pop("_sdcguard_args", None)
+        mod.__dict__.pop("_sdcguard_trace", None)
 
     def add_layer(self, mod: torch.nn.Module, name: str, weight: Optional[torch.Tensor] = None,
                   bias: Optional[torch.Tensor] = None) -> int:
@@ -389,19 +566,24 @@ class ServeGuard:
         w = mod.weight if weight is None else weight
         b = getattr(mod, "bias", None) if bias is None else bias
         cs = LayerChecksums(w, b, self.block)
-        from . import _serve_fast
-        if _serve_fast.usable(w.device, w.dtype):
-            _serve_fast.verified(w.device, w.dtype)        # first-use comparison, once per device and dtype
-            try:
-                _serve_fast.warm(*cs.tensors(True), cs.k, cs.n, cs.dtype)    # compile now, not while serving
-            except Exception:  # noqa: BLE001  (a compile problem shows up, and falls back, at the first check)
-                pass
+        self._prepare(cs, w)
         slot = len(self.layers)
         self.layers.append({"name": name, "module": mod, "cs": cs, "device": w.device})
         mod._sdcguard_slot = slot + 1              # 0 means "not registered"
         self._grow(w.device)
         self.stats["layers"] += 1
         return slot
+
+    def _prepare(self, cs: "LayerChecksums", w: torch.Tensor) -> None:
+        """The Triton check's first-use comparison and compile, before serving (blocks up to 128 wide only:
+        its sign table holds 128; wider blocks use the PyTorch check)."""
+        from . import _serve_fast
+        if cs.bs <= 128 and _serve_fast.usable(w.device, w.dtype):
+            _serve_fast.verified(w.device, w.dtype)        # first-use comparison, once per device and dtype
+            try:
+                _serve_fast.warm(*cs.tensors(True), cs.k, cs.n, cs.dtype)    # compile now, not while serving
+            except Exception:  # noqa: BLE001  (a compile problem shows up, and falls back, at the first check)
+                pass
 
     def _grow(self, device: torch.device) -> None:
         """The state tensor of a device has room for 4,096 layers; past that it is reallocated (and
@@ -419,8 +601,8 @@ class ServeGuard:
                 mod = lay["module"]
                 if lay["device"] != device:
                     continue
-                if "forward" in mod.__dict__:
-                    mod.forward = self._make_forward(mod)
+                if lay.get("took_over"):
+                    mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
                 if hasattr(mod, "_sdcguard_args"):         # registered by an engine plugin (vLLM)
                     mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
         self._state[device] = new
@@ -440,7 +622,7 @@ class ServeGuard:
         """This layer's checks run as the Triton kernel (else the PyTorch check)."""
         from . import _serve_fast
         lay = self.layers[slot]
-        return _serve_fast.ready(lay["device"], lay["cs"].dtype)
+        return lay["cs"].bs <= 128 and _serve_fast.ready(lay["device"], lay["cs"].dtype)
 
     def check(self, slot: int, x: torch.Tensor, y: torch.Tensor, with_bias: bool = True) -> None:
         """Queue the check of layer `slot` for input x and output y (any leading dims)."""
@@ -459,47 +641,102 @@ class ServeGuard:
                 float(self.abs_floor))
 
     def _make_forward(self, mod: torch.nn.Linear):
-        """Forward = the layer's own forward, then one call of the check op. Kept free of Python
-        that torch.compile can't trace (no locks, no data-dependent branches)."""
-        plain = type(mod).forward.__get__(mod)
+        """The forward of an attached layer (sdcguard._swap calls it with the layer it runs on): the plain
+        linear, then one call of the check op. Kept free of Python that torch.compile can't trace (no locks,
+        no data-dependent branches)."""
         guard, slot = self, mod._sdcguard_slot - 1
         lay = self.layers[slot]
         cs, state, op = lay["cs"], self._state[lay["device"]], _op()
         k, n, z, floor = cs.k, cs.n, float(self.z), float(self.abs_floor)
-
+        dtype, device = cs.dtype, lay["device"]
         trace = guard.inline and not guard.uses_fast(slot)
+        with_bias, without = cs.tensors(True), cs.tensors(False)
 
-        def forward(x):
-            y = plain(x)
-            if guard.enabled:
-                # torch.compile: the custom op (or the PyTorch check traced into the graph); eager: a plain call,
-                # without the custom-op dispatch (that cost ~100 us per layer in eager decoding on the H100)
+        def forward(m, x):
+            b = m.bias
+            # at::linear adds the bias inside the matmul (one rounding) for 2-D inputs and contiguous ones with
+            # a plain bias; otherwise it rounds the matmul, then adds the bias (rounded again). The check
+            # assumes one rounding, so in the second case it checks the matmul alone and adds the bias after,
+            # the way at::linear does (same values).
+            fused = b is None or x.dim() <= 2 or (x.is_contiguous() and b.dim() == 1 and b.is_contiguous())
+            y = torch.nn.functional.linear(x, m.weight, b if fused else None)
+            # (a layer cast to another dtype, or a replica on another device, isn't what the checksums
+            # describe: it runs unchecked until refresh(); verify_weights() lists it)
+            if guard.enabled and x.numel() > 0 and y.dtype == dtype and y.device == device:
                 if torch.compiler.is_compiling():
                     call = check_static_impl if trace else op
                 else:
                     call = check_static_any
-                call(x.reshape(-1, k), y.reshape(-1, n), *lay["cs"].tensors(), state, slot, z, floor)
-            return y
+                call(x.reshape(-1, k), y.reshape(-1, n), *(with_bias if fused and b is not None else without),
+                     state, slot, z, floor)
+            return y if fused else y + b
 
         return forward
 
     def detach(self) -> None:
-        if self._restore:
-            from .guard import _exact_reductions_off
-            _exact_reductions_off(self._restore)
-        self._restore = None
-        for lay in self.layers:
-            mod = lay["module"]
-            if "forward" in mod.__dict__:
-                del mod.forward
-            mod._sdcguard_slot = 0
-        self.layers.clear()
-        self._state.clear()
+        """Collect outstanding results, then release the attached layers (waits for queued GPU work).
+
+        Aggregate stats and the event log remain available. Per-layer snapshots belong to this attachment,
+        so a later attach() cannot inherit execution evidence from a different model with the same names.
+        Captured/compiled model graphs must be discarded or rebuilt after changing their instrumentation.
+        """
+        try:
+            if self.layers:
+                self.poll(wait=True)
+        finally:
+            if self._restore:
+                from .guard import _exact_reductions_off
+                _exact_reductions_off(self._restore)
+            self._restore = None
+            for lay in self.layers:
+                self._release(lay)
+            self.layers.clear()
+            self._state.clear()
+            self._host.clear()
+            self.worst_seen.clear()
+            self.checks_seen.clear()
+            self.unjudged_seen.clear()
+            self.unsupported.clear()
+            self.stats["layers"] = 0
 
     # ---------------------------------------------------------------- results
+    def counts(self) -> dict:
+        """Per layer: checks executed and checksums that couldn't be judged, everything read back so far plus
+        what hasn't been polled yet, without resetting (waits for the GPU). This, not worst_z(), says whether a
+        layer was checked."""
+        live: dict = {}
+        for dev, st in self._state.items():
+            rows = decode_counts(st[:len(self.layers)].detach().to("cpu"))
+            pending = self._host.get(dev)
+            if pending is not None:                  # a non-blocking read still on its way: count it too
+                pending[1].synchronize()
+                prev = decode_counts(pending[0])
+                rows = [(a + c, b + d) for (a, b), (c, d) in zip(rows, prev + [(0, 0)] * (len(rows) - len(prev)))]
+            for slot, (ex, un) in enumerate(rows):
+                if self.layers[slot]["device"] == dev:
+                    live[self.layers[slot]["name"]] = (ex, un)
+        out = {}
+        for lay in self.layers:
+            name = lay["name"]
+            ex, un = live.get(name, (0, 0))
+            out[name] = {"checks": self.checks_seen.get(name, 0) + ex, "unjudged": self.unjudged_seen.get(name, 0) + un}
+        return out
+
+    def coverage_report(self) -> dict:
+        """What actually ran: layers attached, layers checked at least once, layers never checked, checks
+        executed, checksums that couldn't be judged, and layers left unchecked at attach (with why)."""
+        c = self.counts()
+        return {"layers": len(self.layers), "layers_checked": sum(v["checks"] > 0 for v in c.values()),
+                "never_checked": sorted(n for n, v in c.items() if v["checks"] == 0),
+                "checks_executed": sum(v["checks"] for v in c.values()),
+                "unjudged_checksums": sum(v["unjudged"] for v in c.values()),
+                "layers_with_unjudged": sorted(n for n, v in c.items() if v["unjudged"]),
+                "not_attached": dict(self.unsupported)}
+
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
-        layer at exactly 0 has not been checked since then: a quick way to see the checks really run."""
+        positive score proves a check contributed a residual. Zero is ambiguous: no execution, an exactly
+        matching result, and an unjudged result can all produce zero; counts() tells them apart."""
         out = {}
         for dev, st in self._state.items():
             rows = [r[0] for r in decode_state(st[:len(self.layers)].detach().to("cpu"))]
@@ -542,13 +779,21 @@ class ServeGuard:
                 buf.copy_(st[:n], non_blocking=True)
                 st[:n].zero_()                 # same stream: runs after the copy has read st
                 ev = torch.cuda.Event()
-                ev.record()
+                ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (buf, ev)
         return events
 
     def _report(self, dev: torch.device, host: torch.Tensor) -> list[SDCEvent]:
         out = []
         rows = decode_state(host)
+        for slot, (ex, un) in enumerate(decode_counts(host)[:len(self.layers)]):
+            lay = self.layers[slot]
+            if lay["device"] != dev or not (ex or un):
+                continue
+            self.checks_seen[lay["name"]] = self.checks_seen.get(lay["name"], 0) + ex
+            self.unjudged_seen[lay["name"]] = self.unjudged_seen.get(lay["name"], 0) + un
+            self.stats["checks_executed"] += ex
+            self.stats["unjudged_checksums"] += un
         try:
             return self._report_rows(dev, rows, out)
         finally:
@@ -575,7 +820,7 @@ class ServeGuard:
                 self._identity[key] = device_identity(dev)
             # Did the weights change since their checksums were computed? Yes: memory corruption, or an
             # intended update nobody told the guard about (call refresh() after updating weights).
-            # No: the matmul itself came out wrong.
+            # No: the weight fingerprint is unchanged. A checksum alert still does not establish a cause.
             changed = None
             w = getattr(lay["module"], "weight", None)
             if isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k):
@@ -588,16 +833,28 @@ class ServeGuard:
                                   "row": row, "col_block": block, "noise": noise,
                                   "checksum": "plain" if int(flat) % 2 == 0 else "signed",
                                   "weights_changed_since_load": changed,
-                                  "reading": ("the layer's weights changed in GPU memory (or were updated "
-                                              "without calling refresh())" if changed else
-                                              "the matmul came out wrong (weights unchanged)" if changed is False
-                                              else None)},
+                                  "reading": ("the layer's weights changed since load (they no longer match "
+                                              "their load-time checksums): in GPU memory, or updated without "
+                                              "calling refresh()" if changed else
+                                              "the output disagrees with its checksums while the weights are "
+                                              "unchanged: a wrong matmul result, or a fault in the check's own "
+                                              "GPU arithmetic; rerun the request on another GPU to tell which"
+                                              if changed is False else None)},
                           identity=dict(self._identity[key]))
             self.stats["alerts"] += 1
             self.log.add(ev)
-            if self.on_alert:
-                self.on_alert(ev)
             out.append(ev)
+        # the callback runs after every layer's result is recorded: one that raises can't lose the others (the
+        # state they came from was already reset)
+        err = None
+        for ev in out:
+            if self.on_alert:
+                try:
+                    self.on_alert(ev)
+                except Exception as e:  # noqa: BLE001
+                    err = err or e
+        if err is not None:
+            raise err
         return out
 
     def verify_weights(self) -> list[str]:
@@ -627,13 +884,43 @@ class ServeGuard:
         mod = lay["module"]
         w = mod.weight if weight is None else weight
         b = getattr(mod, "bias", None) if bias is None else bias
+        if w.dtype not in UNIT_ROUNDOFF:
+            # (cast to fp32, say: the checks need bf16 or fp16; the layer runs unchecked until it's back)
+            if lay.get("took_over"):
+                mod.__dict__["_sdcguard_forward"] = None
+            if hasattr(mod, "_sdcguard_args"):
+                mod._sdcguard_args = None
+            self.unsupported[lay["name"]] = (f"weights are {str(w.dtype).replace('torch.', '')} now (the check "
+                                             "needs bf16 or fp16): not checked")
+            return
+        self.unsupported.pop(lay["name"], None)
         new = LayerChecksums(w, b if isinstance(b, torch.Tensor) else None, self.block)
         old = lay["cs"]
-        if (new.n, new.k) != (old.n, old.k) or new.parts.shape != old.parts.shape:
-            lay["cs"] = new                      # shape changed: nothing captured can stay valid anyway
+        if (new.n, new.k) != (old.n, old.k) or new.parts.shape != old.parts.shape or new.dtype != old.dtype \
+                or w.device != lay["device"]:
+            # shape, dtype or device changed: nothing captured can stay valid anyway; the layer's forward is
+            # rebuilt around the new checksums
+            # Read existing rows while their device and checksum layout still describe the original checks.
+            # Otherwise a moved layer loses its counters, or old flat indices get decoded with the new shape.
+            self.poll(wait=True)
+            lay["cs"], lay["device"] = new, w.device
+            self._prepare(new, w)
+            self._grow(w.device)
+            if lay.get("took_over"):
+                mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
+            if hasattr(mod, "_sdcguard_args"):
+                mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
+                mod._sdcguard_trace = self.inline and not self.uses_fast(slot)
             return
         with torch.no_grad():
             for a, c in zip(old.tensors(True) + old.tensors(False), new.tensors(True) + new.tensors(False)):
                 if a.data_ptr() != c.data_ptr():
                     a.copy_(c)
             old.fingerprint.copy_(new.fingerprint)
+        # A supported dtype may have returned after an unsupported one without changing shape. The earlier
+        # refresh disabled this forward; copying the tensors alone would leave it unchecked forever.
+        if lay.get("took_over") and mod.__dict__.get("_sdcguard_forward") is None:
+            mod.__dict__["_sdcguard_forward"] = self._make_forward(mod)
+        if hasattr(mod, "_sdcguard_args") and mod._sdcguard_args is None:
+            mod._sdcguard_args = (self.op_args(slot, False), self.op_args(slot, True))
+            mod._sdcguard_trace = self.inline and not self.uses_fast(slot)

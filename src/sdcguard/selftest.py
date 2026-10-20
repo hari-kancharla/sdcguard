@@ -134,6 +134,40 @@ def _fp16_overflow_ok(device):
     return overflowed and g.stats["checked"] > 0 and g.stats["alerts"] == 0
 
 
+def _training_triton_checks(device, dtype):
+    """Separate an intentional architecture fallback from a kernel that failed verification."""
+    from . import _group
+    if not _group.enabled():
+        return [], "Triton GPU check: disabled or unavailable; using the plain check"
+    checks = []
+    if not _group.arch_ok(device):
+        try:
+            capability = torch.cuda.get_device_capability(device)
+        except Exception as e:  # noqa: BLE001 (unknown capability is not an intentional fallback)
+            return [(f"GPU capability could be determined ({type(e).__name__}: {e})", False)], ""
+        if capability[0] >= 10:
+            note = (f"Triton GPU check: intentionally disabled on compute capability {capability[0]}."
+                    f"{capability[1]}; using the plain check (no Triton verification claimed)")
+        else:
+            return [("Triton architecture eligibility could be established", False)], ""
+    else:
+        used = _group.available(torch.empty(1, 1, device=device, dtype=dtype))
+        first = _group.status(device, dtype) or (False, "comparison did not run")
+        checks.append(("Triton GPU check passed its first-use comparison with the plain check"
+                       + ("" if used else f" ({first[1]})"), used))
+        note = "Triton GPU check: unavailable after verification"
+        if used:
+            agree, why = _triton_agrees(device, dtype)
+            checks.append(("Triton GPU check gives the same answers as the plain check"
+                           + ("" if agree else f" ({why})"), agree))
+            note = f"Triton GPU check: in use ({why})"
+    # Policy-disabled kernels produce no fallback errors. Real earlier compile/launch failures still fail.
+    checks.append(("Triton GPU check ran with no unexpected fallbacks"
+                   + ("" if _group.FALLBACKS[0] == 0 else f" ({'; '.join(_group.WHY[-3:])})"),
+                   _group.FALLBACKS[0] == 0))
+    return checks, note
+
+
 def main() -> int:
     device = _device()
     dtype = _dtype(device)
@@ -205,24 +239,9 @@ def main() -> int:
                      "plain-check fast GEMM (fp32 output): not available with this PyTorch/GPU, "
                      "using the slower fallback (results are the same)")
         from . import _group
-        if _group.enabled():
-            # Triton is installed: its kernels must pass their first-use comparison here, or every
-            # check falls back to the (correct but slower) plain check
-            used = _group.available(torch.empty(1, 1, device=device, dtype=dtype))
-            first = _group.status(device, dtype) or (False, "comparison did not run")
-            checks.append(("Triton GPU check passed its first-use comparison with the plain check"
-                           + ("" if used else f" ({first[1]})"), used))
-            if used:
-                agree, why = _triton_agrees(device, dtype)
-                checks.append(("Triton GPU check gives the same answers as the plain check"
-                               + ("" if agree else f" ({why})"), agree))
-                fast_note += f"; Triton GPU check: in use ({why})"
-            checks.append(("Triton GPU check ran with no fallbacks"
-                           + ("" if _group.FALLBACKS[0] == 0 else f" ({'; '.join(_group.WHY[-3:])})"),
-                           _group.FALLBACKS[0] == 0))
-        else:
-            fast_note += ("; Triton GPU check: not available (Triton not installed or SDCGUARD_FAST=0), "
-                          "using the plain check (same results, slower)")
+        triton_checks, triton_note = _training_triton_checks(device, dtype)
+        checks.extend(triton_checks)
+        fast_note += "; " + triton_note
         from . import _serve_fast
         if _serve_fast.usable(device, dtype):
             # the serving check's Triton kernel (ServeGuard, the vLLM plugin): same rule

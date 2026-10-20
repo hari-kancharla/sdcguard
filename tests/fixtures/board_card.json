@@ -1,0 +1,19 @@
+{
+  "schema": "sdcguard-check/1",
+  "result": "PASS",
+  "date": "2026-10-19",
+  "minutes": 5,
+  "gpu": {"name": "NVIDIA H100 (synthetic test fixture)", "compute_cap": "9.0", "id_hash": "fixture00001"},
+  "software": {},
+  "provider": {"name": "SYNTHETIC TEST FIXTURE"},
+  "checked": {"results": 100, "unjudged": 0, "memory_gib": 1, "memory_passes": 2},
+  "wrong": {"workload_training": 0, "workload_serving": 0, "stress": 0, "memory_words": 0},
+  "headroom": {"worst_clean_score": 1, "alarm_line": 6},
+  "repeatable": true,
+  "fingerprint": {"key": "fixture-key", "output": "fixture-output"},
+  "speed": {},
+  "health": {},
+  "notes": [],
+  "board": null,
+  "simulated_faults": false
+}

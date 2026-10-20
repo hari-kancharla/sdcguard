@@ -81,7 +81,9 @@ def test_fleet_report(tmp_path):
     assert rep["stats"]["failed"] == 1 and rep["stats"]["passed"] == 1
     page = open(tmp_path / "rep" / "fleet_report.html").read()
     assert "GPU fleet report" in page and "FAIL" in page and "\u2014" not in page
-    assert open(tmp_path / "rep" / "quarantine.txt").read().count("\n") == 1
+    # The simulated FAIL remains in the report and has replay artifacts, but
+    # must never become an operational quarantine instruction.
+    assert open(tmp_path / "rep" / "quarantine.txt").read() == ""
     import zipfile
     z = zipfile.ZipFile(list(rep["rma"].values())[0])
     assert "README.txt" in z.namelist() and any(n.endswith(".pt") for n in z.namelist())
@@ -102,7 +104,8 @@ def test_cli_end_to_end(tmp_path):
     n = _cli(["nhc", "--minutes", "0.03", "--size", "tiny", "--out", "nhc"], tmp_path)
     assert n.returncode == 0 and n.stdout.startswith("OK:"), n.stdout + n.stderr
     nf = _cli(["nhc", "--minutes", "0.03", "--size", "tiny", "--out", "nhc2", "--simulate-faults", "0.05"], tmp_path)
-    assert nf.returncode == 1 and nf.stdout.startswith("FAIL:")
+    assert nf.returncode == 2 and nf.stdout.startswith("SIMULATED:")
+    assert not (tmp_path / "nhc2" / "status.json").exists()
 
 
 class _Hook(BaseHTTPRequestHandler):

@@ -1,7 +1,8 @@
-"""The Triton serving check vs the PyTorch one, in Triton's CPU interpreter.
+"""The Triton serving check vs the PyTorch one, in Triton's CPU interpreter or on a GPU.
 
-Run by tests/test_serve.py in a subprocess with TRITON_INTERPRET=1 and SDCGUARD_FAST_CPU_TEST=1.
-Prints one JSON line per case and ALL AGREE at the end (exit code 0), or exits 1."""
+Run by tests/test_serve.py in a subprocess with TRITON_INTERPRET=1 and SDCGUARD_FAST_CPU_TEST=1, and on GPUs by
+scripts/modal_check.py (`python tests/_serve_fast_compare.py cuda`). Prints one JSON line per case and ALL
+AGREE at the end (exit code 0), or exits 1."""
 import json
 import sys
 
@@ -9,35 +10,48 @@ import torch
 
 from sdcguard import _serve_fast
 from sdcguard.checksum import _split3
-from sdcguard.serve import LayerChecksums, ServeGuard, check_static_impl
+from sdcguard.serve import STATE_COLS, LayerChecksums, ServeGuard, check_static_impl
 
 
-def run(x, y, cs):
-    ref = torch.zeros(1, 2, dtype=torch.int64)
-    fast = torch.zeros(1, 2, dtype=torch.int64)
+def run(x, y, cs, cols=STATE_COLS):
+    """Both checks on one layer: their (z, flat position, noise) and their counts (checks executed, unjudged
+    checksums; empty for a state with only the two key columns)."""
+    ref = torch.zeros(1, cols, dtype=torch.int64, device=x.device)
+    fast = torch.zeros(1, cols, dtype=torch.int64, device=x.device)
     check_static_impl(x, y, *cs.tensors(True), ref, 0, 6.0, 1e-20)
     _serve_fast.check(x, y, *cs.tensors(True), fast, 0, 6.0, 1e-20)
-    return _serve_fast.decode(*ref[0].tolist()), _serve_fast.decode(*fast[0].tolist())
+    return (_serve_fast.decode(*ref[0].tolist()), _serve_fast.decode(*fast[0].tolist()), ref[0, 2:].tolist(),
+            fast[0, 2:].tolist())
 
 
-def main():
+def main(device: str = "cpu"):
+    dev = torch.device(device)
+    if dev.type == "cuda":
+        # the layer outputs below are made without a guard: keep bf16/fp16 partial sums in fp32, as ServeGuard does
+        # while it serves (one rounding per output, what the noise model assumes), instead of depending on what an
+        # earlier step left set
+        torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
     ok_all = True
     g = torch.Generator().manual_seed(3)
     cases = [(64, 256, 300, True), (1, 512, 1000, False), (200, 96, 40, True), (7, 300, 5632 // 4, False),
              (33, 130, 129, True), (300, 64, 2000, False), (5, 40, 1, True), (2, 1, 300, True), (1, 1, 1, False)]
     for dt in (torch.bfloat16, torch.float16):
-        for split in (False, True):
+        # on a GPU, LayerChecksums makes the three low-precision parts itself; on the CPU, split=True makes them
+        for split in ((False, True) if dev.type == "cpu" else (False,)):
             for m, k, n, with_bias in cases:
-                W = (torch.randn(n, k, generator=g) / max(1, k) ** 0.5).to(dt)
-                b = torch.randn(n, generator=g).to(dt) if with_bias else None
-                x = torch.randn(m, k, generator=g).to(dt)
+                W = (torch.randn(n, k, generator=g) / max(1, k) ** 0.5).to(dt).to(dev)
+                b = torch.randn(n, generator=g).to(dt).to(dev) if with_bias else None
+                x = torch.randn(m, k, generator=g).to(dt).to(dev)
                 y = torch.nn.functional.linear(x, W, b)
                 cs = LayerChecksums(W, b, 128)
                 if split:      # the GPU layout: three low-precision parts of the block sums
                     B2 = cs.parts                                   # (on the CPU: plain fp32 block sums)
                     cs.parts = _split3(B2 / cs.scale.view(1, -1), dt).contiguous()
-                for corrupt in (None, "big", "nan", "inf", "zero_block", "small"):
+                for corrupt in (None, "big", "nan", "inf", "zero_block", "small", "huge_pair", "inf_input",
+                                "overflow"):
                     yy = y.clone()
+                    xx = x
                     r, c = (m * 2) // 3, (n * 3) // 5
                     if corrupt == "big":
                         yy[r, c] += 50.0
@@ -49,32 +63,70 @@ def main():
                         yy[r, :] = 0
                     elif corrupt == "small":
                         yy[r, c] += yy[r, c].abs() * 0.001        # below the noise: both must pass
-                    (rz, rf, rn), (fz, ff, fn) = run(x, yy, cs)
-                    if corrupt in (None, "small"):
+                    elif corrupt == "huge_pair" and n >= 2:
+                        # two huge outputs of opposite sign where the sign pattern agrees: they cancel in both
+                        # checksums; only "larger than the inputs allow" catches them
+                        from sdcguard.checksum import _signs
+                        s0 = _signs(min(128, n), dev, 0).cpu()
+                        j = next((j for j in range(1, min(128, n)) if s0[j] == s0[0]), None)
+                        if j is not None:
+                            yy[r, 0], yy[r, j] = 1e4 if dt == torch.float16 else 1e18, \
+                                -1e4 if dt == torch.float16 else -1e18
+                    elif corrupt == "inf_input":
+                        # an infinite input: the expected side of that row can't be computed, so its checksums
+                        # can't be judged (counted, scored 0)
+                        xx = x.clone()
+                        xx[r, 0] = float("inf")
+                        yy = torch.nn.functional.linear(xx, W, b)
+                    elif corrupt == "overflow":
+                        if dt != torch.float16:
+                            continue
+                        # fp16 outputs beyond 65504 that the inputs explain: infinite, legitimately, so unjudged
+                        xx = x * 300.0
+                        yy = torch.nn.functional.linear(xx, W * 300.0, b)
+                        if bool(torch.isfinite(yy).all()):
+                            continue
+                        cs = LayerChecksums(W * 300.0, b, 128)
+                        if split:
+                            cs.parts = _split3(cs.parts / cs.scale.view(1, -1), dt).contiguous()
+                    (rz, rf, rn), (fz, ff, fn), rc, fc = run(xx, yy, cs)
+                    if corrupt in ("inf_input", "overflow"):
+                        agree = rc == fc and rc[0] == 1 and rc[1] > 0 and rz <= 6.0 and fz <= 6.0
+                    elif corrupt in (None, "small"):
                         agree = rz <= 6.0 and fz <= 6.0 and abs(fz - rz) <= 0.05 + 0.02 * rz
                     else:
                         changed = not torch.equal(yy, y)
                         agree = (rz > 6.0) == (fz > 6.0) and (not (rz > 6.0) or rf // 2 == ff // 2) and \
                             (not changed or rz > 6.0 or n == 1 or k == 1)
+                    if corrupt not in ("inf_input", "overflow"):
+                        agree = agree and rc == fc == [1, 0]      # one check executed, every checksum judged
+                    if corrupt is None and m == 64:               # the older two-column state still works
+                        (lz, _lf, _), (lfz, _lff, _), lrc, lfc = run(xx, yy, cs, cols=2)
+                        agree = agree and lrc == lfc == [] and lz == rz and lfz == fz
                     row = {"dtype": str(dt)[6:], "split": split, "m": m, "k": k, "n": n, "bias": with_bias,
-                           "corrupt": corrupt, "plain": [rz, rf], "fast": [fz, ff], "agree": bool(agree)}
+                           "corrupt": corrupt, "plain": [rz, rf], "fast": [fz, ff], "counts": [rc, fc],
+                           "agree": bool(agree)}
                     print(json.dumps(row), flush=True)
                     ok_all &= bool(agree)
     # end to end: a guard on a small model uses the fast check after its first-use comparison
     torch.manual_seed(0)
-    model = torch.nn.Sequential(torch.nn.Linear(64, 300), torch.nn.GELU(), torch.nn.Linear(300, 40)).to(torch.bfloat16)
+    model = torch.nn.Sequential(torch.nn.Linear(64, 300), torch.nn.GELU(), torch.nn.Linear(300, 40)).to(
+        torch.bfloat16).to(dev)
     gd = ServeGuard().attach(model)
     uses = [gd.uses_fast(s) for s in range(len(gd.layers))]
-    model(torch.randn(5, 64).to(torch.bfloat16))
+    model(torch.randn(5, 64).to(torch.bfloat16).to(dev))
     ev = gd.poll(wait=True)
     zs = gd.worst_seen
-    e2e = all(uses) and ev == [] and all(z > 0 for z in zs.values())
-    print(json.dumps({"case": "guard end to end", "uses_fast": uses, "alerts": len(ev), "worst": zs,
+    cov = gd.coverage_report()
+    e2e = all(uses) and ev == [] and all(z > 0 for z in zs.values()) and cov["layers_checked"] == 2 and \
+        cov["checks_executed"] == 2 and cov["unjudged_checksums"] == 0 and cov["never_checked"] == []
+    print(json.dumps({"case": "guard end to end", "uses_fast": uses, "alerts": len(ev), "worst": zs, "coverage": cov,
                       "status": {str(k): v for k, v in _serve_fast.STATUS.items()}, "agree": e2e}), flush=True)
     ok_all &= e2e
+    gd.detach()
     print("ALL AGREE" if ok_all else "DISAGREE")
     return 0 if ok_all else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "cpu"))

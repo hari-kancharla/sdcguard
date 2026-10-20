@@ -7,6 +7,9 @@ What you see:
   2. "Flipping one bit of one weight in GPU memory" (what a memory error does; done here on purpose).
   3. The next answers come out wrong, and sdcguard's alert names the layer, the GPU (UUID, PCI slot)
      and whether the weights changed in memory.
+
+Exit code 0 only if the healthy answers raised no alert and the flipped layer was named in an alert; 1
+otherwise (a recording aid, but its exit code says whether the behavior shown actually happened).
 """
 from __future__ import annotations
 
@@ -55,7 +58,7 @@ def main():
     from sdcguard import vllm_plugin
     vllm_plugin.register()
     from vllm import LLM, SamplingParams
-    say("Starting vLLM with sdcguard (every linear layer checked while it serves)")
+    say("Starting vLLM with sdcguard (its linear layers checked while it serves; the LM head isn't)")
     llm = LLM(model="Qwen/Qwen2.5-1.5B-Instruct", dtype="bfloat16", gpu_memory_utilization=0.5, max_model_len=1024)
     sp = SamplingParams(temperature=0.0, max_tokens=12)
 
@@ -66,10 +69,10 @@ def main():
 
     say("A healthy GPU:")
     ask()
-    ev = llm.apply_model(report)[0]
-    print(f"  sdcguard: {len(ev)} alerts", flush=True)
+    clean = llm.apply_model(report)[0]
+    print(f"  sdcguard: {len(clean)} alerts", flush=True)
     say(f"Flipping ONE bit of ONE weight in GPU memory ({LAYER}), like a memory error would")
-    llm.apply_model(flip)
+    target = llm.apply_model(flip)[0]
     ask()
     ev = llm.apply_model(report)[0]
     say(f"sdcguard: {len(ev)} alert(s)")
@@ -77,6 +80,12 @@ def main():
         print(f"  ALERT {d['where']}: score {d['max_z']} (alarm line 6), row {d['row']}, block {d['col_block']}\n"
               f"        GPU {i.get('gpu_name')} {i.get('gpu_uuid')} PCI {i.get('pci_bus_id')}\n"
               f"        {d.get('reading')}", flush=True)
+    problems = (["the healthy answers raised alerts"] if clean else []) + \
+        ([] if target else [f"{LAYER} wasn't found, so nothing was flipped"]) + \
+        ([] if target and any(d.get("where") == target for d, _ in ev) else ["no alert named the flipped layer"])
+    if problems:
+        print("DEMO DID NOT SHOW WHAT IT SHOULD: " + "; ".join(problems), flush=True)
+        return 1
     return 0
 
 

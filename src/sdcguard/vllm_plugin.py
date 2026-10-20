@@ -10,14 +10,20 @@ nothing). What it does, in every vLLM process:
   - after every matmul of an unquantized linear layer, queues the check (one custom op, so
     torch.compile keeps a single graph and CUDA graphs capture it);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
-    stalling the GPU and logs an alert for any layer whose output didn't match its checksums:
+    stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
+    reports the previous one, so an alert shows up one read later); and after the first model step that ends
+    SDCGUARD_POLL_SECONDS (default 2) or more after the last read, reads them right away, waiting for the GPU
+    once, so a lightly loaded server reports within one step of that time. There's no background timer (it
+    would get in the way of vLLM's CUDA graph capture): a server that goes idle right after a bad step
+    reports it at its next step, or when it exits:
 
     sdcguard ALERT: model.layers.17.mlp.down_proj on GPU-1a2b... (NVIDIA H100 80GB HBM3, PCI ...)
       z=inf (row 3, block 12)
 
 Settings (environment variables): SDCGUARD_Z (alert threshold, default 6), SDCGUARD_LOG (also append
 alerts as JSON lines to this file), SDCGUARD_POLL_EVERY, SDCGUARD_SHARE (check only this share of the
-linear layers, e.g. 0.125, for a lower cost) and SDCGUARD_OFFSET (which ones; vary it across replicas),
+linear layers, e.g. 0.125, for a lower cost) and SDCGUARD_OFFSET (which ones: with share 1/R, replicas with
+offsets 0 to R-1 check every layer between them, each exactly once),
 SDCGUARD_WEBHOOK (post alerts to Slack, Discord or any JSON endpoint; SDCGUARD_WEBHOOK_FORMAT=slack,
 discord or json) and SDCGUARD_METRICS_PORT (Prometheus metrics; each GPU worker adds its local index).
 
@@ -30,8 +36,10 @@ patches and turns itself off (with a log line) if something is missing.
 """
 from __future__ import annotations
 
+import atexit
 import logging
 import os
+import time
 
 import torch
 
@@ -67,7 +75,17 @@ def _guard():
         if port is not None and g.metrics is not None:
             log.info("sdcguard: Prometheus metrics on port %s", port)
         _STATE["guard"] = g
+        atexit.register(_flush_at_exit)
     return _STATE["guard"]
+
+
+def _flush_at_exit() -> None:
+    """Results are read every SDCGUARD_POLL_EVERY steps; read whatever the last steps left when the
+    worker shuts down, so an alert from the final requests isn't lost."""
+    try:
+        poll(wait=True)
+    except Exception:  # noqa: BLE001  (shutting down: the CUDA context may already be gone)
+        pass
 
 
 def _on_alert(ev) -> None:
@@ -182,6 +200,8 @@ def register() -> None:
     _STATE["patched"] = True
 
     poll_every = max(1, int(os.environ.get("SDCGUARD_POLL_EVERY", "16")))
+    poll_seconds = float(os.environ.get("SDCGUARD_POLL_SECONDS", "2"))
+    last_poll = [time.monotonic()]
 
     def hook(module_name: str) -> bool:
         try:
@@ -196,9 +216,15 @@ def register() -> None:
         def execute_model(self, *args, **kwargs):
             out = orig_exec(self, *args, **kwargs)
             _STATE["steps"] += 1
-            if _STATE["steps"] % poll_every == 0 and _STATE["guard"] is not None:
+            now = time.monotonic()
+            # read results every poll_every model steps without waiting (that read reports the previous one),
+            # or, once poll_seconds have passed since the last read, right away (one wait for the GPU every few
+            # seconds at most); at exit everything is read
+            late = now - last_poll[0] >= poll_seconds
+            if (late or _STATE["steps"] % poll_every == 0) and _STATE["guard"] is not None:
+                last_poll[0] = now
                 try:
-                    _STATE["guard"].poll()
+                    _STATE["guard"].poll(wait=late)
                 except Exception as e:  # noqa: BLE001  (never break serving)
                     log.warning("sdcguard: poll failed: %s", e)
             return out

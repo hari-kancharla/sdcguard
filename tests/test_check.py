@@ -135,6 +135,8 @@ def test_board_build_validates_and_aggregates(cpu_run, tmp_path):
         r = copy.deepcopy(base)
         r["gpu"].update(name=name, id_hash=idh)
         r.update(result=res, minutes=minutes, provider={"name": prov})
+        if res == "SUSPECT":            # (a real SUSPECT card says what disagreed: here, its own reruns)
+            r["repeatable"] = False
         r["speed"]["matmul_tflops"] = tf
         r["fingerprint"] = {"key": "k1", "output": logits}
         r["digest"] = board.digest(r)
@@ -250,16 +252,20 @@ def test_many_gpus_path_reports_a_child_that_crashed(monkeypatch, tmp_path, caps
 
 
 def test_triton_kernels_wait_for_validation_on_new_gpu_generations(monkeypatch):
-    """A B200 faulted (misaligned address) in the first-use comparison: on compute capability 10+ the
-    plain checks run unless SDCGUARD_TRITON_NEW_ARCH=1."""
+    """A fault in an unvalidated kernel ends the process, so generations newer than the validated ones run the
+    plain checks unless SDCGUARD_TRITON_NEW_ARCH=1. Blackwell (capability 10) runs the kernels without
+    software pipelining since Oct 19 (a B200 faulted with it; test_arch_config.py), =0 opts out."""
     import torch
     from sdcguard import _group, _serve_fast
     cuda = torch.device("cuda", 0)
     monkeypatch.delenv("SDCGUARD_TRITON_NEW_ARCH", raising=False)
-    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (10, 0))
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (12, 0))
     assert _group.arch_ok(cuda) is False
     monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "1")
     assert _group.arch_ok(cuda) is True
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (10, 0))
+    monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "0")
+    assert _group.arch_ok(cuda) is False
     monkeypatch.delenv("SDCGUARD_TRITON_NEW_ARCH")
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *a: (9, 0))
     assert _group.arch_ok(cuda) is True
@@ -272,3 +278,37 @@ def test_triton_kernels_wait_for_validation_on_new_gpu_generations(monkeypatch):
 def test_cloud_names():
     assert [gpuinfo.cloud_name(x) for x in ("CLOUD_PROVIDER_UNSPECIFIED", "AZURE", "CLOUD_PROVIDER_GCP", None)] == \
         [None, "Azure", "GCP", None]
+
+
+def test_check_runs_every_math_mode(cpu_run):
+    from sdcguard import modes
+    full, _ = cpu_run
+    mm = full["math_modes"]
+    assert mm["ran"] == list(modes.MODES) and mm["wrong"] == 0 and full["wrong"]["math_modes"] == 0
+    pub = check.public(full)
+    assert pub["math_modes"]["matmuls"] == mm["matmuls"] and pub["math_modes"]["typical_error_caught"]["int8"] == "exact sums"
+    assert "math modes" in check.terminal(pub) and board._shape_problem(pub) is None
+    bad = copy.deepcopy(pub)
+    bad["math_modes"]["ran"] = "all of them"
+    assert "math_modes" in board._shape_problem(bad)
+
+
+def test_a_wrong_math_mode_fails_the_gpu_and_problems_stay_on_the_card(monkeypatch, tmp_path):
+    from sdcguard import modes
+    real = modes.screen
+
+    def one_wrong(*a, **k):
+        r = real(*a, **k)
+        r["modes"]["fp32"]["wrong"] = 1
+        r["wrong"] = 1
+        return r
+    monkeypatch.setattr(modes, "screen", one_wrong)
+    full = check.check_one("cpu", minutes=0.06, out_root=str(tmp_path))
+    assert full["result"] == "FAIL" and full["wrong"]["math_modes"] == 1
+    pub = check.public(full)
+    assert board.validate(dict(pub, gpu=dict(pub["gpu"], name="NVIDIA L4"), minutes=5)) is not None   # digest
+    full["notes"] = [["info", "x"], ["bad", "something broke"], ["warn", "something else"]]
+    rows = check.lines(check.public(full))
+    labels = [k for k, _ in rows[:check.CARD_ROWS]]
+    assert labels[:5] == ["checked", "math modes", "memory test", "bad", "warn"] and rows[-1] == ("note", "x")
+    assert "1 WRONG" in dict(rows)["math modes"] and "math modes 1" in dict(rows)["checked"]

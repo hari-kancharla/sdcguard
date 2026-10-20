@@ -82,3 +82,21 @@ def test_fp16_training_with_loss_scaling_has_no_false_alarms():
         assert g.stats["checked"] > 100 and g.stats["alerts"] == 0, (init, g.stats, g.log.events[:2])
         if init > 1e10:
             assert opt._sdc_overflows > 0
+
+
+def test_mode_compare_counts_every_trial_and_both_checks_catch_large_errors():
+    import torch
+
+    import mode_compare
+    cfg = dict(mode_compare.CONFIG["cpu"])
+    r = mode_compare.run(torch.device("cpu"), cfg, say=lambda s: None, max_matmuls=4)
+    n = len(mode_compare.SIZES)
+    assert r["matmuls"] == 4 and r["trials"] == [4] * n
+    for key in ("default", "precise"):
+        assert len(r[key]["flagged"]) == n and r[key]["flagged"][-1] == 1.0     # an error the size of an output
+        assert r["clean"][key]["checks"] == 4 and r["clean"][key]["false_alarms"] == 0
+        lo, hi = r[key]["flagged_ci95"][-1]
+        assert lo < 1.0 and hi == 1.0
+    assert r["changed_bf16_output"][0] == 0.0 and r["changed_bf16_output"][-1] == 1.0
+    md = mode_compare.markdown({**r, "gpu": "CPU", "torch": torch.__version__, "code_sha256": mode_compare.code_digest()})
+    assert "| 100% | 100% | 100% | 100% |" in md

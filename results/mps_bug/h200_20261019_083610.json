@@ -1,0 +1,576 @@
+{
+  "nvidia_smi": "NVIDIA H200, 610.57.04, 143771 MiB, Default",
+  "packages": {
+    "nvidia-cublas": "13.1.1.3",
+    "torch": "2.14.1"
+  },
+  "runs": [
+    {
+      "share": "100",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 132,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 0,
+          "alerts_by_matmul": [],
+          "first": null
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 0,
+          "alerts_by_matmul": [],
+          "first": null
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.716
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.823
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.776
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.257
+        }
+      }
+    },
+    {
+      "share": "14",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 18,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 11823,
+        "wrong_outputs_nan_prefilled": 11904,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 1,
+          "alerts_by_matmul": [
+            "0"
+          ],
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 2,
+            "max_z": Infinity,
+            "nonfinite": true
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 1,
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 2,
+            "max_z": Infinity,
+            "nonfinite": true,
+            "reading": "the matmul came out wrong (weights unchanged)"
+          }
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 11829,
+        "wrong_outputs_nan_prefilled": 11904,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 2,
+          "alerts_by_matmul": [
+            "0",
+            "0 (backward dX)"
+          ],
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 2,
+            "max_z": Infinity,
+            "nonfinite": true
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 1,
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 2,
+            "max_z": Infinity,
+            "nonfinite": true,
+            "reading": "the matmul came out wrong (weights unchanged)"
+          }
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.716
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.823
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.776
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.257
+        }
+      }
+    },
+    {
+      "share": "20",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 26,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 1,
+          "alerts_by_matmul": [
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0 (backward dW)",
+            "row": 551,
+            "col_block": 2,
+            "max_z": 16591183.0,
+            "nonfinite": false
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 1,
+          "alerts_by_matmul": [
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0 (backward dW)",
+            "row": 721,
+            "col_block": 14,
+            "max_z": 107.10191345214844,
+            "nonfinite": false
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.716
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.823
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.449
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.257
+        }
+      }
+    },
+    {
+      "share": "40",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 52,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 7758,
+        "wrong_outputs_nan_prefilled": 7808,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 2,
+          "alerts_by_matmul": [
+            "0",
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 5,
+            "max_z": Infinity,
+            "nonfinite": true
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 1,
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 4,
+            "max_z": Infinity,
+            "nonfinite": true,
+            "reading": "the matmul came out wrong (weights unchanged)"
+          }
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 7753,
+        "wrong_outputs_nan_prefilled": 7808,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 2,
+          "alerts_by_matmul": [
+            "0",
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0",
+            "row": 0,
+            "col_block": 4,
+            "max_z": Infinity,
+            "nonfinite": true
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 1,
+          "first": {
+            "where": "0",
+            "row": 8,
+            "col_block": 4,
+            "max_z": Infinity,
+            "nonfinite": true,
+            "reading": "the matmul came out wrong (weights unchanged)"
+          }
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 2463332.406
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 2305481.315
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.449
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 4471.344
+        }
+      }
+    },
+    {
+      "share": "50",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 66,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 0,
+          "alerts_by_matmul": [],
+          "first": null
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 0,
+          "alerts_by_matmul": [],
+          "first": null
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.716
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.823
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.554
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.257
+        }
+      }
+    },
+    {
+      "share": "75",
+      "gpu": "NVIDIA H200",
+      "sms_reported": 98,
+      "torch": "2.14.1+cu130",
+      "cuda": "13.0",
+      "fp16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 1,
+          "alerts_by_matmul": [
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0 (backward dW)",
+            "row": 804,
+            "col_block": 15,
+            "max_z": 9841.74609375,
+            "nonfinite": false
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "bf16": {
+        "wrong_outputs": 0,
+        "wrong_outputs_nan_prefilled": 0,
+        "outputs": 16000,
+        "training_check": {
+          "checked": 3,
+          "alerts": 1,
+          "alerts_by_matmul": [
+            "0 (backward dW)"
+          ],
+          "first": {
+            "where": "0 (backward dW)",
+            "row": 804,
+            "col_block": 15,
+            "max_z": 1237.151123046875,
+            "nonfinite": false
+          }
+        },
+        "serving_check": {
+          "layers": 1,
+          "alerts": 0,
+          "first": null
+        }
+      },
+      "math_modes": {
+        "bf16": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 2463332.406
+        },
+        "fp16": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 2305481.315
+        },
+        "tf32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 1.083
+        },
+        "fp32": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.776
+        },
+        "fp64": {
+          "matmuls": 24,
+          "wrong": 0,
+          "worst_z": 0.538
+        },
+        "int8": {
+          "matmuls": 0,
+          "wrong": 0,
+          "worst_z": 0.0,
+          "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+        },
+        "fp8": {
+          "matmuls": 24,
+          "wrong": 24,
+          "worst_z": 4062.516
+        }
+      }
+    }
+  ],
+  "mps_control": "/usr/bin/nvidia-cuda-mps-control",
+  "mps_start": {
+    "exit": 0,
+    "output": ""
+  },
+  "mps_logs": {
+    "control": "2:33:38.560 Control     8] Accepting connection...\n[2026-10-19 12:33:39.225 Control     8] NEW SERVER 16: Ready\n[2026-10-19 12:33:39.317 Control     8] Accepting connection...\n[2026-10-19 12:33:39.317 Control     8] NEW CLIENT 10 from user 0: Server already exists\n[2026-10-19 12:35:16.958 Control     8] Accepting connection...\n[2026-10-19 12:35:16.958 Control     8] Unable to read new connection type information\n[2026-10-19 12:35:16.958 Control     8] Accepting connection...\n[2026-10-19 12:35:16.958 Control     8] NEW CLIENT 110 from user 0: Server already exists\n[2026-10-19 12:35:17.152 Control     8] Accepting connection...\n[2026-10-19 12:35:17.152 Control     8] NEW CLIENT 110 from user 0: Server already exists\n[2026-10-19 12:35:28.068 Control     8] Accepting connection...\n[2026-10-19 12:35:28.068 Control     8] Unable to read new connection type information\n[2026-10-19 12:35:28.068 Control     8] Accepting connection...\n[2026-10-19 12:35:28.068 Control     8] NEW CLIENT 128 from user 0: Server already exists\n[2026-10-19 12:35:28.125 Control     8] Accepting connection...\n[2026-10-19 12:35:28.125 Control     8] NEW CLIENT 128 from user 0: Server already exists\n[2026-10-19 12:35:39.167 Control     8] Accepting connection...\n[2026-10-19 12:35:39.168 Control     8] Unable to read new connection type information\n[2026-10-19 12:35:39.168 Control     8] Accepting connection...\n[2026-10-19 12:35:39.168 Control     8] NEW CLIENT 146 from user 0: Server already exists\n[2026-10-19 12:35:39.210 Control     8] Accepting connection...\n[2026-10-19 12:35:39.210 Control     8] NEW CLIENT 146 from user 0: Server already exists\n[2026-10-19 12:35:49.993 Control     8] Accepting connection...\n[2026-10-19 12:35:49.993 Control     8] Unable to read new connection type information\n[2026-10-19 12:35:49.993 Control     8] Accepting connection...\n[2026-10-19 12:35:49.993 Control     8] NEW CLIENT 164 from user 0: Server already exists\n[2026-10-19 12:35:50.050 Control     8] Accepting connection...\n[2026-10-19 12:35:50.050 Control     8] NEW CLIENT 164 from user 0: Server already exists\n[2026-10-19 12:36:00.876 Control     8] Accepting connection...\n[2026-10-19 12:36:00.876 Control     8] Unable to read new connection type information\n[2026-10-19 12:36:00.876 Control     8] Accepting connection...\n[2026-10-19 12:36:00.877 Control     8] NEW CLIENT 182 from user 0: Server already exists\n[2026-10-19 12:36:01.086 Control     8] Accepting connection...\n[2026-10-19 12:36:01.086 Control     8] NEW CLIENT 182 from user 0: Server already exists\n[2026-10-19 12:36:10.168 Control     8] Accepting connection...\n[2026-10-19 12:36:10.168 Control     8] NEW UI\n[2026-10-19 12:36:10.168 Control     8] Activating queued UI\n[2026-10-19 12:36:10.168 Control     8] Cmd:quit\n[2026-10-19 12:36:10.168 Control     8] Try shutting down server 16, backoff is disabled\n[2026-10-19 12:36:10.216 Control     8] Server 16 exited with status 0\n[2026-10-19 12:36:10.216 Control     8] Exit with status 0\n",
+    "server": ": 164, Context ID: 0}\n[2026-10-19 12:35:50.050 Server    16] Received new client request from PID 164\n[2026-10-19 12:35:50.050 Server    16] Priority level of client {164} is: 0 (NORMAL)\n[2026-10-19 12:35:50.050 Server    16] Client {PID: 164, Context ID: 1} connected\n[2026-10-19 12:35:50.050 Server    16] Creating worker thread for client {PID: 164, Context ID: 1}\n[2026-10-19 12:35:50.050 Server    16] Device NVIDIA H200 (uuid GPU-0bd2f4e4-086c-9889-6182-e4c9175cb6c6) is associated\n[2026-10-19 12:35:50.050 Server    16] Status of client {PID: 164, Context ID: 1} is ACTIVE\n[2026-10-19 12:35:50.051 Client   164] Static partitioning mode disabled\n[2026-10-19 12:35:58.770 Server    16] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 164, Context ID: 0} exit\n[2026-10-19 12:35:58.770 Server    16] Client process 164 disconnected\n[2026-10-19 12:35:58.950 Server    16] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 164, Context ID: 1} exit\n[2026-10-19 12:35:58.950 Server    16] Client {PID: 164, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-19 12:36:00.877 Server    16] Received new client request from PID 182\n[2026-10-19 12:36:00.877 Server    16] Priority level of client {182} is: 0 (NORMAL)\n[2026-10-19 12:36:00.877 Server    16] Client {PID: 182, Context ID: 0} connected\n[2026-10-19 12:36:00.877 Server    16] Creating worker thread for client {PID: 182, Context ID: 0}\n[2026-10-19 12:36:01.086 Server    16] Received new client request from PID 182\n[2026-10-19 12:36:01.086 Server    16] Priority level of client {182} is: 0 (NORMAL)\n[2026-10-19 12:36:01.086 Server    16] Creating worker thread for client {PID: 182, Context ID: 1}\n[2026-10-19 12:36:01.086 Server    16] Client {PID: 182, Context ID: 1} connected\n[2026-10-19 12:36:01.087 Server    16] Device NVIDIA H200 (uuid GPU-0bd2f4e4-086c-9889-6182-e4c9175cb6c6) is associated\n[2026-10-19 12:36:01.087 Server    16] Status of client {PID: 182, Context ID: 1} is ACTIVE\n[2026-10-19 12:36:01.088 Client   182] Static partitioning mode disabled\n[2026-10-19 12:36:10.049 Server    16] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 182, Context ID: 0} exit\n[2026-10-19 12:36:10.049 Server    16] Client process 182 disconnected\n[2026-10-19 12:36:10.078 Server    16] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 182, Context ID: 1} exit\n[2026-10-19 12:36:10.078 Server    16] Client {PID: 182, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-19 12:36:10.169 Server    16] Server has been notified to shutdown\n[2026-10-19 12:36:10.169 Server    16] Waiting for current clients to finish\n[2026-10-19 12:36:10.169 Server    16] Exiting\n"
+  },
+  "seconds": 154.9
+}

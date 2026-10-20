@@ -54,7 +54,10 @@ model whose last layer has a remainder block (1000 outputs) so the multi-span pa
 """
 from __future__ import annotations
 
+import contextlib
 import math
+import os
+import threading
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -81,7 +84,8 @@ HALF_TINY_STEP = {torch.bfloat16: 0.0, torch.float16: 2.0**-25}
 
 # Largest finite value of each output dtype: Inf/NaN outputs are judged only when the inputs
 # can't produce values this large (see above). BIG: the same for outputs too large to square.
-DTYPE_MAX = {torch.bfloat16: float(torch.finfo(torch.bfloat16).max), torch.float16: 65504.0}
+DTYPE_MAX = {torch.bfloat16: float(torch.finfo(torch.bfloat16).max), torch.float16: 65504.0,
+             torch.float32: float(torch.finfo(torch.float32).max)}
 BIG = 1e18
 
 # Above this many elements, the CPU/MPS fallback converts A to fp32 in row chunks.
@@ -91,12 +95,19 @@ _FP32_CHUNK_ELEMS = 1 << 26
 @dataclass
 class CheckResult:
     ok: bool                 # False means "looks corrupted"
-    max_z: float             # worst residual, in units of rounding noise (inf/nan: non-finite output)
+    max_z: float             # worst residual, in units of rounding noise (inf/nan: non-finite output;
+                             # -1: no block could be judged)
     nonfinite: bool          # NaN or Inf in the output (or values too large to square in fp32)
     batch: Optional[int] = None      # where the worst block is (for bmm)
     row: Optional[int] = None
     col_block: Optional[int] = None
     noise: Optional[float] = None    # estimated rounding noise of that block (its scale)
+
+    @property
+    def judged(self) -> bool:
+        """False when any checksum could not be judged and no other checksum found corruption.
+        Non-finite inputs or legitimate overflow then leave an incomplete check, not a clean one."""
+        return not (math.isfinite(self.max_z) and self.max_z < 0)
 
 
 @dataclass
@@ -156,15 +167,80 @@ def _lowp_gemm(A3: torch.Tensor, Bs: torch.Tensor) -> torch.Tensor:
 
 
 _SIGNS: dict = {}
+# The noise model treats each output's rounding as independent of the signs. With one fixed pattern,
+# outputs that happen to line up with it (B's columns proportional to the signs, say) round together
+# and can cross the alarm line on a correct result. A fresh pattern in every process makes that
+# alignment chance instead of a property of the data. SDCGUARD_SIGN_SEED pins it (tests, replays).
+_SIGN_SEED = int(os.environ.get("SDCGUARD_SIGN_SEED") or int.from_bytes(os.urandom(4), "little"))
 
 
-def _signs(width: int, device) -> torch.Tensor:
-    """A fixed pseudo-random +-1 pattern (fp32) for the second checksum."""
-    key = (width, str(device))
-    if key not in _SIGNS:
-        g = torch.Generator().manual_seed(20261014 + width)
-        _SIGNS[key] = (torch.randint(0, 2, (width,), generator=g) * 2 - 1).float().to(device)
-    return _SIGNS[key]
+# Training checks can also take a new pattern on every checked step (SDCGuard(fresh_signs=True), the default):
+# epoch e > 0 is a different pattern. Two outputs of a block swapped where the pattern has the same sign cancel
+# in both sums; with a new pattern each checked step, a fault that keeps doing that is seen on about half the
+# checked steps (each pattern separates a given pair with probability 1/2) instead of never. It can still go
+# unseen for several steps in a row. Serving computes its checksums once at load, so it stays on epoch 0.
+
+
+_CACHE_LOCK = threading.RLock()     # the pattern caches are shared by every thread (one per GPU in autograd)
+
+
+@contextlib.contextmanager
+def sign_seed(seed: Optional[int]):
+    """Use another process's sign patterns for a while (a replay judging a recorded output with the patterns
+    that flagged it). It swaps a process-wide setting: for one-off tools such as `sdcguard replay`, not while
+    other threads are checking matmuls. The Triton checks keep their own copy of the patterns, so use it with
+    CPU tensors."""
+    global _SIGN_SEED
+    if seed is None:
+        yield
+        return
+    with _CACHE_LOCK:
+        old = _SIGN_SEED
+        _SIGN_SEED = int(seed)
+        _SIGNS.clear()
+        _PAIR_W.clear()
+    try:
+        yield
+    finally:
+        with _CACHE_LOCK:
+            _SIGN_SEED = old
+            _SIGNS.clear()
+            _PAIR_W.clear()
+
+
+def _drop_old(cache: dict, epoch: int) -> None:
+    """Keep epoch 0 and the current epoch only (the caches would grow by one pattern per step otherwise).
+    Call with _CACHE_LOCK held."""
+    if epoch:
+        for k in [k for k in list(cache) if k[-1] not in (0, epoch)]:
+            cache.pop(k, None)
+
+
+def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
+    """A pseudo-random +-1 pattern (fp32) for the second checksum: one per process and epoch.
+    Epoch 0 draws each width on its own; a later epoch draws one pattern and narrower blocks use its start
+    (one draw per checked step instead of one per block width)."""
+    key = (width, str(device), epoch)
+    out = _SIGNS.get(key)
+    if out is not None:
+        return out
+    with _CACHE_LOCK:
+        out = _SIGNS.get(key)
+        if out is not None:
+            return out
+        _drop_old(_SIGNS, epoch)
+        if epoch == 0:
+            g = torch.Generator().manual_seed((_SIGN_SEED + width) % (2 ** 63))
+            s = (torch.randint(0, 2, (width,), generator=g) * 2 - 1).float()
+        else:
+            n = max(128, width)
+            base = _SIGNS.get(("base", n, epoch))
+            if base is None:
+                g = torch.Generator().manual_seed((_SIGN_SEED + n + 7919 * epoch) % (2 ** 63))
+                base = _SIGNS[("base", n, epoch)] = (torch.randint(0, 2, (n,), generator=g) * 2 - 1).float()
+            s = base[:width]
+        out = _SIGNS[key] = s.to(device)
+    return out
 
 
 def _c_gemm(flat: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
@@ -174,18 +250,22 @@ def _c_gemm(flat: torch.Tensor, W: torch.Tensor) -> torch.Tensor:
 _PAIR_W: dict = {}
 
 
-def _pair_weights(width: int, dtype: torch.dtype, device) -> torch.Tensor:
+def _pair_weights(width: int, dtype: torch.dtype, device, epoch: int = 0) -> torch.Tensor:
     """[1, s] as a (width, 2) matrix in `dtype` (exact: every entry is +-1). Cached."""
-    key = (width, dtype, str(device))
+    key = (width, dtype, str(device), epoch)
     w = _PAIR_W.get(key)
     if w is None:
-        s = _signs(width, device)
-        w = torch.stack([torch.ones_like(s), s], dim=1).to(dtype)
-        _PAIR_W[key] = w
+        with _CACHE_LOCK:
+            w = _PAIR_W.get(key)
+            if w is None:
+                _drop_old(_PAIR_W, epoch)
+                s = _signs(width, device, epoch)
+                w = torch.stack([torch.ones_like(s), s], dim=1).to(dtype)
+                _PAIR_W[key] = w
     return w
 
 
-def _pair_sums(Xb: torch.Tensor) -> torch.Tensor:
+def _pair_sums(Xb: torch.Tensor, epoch: int = 0) -> torch.Tensor:
     """Plain and signed sums of every block, in fp32: (..., nblk, width) -> (..., nblk, 2).
 
     On NVIDIA GPUs both come from one pass (a skinny GEMM against [1, s] with fp32 output);
@@ -195,11 +275,11 @@ def _pair_sums(Xb: torch.Tensor) -> torch.Tensor:
     if Xb.dtype in UNIT_ROUNDOFF and _use_lowp_gemm(Xb):
         try:
             Xc = Xb if Xb.is_contiguous() else Xb.contiguous()
-            out = _c_gemm(Xc.view(-1, width), _pair_weights(width, Xb.dtype, Xb.device))
+            out = _c_gemm(Xc.view(-1, width), _pair_weights(width, Xb.dtype, Xb.device, epoch))
             return out.view(*Xb.shape[:-1], 2)
         except (RuntimeError, NotImplementedError, AttributeError):
             pass
-    s = _pair_weights(width, Xb.dtype, Xb.device)[:, 1]
+    s = _pair_weights(width, Xb.dtype, Xb.device, epoch)[:, 1]
     return torch.stack([_sum_fp32(Xb), _sum_fp32(Xb * s)], dim=-1)
 
 
@@ -236,18 +316,59 @@ def _matmul_fp32(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
     return torch.cat([torch.matmul(A3[:, i:i + rows].float(), Bb) for i in range(0, m, rows)], dim=-2)
 
 
-def _judge_nonfinite(z, expected, actual, noise, bound, dtype):
+UNJUDGED = -1.0     # incomplete check: at least one checksum unjudged, and no other checksum found corruption
+
+
+def _complete_score(max_z: torch.Tensor, unknown: list[torch.Tensor], z: float) -> torch.Tensor:
+    """Keep a detected failure; otherwise any unjudged checksum makes the whole check incomplete.
+
+    Taking only a maximum drops negative UNJUDGED scores whenever another row is finite. Reducing the
+    coverage flag separately preserves it across rows, blocks and remainder spans, without a host read.
+    """
+    incomplete = unknown[0] if len(unknown) == 1 else torch.stack(unknown).any()
+    return torch.where(incomplete & (max_z <= z), UNJUDGED, max_z)
+
+
+def _judge_nonfinite(z, expected, actual, noise, bound, dtype, cnorm=None, width: int = 1, step: float = 0.0,
+                     k: int = 0):
     """Judging Inf/NaN (see the module docstring). An expected side that isn't finite can't be
-    judged (non-finite inputs, or values too large for fp32 sums): z = 0. An Inf/NaN output, or
-    one too large to square in fp32, is corruption (z = inf) only if the inputs can't produce it."""
+    judged (non-finite inputs, or values too large for fp32 sums): z = UNJUDGED. An Inf/NaN output, or
+    one too large to square in fp32, is corruption (z = inf) only if the inputs can't produce it; if they
+    can (fp16 loss-scaling overflow, say), it can't be judged either.
+
+    cnorm (the block's L2 norm), width and step (one subnormal step of the output dtype): finite outputs too
+    large for the inputs are corruption too. Every output of the block is at most `bound` (plus rounding), so
+    the block's norm is at most that times sqrt(width). Two huge outputs of opposite sign that cancel in both
+    checksums (+1e18 and -1e18 where the pattern has the same sign) are caught this way (independent review,
+    Oct 19, 2026)."""
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad
     lim = bound * 1.01
-    z = torch.where(z == z, z, 0.0)                     # inf/inf (both sides huge): nothing to judge
-    z = torch.where(e_bad, 0.0, z)
-    z = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dtype], BIG), float("inf"), 0.0), z)
-    return torch.where(big, torch.where(lim < BIG, float("inf"), 0.0), z)
+    z = torch.where(z == z, z, UNJUDGED)                # inf/inf (both sides huge): nothing to judge
+    z = torch.where(e_bad, UNJUDGED, z)
+    if cnorm is not None:
+        cn = cnorm.unsqueeze(-1) if cnorm.dim() == z.dim() - 1 else cnorm
+        # (each output may also be off by the accumulation's worst-case rounding, k x 2^-22 of the bound)
+        cap = bound * (1.02 + k * 2.0 ** -22) + step
+        imposs = ~e_bad & ~a_bad & ~big & (lim < BIG) & (cn > cap * math.sqrt(width))
+        z = torch.where(imposs, float("inf"), z)
+    z = torch.where(a_bad, torch.where(lim < min(DTYPE_MAX[dtype], BIG), float("inf"), UNJUDGED), z)
+    return torch.where(big, torch.where(lim < BIG, float("inf"), UNJUDGED), z)
+
+
+def _pad_empty_k(A: torch.Tensor, B: torch.Tensor):
+    """A @ B with k = 0 (an MoE expert that got no tokens, in a weight gradient) is all zeros: check it as a
+    product with one zero column, so C must equal the bias (or zero)."""
+    if A.shape[-1] == 0:
+        A = A.new_zeros(*A.shape[:-1], 1)
+        B = B.new_zeros(*B.shape[:-2], 1, B.shape[-1])
+    return A, B
+
+
+def is_empty(C: torch.Tensor) -> bool:
+    """An output with no elements (m = 0 or n = 0): nothing to check."""
+    return C.numel() == 0
 
 
 def matmul_zscores(
@@ -261,6 +382,7 @@ def matmul_zscores(
     block: int = 128,
     abs_floor: float = ABS_FLOOR,
     z: float = 6.0,
+    epoch: int = 0,
 ) -> Optional[CheckStat]:
     """Queue the check of C = beta*bias + alpha*(A @ B) without waiting for the GPU.
 
@@ -275,7 +397,16 @@ def matmul_zscores(
     u = UNIT_ROUNDOFF.get(C.dtype)
     if u is None:
         return None
+    if is_empty(C):
+        raise ValueError("empty output: nothing to check (callers skip these, see is_empty)")
+    A, B = _pad_empty_k(A, B)
+    # backward passes often run under autocast, which would round this fp32 math to bf16/fp16 on CPUs
+    # and Apple GPUs
+    with torch.autocast(device_type=C.device.type, enabled=False):
+        return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch)
 
+
+def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> CheckStat:
     A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
     nb_batch, m, n = C3.shape
     k = A3.shape[-1]
@@ -295,14 +426,14 @@ def matmul_zscores(
 
     A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1, 1)                      # (bA, m, 1, 1)
     A_l1 = _norm_fp32(A3, ord=1).view(A3.shape[0], m, 1)                    # (bA, m, 1)
-    maxes, args, noises = [], [], []
+    maxes, args, noises, unknown = [], [], [], []
     for start, width, nblk, off in spans:
         end = start + width * nblk
         Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)          # a view when possible
         Bblk = B3[..., start:end].reshape(B3.shape[0], k, nblk, width)
         # Two checksums per block: the plain sum, and a sum with fixed random +-1 signs. A fault
         # whose changes happen to cancel in one sum (e.g. zeroing a +3 and a -3) shows in the other.
-        B2 = _pair_sums(Bblk)                                                # (bB, k, nblk, 2) fp32
+        B2 = _pair_sums(Bblk, epoch)                                         # (bB, k, nblk, 2) fp32
         expected = _matmul_fp32(A3, B2.view(B3.shape[0], k, 2 * nblk))
         expected = expected.view(expected.shape[0], m, nblk, 2)
         # largest output these inputs allow, per row and block (for judging Inf/NaN outputs):
@@ -314,16 +445,19 @@ def matmul_zscores(
         if bias is not None and beta != 0:
             if bias.dim() == 1:                                              # (n,)
                 bb = bias[start:end].reshape(nblk, width)
-            else:                                                            # (m, n) or (1, n)
+            elif bias.dim() <= 2:                                            # (m, n) or (1, n)
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
-            expected = expected.add(_pair_sums(bb), alpha=beta)
-            bound = bound + abs(beta) * bb.abs().amax(-1).float()             # (nblk,) or (m, nblk)
+            else:                                                            # (batch, m, n) and friends: baddbmm
+                bb = torch.broadcast_to(bias, (nb_batch, m, n))[..., start:end].reshape(nb_batch, m, nblk, width)
+            expected = expected.add(_pair_sums(bb, epoch), alpha=beta)
+            bound = bound + abs(beta) * bb.abs().amax(-1).float()             # (nblk,), (m, nblk) or (b, m, nblk)
 
-        actual = _pair_sums(Cb)                                              # (batch, m, nblk, 2)
+        actual = _pair_sums(Cb, epoch)                                       # (batch, m, nblk, 2)
         # Rounding noise of a block sum ~ unit roundoff x L2 norm of the outputs (same for +-1
         # signs), plus a floor for the fp32 rounding of `expected` itself (matters only when the
         # outputs nearly cancel): 1e-5 x |alpha| x |a_row| x |checksum column of B|.
-        noise = _norm_fp32(Cb).mul_(u).unsqueeze(-1)                         # (batch, m, nblk, 1)
+        cnorm = _norm_fp32(Cb)                                               # (batch, m, nblk)
+        noise = (cnorm * u).unsqueeze(-1)                                    # (batch, m, nblk, 1)
         b2n = _norm_fp32(B2, dim=-3).unsqueeze(-3)                           # (bB, 1, nblk, 2)
         bound = bound.unsqueeze(-1)                                          # (b, m, nblk, 1)
         floor = (A_norm * b2n).mul_(1e-5 * abs(alpha))
@@ -340,7 +474,8 @@ def matmul_zscores(
         worst = (_norm_fp32(Cb, ord=1).mul_(1.25 * u).add_(1.25 * width * h).unsqueeze(-1)
                  + floor[..., :1]).add_(abs_floor)
         zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
-        zs = _judge_nonfinite(zs, expected, actual, noise, bound, C3.dtype)
+        zs = _judge_nonfinite(zs, expected, actual, noise, bound, C3.dtype, cnorm, width, 2 * h, k)
+        unknown.append((zs < 0).any())
         mz, arg = torch.max(zs.view(-1), 0)
         maxes.append(mz)
         # gather, not den.view(-1)[arg]: indexing with a GPU tensor makes the CPU wait for the GPU
@@ -355,8 +490,171 @@ def matmul_zscores(
         max_z = mz.gather(0, best).squeeze(0)
         arg = torch.stack(args).gather(0, best).squeeze(0)
         nz = torch.stack(noises).gather(0, best).squeeze(0)
+    max_z = _complete_score(max_z, unknown, z)
     return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
                      batched=C.dim() == 3)
+
+# --- checks of fp32 accumulators (SDCGuard(precise=True)) -----------------------------------------------
+#
+# In precise mode a bf16/fp16 linear layer's matmul keeps its fp32 result (the tensor cores' accumulator)
+# long enough to check it, and only then rounds it to bf16/fp16. That result has 16 more bits than the
+# rounded one, so the check sees far smaller errors (AEGIS, OSDI '26, found its production incidents with
+# checksums over fp32 accumulators, not over bf16 outputs).
+#
+# Both sides of the identity are added up in float64 (the inputs are bf16/fp16, so A @ (block sums of B)
+# in float64 is all but exact), and the noise is the fp32 accumulation error of the result alone:
+#     u * (C1 sqrt(k) |alpha| |a_row| |B_block| + (C2 sqrt(k) + C3 k / N + sqrt(width)) |C_block|),  u = 2^-24
+# The first term is the random part of the accumulation's rounding: every one of the k products is aligned
+# and truncated (tensor cores) or rounded (FMA) against the running sum, an error of up to one fp32 ulp of
+# the running sum with a standard deviation of ulp / sqrt(12) ~ 0.58 u |running sum|, and no running sum can
+# exceed |a_row| |b_column| (Cauchy-Schwarz). C1 = 0.6. The k / N term is the bias of truncating once per
+# tensor-core step (N products, modes.n_fma); sqrt(width): rounding of the fp32 outputs themselves.
+# Cauchy-Schwarz bounds the exact partial sums, but the sqrt(k) noise scaling additionally assumes
+# sufficiently independent rounding errors. This is a statistical estimate requiring held-out validation,
+# not a deterministic error bound or a universal false-alarm guarantee.
+#
+# Until Oct 19, 2026 the first term had no sqrt(k): it assumed the running sums stay near the final output.
+# On real training (backward dW of the attention input and output layers, 4,096 tokens) they don't, and the
+# check raised 72 to 84 false alarms in 2,970 clean checks on an A100, H100 and B200
+# (results/precise_models). The term above was chosen from those measurements and the rounding argument,
+# then frozen before the held-out run (experiments/precise_models.py --validate). Precise mode stays opt-in
+# and experimental until that run passes. The plain sum also has to beat the same bound with |C_block|
+# summed instead of squared (outputs whose errors line up), as in matmul_zscores. float64 is fast on
+# data-center GPUs (A100, H100, B200) and slow on most others, another reason precise mode is opt-in.
+ACC_UNIT = 2.0 ** -24
+ACC_C1, ACC_C2, ACC_C3 = 0.6, 1.0, 1.0
+_F64_CHUNK = 1 << 24          # elements converted to float64 at a time
+
+
+def acc_supported(A: torch.Tensor, C: torch.Tensor) -> bool:
+    return C.dtype == torch.float32 and A.dtype in UNIT_ROUNDOFF
+
+
+def _pair_sums64(Xb: torch.Tensor, epoch: int = 0) -> torch.Tensor:
+    """Plain and signed block sums in float64: (..., nblk, width) -> (..., nblk, 2), in chunks."""
+    width = Xb.shape[-1]
+    w = _pair_weights(width, torch.float64, Xb.device, epoch)
+    flat = Xb.reshape(-1, width)
+    out = torch.empty(flat.shape[0], 2, dtype=torch.float64, device=Xb.device)
+    rows = max(1, _F64_CHUNK // max(1, width))
+    for i in range(0, flat.shape[0], rows):
+        out[i:i + rows] = flat[i:i + rows].double() @ w
+    return out.view(*Xb.shape[:-1], 2)
+
+
+def _matmul64(A3: torch.Tensor, Bb: torch.Tensor) -> torch.Tensor:
+    """A3 ((bA, m, k), any dtype) @ Bb ((bB, k, c), float64) in float64, A converted in row chunks."""
+    m, k = A3.shape[-2], A3.shape[-1]
+    rows = max(1, _F64_CHUNK // max(1, A3.shape[0] * k))
+    if rows >= m:
+        return torch.matmul(A3.double(), Bb)
+    return torch.cat([torch.matmul(A3[:, i:i + rows].double(), Bb) for i in range(0, m, rows)], dim=-2)
+
+
+def matmul_zscores_acc(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    C: torch.Tensor,
+    bias: Optional[torch.Tensor] = None,
+    *,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+    block: int = 128,
+    abs_floor: float = ABS_FLOOR,
+    z: float = 6.0,
+    nfma: Optional[int] = None,
+    epoch: int = 0,
+) -> Optional[CheckStat]:
+    """Queue the check of C = beta*bias + alpha*(A @ B) where A and B are bf16/fp16 and C is the fp32
+    result (not rounded). Same layout and read-back as matmul_zscores (resolve() decodes both). None if
+    the dtypes don't fit. nfma: tensor-core products per truncation step (None: no tensor cores)."""
+    if not acc_supported(A, C):
+        return None
+    if is_empty(C):
+        raise ValueError("empty output: nothing to check (callers skip these, see is_empty)")
+    A, B = _pad_empty_k(A, B)
+    with torch.autocast(device_type=C.device.type, enabled=False):     # its fp32/fp64 math stays as written
+        return _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch)
+
+
+def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0) -> CheckStat:
+    A3, B3, C3 = _as_batched(A), _as_batched(B), _as_batched(C)
+    nb_batch, m, n = C3.shape
+    k = A3.shape[-1]
+    if A3.shape[-2] != m or B3.shape[-2] != k or B3.shape[-1] != n:
+        raise ValueError(f"shape mismatch: A{tuple(A.shape)} B{tuple(B.shape)} C{tuple(C.shape)}")
+    u = ACC_UNIT
+    steps = k / nfma if nfma else 0.0
+
+    bs = max(1, min(block, n))
+    spans, offset = [], 0
+    for start, width, nblk in ((0, bs, n // bs), ((n // bs) * bs, n % bs, 1)):
+        if nblk and width:
+            spans.append((start, width, nblk, offset))
+            offset += max(nb_batch, A3.shape[0], B3.shape[0]) * m * nblk * 2
+
+    A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1)                          # (bA, m, 1)
+    A_l1 = _norm_fp32(A3, ord=1).view(A3.shape[0], m, 1)
+    maxes, args, noises, unknown = [], [], [], []
+    for start, width, nblk, off in spans:
+        end = start + width * nblk
+        Cb = C3[..., start:end].reshape(nb_batch, m, nblk, width)
+        Bblk = B3[..., start:end].reshape(B3.shape[0], k, nblk, width)
+        B2 = _pair_sums64(Bblk, epoch)                                       # (bB, k, nblk, 2) float64
+        expected = _matmul64(A3, B2.view(B3.shape[0], k, 2 * nblk)).view(-1, m, nblk, 2)
+        bound = A_l1 * Bblk.abs().amax(dim=(-3, -1)).float().unsqueeze(-2)  # (b, m, nblk)
+        if alpha != 1.0:
+            expected = expected * alpha
+            bound = bound * abs(alpha)
+        if bias is not None and beta != 0:
+            if bias.dim() == 1:
+                bb = bias[start:end].reshape(nblk, width)
+            elif bias.dim() <= 2:
+                bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
+            else:
+                bb = torch.broadcast_to(bias, (nb_batch, m, n))[..., start:end].reshape(nb_batch, m, nblk, width)
+            expected = expected + beta * _pair_sums64(bb, epoch)
+            bound = bound + abs(beta) * bb.abs().amax(-1).float()
+
+        actual = _pair_sums64(Cb, epoch)                                     # (b, m, nblk, 2) float64
+        cnorm = _norm_fp32(Cb)                                               # (b, m, nblk)
+        b_frob = torch.linalg.vector_norm(Bblk.float(), dim=(-3, -1)).unsqueeze(-2)   # (bB, 1, nblk)
+        per_out = ACC_C2 * math.sqrt(k) + ACC_C3 * steps + math.sqrt(width)
+        prod = (A_norm * b_frob).mul_(ACC_C1 * math.sqrt(k) * abs(alpha) * u)  # (b, m, nblk)
+        prod = torch.where(torch.isfinite(prod), prod, bound * (u * 128))
+        noise = (cnorm * (per_out * u) + prod).unsqueeze(-1)                 # (b, m, nblk, 1)
+        den = (noise + abs_floor).double()
+        diff = (expected - actual).abs_()
+        zs = diff / den
+        worst = (_norm_fp32(Cb, ord=1).mul_(per_out * u) + prod).unsqueeze(-1).add_(abs_floor).double()
+        zs[..., :1] = torch.minimum(zs[..., :1], diff[..., :1] / worst * z)
+        zs = _judge_nonfinite(zs.float(), expected, actual, noise, bound.unsqueeze(-1), torch.float32, cnorm, width,
+                              0.0, k)
+        unknown.append((zs < 0).any())
+        mz, arg = torch.max(zs.view(-1), 0)
+        maxes.append(mz)
+        noises.append(den.float().expand_as(zs).reshape(-1).gather(0, arg.view(1)).squeeze(0))
+        args.append(arg if off == 0 else arg + off)
+
+    if len(maxes) == 1:
+        max_z, arg, nz = maxes[0], args[0], noises[0]
+    else:
+        mz = torch.stack(maxes)
+        best = mz.argmax().view(1)
+        max_z = mz.gather(0, best).squeeze(0)
+        arg = torch.stack(args).gather(0, best).squeeze(0)
+        nz = torch.stack(noises).gather(0, best).squeeze(0)
+    max_z = _complete_score(max_z, unknown, z)
+    return CheckStat(max_z=max_z.float(), argmax=arg, noise=nz, spans=tuple(spans), m=m,
+                     batched=C.dim() == 3)
+
+
+def check_matmul_acc(A, B, C, bias=None, *, z: float = 6.0, nfma: Optional[int] = None, **kw) -> Optional[CheckResult]:
+    """matmul_zscores_acc, answered immediately (tests and one-off use)."""
+    if is_empty(C) and acc_supported(A, C):
+        return CheckResult(ok=True, max_z=0.0, nonfinite=False)
+    st = matmul_zscores_acc(A, B, C, bias, z=z, nfma=nfma, **kw)
+    return None if st is None else resolve([st], z)[0]
 
 
 def resolve(stats: Sequence[CheckStat], z: float = 6.0) -> list[CheckResult]:
@@ -405,6 +703,8 @@ def check_matmul(
     abs_floor: float = ABS_FLOOR,
 ) -> Optional[CheckResult]:
     """Check C = beta*bias + alpha*(A @ B) and answer immediately. None if dtype unsupported."""
+    if is_empty(C) and C.dtype in UNIT_ROUNDOFF:
+        return CheckResult(ok=True, max_z=0.0, nonfinite=False)       # nothing that could be wrong
     if USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, block):
         try:
             r = _group.check_now(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)

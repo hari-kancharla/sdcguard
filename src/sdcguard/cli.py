@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import math
 import os
 import subprocess
 import sys
@@ -74,7 +75,11 @@ def cmd_certify(a) -> int:
 
 
 def cmd_verify(a) -> int:
+    """Exit 0 when every certificate is authentic (and, with --require-pass, says PASS); 1 otherwise."""
     from . import certify
+    if a.require_pass and not a.pubkey:
+        print("sdcguard verify: --require-pass needs --pubkey (anyone can sign a certificate with their own key)")
+        return 2
     worst = 0
     for path in a.certificates:
         r = certify.verify(path, a.pubkey)
@@ -90,7 +95,10 @@ def cmd_verify(a) -> int:
                 print(f"  - {pr}")
             if r["ok"] and r["trusted_key"] is None:
                 print("  (signature is valid; pass --pubkey to check it was signed by a key you trust)")
-        worst = max(worst, 0 if r["ok"] else 1)
+        bad = not r["ok"] or (a.require_pass and r.get("result") != "PASS")
+        if a.require_pass and r["ok"] and r.get("result") != "PASS" and not a.json:
+            print(f"  --require-pass: the certificate is authentic but says {r.get('result')}")
+        worst = max(worst, 1 if bad else 0)
     return worst
 
 
@@ -110,19 +118,23 @@ def cmd_report(a) -> int:
     rep = fleet.write(rows, a.out)
     s = rep["stats"]
     print(f"sdcguard report: {s['gpus']} GPUs, {s['passed']} PASS, {s['failed'] - s['suspect']} FAIL, "
-          f"{s['suspect']} SUSPECT, "
+          f"{s['suspect']} SUSPECT, {s.get('incomplete', 0)} INCOMPLETE, "
           f"{s['matmuls_checked'] + s['serving_layer_checks']:,} results checked. "
           f"{os.path.join(a.out, 'fleet_report.html')}")
     if s["failed"]:
         print(f"  pull: {os.path.join(a.out, 'quarantine.txt')}   evidence: {os.path.join(a.out, 'rma')}/")
-    return 1 if s["failed"] else 0
+    return 1 if s["failed"] else (2 if s.get("incomplete") else 0)
 
 
 def cmd_replay(a) -> int:
     from .screen import replay
+    if a.times < 1:
+        print("sdcguard replay: --times must be at least 1")
+        return 2
     r = replay(a.evidence, a.times, a.device)
     print(json.dumps(r, indent=2, default=str))
-    return 1 if r["recomputations_that_failed_the_check"] else 0
+    from .verdict import replay_exit
+    return replay_exit(r)
 
 
 def _nhc_status(out: str, line: str, code: int) -> None:
@@ -136,17 +148,31 @@ def _nhc_status(out: str, line: str, code: int) -> None:
         pass
 
 
+def _nhc_previous(out: str):
+    """The last status.json, or None (missing or not a JSON object)."""
+    try:
+        with open(os.path.join(out, "status.json")) as f:
+            st = json.load(f)
+        return st if isinstance(st, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
 def _nhc_cached(a) -> int:
     """Report the last screen's result without running anything (instant): for health checks with a short
     time limit, such as Slurm's HealthCheckProgram (killed after 60 seconds). The screen itself runs on its
     own schedule (deploy/slurm/sdcguard-screen.sbatch, or a timer) and writes status.json."""
-    try:
-        with open(os.path.join(a.out, "status.json")) as f:
-            st = json.load(f)
-    except (OSError, ValueError):
-        print(f"UNKNOWN: no sdcguard screen result in {a.out} yet")
+    st = _nhc_previous(a.out)
+    if st is None:
+        print(f"UNKNOWN: no readable sdcguard screen result in {a.out} yet")
         return 2
-    age_h = (time.time() - float(st.get("time", 0))) / 3600
+    try:
+        age_h = (time.time() - float(st.get("time", 0))) / 3600
+        if not math.isfinite(age_h) or age_h < 0:
+            raise ValueError("invalid or future timestamp")
+    except (TypeError, ValueError):
+        print(f"UNKNOWN: unreadable sdcguard screen result in {a.out}")
+        return 2
     if st.get("code") == 1:                       # a failure stays a failure until someone screens again
         print(st.get("line", "FAIL"))
         return 1
@@ -162,27 +188,53 @@ def cmd_nhc(a) -> int:
     2 = couldn't tell (the conventions of Kubernetes node-problem-detector custom plugins)."""
     if a.cached:
         return _nhc_cached(a)
+    if a.simulate_faults > 0:
+        # A demonstration must never turn into a production drain signal or
+        # overwrite a real cached FAIL/PASS. Keep its workload files separate too.
+        demo_args = argparse.Namespace(**{**vars(a), "out": os.path.join(a.out, "simulated")})
+        try:
+            code = _run_screen(demo_args, capture=True).returncode
+            detail = f"demo screen exited {code}; evidence in {os.path.abspath(demo_args.out)}"
+        except Exception as e:  # noqa: BLE001
+            detail = f"demo could not run ({type(e).__name__})"
+        print(f"SIMULATED: {detail}; not a node health result, cached status unchanged")
+        return 2
     t0 = time.time()
     try:
         code = _run_screen(a, capture=True).returncode
     except Exception as e:  # noqa: BLE001
-        line = f"UNKNOWN: sdcguard could not run ({type(e).__name__})"
+        line, rc = f"UNKNOWN: sdcguard could not run ({type(e).__name__})", 2
+        prev = _nhc_previous(a.out)
+        if prev is not None and prev.get("code") == 1:          # (see below: a FAIL stays until a clean screen)
+            line, rc = f"{prev.get('line', 'FAIL')} (a later screen couldn't run: {type(e).__name__})", 1
         print(line)
-        _nhc_status(a.out, line, 2)
-        return 2
+        _nhc_status(a.out, line, rc)
+        return rc
     rows = _fresh_summaries(a.out, t0)
+    if any(s.get("SIMULATED_FAULTS") for _d, s in rows):
+        print("UNKNOWN: simulated screen results cannot update the node health status")
+        return 2
     bad = [s for _d, s in rows if s.get("result") == "FAIL"]
+    partial = [s for _d, s in rows if s.get("result") == "INCOMPLETE"]
     if bad:
         g = bad[0].get("gpu", {})
         line = (f"FAIL: {len(bad)} of {len(rows)} GPUs computed wrong results; first {g.get('gpu_uuid')} PCI "
                 f"{g.get('pci_bus_id')} serial {g.get('serial')}; evidence in {os.path.abspath(a.out)}")
         rc = 1
+    elif partial:
+        line, rc = (f"UNKNOWN: {len(partial)} of {len(rows)} GPUs couldn't be fully checked (checks that couldn't "
+                    f"judge their results); see {os.path.abspath(a.out)}"), 2
     elif code != 0 or not rows:
         line, rc = f"UNKNOWN: sdcguard screen exited {code} with {len(rows)} results", 2
     else:
         checked = sum((s.get("matmuls_checked") or 0) + (s.get("linear_layer_checks_while_serving") or 0)
                       for _d, s in rows)
         line, rc = f"OK: {len(rows)} GPUs computed correctly ({checked:,} results checked)", 0
+    prev = _nhc_previous(a.out)
+    if rc == 2 and prev is not None and prev.get("code") == 1:
+        # a later screen that couldn't finish (often the same faulty GPU crashing) doesn't clear a FAIL:
+        # only a screen that completes with every GPU correct does
+        line, rc = f"{prev.get('line', 'FAIL')} (a later screen couldn't finish: {line})", 1
     print(line)
     _nhc_status(a.out, line, rc)
     return rc
@@ -207,6 +259,8 @@ def main(argv=None) -> int:
     v.add_argument("certificates", nargs="+")
     v.add_argument("--pubkey", default=None, help="the public key you trust")
     v.add_argument("--json", action="store_true")
+    v.add_argument("--require-pass", action="store_true",
+                   help="also exit 1 unless every certificate says PASS (needs --pubkey); for scripts that gate on it")
     k = sub.add_parser("keygen", help="make a signing key pair")
     k.add_argument("--out", default="sdcguard")
     r = sub.add_parser("report", help="fleet report from screen results")
@@ -244,7 +298,13 @@ def main(argv=None) -> int:
     if a.cmd not in handlers:
         p.print_help()
         return 0
-    return handlers[a.cmd](a)
+    try:
+        return handlers[a.cmd](a)
+    except KeyboardInterrupt:
+        raise
+    except Exception as e:  # noqa: BLE001  (exit 1 means wrong results: an error here is "couldn't tell", 2)
+        print(f"sdcguard {a.cmd}: error: {type(e).__name__}: {e}")
+        return 2
 
 
 if __name__ == "__main__":

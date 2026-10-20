@@ -1,0 +1,109 @@
+d (normal for big matmuls)"
+E             ]
+E           ],
+E           "board": null,
+E           "simulated_faults": false,
+E           "math_modes": {
+E             "ran": [
+E               "bf16",
+E               "fp16",
+E               "tf32",
+E               "fp32",
+E               "fp64",
+E               "fp8"
+E             ],
+E             "matmuls": 36,
+E             "wrong": 0,
+E             "not_checked": {
+E               "int8": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+E             },
+E             "errors": {
+E               "int8": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+E             },
+E             "typical_error_caught": {
+E               "bf16": 0.00078,
+E               "fp16": 0.00078,
+E               "tf32": 0.0013,
+E               "fp32": 0.00026,
+E               "fp64": 9.7e-13,
+E               "fp8": 0.2
+E             }
+E           },
+E           "digest": "6241190f7c1eef61"
+E         }
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/usr/local/bin/python', '-m', 'sdcguard', 'check', '--minutes', '0.06', '--offline', '--json',...p32": 0.00026,\n      "fp64": 9.7e-13,\n      "fp8": 0.2\n    }\n  },\n  "digest": "6241190f7c1eef61"\n}\n', stderr='').returncode
+
+tests/test_check.py:199: AssertionError
+______________________________ test_check_on_gpu _______________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_check_on_gpu0')
+
+    @pytest.mark.skipif(not __import__("torch").cuda.is_available(), reason="needs a CUDA GPU")
+    def test_check_on_gpu(tmp_path):
+        full = check.check_one("cuda", minutes=0.5, out_root=str(tmp_path))
+>       assert full["result"] == "PASS", full["notes"]
+E       AssertionError: [['bad', 'the int8 math-mode check couldn\'t run (NotImplementedError: "baddbmm_cuda" not implemented for \'Long\'): that part wasn\'t checked'], ['info', 'clocks held back by the power limit at full load (normal for big matmuls)']]
+E       assert 'INCOMPLETE' == 'PASS'
+E         
+E         - PASS
+E         + INCOMPLETE
+
+tests/test_check.py:217: AssertionError
+_______ test_board_rejects_cards_whose_verdict_contradicts_their_counts ________
+
+    def test_board_rejects_cards_whose_verdict_contradicts_their_counts():
+        from sdcguard import board
+>       assert board.validate(_card()) is None
+                              ^^^^^^^
+
+tests/test_edge_cases.py:159: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+changes = {}
+
+    def _card(**changes):
+        from sdcguard import board
+        seed = os.path.join(HERE, "..", "docs", "board", "seed")
+>       with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
+                                            ^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/root/sdcguard/tests/../docs/board/seed'
+
+tests/test_edge_cases.py:148: FileNotFoundError
+___________ test_board_rejects_cards_whose_math_mode_counts_disagree ___________
+
+    def test_board_rejects_cards_whose_math_mode_counts_disagree():
+        seed = os.path.join(HERE, "..", "docs", "board", "seed")
+>       with open(os.path.join(seed, sorted(os.listdir(seed))[0])) as f:
+                                            ^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/root/sdcguard/tests/../docs/board/seed'
+
+tests/test_review_cases.py:185: FileNotFoundError
+4 failed, 247 passed in 434.86s (0:07:14)
+
+[pytest exit code 1]
+
+  NVIDIA L4: fingerprint run 1 of 3
+  NVIDIA L4: memory patterns (4 s)
+  NVIDIA L4: matmul speed (7 s) and memory bandwidth
+  NVIDIA L4: checked matmuls at full power (5 s)
+  NVIDIA L4: six matmul modes against a float64 reference (4 s)
+  NVIDIA L4: training and serving workload, every matmul checked (0.9 min)
+sdcguard check  NVIDIA L4  Modal / GCP  2026-10-19
+  INCOMPLETE  part of the check couldn't run or couldn't judge its results
+  checked     26,051 matmul results (625 TFLOP of work), 0 wrong
+  math modes  bf16 fp16 tf32 fp32 fp64 fp8 vs float64: 102 matmuls, 0 wrong, typical sensitivity 0.13% (fp8 20%); ERROR in int8
+  memory test 16.6 GiB written and read back x4, 0 errors
+  bad         the int8 math-mode check couldn't run (NotImplementedError: "baddbmm_cuda" not implemented for 'Long'): that part wasn't checked
+  repeatable  3 of 3 runs bit-identical, fingerprint a10587e20440
+  speed       bf16 matmul 54.1 TFLOPS (45% of datasheet peak), steady
+  bandwidth   230.5 GB/s (77% of datasheet)
+  health      82 C max, 74 W max (limit 72 W), PCIe Gen3 x16, ECC on
+  headroom    worst clean score 2.55 (alarm at 6): 2.3x margin
+  note        clocks held back by the power limit at full load (normal for big matmuls)
+  files       /vol/check_sweep/tests_cli/GPU-5ca0ee76-4200-8c27-379e-55765265372f/ (result.json, card.svg, card.md)
+
+Share it: sdcguard check --share prints a link that posts your card to the public board.
+
+[sdcguard check exit code 2]

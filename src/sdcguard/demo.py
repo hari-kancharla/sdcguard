@@ -13,16 +13,24 @@ What happens:
   3. A later check catches it and names the layer, the row and the columns. Training rolls
      back to the newest checkpoint saved before the last two checks that passed, and the demo
      tells you whether that checkpoint really is from before the first fault.
+     Some fault patterns wreck the model (loss NaN) before the next scheduled check, and a check
+     whose inputs are already NaN can't name anything. Then the demo does what a training job
+     does on a NaN loss: it rolls back to the last checkpoint, and sdcguard checks every step
+     for a while after the restart (SDCGuard.after_restart), so a device that is still bad gets
+     named the next time it corrupts a result.
   4. Training continues without the bad device and finishes with no more alerts.
 
 Nothing is downloaded. Exit code 0 means the fault was caught, the rollback landed before the
-first fault, and there were no false alarms. Other --seed values give other fault patterns;
-on CPU, 39 of seeds 0-39 pass, and the one that fails (seed 20) says why.
+first fault, and there were no false alarms. Other --seed values give other fault patterns: on
+CPU (Oct 19, 2026) all 40 of seeds 0-39 pass, 13 of them after a restart from a NaN loss. (Before
+the restart was added, those 12 to 13 seeds failed: the fault made the loss NaN between two
+checks, and the next checks could only see NaN inputs.)
 """
 from __future__ import annotations
 
 import argparse
 import copy
+import math
 import sys
 import time
 from typing import Optional
@@ -112,7 +120,7 @@ def run(steps: int = 150, bad_from: int = 45, check_every: int = 10, ckpt_every:
         if token is not None and inj is not None:
             inj.resolve(token, res.ok, res.max_z)
 
-    guard = SDCGuard(on_check=on_check,
+    guard = SDCGuard(every=check_every, on_check=on_check,
                      on_check_start=lambda _op, C: inj.match(C) if inj is not None else None).watch(model)
 
     out(f"sdcguard demo on {dev} ({str(dtype).replace('torch.', '')} mixed precision), {steps} steps.")
@@ -125,11 +133,31 @@ def run(steps: int = 150, bad_from: int = 45, check_every: int = 10, ckpt_every:
     losses: dict[int, float] = {}
     alert = None
     false_alarms_before = 0
+    nan_restarts = 0
     step = 0
     while step < steps:
-        checked = step % check_every == 0
+        checked = guard.should_check(step)
         loss = train_step(step, guard if checked else None, inj)
         losses[step] = loss
+        if not math.isfinite(loss) and alert is None and nan_restarts < 3 and not guard.log.events:
+            # The model blew up between two checks: no check saw the fault itself, and the next one gets
+            # NaN inputs it can't judge. What a training job does on a NaN loss: restart from the last
+            # checkpoint. sdcguard then checks every step for a while (after_restart), so a device that is
+            # still bad is named as soon as it corrupts a result again.
+            back = max((s_ for s_ in ckpts if s_ < step), default=None)
+            if back is None:
+                out(f"step {step:4d}  loss {loss}  (NaN before any checkpoint: nothing to restart from)")
+                break
+            nan_restarts += 1
+            out(f"step {step:4d}  loss {loss}  the model blew up between two checks (the next check would only "
+                f"see NaN inputs)")
+            out(f"\n--> Restarting from the checkpoint at step {back}, and checking every step for the next "
+                f"{2 * check_every} steps (SDCGuard.after_restart).\n")
+            model.load_state_dict(ckpts[back]["model"])
+            opt.load_state_dict(ckpts[back]["opt"])
+            guard.after_restart(back + 1, steps=2 * check_every)
+            step = back + 1
+            continue
         if checked:
             new = guard.log.events
             if new:
@@ -167,7 +195,8 @@ def run(steps: int = 150, bad_from: int = 45, check_every: int = 10, ckpt_every:
                          "first_fault": injected[0]["step"] if injected else None}
                 # windows=2: step back past the last TWO checks that passed. Faults come and go,
                 # so a single passing check doesn't prove the device was healthy then.
-                safe = rollback_checkpoint(step, sorted(ckpts), check_every=check_every, windows=2)
+                safe = rollback_checkpoint(step, sorted(c for c in ckpts if c < step), check_every=check_every,
+                                           windows=2)
                 if safe is None:
                     out("\n--> No checkpoint old enough to trust. Stopping.")
                     break
@@ -185,6 +214,7 @@ def run(steps: int = 150, bad_from: int = 45, check_every: int = 10, ckpt_every:
                 inj.remove_hooks()
                 inj = None                                  # training continues on healthy hardware
                 guard.log.events.clear()
+                guard._dense = None                         # (back to every check_every-th step)
                 step = safe + 1
                 continue
             if step % (check_every * 2) == 0:
@@ -200,7 +230,10 @@ def run(steps: int = 150, bad_from: int = 45, check_every: int = 10, ckpt_every:
     out(f"Checks: {guard.stats['checked']:,} matmuls. Alerts before the fault started: {false_alarms_before}. "
         f"Alerts after the rollback: {alerts_after}.")
     if caught:
-        out(f"Caught at step {alert['step']}, {alert['step'] - bad_from} steps after the device went bad.")
+        late = alert["step"] - bad_from
+        out(f"Caught at step {alert['step']}, {late} step{'' if late == 1 else 's'} after the device went bad"
+            + (f" (after {nan_restarts} restart{'s' if nan_restarts > 1 else ''} from a NaN loss)." if nan_restarts
+               else "."))
     else:
         out("The fault was NOT caught in this run.")
     ok = caught and alert.get("rollback_clean", False) and false_alarms_before == 0 and alerts_after == 0

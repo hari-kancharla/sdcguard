@@ -9,7 +9,7 @@ node-problem-detector custom plugins use, and what Slurm's NHC needs to drain a 
 |---|---|
 | `Dockerfile` | an image with sdcguard (PyTorch 2.14.1, CUDA 13.0); its default command is `sdcguard nhc --minutes 2` |
 | `kubernetes/node-problem-detector/sdcguard-monitor.json` | node-problem-detector custom plugin: sets the node condition `GPUComputeIncorrect` when a GPU fails |
-| `kubernetes/node-problem-detector/sdcguard-check.sh` | the script that plugin runs |
+| `kubernetes/node-problem-detector/sdcguard-check.sh` | the script that plugin runs: reads the last screen's result, never screens while jobs run |
 | `kubernetes/screen-job.yaml` | a one-off screen of one node (e.g. when a node joins, or in a maintenance window); taints the node if a GPU fails |
 | `slurm/sdcguard-screen.sbatch` | screens one node's GPUs (run it on idle nodes on a schedule); leaves the result for the health checks below |
 | `slurm/sdcguard.nhc` | a check for LBNL NHC (`check_sdcguard`): reads the last screen's result instantly; NHC drains the node when a GPU failed |
@@ -26,3 +26,7 @@ vLLM plugin (`SDCGUARD=1`) or the training check instead; they check the job's o
 
 After a screen, `sdcguard report <out dirs> --out fleet_report` turns the results of many nodes into one
 page, a quarantine list and an evidence zip per failed GPU for the RMA.
+
+Fault-injection demonstrations do not produce node health decisions. `sdcguard nhc --simulate-faults`
+writes its workload under `<out>/simulated`, exits 2 and leaves the real cached status unchanged. Fleet
+reports keep simulated incidents visible with their replay artifacts, but omit them from `quarantine.txt`.

@@ -1,0 +1,4318 @@
+{
+ "started_utc": "2026-10-20T09:58:40Z",
+ "setup": {
+  "nvidia_smi": {
+   "step": "nvidia_smi",
+   "argv": [
+    "nvidia-smi",
+    "--query-gpu=name,uuid,driver_version,compute_mode,memory.total",
+    "--format=csv"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "name, uuid, driver_version, compute_mode, memory.total [MiB]\nNVIDIA H200, GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d, 610.57.04, Default, 143771 MiB\n",
+   "stderr": "",
+   "status": "ran"
+  },
+  "user": {
+   "step": "user",
+   "argv": [
+    "id"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "uid=0(root) gid=0(root) groups=0(root)\n",
+   "stderr": "",
+   "status": "ran"
+  },
+  "hostengine_running": {
+   "step": "hostengine_running",
+   "argv": [
+    "pgrep",
+    "-a",
+    "nv-hostengine"
+   ],
+   "budget_s": 60.0,
+   "exit": 1,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "",
+   "stderr": "pgrep: uptime\n",
+   "status": "ran"
+  },
+  "dcgm_service_account": {
+   "step": "dcgm_service_account",
+   "argv": [
+    "getent",
+    "passwd",
+    "nvidia-dcgm"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "nvidia-dcgm:x:999:999::/home/nvidia-dcgm:/usr/sbin/nologin\n",
+   "stderr": "",
+   "status": "ran"
+  },
+  "dcgmi_version": {
+   "step": "dcgmi_version",
+   "argv": [
+    "dcgmi",
+    "--version"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "\ndcgmi  version: 4.7.0\n\n",
+   "stderr": "",
+   "status": "ran"
+  },
+  "cublas_libraries": {
+   "step": "cublas_libraries",
+   "argv": [
+    "bash",
+    "-c",
+    "ls -l /usr/local/cuda/lib64/libcublas*.so* 2>&1 | head"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 0.0,
+   "stdout": "lrwxrwxrwx 1 root root        15 Aug 28  2025 /usr/local/cuda/lib64/libcublas.so -> libcublas.so.13\nlrwxrwxrwx 1 root root        22 Aug 28  2025 /usr/local/cuda/lib64/libcublas.so.13 -> libcublas.so.13.0.2.14\n-rw-r--r-- 1 root root  54440120 Aug 28  2025 /usr/local/cuda/lib64/libcublas.so.13.0.2.14\nlrwxrwxrwx 1 root root        17 Aug 28  2025 /usr/local/cuda/lib64/libcublasLt.so -> libcublasLt.so.13\nlrwxrwxrwx 1 root root        24 Aug 28  2025 /usr/local/cuda/lib64/libcublasLt.so.13 -> libcublasLt.so.13.0.2.14\n-rw-r--r-- 1 root root 539533072 Aug 28  2025 /usr/local/cuda/lib64/libcublasLt.so.13.0.2.14\n",
+   "stderr": "",
+   "status": "ran"
+  },
+  "dcgm_static_cublas": {
+   "step": "dcgm_static_cublas",
+   "argv": [
+    "bash",
+    "-c",
+    "for f in $(find /usr -name 'libdcgm_cublas_proxy*.so*' 2>/dev/null); do echo $f; strings $f | grep -i -m 5 -E 'cublas.*(version|1[23]\\.)'; done"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 1.2,
+   "stdout": "",
+   "stderr": "",
+   "status": "ran"
+  },
+  "torch": {
+   "step": "torch",
+   "argv": [
+    "/usr/local/bin/python",
+    "-c",
+    "import torch, sdcguard; print(torch.__version__, torch.version.cuda, sdcguard.__file__)"
+   ],
+   "budget_s": 60.0,
+   "exit": 0,
+   "timed_out": false,
+   "seconds": 2.5,
+   "stdout": "2.14.1+cu130 13.0 /root/sdcguard/src/sdcguard/__init__.py\n",
+   "stderr": "",
+   "status": "ran"
+  }
+ },
+ "shares": {
+  "100": {
+   "mps_started": true,
+   "probe": {
+    "step": "probe",
+    "argv": [
+     "/opt/h2h/probe",
+     "lt16:1000:2048:16",
+     "ltbf16:1000:2048:16",
+     "lt16:2048:2048:2048",
+     "ltbf16:2048:2048:2048",
+     "hgemm:2048",
+     "ex16:2048",
+     "exbf16:2048"
+    ],
+    "budget_s": 300.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 3.0,
+    "stdout": "...(cut)...\n35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#1\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 23, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#2\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 20, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#3\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 209, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#4\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 25, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#5\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 22, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#6\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 21, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#7\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 19, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#0w\", \"variant\": \"cluster_1x1x1\", \"cublaslt_version\": 130002, \"sms_visible\": 132, \"algo_id\": 66, \"cluster_shape_id\": 2, \"cluster_ctas\": 1, \"tile_id\": 24, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16_summary\", \"n\": \"2048x2048x2048\", \"algorithms_offered\": 8, \"sms_visible\": 132}\n{\"case\": \"hgemm\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00615, \"gemm_ms\": 71.896, \"correct\": true}\n{\"case\": \"ex16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.000352, \"gemm_ms\": 3.690, \"correct\": true}\n{\"case\": \"exbf16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00267, \"gemm_ms\": 3.429, \"correct\": true}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "probe_parsed": {
+    "lt16:1000x2048x16#0": {
+     "case": "lt16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#1": {
+     "case": "lt16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 7,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#2": {
+     "case": "lt16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 59,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#3": {
+     "case": "lt16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 80,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#4": {
+     "case": "lt16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#5": {
+     "case": "lt16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#6": {
+     "case": "lt16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#7": {
+     "case": "lt16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#0w": {
+     "case": "lt16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16_summary:1000x2048x16": {
+     "case": "lt16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 132
+    },
+    "ltbf16:1000x2048x16#0": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#1": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 7,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#2": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 59,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#3": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 80,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#4": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#5": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#6": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#7": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#0w": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16_summary:1000x2048x16": {
+     "case": "ltbf16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 132
+    },
+    "lt16:2048x2048x2048#0": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 24,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#1": {
+     "case": "lt16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 23,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#2": {
+     "case": "lt16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 20,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#3": {
+     "case": "lt16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 209,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#4": {
+     "case": "lt16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 25,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#5": {
+     "case": "lt16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 22,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#6": {
+     "case": "lt16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 21,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#7": {
+     "case": "lt16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 19,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#0w": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 24,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16_summary:2048x2048x2048": {
+     "case": "lt16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 132
+    },
+    "ltbf16:2048x2048x2048#0": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 24,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#1": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 23,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#2": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 20,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#3": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 209,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#4": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 25,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#5": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 22,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#6": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 21,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#7": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 19,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#0w": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 132,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 24,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16_summary:2048x2048x2048": {
+     "case": "ltbf16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 132
+    },
+    "hgemm:2048": {
+     "case": "hgemm",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00615,
+     "gemm_ms": 71.896,
+     "correct": true
+    },
+    "ex16:2048": {
+     "case": "ex16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000352,
+     "gemm_ms": 3.69,
+     "correct": true
+    },
+    "exbf16:2048": {
+     "case": "exbf16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00267,
+     "gemm_ms": 3.429,
+     "correct": true
+    }
+   },
+   "algorithms": {
+    "algorithms_run": 32,
+    "wrong": 0,
+    "wrong_rows": [],
+    "all_wrong_are_algo66_cluster4plus": false,
+    "algo66_cluster4plus_run": 14,
+    "algo66_cluster4plus_wrong": 0,
+    "wrong_with_1_or_2_cta_clusters": 0,
+    "workaround_runs": 4,
+    "workaround_wrong": 0,
+    "sms_visible": [
+     132
+    ],
+    "cublaslt_version": [
+     130002
+    ]
+   },
+   "cublaslt_log": {
+    "lines": 266,
+    "unique": [
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEA60 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEA60 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEA60 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEA60 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEA60 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEAC0 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEAC0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEAC0 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEAC0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEAC0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB20 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB20 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB20 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB20 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB20 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB80 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB80 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB80 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB80 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEB80 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEBE0 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEBE0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEBE0 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEBE0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEBE0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEC40 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEC40 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEC40 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEC40 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CEC40 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CECA0 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CECA0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CECA0 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CECA0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CECA0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CED00 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CED00 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CED00 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CED00 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CED00 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigSetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE7C2 sizeInBytes=2"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_ID buf=0X7F80F09CE6B8 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F80F09CE6B6 sizeInBytes=2 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_TILE_ID buf=0X7F80F09CE6C0 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F80F09CE6C4 sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][118][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F80F09CE9C0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F80F09CE6BC sizeInBytes=4 sizeWritten=0X7F80F09CE6D0"
+     },
+     {
+      "count": 3,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2D000000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2B3D2D800000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2B3D5A000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2B3D5A000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_25"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2C800000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2B3D47E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2B3D47E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2B3D47E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x8 stages="
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2C800000 Adesc=[type=R_16BF rows=2048 cols=1000 ld=2048] B=0X2B3D47E00000 Bdesc=[type=R_16BF rows=2048 cols=16 ld=2048] C=0X2B3D47E10000 Cdesc=[type=R_16BF rows=1000 cols=16 ld=1000] D=0X2B3D47E10000 Ddesc=[type=R_16BF rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x8 sta"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2D000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B3D2D800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B3D5A000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B3D5A000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_256x12"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2D000000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2B3D2D800000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2B3D5A000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2B3D5A000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_12"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2D000000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2B3D2D800000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2B3D5A000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2B3D5A000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Api][cublasLtMatmul] A=0X2B3D2C800000 Adesc=0X556E3493DC80 B=0X2B3D47E00000 Bdesc=0X556E3493DD30 C=0X2B3D47E10000 Cdesc=0X556E3493DD80 D=0X2B3D47E10000 Ddesc=0X556E3493DD80 computeDesc=0X556E3431B880 algo=0X7F80F09CEA60 workSpace=0X2B3D4C000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Api][cublasLtMatmul] A=0X2B3D2C800000 Adesc=0X556E3493DC80 B=0X2B3D47E00000 Bdesc=0X556E3493DD30 C=0X2B3D47E10000 Cdesc=0X556E3493DD80 D=0X2B3D47E10000 Ddesc=0X556E3493DD80 computeDesc=0X556E3431B880 algo=0X7F80F09CEAC0 workSpace=0X2B3D4C000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2C800000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2B3D47E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2B3D47E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2B3D47E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_8x64 stages="
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Api][cublasLtMatmul] A=0X2B3D2C800000 Adesc=0X556E3493DC80 B=0X2B3D47E00000 Bdesc=0X556E3493DD30 C=0X2B3D47E10000 Cdesc=0X556E3493DD80 D=0X2B3D47E10000 Ddesc=0X556E3493DD80 computeDesc=0X556E3431B880 algo=0X7F80F09CEB20 workSpace=0X2B3D4C000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2C800000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2B3D47E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2B3D47E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2B3D47E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_24x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Api][cublasLtMatmul] A=0X2B3D2C800000 Adesc=0X556E3493DC80 B=0X2B3D47E00000 Bdesc=0X556E3493DD30 C=0X2B3D47E10000 Cdesc=0X556E3493DD80 D=0X2B3D47E10000 Ddesc=0X556E3493DD80 computeDesc=0X556E3431B880 algo=0X7F80F09CEB80 workSpace=0X2B3D4C000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Trace][cublasLtMatmul] A=0X2B3D2C800000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2B3D47E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2B3D47E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2B3D47E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_40x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][118][Api][cublasLtMatmul] A=0X2B3D2C800000 Adesc=0X556E3493DC80 B=0X2B3D47E00000 Bdesc=0X556E3493DD30 C=0X2B3D47E10000 Cdesc=0X556E3493DD80 D=0X2B3D47E10000 Ddesc=0X556E3493DD80 computeDesc=0X556E3431B880 algo=0X7F80F09CEBE0 workSpace=0X2B3D4C000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     }
+    ],
+    "algo66_cluster4plus": 0
+   },
+   "legacy_calls": {
+    "hgemm:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    },
+    "ex16:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    },
+    "exbf16:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    }
+   }
+  },
+  "40": {
+   "mps_started": true,
+   "probe": {
+    "step": "probe",
+    "argv": [
+     "/opt/h2h/probe",
+     "lt16:1000:2048:16",
+     "ltbf16:1000:2048:16",
+     "lt16:2048:2048:2048",
+     "ltbf16:2048:2048:2048",
+     "hgemm:2048",
+     "ex16:2048",
+     "exbf16:2048"
+    ],
+    "budget_s": 300.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 2.9,
+    "stdout": "...(cut)...\nsampled\": 65536, \"wrong_sampled\": 8192, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#1\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 8, \"cluster_ctas\": 4, \"tile_id\": 20, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 393216, \"sampled\": 65536, \"wrong_sampled\": 6144, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#2\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 8, \"cluster_ctas\": 4, \"tile_id\": 197, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 516096, \"sampled\": 65536, \"wrong_sampled\": 8064, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#3\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 4, \"cluster_ctas\": 4, \"tile_id\": 19, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 393216, \"sampled\": 65536, \"wrong_sampled\": 6144, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#4\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 8, \"cluster_ctas\": 4, \"tile_id\": 21, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 393216, \"sampled\": 65536, \"wrong_sampled\": 6144, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#5\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 6, \"cluster_ctas\": 4, \"tile_id\": 400, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 245760, \"sampled\": 65536, \"wrong_sampled\": 4352, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#6\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 9, \"cluster_ctas\": 8, \"tile_id\": 201, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 1441792, \"sampled\": 65536, \"wrong_sampled\": 22528, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#7\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 8, \"cluster_ctas\": 4, \"tile_id\": 165, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 344064, \"sampled\": 65536, \"wrong_sampled\": 5376, \"worst_rel_err_finite\": 0.00346, \"correct\": false}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#0w\", \"variant\": \"cluster_1x1x1\", \"cublaslt_version\": 130002, \"sms_visible\": 52, \"algo_id\": 66, \"cluster_shape_id\": 2, \"cluster_ctas\": 1, \"tile_id\": 29, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16_summary\", \"n\": \"2048x2048x2048\", \"algorithms_offered\": 8, \"sms_visible\": 52}\n{\"case\": \"hgemm\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00615, \"gemm_ms\": 58.034, \"correct\": true}\n{\"case\": \"ex16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 491520, \"first_unwritten_index\": 1536, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 8192, \"worst_rel_err_finite\": 0.000352, \"gemm_ms\": 4.179, \"correct\": false}\n{\"case\": \"exbf16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 491520, \"first_unwritten_index\": 1536, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 8192, \"worst_rel_err_finite\": 0.00267, \"gemm_ms\": 3.805, \"correct\": false}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "probe_parsed": {
+    "lt16:1000x2048x16#0": {
+     "case": "lt16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 7808,
+     "sampled": 16000,
+     "wrong_sampled": 7808,
+     "worst_rel_err_finite": 0.000423,
+     "correct": false
+    },
+    "lt16:1000x2048x16#1": {
+     "case": "lt16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 59,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 640,
+     "sampled": 16000,
+     "wrong_sampled": 640,
+     "worst_rel_err_finite": 0.000423,
+     "correct": false
+    },
+    "lt16:1000x2048x16#2": {
+     "case": "lt16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 12,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#3": {
+     "case": "lt16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 80,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#4": {
+     "case": "lt16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#5": {
+     "case": "lt16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#6": {
+     "case": "lt16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#7": {
+     "case": "lt16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#0w": {
+     "case": "lt16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16_summary:1000x2048x16": {
+     "case": "lt16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 52
+    },
+    "ltbf16:1000x2048x16#0": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 7808,
+     "sampled": 16000,
+     "wrong_sampled": 7808,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#1": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 59,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 640,
+     "sampled": 16000,
+     "wrong_sampled": 640,
+     "worst_rel_err_finite": 0.00339,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#2": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 12,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#3": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 80,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#4": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#5": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#6": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#7": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#0w": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 10,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16_summary:1000x2048x16": {
+     "case": "ltbf16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 52
+    },
+    "lt16:2048x2048x2048#0": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 491520,
+     "sampled": 65536,
+     "wrong_sampled": 8192,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#1": {
+     "case": "lt16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 20,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#2": {
+     "case": "lt16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 197,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 516096,
+     "sampled": 65536,
+     "wrong_sampled": 8064,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#3": {
+     "case": "lt16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 19,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#4": {
+     "case": "lt16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 21,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#5": {
+     "case": "lt16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 6,
+     "cluster_ctas": 4,
+     "tile_id": 400,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 245760,
+     "sampled": 65536,
+     "wrong_sampled": 4352,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#6": {
+     "case": "lt16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 9,
+     "cluster_ctas": 8,
+     "tile_id": 201,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 1441792,
+     "sampled": 65536,
+     "wrong_sampled": 22528,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#7": {
+     "case": "lt16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 165,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 344064,
+     "sampled": 65536,
+     "wrong_sampled": 5376,
+     "worst_rel_err_finite": 0.000436,
+     "correct": false
+    },
+    "lt16:2048x2048x2048#0w": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16_summary:2048x2048x2048": {
+     "case": "lt16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 52
+    },
+    "ltbf16:2048x2048x2048#0": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 491520,
+     "sampled": 65536,
+     "wrong_sampled": 8192,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#1": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 20,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#2": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 197,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 516096,
+     "sampled": 65536,
+     "wrong_sampled": 8064,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#3": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 19,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#4": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 21,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 393216,
+     "sampled": 65536,
+     "wrong_sampled": 6144,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#5": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 6,
+     "cluster_ctas": 4,
+     "tile_id": 400,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 245760,
+     "sampled": 65536,
+     "wrong_sampled": 4352,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#6": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 9,
+     "cluster_ctas": 8,
+     "tile_id": 201,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 1441792,
+     "sampled": 65536,
+     "wrong_sampled": 22528,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#7": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 8,
+     "cluster_ctas": 4,
+     "tile_id": 165,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 344064,
+     "sampled": 65536,
+     "wrong_sampled": 5376,
+     "worst_rel_err_finite": 0.00346,
+     "correct": false
+    },
+    "ltbf16:2048x2048x2048#0w": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 52,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16_summary:2048x2048x2048": {
+     "case": "ltbf16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 52
+    },
+    "hgemm:2048": {
+     "case": "hgemm",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00615,
+     "gemm_ms": 58.034,
+     "correct": true
+    },
+    "ex16:2048": {
+     "case": "ex16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 491520,
+     "first_unwritten_index": 1536,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 8192,
+     "worst_rel_err_finite": 0.000352,
+     "gemm_ms": 4.179,
+     "correct": false
+    },
+    "exbf16:2048": {
+     "case": "exbf16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 491520,
+     "first_unwritten_index": 1536,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 8192,
+     "worst_rel_err_finite": 0.00267,
+     "gemm_ms": 3.805,
+     "correct": false
+    }
+   },
+   "algorithms": {
+    "algorithms_run": 32,
+    "wrong": 20,
+    "wrong_rows": [
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#0",
+      "algo_id": 66,
+      "cluster_shape_id": 7,
+      "cluster_ctas": 8,
+      "tile_id": 10,
+      "unwritten": 7808,
+      "wrong_sampled": 7808,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#1",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 59,
+      "unwritten": 640,
+      "wrong_sampled": 640,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#0",
+      "algo_id": 66,
+      "cluster_shape_id": 7,
+      "cluster_ctas": 8,
+      "tile_id": 10,
+      "unwritten": 7808,
+      "wrong_sampled": 7808,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#1",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 59,
+      "unwritten": 640,
+      "wrong_sampled": 640,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#0",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 29,
+      "unwritten": 491520,
+      "wrong_sampled": 8192,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#1",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 20,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#2",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 197,
+      "unwritten": 516096,
+      "wrong_sampled": 8064,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#3",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 19,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#4",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 21,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#5",
+      "algo_id": 66,
+      "cluster_shape_id": 6,
+      "cluster_ctas": 4,
+      "tile_id": 400,
+      "unwritten": 245760,
+      "wrong_sampled": 4352,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#6",
+      "algo_id": 66,
+      "cluster_shape_id": 9,
+      "cluster_ctas": 8,
+      "tile_id": 201,
+      "unwritten": 1441792,
+      "wrong_sampled": 22528,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "2048x2048x2048#7",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 165,
+      "unwritten": 344064,
+      "wrong_sampled": 5376,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#0",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 29,
+      "unwritten": 491520,
+      "wrong_sampled": 8192,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#1",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 20,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#2",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 197,
+      "unwritten": 516096,
+      "wrong_sampled": 8064,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#3",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 19,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#4",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 21,
+      "unwritten": 393216,
+      "wrong_sampled": 6144,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#5",
+      "algo_id": 66,
+      "cluster_shape_id": 6,
+      "cluster_ctas": 4,
+      "tile_id": 400,
+      "unwritten": 245760,
+      "wrong_sampled": 4352,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#6",
+      "algo_id": 66,
+      "cluster_shape_id": 9,
+      "cluster_ctas": 8,
+      "tile_id": 201,
+      "unwritten": 1441792,
+      "wrong_sampled": 22528,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "2048x2048x2048#7",
+      "algo_id": 66,
+      "cluster_shape_id": 8,
+      "cluster_ctas": 4,
+      "tile_id": 165,
+      "unwritten": 344064,
+      "wrong_sampled": 5376,
+      "status": 0,
+      "cuda_error": 0
+     }
+    ],
+    "all_wrong_are_algo66_cluster4plus": true,
+    "algo66_cluster4plus_run": 32,
+    "algo66_cluster4plus_wrong": 20,
+    "wrong_with_1_or_2_cta_clusters": 0,
+    "workaround_runs": 4,
+    "workaround_wrong": 0,
+    "sms_visible": [
+     52
+    ],
+    "cublaslt_version": [
+     130002
+    ]
+   },
+   "cublaslt_log": {
+    "lines": 266,
+    "unique": [
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FA60 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FA60 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FA60 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FA60 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FA60 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FAC0 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FAC0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FAC0 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FAC0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FAC0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB20 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB20 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB20 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB20 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB20 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB80 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB80 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB80 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB80 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FB80 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FBE0 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FBE0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FBE0 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FBE0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FBE0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FC40 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FC40 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FC40 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FC40 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FC40 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FCA0 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FCA0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FCA0 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FCA0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FCA0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FD00 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FD00 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FD00 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FD00 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6FD00 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigSetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F7C2 sizeInBytes=2"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_ID buf=0X7F3D9FC6F6B8 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F3D9FC6F6B6 sizeInBytes=2 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_TILE_ID buf=0X7F3D9FC6F6C0 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F3D9FC6F6C4 sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F3D9FC6F9C0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F3D9FC6F6BC sizeInBytes=4 sizeWritten=0X7F3D9FC6F6D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AAE00000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2AF2AB600000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2AF2BC000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2AF2BC000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_12"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x8 stages="
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16BF rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16BF rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16BF rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16BF rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x8 sta"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AAE00000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2AF2AB600000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2AF2BC000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2AF2BC000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_128x16"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FA60 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FAC0 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_24x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FB20 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_32x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FB80 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_40x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FBE0 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Trace][cublasLtMatmul] A=0X2AF2AA400000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2AF2AA800000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2AF2AA810000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2AF2AA810000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_56x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][137][Api][cublasLtMatmul] A=0X2AF2AA400000 Adesc=0X5653D6BB70C0 B=0X2AF2AA800000 Bdesc=0X5653D6BB7170 C=0X2AF2AA810000 Cdesc=0X5653D6BB71C0 D=0X2AF2AA810000 Ddesc=0X5653D6BB71C0 computeDesc=0X5653D6594AF0 algo=0X7F3D9FC6FC40 workSpace=0X2AF2B0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     }
+    ],
+    "algo66_cluster4plus": 0
+   },
+   "legacy_calls": {
+    "hgemm:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    },
+    "ex16:2048": {
+     "correct": false,
+     "unwritten": 491520,
+     "wrong_sampled": 8192,
+     "error": null
+    },
+    "exbf16:2048": {
+     "correct": false,
+     "unwritten": 491520,
+     "wrong_sampled": 8192,
+     "error": null
+    }
+   }
+  },
+  "14": {
+   "mps_started": true,
+   "probe": {
+    "step": "probe",
+    "argv": [
+     "/opt/h2h/probe",
+     "lt16:1000:2048:16",
+     "ltbf16:1000:2048:16",
+     "lt16:2048:2048:2048",
+     "ltbf16:2048:2048:2048",
+     "hgemm:2048",
+     "ex16:2048",
+     "exbf16:2048"
+    ],
+    "budget_s": 300.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 3.4,
+    "stdout": "...(cut)...\n_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#1\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 31, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#2\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 495, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#3\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 201, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#4\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 29, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#5\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 5, \"cluster_ctas\": 2, \"tile_id\": 165, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#6\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 2, \"cluster_ctas\": 1, \"tile_id\": 209, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#7\", \"variant\": \"\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 3, \"cluster_ctas\": 2, \"tile_id\": 28, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16\", \"n\": \"2048x2048x2048#0w\", \"variant\": \"cluster_1x1x1\", \"cublaslt_version\": 130002, \"sms_visible\": 18, \"algo_id\": 66, \"cluster_shape_id\": 2, \"cluster_ctas\": 1, \"tile_id\": 32, \"stages_id\": 35, \"splitk\": 1, \"status\": 0, \"cuda_error\": 0, \"elements\": 4194304, \"unwritten\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00346, \"correct\": true}\n{\"case\": \"ltbf16_summary\", \"n\": \"2048x2048x2048\", \"algorithms_offered\": 8, \"sms_visible\": 18}\n{\"case\": \"hgemm\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00615, \"gemm_ms\": 55.071, \"correct\": true}\n{\"case\": \"ex16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.000352, \"gemm_ms\": 3.031, \"correct\": true}\n{\"case\": \"exbf16\", \"n\": 2048, \"source\": \"gpu\", \"cublas_version\": 130002, \"elements\": 4194304, \"unwritten\": 0, \"first_unwritten_index\": -1, \"nonfinite_written\": 0, \"sampled\": 65536, \"wrong_sampled\": 0, \"worst_rel_err_finite\": 0.00267, \"gemm_ms\": 3.214, \"correct\": true}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "probe_parsed": {
+    "lt16:1000x2048x16#0": {
+     "case": "lt16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 312,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11904,
+     "sampled": 16000,
+     "wrong_sampled": 11904,
+     "worst_rel_err_finite": 0.00042,
+     "correct": false
+    },
+    "lt16:1000x2048x16#1": {
+     "case": "lt16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 393,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#2": {
+     "case": "lt16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#3": {
+     "case": "lt16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16:1000x2048x16#4": {
+     "case": "lt16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 12,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11904,
+     "sampled": 16000,
+     "wrong_sampled": 11904,
+     "worst_rel_err_finite": 0.000414,
+     "correct": false
+    },
+    "lt16:1000x2048x16#5": {
+     "case": "lt16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11392,
+     "sampled": 16000,
+     "wrong_sampled": 11392,
+     "worst_rel_err_finite": 0.000421,
+     "correct": false
+    },
+    "lt16:1000x2048x16#6": {
+     "case": "lt16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 134,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 10880,
+     "sampled": 16000,
+     "wrong_sampled": 10880,
+     "worst_rel_err_finite": 0.000421,
+     "correct": false
+    },
+    "lt16:1000x2048x16#7": {
+     "case": "lt16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 10368,
+     "sampled": 16000,
+     "wrong_sampled": 10368,
+     "worst_rel_err_finite": 0.000421,
+     "correct": false
+    },
+    "lt16:1000x2048x16#0w": {
+     "case": "lt16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 312,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000423,
+     "correct": true
+    },
+    "lt16_summary:1000x2048x16": {
+     "case": "lt16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 18
+    },
+    "ltbf16:1000x2048x16#0": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 312,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11904,
+     "sampled": 16000,
+     "wrong_sampled": 11904,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#1": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 393,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#2": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 104,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#3": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 7,
+     "cluster_ctas": 8,
+     "tile_id": 448,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16:1000x2048x16#4": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 12,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11904,
+     "sampled": 16000,
+     "wrong_sampled": 11904,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#5": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 124,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 11392,
+     "sampled": 16000,
+     "wrong_sampled": 11392,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#6": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 134,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 10880,
+     "sampled": 16000,
+     "wrong_sampled": 10880,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#7": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 4,
+     "cluster_ctas": 4,
+     "tile_id": 143,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 10368,
+     "sampled": 16000,
+     "wrong_sampled": 10368,
+     "worst_rel_err_finite": 0.00335,
+     "correct": false
+    },
+    "ltbf16:1000x2048x16#0w": {
+     "case": "ltbf16",
+     "n": "1000x2048x16#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 312,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 16000,
+     "unwritten": 0,
+     "sampled": 16000,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00339,
+     "correct": true
+    },
+    "ltbf16_summary:1000x2048x16": {
+     "case": "ltbf16_summary",
+     "n": "1000x2048x16",
+     "algorithms_offered": 8,
+     "sms_visible": 18
+    },
+    "lt16:2048x2048x2048#0": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 32,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#1": {
+     "case": "lt16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 31,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#2": {
+     "case": "lt16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 495,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#3": {
+     "case": "lt16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 201,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#4": {
+     "case": "lt16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#5": {
+     "case": "lt16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 165,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#6": {
+     "case": "lt16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 209,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#7": {
+     "case": "lt16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 28,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16:2048x2048x2048#0w": {
+     "case": "lt16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 32,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000436,
+     "correct": true
+    },
+    "lt16_summary:2048x2048x2048": {
+     "case": "lt16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 18
+    },
+    "ltbf16:2048x2048x2048#0": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 32,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#1": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#1",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 31,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#2": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#2",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 495,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#3": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#3",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 201,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#4": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#4",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 29,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#5": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#5",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 5,
+     "cluster_ctas": 2,
+     "tile_id": 165,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#6": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#6",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 209,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#7": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#7",
+     "variant": "",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 3,
+     "cluster_ctas": 2,
+     "tile_id": 28,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16:2048x2048x2048#0w": {
+     "case": "ltbf16",
+     "n": "2048x2048x2048#0w",
+     "variant": "cluster_1x1x1",
+     "cublaslt_version": 130002,
+     "sms_visible": 18,
+     "algo_id": 66,
+     "cluster_shape_id": 2,
+     "cluster_ctas": 1,
+     "tile_id": 32,
+     "stages_id": 35,
+     "splitk": 1,
+     "status": 0,
+     "cuda_error": 0,
+     "elements": 4194304,
+     "unwritten": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00346,
+     "correct": true
+    },
+    "ltbf16_summary:2048x2048x2048": {
+     "case": "ltbf16_summary",
+     "n": "2048x2048x2048",
+     "algorithms_offered": 8,
+     "sms_visible": 18
+    },
+    "hgemm:2048": {
+     "case": "hgemm",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00615,
+     "gemm_ms": 55.071,
+     "correct": true
+    },
+    "ex16:2048": {
+     "case": "ex16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.000352,
+     "gemm_ms": 3.031,
+     "correct": true
+    },
+    "exbf16:2048": {
+     "case": "exbf16",
+     "n": 2048,
+     "source": "gpu",
+     "cublas_version": 130002,
+     "elements": 4194304,
+     "unwritten": 0,
+     "first_unwritten_index": -1,
+     "nonfinite_written": 0,
+     "sampled": 65536,
+     "wrong_sampled": 0,
+     "worst_rel_err_finite": 0.00267,
+     "gemm_ms": 3.214,
+     "correct": true
+    }
+   },
+   "algorithms": {
+    "algorithms_run": 32,
+    "wrong": 10,
+    "wrong_rows": [
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#0",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 312,
+      "unwritten": 11904,
+      "wrong_sampled": 11904,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#4",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 12,
+      "unwritten": 11904,
+      "wrong_sampled": 11904,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#5",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 124,
+      "unwritten": 11392,
+      "wrong_sampled": 11392,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#6",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 134,
+      "unwritten": 10880,
+      "wrong_sampled": 10880,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "lt16",
+      "n": "1000x2048x16#7",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 143,
+      "unwritten": 10368,
+      "wrong_sampled": 10368,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#0",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 312,
+      "unwritten": 11904,
+      "wrong_sampled": 11904,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#4",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 12,
+      "unwritten": 11904,
+      "wrong_sampled": 11904,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#5",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 124,
+      "unwritten": 11392,
+      "wrong_sampled": 11392,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#6",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 134,
+      "unwritten": 10880,
+      "wrong_sampled": 10880,
+      "status": 0,
+      "cuda_error": 0
+     },
+     {
+      "case": "ltbf16",
+      "n": "1000x2048x16#7",
+      "algo_id": 66,
+      "cluster_shape_id": 4,
+      "cluster_ctas": 4,
+      "tile_id": 143,
+      "unwritten": 10368,
+      "wrong_sampled": 10368,
+      "status": 0,
+      "cuda_error": 0
+     }
+    ],
+    "all_wrong_are_algo66_cluster4plus": true,
+    "algo66_cluster4plus_run": 14,
+    "algo66_cluster4plus_wrong": 10,
+    "wrong_with_1_or_2_cta_clusters": 0,
+    "workaround_runs": 4,
+    "workaround_wrong": 0,
+    "sms_visible": [
+     18
+    ],
+    "cublaslt_version": [
+     130002
+    ]
+   },
+   "cublaslt_log": {
+    "lines": 266,
+    "unique": [
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756A60 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756A60 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756A60 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756A60 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756A60 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756AC0 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756AC0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756AC0 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756AC0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756AC0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B20 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B20 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B20 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B20 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B20 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B80 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B80 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B80 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B80 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756B80 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756BE0 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756BE0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756BE0 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756BE0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756BE0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756C40 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756C40 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756C40 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756C40 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756C40 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756CA0 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756CA0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756CA0 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756CA0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756CA0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756D00 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756D00 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756D00 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756D00 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF756D00 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigSetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7567C2 sizeInBytes=2"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_ID buf=0X7F1BBF7566B8 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_CLUSTER_SHAPE_ID buf=0X7F1BBF7566B6 sizeInBytes=2 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_TILE_ID buf=0X7F1BBF7566C0 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_STAGES_ID buf=0X7F1BBF7566C4 sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 4,
+      "line": "[cublasLt][250][Api][cublasLtMatmulAlgoConfigGetAttribute] algo=0X7F1BBF7569C0 attr=ALGO_CONFIG_SPLITK_NUM buf=0X7F1BBF7566BC sizeInBytes=4 sizeWritten=0X7F1BBF7566D0"
+     },
+     {
+      "count": 3,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE95000000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2ADE95800000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2ADEAC000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2ADEAC000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_12"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x16 stages"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16BF rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16BF rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16BF rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16BF rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_64x16 st"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE95000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2ADE95800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2ADEAC000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2ADEAC000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_128x19"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE95000000 Adesc=[type=R_16BF rows=2048 cols=2048 ld=2048] B=0X2ADE95800000 Bdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] C=0X2ADEAC000000 Cdesc=[type=R_16BF rows=2048 cols=2048 ld=2048] D=0X2ADEAC000000 Ddesc=[type=R_16BF rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_19"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Api][cublasLtMatmul] A=0X2ADE99A00000 Adesc=0X55DEE1A75280 B=0X2ADE99E00000 Bdesc=0X55DEE1A75330 C=0X2ADE99E10000 Cdesc=0X55DEE1A75380 D=0X2ADE99E10000 Ddesc=0X55DEE1A75380 computeDesc=0X55DEE1452C80 algo=0X7F1BBF756A60 workSpace=0X2ADEA0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Api][cublasLtMatmul] A=0X2ADE99A00000 Adesc=0X55DEE1A75280 B=0X2ADE99E00000 Bdesc=0X55DEE1A75330 C=0X2ADE99E10000 Cdesc=0X55DEE1A75380 D=0X2ADE99E10000 Ddesc=0X55DEE1A75380 computeDesc=0X55DEE1452C80 algo=0X7F1BBF756AC0 workSpace=0X2ADEA0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_128x8 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Api][cublasLtMatmul] A=0X2ADE99A00000 Adesc=0X55DEE1A75280 B=0X2ADE99E00000 Bdesc=0X55DEE1A75330 C=0X2ADE99E10000 Cdesc=0X55DEE1A75380 D=0X2ADE99E10000 Ddesc=0X55DEE1A75380 computeDesc=0X55DEE1452C80 algo=0X7F1BBF756B20 workSpace=0X2ADEA0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_56x64 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Api][cublasLtMatmul] A=0X2ADE99A00000 Adesc=0X55DEE1A75280 B=0X2ADE99E00000 Bdesc=0X55DEE1A75330 C=0X2ADE99E10000 Cdesc=0X55DEE1A75380 D=0X2ADE99E10000 Ddesc=0X55DEE1A75380 computeDesc=0X55DEE1452C80 algo=0X7F1BBF756B80 workSpace=0X2ADEA0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_192x8 stages"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Api][cublasLtMatmul] A=0X2ADE99A00000 Adesc=0X55DEE1A75280 B=0X2ADE99E00000 Bdesc=0X55DEE1A75330 C=0X2ADE99E10000 Cdesc=0X55DEE1A75380 D=0X2ADE99E10000 Ddesc=0X55DEE1A75380 computeDesc=0X55DEE1452C80 algo=0X7F1BBF756BE0 workSpace=0X2ADEA0000000 workSpaceSizeInBytes=33554432 stream=0X0"
+     },
+     {
+      "count": 1,
+      "line": "[cublasLt][250][Trace][cublasLtMatmul] A=0X2ADE99A00000 Adesc=[type=R_16F rows=2048 cols=1000 ld=2048] B=0X2ADE99E00000 Bdesc=[type=R_16F rows=2048 cols=16 ld=2048] C=0X2ADE99E10000 Cdesc=[type=R_16F rows=1000 cols=16 ld=1000] D=0X2ADE99E10000 Ddesc=[type=R_16F rows=1000 cols=16 ld=1000] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T] algo=[algoId=66 tile=MATMUL_TILE_32x64 stages"
+     }
+    ],
+    "algo66_cluster4plus": 0
+   },
+   "legacy_calls": {
+    "hgemm:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    },
+    "ex16:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    },
+    "exbf16:2048": {
+     "correct": true,
+     "unwritten": 0,
+     "wrong_sampled": 0,
+     "error": null
+    }
+   }
+  }
+ },
+ "dcgm": {
+  "dcgm_software": {
+   "step": {
+    "step": "dcgm_software",
+    "argv": [
+     "dcgmi",
+     "diag",
+     "-r",
+     "1",
+     "-j"
+    ],
+    "budget_s": 240.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 10.1,
+    "stdout": "{\n\t\"DCGM Diagnostic\" : \n\t{\n\t\t\"test_categories\" : \n\t\t[\n\t\t\t{\n\t\t\t\t\"category\" : \"Deployment\",\n\t\t\t\t\"tests\" : \n\t\t\t\t[\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\" : \"software\",\n\t\t\t\t\t\t\"results\" : \n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\t\t\t\t\t\"entity_group_id\" : 1,\n\t\t\t\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t],\n\t\t\t\t\t\t\"test_summary\" : \n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t},\n\t\"entity_groups\" : \n\t[\n\t\t{\n\t\t\t\"entities\" : \n\t\t\t[\n\t\t\t\t{\n\t\t\t\t\t\"device_id\" : \"2335\",\n\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\"serial_num\" : \"1654124223434\"\n\t\t\t\t}\n\t\t\t],\n\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\"entity_group_id\" : 1\n\t\t}\n\t],\n\t\"metadata\" : \n\t{\n\t\t\"Driver Version Detected\" : \"610.57.04\",\n\t\t\"version\" : \"4.7.0\"\n\t}\n}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "parsed": {
+    "status": "unknown",
+    "codes": [],
+    "messages": [],
+    "faulty_memory_elements": null,
+    "nan_elements": null
+   }
+  },
+  "dcgm_diagnostic_20s": {
+   "step": {
+    "step": "dcgm_diagnostic_20s",
+    "argv": [
+     "dcgmi",
+     "diag",
+     "-r",
+     "diagnostic",
+     "-i",
+     "0",
+     "-j",
+     "-p",
+     "diagnostic.test_duration=20"
+    ],
+    "budget_s": 240.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 33.1,
+    "stdout": "{\n\t\"DCGM Diagnostic\" : \n\t{\n\t\t\"test_categories\" : \n\t\t[\n\t\t\t{\n\t\t\t\t\"category\" : \"Deployment\",\n\t\t\t\t\"tests\" : \n\t\t\t\t[\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\" : \"software\",\n\t\t\t\t\t\t\"results\" : \n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\t\t\t\t\t\"entity_group_id\" : 1,\n\t\t\t\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t],\n\t\t\t\t\t\t\"test_summary\" : \n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"category\" : \"Hardware\",\n\t\t\t\t\"tests\" : \n\t\t\t\t[\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\" : \"diagnostic\",\n\t\t\t\t\t\t\"results\" : \n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\t\t\t\t\t\"entity_group_id\" : 1,\n\t\t\t\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\t\t\t\"info\" : \n\t\t\t\t\t\t\t\t[\n\t\t\t\t\t\t\t\t\t\"Allocated space for 4007 double precision output matrices from 134594356838 bytes available.\",\n\t\t\t\t\t\t\t\t\t\"Running with precisions: FP64 1, FP32 1, FP16 1\",\n\t\t\t\t\t\t\t\t\t\"GPU 0 calculated at approximately 134700.94 gigaflops during this test\"\n\t\t\t\t\t\t\t\t],\n\t\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t],\n\t\t\t\t\t\t\"test_summary\" : \n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t},\n\t\"entity_groups\" : \n\t[\n\t\t{\n\t\t\t\"entities\" : \n\t\t\t[\n\t\t\t\t{\n\t\t\t\t\t\"device_id\" : \"2335\",\n\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\"serial_num\" : \"1654124223434\"\n\t\t\t\t}\n\t\t\t],\n\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\"entity_group_id\" : 1\n\t\t}\n\t],\n\t\"metadata\" : \n\t{\n\t\t\"Driver Version Detected\" : \"610.57.04\",\n\t\t\"version\" : \"4.7.0\"\n\t}\n}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "parsed": {
+    "status": "pass",
+    "codes": [],
+    "messages": [],
+    "faulty_memory_elements": null,
+    "nan_elements": null
+   }
+  },
+  "under_mps_40": {
+   "step": {
+    "step": "dcgm_under_mps",
+    "argv": [
+     "dcgmi",
+     "diag",
+     "-r",
+     "diagnostic",
+     "-i",
+     "0",
+     "-j",
+     "-p",
+     "diagnostic.test_duration=20"
+    ],
+    "budget_s": 240.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 36.2,
+    "stdout": "{\n\t\"DCGM Diagnostic\" : \n\t{\n\t\t\"test_categories\" : \n\t\t[\n\t\t\t{\n\t\t\t\t\"category\" : \"Deployment\",\n\t\t\t\t\"tests\" : \n\t\t\t\t[\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\" : \"software\",\n\t\t\t\t\t\t\"results\" : \n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\t\t\t\t\t\"entity_group_id\" : 1,\n\t\t\t\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t],\n\t\t\t\t\t\t\"test_summary\" : \n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t},\n\t\t\t{\n\t\t\t\t\"category\" : \"Hardware\",\n\t\t\t\t\"tests\" : \n\t\t\t\t[\n\t\t\t\t\t{\n\t\t\t\t\t\t\"name\" : \"diagnostic\",\n\t\t\t\t\t\t\"results\" : \n\t\t\t\t\t\t[\n\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\t\t\t\t\t\"entity_group_id\" : 1,\n\t\t\t\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\t\t\t\"info\" : \n\t\t\t\t\t\t\t\t[\n\t\t\t\t\t\t\t\t\t\"Allocated space for 4014 double precision output matrices from 134820849254 bytes available.\",\n\t\t\t\t\t\t\t\t\t\"Running with precisions: FP64 1, FP32 1, FP16 1\",\n\t\t\t\t\t\t\t\t\t\"GPU 0 calculated at approximately 35340.45 gigaflops during this test\"\n\t\t\t\t\t\t\t\t],\n\t\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t],\n\t\t\t\t\t\t\"test_summary\" : \n\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\"status\" : \"Pass\"\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t]\n\t\t\t}\n\t\t]\n\t},\n\t\"entity_groups\" : \n\t[\n\t\t{\n\t\t\t\"entities\" : \n\t\t\t[\n\t\t\t\t{\n\t\t\t\t\t\"device_id\" : \"2335\",\n\t\t\t\t\t\"entity_id\" : 0,\n\t\t\t\t\t\"serial_num\" : \"1654124223434\"\n\t\t\t\t}\n\t\t\t],\n\t\t\t\"entity_group\" : \"GPU\",\n\t\t\t\"entity_group_id\" : 1\n\t\t}\n\t],\n\t\"metadata\" : \n\t{\n\t\t\"Driver Version Detected\" : \"610.57.04\",\n\t\t\"version\" : \"4.7.0\"\n\t}\n}\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "mps": {
+    "new_text": {
+     "control.log": "[2026-10-20 09:59:51.412 Control   152] Accepting connection...\n[2026-10-20 09:59:51.412 Control   152] Unable to read new connection type information\n[2026-10-20 09:59:51.412 Control   152] Accepting connection...\n[2026-10-20 09:59:51.412 Control   152] NEW CLIENT 176 from user 0: Server is not ready, push client to pending list\n[2026-10-20 09:59:51.413 Control   199] Starting new server 199 for user 0\n[2026-10-20 09:59:51.417 Control   152] Accepting connection...\n[2026-10-20 09:59:51.531 Control   152] NEW SERVER 199: Ready\n[2026-10-20 09:59:51.568 Control   152] Accepting connection...\n[2026-10-20 09:59:51.568 Control   152] NEW CLIENT 176 from user 0: Server already exists\n",
+     "server.log": "[2026-10-20 09:59:51.417 Server   199] Startup\n[2026-10-20 09:59:51.417 Server   199] Connecting to control daemon on socket: /tmp/nvidia-mps/control\n[2026-10-20 09:59:51.418 Server   199] Initializing server process\n[2026-10-20 09:59:51.443 Server   199] Creating server context on device 0 (NVIDIA H200)\n[2026-10-20 09:59:51.531 Server   199] Created anonymous shared memory region mps.shm.0.199\n[2026-10-20 09:59:51.531 Server   199] CUDA MPS Server for Linux/Unix. Binary version: 13030\n[2026-10-20 09:59:51.531 Server   199] Display Driver version: 610\n[2026-10-20 09:59:51.531 Server   199] Active Threads Percentage set to 40.0\n[2026-10-20 09:59:51.531 Server   199] Server Priority set to 0\n[2026-10-20 09:59:51.531 Server   199] Static Partitioning mode disabled\n[2026-10-20 09:59:51.531 Server   199] Server has started\n[2026-10-20 09:59:51.531 Server   199] Received new client request from PID 176\n[2026-10-20 09:59:51.532 Server   199] Priority level of client {176} is: 0 (NORMAL)\n[2026-10-20 09:59:51.532 Server   199] Client {PID: 176, Context ID: 0} connected\n[2026-10-20 09:59:51.532 Server   199] Creating worker thread for client {PID: 176, Context ID: 0}\n[2026-10-20 09:59:51.568 Server   199] Received new client request from PID 176\n[2026-10-20 09:59:51.569 Server   199] Priority level of client {176} is: 0 (NORMAL)\n[2026-10-20 09:59:51.569 Server   199] Client {PID: 176, Context ID: 1} connected\n[2026-10-20 09:59:51.569 Server   199] Creating worker thread for client {PID: 176, Context ID: 1}\n[2026-10-20 09:59:51.569 Server   199] Device NVIDIA H200 (uuid GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d) is associated\n[2026-10-20 09:59:51.569 Server   199] Status of client {PID: 176, Context ID: 1} is ACTIVE\n[2026-10-20 09:59:51.569 Client   176] Static partitioning mode disabled\n[2026-10-20 10:00:17.552 Server   199] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 176, Context ID: 1} exit\n[2026-10-20 10:00:17.552 Server   199] Client {PID: 176, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-20 10:00:19.080 Server   199] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 176, Context ID: 0} exit\n[2026-10-20 10:00:19.080 Server   199] Client process 176 disconnected\n"
+    },
+    "connections": 4,
+    "client_lines": 20
+   },
+   "cublaslt_log": {
+    "lines": 88308,
+    "unique": [
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8082000000 Cdesc=0X2B807AA03070 D=0X2B8082000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8082000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8082000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8082800000 Cdesc=0X2B807AA03070 D=0X2B8082800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8082800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8082800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8083000000 Cdesc=0X2B807AA03070 D=0X2B8083000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8083000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8083000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8083800000 Cdesc=0X2B807AA03070 D=0X2B8083800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8083800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8083800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8084000000 Cdesc=0X2B807AA03070 D=0X2B8084000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8084000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8084000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8084800000 Cdesc=0X2B807AA03070 D=0X2B8084800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8084800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8084800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8085000000 Cdesc=0X2B807AA03070 D=0X2B8085000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8085000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8085000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8085800000 Cdesc=0X2B807AA03070 D=0X2B8085800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8085800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8085800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8086000000 Cdesc=0X2B807AA03070 D=0X2B8086000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8086000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8086000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8086800000 Cdesc=0X2B807AA03070 D=0X2B8086800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8086800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8086800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8087000000 Cdesc=0X2B807AA03070 D=0X2B8087000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8087000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8087000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8087800000 Cdesc=0X2B807AA03070 D=0X2B8087800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8087800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8087800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8088000000 Cdesc=0X2B807AA03070 D=0X2B8088000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8088000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8088000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8088800000 Cdesc=0X2B807AA03070 D=0X2B8088800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8088800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8088800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8089000000 Cdesc=0X2B807AA03070 D=0X2B8089000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8089000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8089000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8089800000 Cdesc=0X2B807AA03070 D=0X2B8089800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8089800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8089800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808A000000 Cdesc=0X2B807AA03070 D=0X2B808A000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808A000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808A000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808A800000 Cdesc=0X2B807AA03070 D=0X2B808A800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808A800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808A800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808B000000 Cdesc=0X2B807AA03070 D=0X2B808B000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808B000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808B000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808B800000 Cdesc=0X2B807AA03070 D=0X2B808B800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808B800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808B800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808C000000 Cdesc=0X2B807AA03070 D=0X2B808C000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808C000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808C000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808C800000 Cdesc=0X2B807AA03070 D=0X2B808C800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808C800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808C800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808D000000 Cdesc=0X2B807AA03070 D=0X2B808D000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808D000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808D000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808D800000 Cdesc=0X2B807AA03070 D=0X2B808D800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808D800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808D800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808E000000 Cdesc=0X2B807AA03070 D=0X2B808E000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808E000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808E000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808E800000 Cdesc=0X2B807AA03070 D=0X2B808E800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808E800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808E800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808F000000 Cdesc=0X2B807AA03070 D=0X2B808F000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808F000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808F000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B808F800000 Cdesc=0X2B807AA03070 D=0X2B808F800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B808F800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B808F800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8090000000 Cdesc=0X2B807AA03070 D=0X2B8090000000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8090000000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8090000000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Api][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=0X2B807AA02F90 B=0X2B8081800000 Bdesc=0X2B807AA03000 C=0X2B8090800000 Cdesc=0X2B807AA03070 D=0X2B8090800000 Ddesc=0X2B807AA03070 computeDesc=0X2B807AA030E0 algo=0X2B807AA02ED0 workSpace=0X2B9FE4000000 workSpaceSizeInBytes=3145987 stream=0X0"
+     },
+     {
+      "count": 2,
+      "line": "[cublasLt][207][Trace][cublasLtHHHMatmul] A=0X2B8081000000 Adesc=[type=R_16F rows=2048 cols=2048 ld=2048] B=0X2B8081800000 Bdesc=[type=R_16F rows=2048 cols=2048 ld=2048] C=0X2B8090800000 Cdesc=[type=R_16F rows=2048 cols=2048 ld=2048] D=0X2B8090800000 Ddesc=[type=R_16F rows=2048 cols=2048 ld=2048] computeDesc=[computeType=COMPUTE_16F scaleType=R_16F smCountTarget=52] algo=[algoId=39 tile=MATMUL_TIL"
+     }
+    ],
+    "algo66_cluster4plus": 0
+   },
+   "parsed": {
+    "status": "pass",
+    "codes": [],
+    "messages": [],
+    "faulty_memory_elements": null,
+    "nan_elements": null
+   }
+  }
+ },
+ "gpu_burn": {
+  "under_mps_40": {
+   "step": {
+    "step": "gpu_burn_tc_10s",
+    "argv": [
+     "./gpu_burn",
+     "-tc",
+     "10"
+    ],
+    "budget_s": 90.0,
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 42.4,
+    "stdout": "GPU 0: NVIDIA H200 (UUID: GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d)\nUsing compare file: compare.fatbin\nBurning for 10 seconds.\n\n50.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n\tSummary at:   Tue Oct 20 10:00:35 UTC 2026\n\n\n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n\tSummary at:   Tue Oct 20 10:00:36 UTC 2026\n\n\n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 32 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n60.0%  proc'd: 500 (125593 Gflop/s)   errors: 0   temps: 52 C \n80.0%  proc'd: 1000 (179974 Gflop/s)   errors: 0   temps: 52 C \n\tSummary at:   Tue Oct 20 10:00:38 UTC 2026\n\n\n100.0%  proc'd: 1000 (179974 Gflop/s)   errors: 0   temps: 52 C \n\tSummary at:   Tue Oct 20 10:00:41 UTC 2026\n\n\nKilling processes with SIGTERM (soft kill)\nUsing compare file: compare.fatbin\nBurning for 10 seconds.\nInitialized device 0 with 143148 MB of memory (142793 MB available, using 128513 MB of it), using FLOATS, using Tensor Cores\nResults are 268435456 bytes each, thus performing 500 iterations\nFreed memory for dev 0\nUninitted cublas\ndone\n\nTested 1 GPUs:\n\tGPU 0: OK\n",
+    "stderr": "",
+    "status": "ran"
+   },
+   "mps": {
+    "new_text": {
+     "control.log": "[2026-10-20 10:00:30.797 Control   213] Accepting connection...\n[2026-10-20 10:00:30.797 Control   213] Unable to read new connection type information\n[2026-10-20 10:00:30.797 Control   213] Accepting connection...\n[2026-10-20 10:00:30.798 Control   213] NEW CLIENT 221 from user 0: Server is not ready, push client to pending list\n[2026-10-20 10:00:30.798 Control   223] Starting new server 223 for user 0\n[2026-10-20 10:00:30.802 Control   213] Accepting connection...\n[2026-10-20 10:00:30.914 Control   213] NEW SERVER 223: Ready\n[2026-10-20 10:00:30.992 Control   213] Accepting connection...\n[2026-10-20 10:00:30.992 Control   213] NEW CLIENT 221 from user 0: Server already exists\n",
+     "server.log": "[2026-10-20 10:00:30.802 Server   223] Startup\n[2026-10-20 10:00:30.802 Server   223] Connecting to control daemon on socket: /tmp/nvidia-mps/control\n[2026-10-20 10:00:30.803 Server   223] Initializing server process\n[2026-10-20 10:00:30.829 Server   223] Creating server context on device 0 (NVIDIA H200)\n[2026-10-20 10:00:30.914 Server   223] Created anonymous shared memory region mps.shm.0.223\n[2026-10-20 10:00:30.914 Server   223] CUDA MPS Server for Linux/Unix. Binary version: 13030\n[2026-10-20 10:00:30.914 Server   223] Display Driver version: 610\n[2026-10-20 10:00:30.914 Server   223] Active Threads Percentage set to 40.0\n[2026-10-20 10:00:30.914 Server   223] Server Priority set to 0\n[2026-10-20 10:00:30.914 Server   223] Static Partitioning mode disabled\n[2026-10-20 10:00:30.914 Server   223] Server has started\n[2026-10-20 10:00:30.914 Server   223] Received new client request from PID 221\n[2026-10-20 10:00:30.914 Server   223] Priority level of client {221} is: 0 (NORMAL)\n[2026-10-20 10:00:30.914 Server   223] Client {PID: 221, Context ID: 0} connected\n[2026-10-20 10:00:30.915 Server   223] Creating worker thread for client {PID: 221, Context ID: 0}\n[2026-10-20 10:00:30.992 Server   223] Received new client request from PID 221\n[2026-10-20 10:00:30.992 Server   223] Priority level of client {221} is: 0 (NORMAL)\n[2026-10-20 10:00:30.992 Server   223] Client {PID: 221, Context ID: 1} connected\n[2026-10-20 10:00:30.993 Server   223] Creating worker thread for client {PID: 221, Context ID: 1}\n[2026-10-20 10:00:30.993 Server   223] Device NVIDIA H200 (uuid GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d) is associated\n[2026-10-20 10:00:30.993 Server   223] Status of client {PID: 221, Context ID: 1} is ACTIVE\n[2026-10-20 10:00:30.994 Client   221] Static partitioning mode disabled\n[2026-10-20 10:00:43.656 Server   223] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 221, Context ID: 0} exit\n[2026-10-20 10:00:43.656 Server   223] Client process 221 disconnected\n[2026-10-20 10:00:43.686 Server   223] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 221, Context ID: 1} exit\n[2026-10-20 10:00:43.686 Server   223] Client {PID: 221, Context ID: 1} exiting. Number of active client contexts is 0.\n"
+    },
+    "connections": 4,
+    "client_lines": 20
+   },
+   "parsed": {
+    "verdict": "OK",
+    "max_errors": 0
+   }
+  }
+ },
+ "notes": [],
+ "mps_log": [
+  {
+   "share": 100,
+   "start_exit": 0,
+   "start_output": "",
+   "default_share_reported": "100.0"
+  },
+  {
+   "share": 40,
+   "start_exit": 0,
+   "start_output": "",
+   "default_share_reported": "40.0"
+  },
+  {
+   "share": 40,
+   "start_exit": 0,
+   "start_output": "",
+   "default_share_reported": "40.0"
+  },
+  {
+   "share": 40,
+   "start_exit": 0,
+   "start_output": "",
+   "default_share_reported": "40.0"
+  },
+  {
+   "share": 14,
+   "start_exit": 0,
+   "start_output": "",
+   "default_share_reported": "14.0"
+  }
+ ],
+ "mps_logs": {
+  "control.log": "trol   133] NEW SERVER 139: Ready\n[2026-10-20 09:59:39.393 Control   133] Accepting connection...\n[2026-10-20 09:59:39.393 Control   133] NEW CLIENT 137 from user 0: Server already exists\n[2026-10-20 09:59:43.109 Control   133] Accepting connection...\n[2026-10-20 09:59:43.109 Control   133] NEW UI\n[2026-10-20 09:59:43.109 Control   133] Activating queued UI\n[2026-10-20 09:59:43.109 Control   133] Cmd:quit\n[2026-10-20 09:59:43.109 Control   133] Try shutting down server 139, backoff is disabled\n[2026-10-20 09:59:43.153 Control   133] Server 139 exited with status 0\n[2026-10-20 09:59:43.153 Control   133] Exit with status 0\n[2026-10-20 09:59:44.833 Control   152] Starting control daemon using socket /tmp/nvidia-mps/control\n[2026-10-20 09:59:44.833 Control   152] To connect CUDA applications to this daemon, set env CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps\n[2026-10-20 09:59:44.833 Control   152] CUDA MPS Control binary version: 13030\n[2026-10-20 09:59:44.838 Control   152] Accepting connection...\n[2026-10-20 09:59:44.838 Control   152] NEW UI\n[2026-10-20 09:59:44.838 Control   152] Activating queued UI\n[2026-10-20 09:59:44.838 Control   152] Cmd:get_default_active_thread_percentage\n[2026-10-20 09:59:44.839 Control   152] 40.0\n[2026-10-20 09:59:44.839 Control   152] UI closed\n[2026-10-20 09:59:51.412 Control   152] Accepting connection...\n[2026-10-20 09:59:51.412 Control   152] Unable to read new connection type information\n[2026-10-20 09:59:51.412 Control   152] Accepting connection...\n[2026-10-20 09:59:51.412 Control   152] NEW CLIENT 176 from user 0: Server is not ready, push client to pending list\n[2026-10-20 09:59:51.413 Control   199] Starting new server 199 for user 0\n[2026-10-20 09:59:51.417 Control   152] Accepting connection...\n[2026-10-20 09:59:51.531 Control   152] NEW SERVER 199: Ready\n[2026-10-20 09:59:51.568 Control   152] Accepting connection...\n[2026-10-20 09:59:51.568 Control   152] NEW CLIENT 176 from user 0: Server already exists\n[2026-10-20 10:00:27.114 Control   152] Accepting connection...\n[2026-10-20 10:00:27.115 Control   152] NEW UI\n[2026-10-20 10:00:27.115 Control   152] Activating queued UI\n[2026-10-20 10:00:27.115 Control   152] Cmd:quit\n[2026-10-20 10:00:27.115 Control   152] Try shutting down server 199, backoff is disabled\n[2026-10-20 10:00:27.180 Control   152] Server 199 exited with status 0\n[2026-10-20 10:00:27.180 Control   152] Exit with status 0\n[2026-10-20 10:00:28.718 Control   213] Starting control daemon using socket /tmp/nvidia-mps/control\n[2026-10-20 10:00:28.718 Control   213] To connect CUDA applications to this daemon, set env CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps\n[2026-10-20 10:00:28.718 Control   213] CUDA MPS Control binary version: 13030\n[2026-10-20 10:00:28.722 Control   213] Accepting connection...\n[2026-10-20 10:00:28.722 Control   213] NEW UI\n[2026-10-20 10:00:28.722 Control   213] Activating queued UI\n[2026-10-20 10:00:28.722 Control   213] Cmd:get_default_active_thread_percentage\n[2026-10-20 10:00:28.722 Control   213] 40.0\n[2026-10-20 10:00:28.722 Control   213] UI closed\n[2026-10-20 10:00:30.797 Control   213] Accepting connection...\n[2026-10-20 10:00:30.797 Control   213] Unable to read new connection type information\n[2026-10-20 10:00:30.797 Control   213] Accepting connection...\n[2026-10-20 10:00:30.798 Control   213] NEW CLIENT 221 from user 0: Server is not ready, push client to pending list\n[2026-10-20 10:00:30.798 Control   223] Starting new server 223 for user 0\n[2026-10-20 10:00:30.802 Control   213] Accepting connection...\n[2026-10-20 10:00:30.914 Control   213] NEW SERVER 223: Ready\n[2026-10-20 10:00:30.992 Control   213] Accepting connection...\n[2026-10-20 10:00:30.992 Control   213] NEW CLIENT 221 from user 0: Server already exists\n[2026-10-20 10:01:12.527 Control   213] Accepting connection...\n[2026-10-20 10:01:12.528 Control   213] NEW UI\n[2026-10-20 10:01:12.528 Control   213] Activating queued UI\n[2026-10-20 10:01:12.528 Control   213] Cmd:quit\n[2026-10-20 10:01:12.528 Control   213] Try shutting down server 223, backoff is disabled\n[2026-10-20 10:01:12.604 Control   213] Server 223 exited with status 0\n[2026-10-20 10:01:12.604 Control   213] Exit with status 0\n[2026-10-20 10:01:14.198 Control   246] Starting control daemon using socket /tmp/nvidia-mps/control\n[2026-10-20 10:01:14.198 Control   246] To connect CUDA applications to this daemon, set env CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps\n[2026-10-20 10:01:14.198 Control   246] CUDA MPS Control binary version: 13030\n[2026-10-20 10:01:14.202 Control   246] Accepting connection...\n[2026-10-20 10:01:14.202 Control   246] NEW UI\n[2026-10-20 10:01:14.202 Control   246] Activating queued UI\n[2026-10-20 10:01:14.202 Control   246] Cmd:get_default_active_thread_percentage\n[2026-10-20 10:01:14.202 Control   246] 14.0\n[2026-10-20 10:01:14.202 Control   246] UI closed\n[2026-10-20 10:01:14.346 Control   246] Accepting connection...\n[2026-10-20 10:01:14.346 Control   246] Unable to read new connection type information\n[2026-10-20 10:01:14.346 Control   246] Accepting connection...\n[2026-10-20 10:01:14.346 Control   246] NEW CLIENT 250 from user 0: Server is not ready, push client to pending list\n[2026-10-20 10:01:14.347 Control   252] Starting new server 252 for user 0\n[2026-10-20 10:01:14.351 Control   246] Accepting connection...\n[2026-10-20 10:01:14.496 Control   246] NEW SERVER 252: Ready\n[2026-10-20 10:01:14.592 Control   246] Accepting connection...\n[2026-10-20 10:01:14.592 Control   246] NEW CLIENT 250 from user 0: Server already exists\n[2026-10-20 10:01:19.738 Control   246] Accepting connection...\n[2026-10-20 10:01:19.738 Control   246] NEW UI\n[2026-10-20 10:01:19.738 Control   246] Activating queued UI\n[2026-10-20 10:01:19.739 Control   246] Cmd:quit\n[2026-10-20 10:01:19.739 Control   246] Try shutting down server 252, backoff is disabled\n[2026-10-20 10:01:19.790 Control   246] Server 252 exited with status 0\n[2026-10-20 10:01:19.790 Control   246] Exit with status 0\n",
+  "server.log": "tic partitioning mode disabled\n[2026-10-20 10:00:17.552 Server   199] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 176, Context ID: 1} exit\n[2026-10-20 10:00:17.552 Server   199] Client {PID: 176, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-20 10:00:19.080 Server   199] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 176, Context ID: 0} exit\n[2026-10-20 10:00:19.080 Server   199] Client process 176 disconnected\n[2026-10-20 10:00:27.115 Server   199] Server has been notified to shutdown\n[2026-10-20 10:00:27.115 Server   199] Waiting for current clients to finish\n[2026-10-20 10:00:27.115 Server   199] Exiting\n[2026-10-20 10:00:30.802 Server   223] Startup\n[2026-10-20 10:00:30.802 Server   223] Connecting to control daemon on socket: /tmp/nvidia-mps/control\n[2026-10-20 10:00:30.803 Server   223] Initializing server process\n[2026-10-20 10:00:30.829 Server   223] Creating server context on device 0 (NVIDIA H200)\n[2026-10-20 10:00:30.914 Server   223] Created anonymous shared memory region mps.shm.0.223\n[2026-10-20 10:00:30.914 Server   223] CUDA MPS Server for Linux/Unix. Binary version: 13030\n[2026-10-20 10:00:30.914 Server   223] Display Driver version: 610\n[2026-10-20 10:00:30.914 Server   223] Active Threads Percentage set to 40.0\n[2026-10-20 10:00:30.914 Server   223] Server Priority set to 0\n[2026-10-20 10:00:30.914 Server   223] Static Partitioning mode disabled\n[2026-10-20 10:00:30.914 Server   223] Server has started\n[2026-10-20 10:00:30.914 Server   223] Received new client request from PID 221\n[2026-10-20 10:00:30.914 Server   223] Priority level of client {221} is: 0 (NORMAL)\n[2026-10-20 10:00:30.914 Server   223] Client {PID: 221, Context ID: 0} connected\n[2026-10-20 10:00:30.915 Server   223] Creating worker thread for client {PID: 221, Context ID: 0}\n[2026-10-20 10:00:30.992 Server   223] Received new client request from PID 221\n[2026-10-20 10:00:30.992 Server   223] Priority level of client {221} is: 0 (NORMAL)\n[2026-10-20 10:00:30.992 Server   223] Client {PID: 221, Context ID: 1} connected\n[2026-10-20 10:00:30.993 Server   223] Creating worker thread for client {PID: 221, Context ID: 1}\n[2026-10-20 10:00:30.993 Server   223] Device NVIDIA H200 (uuid GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d) is associated\n[2026-10-20 10:00:30.993 Server   223] Status of client {PID: 221, Context ID: 1} is ACTIVE\n[2026-10-20 10:00:30.994 Client   221] Static partitioning mode disabled\n[2026-10-20 10:00:43.656 Server   223] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 221, Context ID: 0} exit\n[2026-10-20 10:00:43.656 Server   223] Client process 221 disconnected\n[2026-10-20 10:00:43.686 Server   223] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 221, Context ID: 1} exit\n[2026-10-20 10:00:43.686 Server   223] Client {PID: 221, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-20 10:01:12.528 Server   223] Server has been notified to shutdown\n[2026-10-20 10:01:12.528 Server   223] Waiting for current clients to finish\n[2026-10-20 10:01:12.528 Server   223] Exiting\n[2026-10-20 10:01:14.351 Server   252] Startup\n[2026-10-20 10:01:14.351 Server   252] Connecting to control daemon on socket: /tmp/nvidia-mps/control\n[2026-10-20 10:01:14.351 Server   252] Initializing server process\n[2026-10-20 10:01:14.400 Server   252] Creating server context on device 0 (NVIDIA H200)\n[2026-10-20 10:01:14.496 Server   252] Created anonymous shared memory region mps.shm.0.252\n[2026-10-20 10:01:14.496 Server   252] CUDA MPS Server for Linux/Unix. Binary version: 13030\n[2026-10-20 10:01:14.496 Server   252] Display Driver version: 610\n[2026-10-20 10:01:14.496 Server   252] Active Threads Percentage set to 14.0\n[2026-10-20 10:01:14.496 Server   252] Server Priority set to 0\n[2026-10-20 10:01:14.496 Server   252] Static Partitioning mode disabled\n[2026-10-20 10:01:14.496 Server   252] Server has started\n[2026-10-20 10:01:14.496 Server   252] Received new client request from PID 250\n[2026-10-20 10:01:14.496 Server   252] Priority level of client {250} is: 0 (NORMAL)\n[2026-10-20 10:01:14.496 Server   252] Client {PID: 250, Context ID: 0} connected\n[2026-10-20 10:01:14.496 Server   252] Creating worker thread for client {PID: 250, Context ID: 0}\n[2026-10-20 10:01:14.592 Server   252] Received new client request from PID 250\n[2026-10-20 10:01:14.592 Server   252] Priority level of client {250} is: 0 (NORMAL)\n[2026-10-20 10:01:14.592 Server   252] Client {PID: 250, Context ID: 1} connected\n[2026-10-20 10:01:14.592 Server   252] Creating worker thread for client {PID: 250, Context ID: 1}\n[2026-10-20 10:01:14.592 Server   252] Device NVIDIA H200 (uuid GPU-1e025d65-f638-3dca-da3f-5fbc8f1adf9d) is associated\n[2026-10-20 10:01:14.592 Server   252] Status of client {PID: 250, Context ID: 1} is ACTIVE\n[2026-10-20 10:01:14.593 Client   250] Static partitioning mode disabled\n[2026-10-20 10:01:17.508 Server   252] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 250, Context ID: 0} exit\n[2026-10-20 10:01:17.508 Server   252] Client process 250 disconnected\n[2026-10-20 10:01:17.541 Server   252] Server failed to receive command: the remote procedural call between the MPS server and the MPS client failed, assuming client {PID: 250, Context ID: 1} exit\n[2026-10-20 10:01:17.541 Server   252] Client {PID: 250, Context ID: 1} exiting. Number of active client contexts is 0.\n[2026-10-20 10:01:19.739 Server   252] Server has been notified to shutdown\n[2026-10-20 10:01:19.739 Server   252] Waiting for current clients to finish\n[2026-10-20 10:01:19.739 Server   252] Exiting\n"
+ },
+ "decisions": {
+  "mps_works (daemon started at every share, fewer SMs visible at 40% than at 100%)": true,
+  "100% control: every cuBLASLt algorithm right": true,
+  "bug reproduced as published (wrong only with algorithm 66 and 4+ CTAs per cluster)": true,
+  "documented workaround (1x1x1 cluster) gives right results": true,
+  "DCGM diagnostic runs here with readable results (no MPS)": true,
+  "DCGM diagnostic runs under MPS at 40% with readable results": true,
+  "DCGM connected as an MPS client (new MPS connections during its run)": true,
+  "DCGM's cuBLAS calls visible in a cuBLASLt log": true,
+  "gpu-burn runs under MPS with a readable verdict": true,
+  "go: the full head-to-head can answer its question": true,
+  "DCGM cells will be meaningful": true
+ },
+ "seconds": 160.5,
+ "run_id": "preflight_h200_20261020_055833",
+ "function_started_utc": "2026-10-20T09:58:40Z",
+ "function_seconds": 161.7,
+ "estimated_cost_usd": 0.22,
+ "cost_note": "function time x $4.92/hour (H200, 4 cores, 24 GiB at Oct 20 prices); image pull and startup are billed too and not in this number; Modal's usage page has the billed amount",
+ "source": {
+  "sha256": "28ac0adccafdcd9a9584377b1669b515cba8175f10a323c25a995e33a96996a8",
+  "files": 112
+ }
+}

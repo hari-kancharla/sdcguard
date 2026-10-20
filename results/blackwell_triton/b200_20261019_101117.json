@@ -1,0 +1,100 @@
+{
+  "seconds": 14.9,
+  "exit": 0,
+  "head": "{\"gpu\": \"NVIDIA B200\", \"cc\": [10, 0], \"torch\": \"2.14.1+cu130\"}\nas_is {\"exit\": 1, \"all_agree\": false, \"faulting_launch\": {\"kernel\": \"_compare\", \"grid\": [2], \"ptr_mod64\": [0, 0, 0, 0], \"ints_mod16\": [0, 0, 0, 3, 0, 12, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 2]}, \"mismatches\": [], \"error_tail\": \"riments/../tests/_fast_compare.py\\\", line 335, in main\\n    f, p = both(A, B, C, bias, alpha, beta)\\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \\\"/root/sdcguard/experiments/../tests/_fast_compare.py\\\", line 16, in both\\n    fast = cs.check_matmul(A, B, C, bias, alpha=alpha, beta=beta)",
+  "result": {
+    "as_is": {
+      "exit": 1,
+      "all_agree": false,
+      "faulting_launch": {
+        "kernel": "_compare",
+        "grid": [
+          2
+        ],
+        "ptr_mod64": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ints_mod16": [
+          0,
+          0,
+          0,
+          3,
+          0,
+          12,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          2,
+          1,
+          2
+        ]
+      },
+      "mismatches": [],
+      "error_tail": "riments/../tests/_fast_compare.py\", line 335, in main\n    f, p = both(A, B, C, bias, alpha, beta)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../tests/_fast_compare.py\", line 16, in both\n    fast = cs.check_matmul(A, B, C, bias, alpha=alpha, beta=beta)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 627, in check_matmul\n    st = matmul_zscores(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 341, in matmul_zscores\n    return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 362, in _zscores\n    A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1, 1)                      # (bA, m, 1, 1)\n             ^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 140, in _norm_fp32\n    return torch.linalg.vector_norm(t.float(), ord=ord, dim=dim)\n                                    ^^^^^^^^^\ntorch.AcceleratorError: CUDA error: misaligned address\nSearch for `cudaErrorMisalignedAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\n\n"
+    },
+    "aligned": {
+      "exit": 1,
+      "all_agree": false,
+      "faulting_launch": {
+        "kernel": "_compare",
+        "grid": [
+          2
+        ],
+        "ptr_mod64": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "ints_mod16": [
+          0,
+          0,
+          0,
+          3,
+          0,
+          12,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          2,
+          1,
+          2
+        ]
+      },
+      "mismatches": [],
+      "error_tail": "riments/../tests/_fast_compare.py\", line 335, in main\n    f, p = both(A, B, C, bias, alpha, beta)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../tests/_fast_compare.py\", line 16, in both\n    fast = cs.check_matmul(A, B, C, bias, alpha=alpha, beta=beta)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 627, in check_matmul\n    st = matmul_zscores(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 341, in matmul_zscores\n    return _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 362, in _zscores\n    A_norm = _norm_fp32(A3).view(A3.shape[0], m, 1, 1)                      # (bA, m, 1, 1)\n             ^^^^^^^^^^^^^^\n  File \"/root/sdcguard/experiments/../src/sdcguard/checksum.py\", line 140, in _norm_fp32\n    return torch.linalg.vector_norm(t.float(), ord=ord, dim=dim)\n                                    ^^^^^^^^^\ntorch.AcceleratorError: CUDA error: misaligned address\nSearch for `cudaErrorMisalignedAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\n\n"
+    }
+  },
+  "stderr": "",
+  "source": {
+    "sha256": "aedf94bfe897569a7549d44a9ea60adeb6c1cc7dffd131f29b224989ecda4495",
+    "files": 73
+  }
+}

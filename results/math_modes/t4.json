@@ -1,0 +1,524 @@
+{
+  "label": "t4",
+  "gpu": "Tesla T4",
+  "cc": [
+    7,
+    5
+  ],
+  "torch": "2.14.1+cu130",
+  "cuda": "13.0",
+  "nvidia_smi": "Tesla T4, 610.57.04, 15360 MiB, Enabled",
+  "calibration": {
+    "shape": [
+      2048,
+      1024,
+      2048
+    ],
+    "rounds": 112,
+    "modes": {
+      "bf16": {
+        "skipped": "needs compute capability 8.0 or newer"
+      },
+      "fp16": {
+        "matmuls": 672,
+        "wrong": 0,
+        "worst_z": {
+          "normal x1": 0.512,
+          "uniform x0.00390625": 0.511,
+          "sparse x64": 0.033,
+          "normal x256": 0.465,
+          "laplace x0.0625": 0.49,
+          "uniform x1": 0.504
+        },
+        "typical_caught": {
+          "normal x1": 0.0013,
+          "uniform x0.00390625": 0.0013,
+          "sparse x64": 0.0013,
+          "normal x256": 0.0013,
+          "laplace x0.0625": 0.0013,
+          "uniform x1": 0.0013
+        },
+        "tensor_core_steps": 4
+      },
+      "tf32": {
+        "skipped": "needs compute capability 8.0 or newer"
+      },
+      "fp32": {
+        "matmuls": 672,
+        "wrong": 0,
+        "worst_z": {
+          "normal x1": 0.576,
+          "uniform x0.00390625": 0.569,
+          "sparse x64": 0.09,
+          "normal x256": 0.604,
+          "laplace x0.0625": 0.616,
+          "uniform x1": 0.568
+        },
+        "typical_caught": {
+          "normal x1": 0.000259,
+          "uniform x0.00390625": 0.000259,
+          "sparse x64": 0.00026,
+          "normal x256": 0.000259,
+          "laplace x0.0625": 0.000259,
+          "uniform x1": 0.000259
+        },
+        "tensor_core_steps": null
+      },
+      "fp64": {
+        "matmuls": 672,
+        "wrong": 0,
+        "worst_z": {
+          "normal x1": 0.585,
+          "uniform x0.00390625": 0.497,
+          "sparse x64": 0.383,
+          "normal x256": 0.574,
+          "laplace x0.0625": 0.647,
+          "uniform x1": 0.508
+        },
+        "typical_caught": {
+          "normal x1": 9.66e-13,
+          "uniform x0.00390625": 9.66e-13,
+          "sparse x64": 9.67e-13,
+          "normal x256": 9.67e-13,
+          "laplace x0.0625": 9.66e-13,
+          "uniform x1": 9.66e-13
+        },
+        "tensor_core_steps": null
+      },
+      "int8": {
+        "matmuls": 0,
+        "wrong": 0,
+        "worst_z": {},
+        "typical_caught": {},
+        "tensor_core_steps": null,
+        "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+      },
+      "fp8": {
+        "skipped": "needs compute capability 8.9 or newer"
+      }
+    }
+  },
+  "sensitivity": {
+    "sizes": [
+      1e-06,
+      3e-06,
+      1e-05,
+      3e-05,
+      0.0001,
+      0.0003,
+      0.001,
+      0.003,
+      0.01,
+      0.03,
+      0.1,
+      0.3,
+      1.0
+    ],
+    "trials_per_size": 32,
+    "skipped_overflow": 16,
+    "flagged": {
+      "low": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "fp32": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "changed_low_output": [
+      0.0,
+      0.0,
+      0.03125,
+      0.09375,
+      0.125,
+      0.53125,
+      0.9375,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "clean": {
+      "low": {
+        "false_alarms": 0,
+        "worst_z": 1.3694323301315308
+      },
+      "fp32": {
+        "false_alarms": 0,
+        "worst_z": 0.42307974907483276
+      }
+    },
+    "low_dtype": "fp16",
+    "half_caught_at": {
+      "low": 0.055,
+      "fp32": 0.0017
+    },
+    "per_variant": {
+      "normal x1": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "trials": 8
+      },
+      "uniform x0.00390625": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "trials": 8
+      },
+      "sparse x64": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "trials": 0
+      },
+      "normal x256": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "trials": 0
+      },
+      "laplace x0.0625": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "trials": 8
+      },
+      "uniform x1": {
+        "low": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8
+        ],
+        "fp32": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ],
+        "trials": 8
+      }
+    },
+    "tensor_core_steps": 4,
+    "device": "cuda",
+    "gpu": "Tesla T4",
+    "torch": "2.14.1+cu130",
+    "shape": [
+      2048,
+      1024,
+      2048
+    ],
+    "seconds": 43.9,
+    "date": "2026-10-19"
+  },
+  "sensitivity_md": "# Sensitivity: fp16 result vs fp32 accumulator (cuda)\n\nTesla T4, torch 2.14.1+cu130, matmuls of 2048 x 1024 by 1024 x 2048, 32 trials per error size (6 input distributions; 16 skipped because the fp16 result overflowed). An error is relative to a typical output of its block.\n\n| error size | fp16 check flags | fp32 check flags | changed the fp16 output |\n|---|---|---|---|\n| 0.0001% | 0% | 0% | 0% |\n| 0.0003% | 0% | 0% | 0% |\n| 0.001% | 0% | 0% | 3% |\n| 0.003% | 0% | 0% | 9% |\n| 0.01% | 0% | 0% | 12% |\n| 0.03% | 0% | 0% | 53% |\n| 0.1% | 0% | 0% | 94% |\n| 0.3% | 0% | 100% | 100% |\n| 1% | 0% | 100% | 100% |\n| 3% | 0% | 100% | 100% |\n| 10% | 100% | 100% | 100% |\n| 30% | 100% | 100% | 100% |\n| 100% | 100% | 100% | 100% |\n\nHalf the errors are caught from about 5.5% (fp16 check) and 0.17% (fp32 check).\nClean trials: fp16 check 0 false alarms (worst score 1.37), fp32 check 0 (worst score 0.42); the alarm is at 6.\n",
+  "screen": {
+    "shape": [
+      2048,
+      1024,
+      2048
+    ],
+    "modes": {
+      "bf16": {
+        "skipped": "needs compute capability 8.0 or newer"
+      },
+      "fp16": {
+        "matmuls": 24,
+        "wrong": 0,
+        "blocks_checked": 786432,
+        "worst_z": 0.454,
+        "typical_error_caught": 0.0013
+      },
+      "tf32": {
+        "skipped": "needs compute capability 8.0 or newer"
+      },
+      "fp32": {
+        "matmuls": 24,
+        "wrong": 0,
+        "blocks_checked": 786432,
+        "worst_z": 0.565,
+        "typical_error_caught": 0.00026
+      },
+      "fp64": {
+        "matmuls": 24,
+        "wrong": 0,
+        "blocks_checked": 786432,
+        "worst_z": 0.492,
+        "typical_error_caught": 9.7e-13
+      },
+      "int8": {
+        "matmuls": 0,
+        "wrong": 0,
+        "blocks_checked": 0,
+        "worst_z": 0.0,
+        "typical_error_caught": null,
+        "error": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+      },
+      "fp8": {
+        "skipped": "needs compute capability 8.9 or newer"
+      }
+    },
+    "wrong": 0,
+    "matmuls": 72,
+    "ran": [
+      "fp16",
+      "fp32",
+      "fp64"
+    ],
+    "not_checked": {
+      "bf16": "needs compute capability 8.0 or newer",
+      "tf32": "needs compute capability 8.0 or newer",
+      "int8": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'",
+      "fp8": "needs compute capability 8.9 or newer"
+    },
+    "errors": {
+      "int8": "NotImplementedError: \"baddbmm_cuda\" not implemented for 'Long'"
+    },
+    "unsupported": {
+      "bf16": "needs compute capability 8.0 or newer",
+      "tf32": "needs compute capability 8.0 or newer",
+      "fp8": "needs compute capability 8.9 or newer"
+    },
+    "failures": []
+  },
+  "precise": {
+    "config": {
+      "vocab": 32000,
+      "layers": 8,
+      "width": 1024,
+      "heads": 16,
+      "seq": 512,
+      "batch": 8
+    },
+    "dtype": "float16",
+    "device": "cuda",
+    "clean": {
+      "steps": 30,
+      "checks": 2970,
+      "fp32_checks": 2970,
+      "unjudged": 0,
+      "alarms": 0,
+      "worst_score": 1.53,
+      "p99_score": 1.12
+    },
+    "same": {
+      "logits_max_abs_diff": 0.001953125,
+      "logits_identical": false,
+      "grad_max_rel_diff": 0.8146469593048096,
+      "grad_median_rel_diff": 0.28784647583961487,
+      "grads_identical": false
+    },
+    "cost": {
+      "seconds_per_step_unguarded": 0.2603,
+      "seconds_bf16_checked": 0.3033,
+      "seconds_precise_checked": 1.9552,
+      "bf16_overhead_at_every_20_pct": 0.83,
+      "precise_overhead_at_every_20_pct": 32.55
+    },
+    "faults": {
+      "rate": 0.05,
+      "steps": 20,
+      "bf16": {
+        "injected": 13,
+        "checked": 13,
+        "caught": 12,
+        "alarms": 12,
+        "missed_rel_change_max": 1.1451744285295717e-05,
+        "missed_rel_change_median": 1.1451744285295717e-05,
+        "caught_rel_change_min": 0.018940526992082596
+      },
+      "precise": {
+        "injected": 13,
+        "checked": 13,
+        "caught": 11,
+        "alarms": 11,
+        "missed_rel_change_max": 2.3534626052423846e-06,
+        "missed_rel_change_median": 1.179670595208293e-06,
+        "caught_rel_change_min": 0.002213102765381336
+      }
+    },
+    "gpu": "Tesla T4",
+    "torch": "2.14.1+cu130",
+    "seconds": 146.5
+  },
+  "precise_md": "# Precise mode on Tesla T4 (float16)\n\nModel: {'vocab': 32000, 'layers': 8, 'width': 1024, 'heads': 16, 'seq': 512, 'batch': 8}. torch 2.14.1+cu130.\n\nClean: 30 steps, 2970 fp32 checks, 0 false alarms, worst score 1.53 (99th percentile 1.12; the alarm is at 6).\n\nSame step unguarded vs precise: logits identical False (largest difference 0.00195), gradients largest relative difference 0.815.\n\nTime per step: unguarded 0.2603 s, bf16 checks 0.3033 s, precise checks 1.9552 s. At every=20: bf16 0.83%, precise 32.55%.\n\n| injected faults | injected | checked | caught | largest missed change | smallest caught change |\n|---|---|---|---|---|---|\n| bf16 | 13 | 13 | 12 | 1.1451744285295717e-05 | 0.018940526992082596 |\n| precise | 13 | 13 | 11 | 2.3534626052423846e-06 | 0.002213102765381336 |\n"
+}

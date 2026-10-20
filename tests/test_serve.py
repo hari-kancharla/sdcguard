@@ -1,4 +1,5 @@
 """ServeGuard (inference) and the vLLM plugin (against a stand-in for vLLM's classes)."""
+import contextlib
 import math
 import os
 import sys
@@ -187,6 +188,7 @@ def _plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("SDCGUARD", "1")
     monkeypatch.setenv("SDCGUARD_ALLOW_CPU", "1")
     monkeypatch.setenv("SDCGUARD_POLL_EVERY", "100000")       # these tests read the results themselves
+    monkeypatch.setenv("SDCGUARD_POLL_SECONDS", "1e9")
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
@@ -292,12 +294,27 @@ def test_alert_says_whether_weights_changed():
 cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs an NVIDIA GPU")
 
 
+@contextlib.contextmanager
+def _fp32_partial_sums():
+    """Layer outputs made without a guard: keep bf16/fp16 partial sums in fp32, as ServeGuard does while it serves,
+    so these GPU tests don't depend on what an earlier test left set (vllm_plugin._exact_reductions sets it for the
+    rest of a process)."""
+    m = torch.backends.cuda.matmul
+    saved = (m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction)
+    m.allow_bf16_reduced_precision_reduction = m.allow_fp16_reduced_precision_reduction = False
+    try:
+        yield
+    finally:
+        m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction = saved
+
+
 @cuda
+@_fp32_partial_sums()
 def test_gpu_fast_serving_check_agrees_and_is_used():
     """On a GPU: the Triton check passes its first-use comparison, is used, and gives the PyTorch
     check's answers on clean and corrupted layers."""
     from sdcguard import _serve_fast
-    from sdcguard.serve import LayerChecksums, check_static_impl
+    from sdcguard.serve import STATE_COLS, LayerChecksums, check_static_impl
     dev = torch.device("cuda")
     for dt in (torch.bfloat16, torch.float16):
         assert _serve_fast.verified(dev, dt), _serve_fast.WHY
@@ -307,19 +324,27 @@ def test_gpu_fast_serving_check_agrees_and_is_used():
             x = torch.randn(m, k, device=dev).to(dt)
             y = x @ W.t()
             cs = LayerChecksums(W, None, 128)
-            for corrupt in (False, True):
-                yy = y.clone()
-                if corrupt:
+            for corrupt in (False, True, "inf_input"):
+                yy, xx = y.clone(), x
+                if corrupt == "inf_input":       # its row can't be judged: counted as unjudged, scored 0
+                    xx = x.clone()
+                    xx[m // 2, 0] = float("inf")
+                    yy = xx @ W.t()
+                elif corrupt:
                     yy[m // 2, n // 3] += 30.0
-                ref = torch.zeros(1, 2, dtype=torch.int64, device=dev)
-                fast = torch.zeros(1, 2, dtype=torch.int64, device=dev)
-                check_static_impl(x, yy, *cs.tensors(True), ref, 0, 6.0, 1e-20)
-                _serve_fast.check(x, yy, *cs.tensors(True), fast, 0, 6.0, 1e-20)
+                ref = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=dev)
+                fast = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=dev)
+                check_static_impl(xx, yy, *cs.tensors(True), ref, 0, 6.0, 1e-20)
+                _serve_fast.check(xx, yy, *cs.tensors(True), fast, 0, 6.0, 1e-20)
                 (rz, rf, _), (fz, ff, _) = (_serve_fast.decode(*ref[0].tolist()), _serve_fast.decode(*fast[0].tolist()))
-                if corrupt:
-                    assert rz > 6 and fz > 6 and rf // 2 == ff // 2
+                rc, fc = ref[0, 2:].tolist(), fast[0, 2:].tolist()
+                assert rc == fc, (dt, m, k, n, corrupt, rc, fc)          # same counts, exactly
+                if corrupt == "inf_input":
+                    assert rz <= 6 and fz <= 6 and rc == [1, 2 * cs.nb]
+                elif corrupt:
+                    assert rz > 6 and fz > 6 and rf // 2 == ff // 2 and rc == [1, 0]
                 else:
-                    assert rz <= 6 and fz <= 6 and abs(fz - rz) <= 0.05 + 0.02 * rz
+                    assert rz <= 6 and fz <= 6 and abs(fz - rz) <= 0.05 + 0.02 * rz and rc == [1, 0]
 
 
 @cuda
@@ -341,6 +366,26 @@ def test_gpu_compiled_cuda_graphs_catch_a_flip(fast, monkeypatch):
             cm(x)
     assert g.poll(wait=True) == []
     assert all(z > 0 for z in g.worst_seen.values())
+    cov = g.coverage_report()           # the counts are written inside the replayed graphs too
+    assert cov["never_checked"] == [] and cov["unjudged_checksums"] == 0, cov
+    assert all(v["checks"] >= 4 for v in g.counts().values()), g.counts()
+    # The graph path itself, not an eager fallback: the next calls replay a CUDA graph, and each replay runs every
+    # layer's check exactly once (outside review, Oct 20: a compiled call that silently ran eagerly passed before)
+    hook = getattr(torch.cuda.graphs, "register_graph_replay_start_hook", None)
+    if hook is not None:
+        replays = []
+        handle = hook(lambda graph: replays.append(1))
+        try:
+            before = {k: v["checks"] for k, v in g.counts().items()}
+            with torch.no_grad():
+                for _ in range(3):
+                    cm(x)
+            torch.cuda.synchronize()
+            after = {k: v["checks"] for k, v in g.counts().items()}
+        finally:
+            handle.remove()
+        assert len(replays) >= 3, f"the compiled model ran without replaying a CUDA graph ({len(replays)} replays)"
+        assert all(after[k] - before[k] == 3 for k in after), (before, after)
     with torch.no_grad():
         m[2].weight.view(torch.int16)[7, 9] ^= (1 << 14)
         for _ in range(2):
@@ -371,6 +416,7 @@ def test_checksums_stay_fp32_under_a_bf16_default_dtype():
 
 
 @cuda
+@_fp32_partial_sums()
 def test_gpu_no_kernel_compile_while_serving():
     """After add_layer() (which compiles the Triton check for the layer's shape), batches of any size
     must not compile anything (vLLM's JIT monitor flagged compiles during inference before this)."""
@@ -389,4 +435,5 @@ def test_gpu_no_kernel_compile_while_serving():
         x = torch.randn(m, 2048, device="cuda").to(torch.bfloat16)
         g.check(slot, x, lin(x))
     assert g.read_slot(slot)[0] < 6
-    assert before is None or compiled() == before
+    assert before is None or compiled() == before          # (add_layer compiled the variant with counts)
+    assert g.counts()["lin"] == {"checks": 8, "unjudged": 0}

@@ -118,8 +118,9 @@ def test_alerts_arrive_when_the_with_block_exits():
 
 
 def test_immediate_mode_raises_inside_the_op():
-    model, x = _model(), torch.randn(64, 256)
-    inj = FaultInjector(rate=1.0, seed=5).arm_on([model[2]])
+    model = _model()
+    x = torch.randn(64, 256, generator=torch.Generator().manual_seed(1))
+    inj = FaultInjector(rate=1.0, seed=8).arm_on([model[2]])      # a fault well above the bf16 check's floor
     guard = SDCGuard(immediate=True, raise_on_alert=True)
     with pytest.raises(SDCError):
         with inj, guard:
