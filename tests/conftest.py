@@ -17,12 +17,26 @@ os.environ.setdefault("SDCGUARD_SIGN_SEED", "1")
 @pytest.fixture(autouse=True)
 def _cublas_settings_released():
     from sdcguard import guard
-    before = guard._FLAGS["holds"]
+    import torch
+    saved = guard._FLAGS.copy()
+    before = saved["holds"]
+    flags = guard._reduced_precision_flags()
+    existing = ({id(item) for item in gc.get_objects() if type(item) is guard._FlagHold and item.live}
+                if before else set())
     yield
     if guard._FLAGS["holds"] != before:
         gc.collect()
     left = guard._FLAGS["holds"] - before
     if left:
-        guard._FLAGS["holds"] = before           # so the tests after this one start clean
+        # A counter reset alone leaves the backend flags changed. Retire leaked tokens too: a later
+        # finalizer for a failed test must not release a hold acquired by the following test.
+        with guard._FLAGS_LOCK:
+            for item in gc.get_objects():
+                if type(item) is guard._FlagHold and id(item) not in existing:
+                    item.live = False
+            guard._FLAGS.update(saved)
+            matmul = torch.backends.cuda.matmul
+            matmul.allow_bf16_reduced_precision_reduction = flags[0]
+            matmul.allow_fp16_reduced_precision_reduction = flags[1]
         pytest.fail(f"this test left {left} guard(s) holding the cuBLAS settings (detach or exit them)",
                     pytrace=False)
