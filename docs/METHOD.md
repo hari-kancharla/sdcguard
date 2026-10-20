@@ -455,6 +455,72 @@ doesn't work with `protect()` yet. The worst clean score sat about 30 times unde
 line of 4, so the noise model is far more cautious than these workloads needed; a tighter model could catch
 smaller errors, but it would need new held-out workloads and criteria written before its run.
 
+## Head-to-head on a real cuBLAS bug (written October 20, 2026, before any run)
+
+The question: when NVIDIA's own GEMM library silently computes wrong results on healthy hardware, which tools notice?
+The bug is cuBLAS known issue 6862950 (CUDA 13.4 Update 2 release notes, October 12, 2026): on Hopper, FP16, BF16
+and FP8 GEMMs can leave part of the output unwritten when the process is an MPS client with
+`CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` below 100. It is deterministic and reproducible, so every tool faces the same
+wrong math. sdcguard reproduced it on a Modal H200 on October 19 ([results](../results/mps_bug)).
+
+**Setup** ([scripts/modal_h2h.py](../scripts/modal_h2h.py), [experiments/h2h_run.py](../experiments/h2h_run.py)):
+one H200 on Modal, one container, everything in sequence. MPS shares 100 (control), 40, 75 and 14, then a short 100
+recheck. The MPS daemon is restarted at the share before every tool, with the share set at the daemon and in each
+tool's environment. At each share:
+
+1. Ground truth for PyTorch (what sdcguard uses): experiments/mps_unwritten.py, the October 19 probe, against a
+   float64 CPU reference.
+2. Ground truth for the tools' own calls: [experiments/h2h_probe.cpp](../experiments/h2h_probe.cpp) makes DCGM's
+   and gpu-burn's cuBLAS calls (Hgemm, Sgemm, Sgemm with tensor-op math and Dgemm, at their shapes, with their
+   inputs) and FP16/BF16 GemmEx, into buffers pre-filled with NaN, against float64, with cuBLASLt logging on. It
+   links the system cuBLAS that gpu-burn uses. DCGM links its own static cuBLAS (built with a newer CUDA), so for
+   DCGM the probe is a close proxy, not its exact library; a short traced DCGM run at 40% logs DCGM's own kernel
+   choices if its cuBLAS honors cuBLASLt logging. The probe also measures whether fresh device memory is zeroed.
+3. DCGM 4.7.0 (the newest in NVIDIA's apt repository on October 20): `dcgmi diag -r diagnostic`, its only test that
+   checks GEMM results, with its defaults. Source reading was of 4.6.1.
+4. gpu-burn (commit 0d19c94) with `-tc` for 60 seconds: its only mode that could reach FP16 math (the default is
+   FP32 and `-d` is FP64, which the bug does not affect).
+5. `sdcguard check` for 5 minutes, offline.
+
+At 40% also: DCGM with FP16 only, the traced DCGM run, and gpu-burn's default FP32 mode.
+
+**Classification** (in code, tested in [tests/test_h2h.py](../tests/test_h2h.py)). Each (tool, share) cell is
+judged against that tool's own ground truth at that share:
+- DETECTED: its GEMMs were wrong and it flagged them.
+- MISSED: they were wrong and it passed.
+- NOT EXERCISED: they were right and it passed.
+- FALSE ALARM: they were right and it flagged a result error.
+- FAIL (NOT ATTRIBUTABLE): it failed for another reason.
+- COULD NOT TEST: it didn't run, timed out or couldn't judge.
+
+What counts as flagged:
+- DCGM: the diagnostic test fails with error 52 (faulty memory) or 111 (NaN), or reports faulty or NaN elements.
+- gpu-burn: `FAULTY` with errors above 0.
+- sdcguard check: FAIL with a wrong count above 0 in training, serving, stress or math modes. SUSPECT and INCOMPLETE
+  are recorded, not counted.
+
+**Predictions**, from reading each tool's source (judgment, not results):
+
+| share | DCGM diagnostic | gpu-burn | sdcguard check |
+|---|---|---|---|
+| 100, 50 | pass | OK | PASS |
+| 40 | about even odds: a pass, or a "faulty memory" fail if its FP16 GEMMs hit the bug (a real catch with the wrong label) | OK (its FP32 inputs and self-comparison make a hit unlikely and a deterministic hole invisible) | FAIL through math modes (24 of 24 wrong on October 19) |
+| 75 | leaning pass | OK | FAIL through math modes |
+| 14 | pass | OK | uncertain |
+
+Why: DCGM and gpu-burn compare every result with their own first result, never with a correct answer, so a wrong
+answer that repeats exactly passes, and neither runs BF16. DCGM's FP16 buffers overlap earlier FP64 results, which
+could turn unwritten regions into mismatches. sdcguard compares with a float64 reference.
+
+**Reporting.** Every cell is published, including any where sdcguard misses or false-alarms. No step is rerun
+because its result was unwelcome. A tool that cannot run here is "could not test", never "missed". This is one GPU,
+one software bug and sdcguard's own author running the comparison. It says nothing about physically defective GPUs
+or about H100.
+
+**Cost**, at Modal's prices on October 20: about $5 for a typical hour on the H200. The 80-minute execution limit
+is about $6.60 at the requested CPU and memory. That limit is per attempt, excluding queueing; higher actual use,
+startup and a restart after preemption can add cost.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use
