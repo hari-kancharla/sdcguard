@@ -833,9 +833,9 @@ class ServeGuard:
                                   "row": row, "col_block": block, "noise": noise,
                                   "checksum": "plain" if int(flat) % 2 == 0 else "signed",
                                   "weights_changed_since_load": changed,
-                                  "reading": ("the layer's weights no longer match their load-time checksums: "
-                                              "changed in GPU memory, or updated without calling refresh()"
-                                              if changed else
+                                  "reading": ("the layer's weights changed since load (they no longer match "
+                                              "their load-time checksums): in GPU memory, or updated without "
+                                              "calling refresh()" if changed else
                                               "the output disagrees with its checksums while the weights are "
                                               "unchanged: a wrong matmul result, or a fault in the check's own "
                                               "GPU arithmetic; rerun the request on another GPU to tell which"
