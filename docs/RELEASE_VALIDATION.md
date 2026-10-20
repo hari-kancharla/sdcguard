@@ -1,9 +1,11 @@
-# Release validation for the October 19 review candidate
+# Release validation for the October 20 review of 12e23f5
 
 This is a validation plan, not a record of a completed GPU run. It was written by an outside review of the
 b778d27 source (CPU only: Python 3.12.14, PyTorch 2.14.1+cpu, Triton 3.8.0, no CUDA device) and updated after
-its fixes were merged onto the later local work. CPU tests and the Triton interpreter cannot establish actual
-kernel compilation, CUDA graph behavior, numerical calibration or GPU overhead. Results of each gate are
+its fixes were merged onto the later local work. The October 20 review covers the supplied `12e23f5` snapshot
+and the new patches against it. CPU tests and the Triton interpreter do not establish CUDA execution, graph
+replay, numerical calibration or GPU overhead. Separate local compilation can establish compiler acceptance
+for specific targets, but not device correctness. Results of each gate are
 recorded in [METHOD.md](METHOD.md) and `results/`.
 
 Keep the existing hold on GitHub/Pages/PyPI publication until the founder's release authorization. All existing
@@ -11,13 +13,17 @@ features remain in the source. Experimental paths retain that status until their
 
 ## 1. Bind every result to the actual source
 
-The reviewed archive claims b778d27 and its original 77-Python-file fingerprint is:
+The earlier review was of `b778d27`, whose 77-Python-file fingerprint was:
 
 `1265b3e0a38589060c14c399d072cb6fda5985849bac282bb54e8b88a494ccfb`
 
-The review fixes change that fingerprint. The handoff contains a patch against that exact archive, an original
-file manifest, a reviewed source snapshot and a final manifest. If the working Mac checkout has advanced,
-preserve its work and port the fixes; do not overwrite it with the snapshot or assume the old test count applies.
+The supplied archive for this review identifies its source as `12e23f5`. Recomputing the runner's fingerprint
+directly from that archive gives 92 Python files and:
+
+`7508925675608f0b95a6753f7d86b45748e93abe6e9daa16c6cc81b21a84a279`
+
+The October 20 patches are against this supplied snapshot and change its fingerprint. If the working Mac
+checkout has advanced, preserve its work and port the fixes; do not overwrite it or assume an old test count applies.
 
 Commit the integrated candidate locally, record `git rev-parse HEAD` and its working-tree status, and save the
 source fingerprint printed by each runner. A version string alone is insufficient. The vLLM runner predates
@@ -33,7 +39,7 @@ Install the candidate and declared test dependencies in the intended Python envi
 
 ```bash
 python -m pip install -e ".[dev,experiments]"
-python -m pytest -q -rs
+python -m pytest -q -rfEs
 python -m sdcguard.selftest
 ```
 
@@ -42,18 +48,25 @@ Accelerate integration, install that optional package and run its test explicitl
 package skip a GPU skip. Build/install the wheel outside the source checkout and confirm `sdcguard.__file__`
 points into the installed package before running its selftest and a small offline check.
 
-## 3. Real GPU checks, in this order
+## 3. Planned GPU checks and recorded validation
 
-These commands allocate paid Modal resources. Obtain current pricing and a concrete total cap under the
-founder's existing spending authorization before starting. The hard function timeouts below are runtime
-limits, not a guaranteed dollar ceiling. Do not launch duplicate watchers or use `--force` to work around an
+The next three planned runs are the updated tests, the vLLM integration, then the paired default/precise
+comparison. The table also retains the frozen precise-mode run's history and the later public-sweep gate.
+
+These commands allocate paid Modal resources. Confirm current pricing and the planned nominal allocation
+under the founder's spending authorization before starting. Scalar CPU and memory settings are requests,
+and actual usage can cost more; startup, idle retention and restarted attempts can add charges too
+([resources](https://modal.com/docs/guide/resources), [pricing](https://modal.com/pricing), accessed October 20, 2026).
+The function timeouts below limit execution per attempt, excluding scheduling time; they do not establish a
+strict total bill cap ([timeouts](https://modal.com/docs/guide/timeouts), accessed October 20, 2026).
+Do not launch duplicate watchers or use `--force` to work around an
 active-run lock. A timeout, NOT STARTED message, missing report or nonzero exit is not a passed run.
 
-| Gate | Existing command | Configured maximum allocation | What must be inspected |
+| Gate | Existing command | Configured resources and per-attempt execution limit | What must be inspected |
 |---|---|---|---|
-| Updated training/serving kernels and wheel | `modal run scripts/modal_check.py --phase tests` | One L4, one H100 and one B200, up to 30 minutes each | Full test logs and skip reasons; real training-kernel and serving-kernel comparisons (`tests/_fast_compare.py`, `tests/_serve_fast_compare.py cuda`); installed-wheel selftest/check; all subprocess return codes. The changed training tile buffer has an extra completeness plane. On the B200 this is also the first full test of the Triton kernels without software pipelining, with per-shape kernel timings. Last, with its own time limit and reported separately: the attention check's calibration against its written criteria. |
+| Updated training/serving kernels and wheel | `modal run scripts/modal_check.py --phase tests` | One L4, up to 45 minutes; one H100 and one B200, up to 30 minutes each | Full test logs and skip reasons; real training-kernel and serving-kernel comparisons (`tests/_fast_compare.py`, `tests/_serve_fast_compare.py cuda`); installed-wheel selftest/check; all subprocess return codes. The changed training tile buffer has an extra completeness plane. On the B200 the reviewed candidate needs full validation of the one-stage Triton path, with per-shape kernel timings. Last, with its own time limit and reported separately: the attention calibration's results, including partial or unjudged work. |
 | Experimental precise noise model | `modal run scripts/modal_precise_validate.py` | H100, B200, A100-80GB, L4 and T4, up to 30 minutes each | Ran October 19 on the frozen model (fingerprint 1265b3e0a385): 0 alarms in 17,424 checks, but worst 4.27 (A100) and 4.26 (L4) against 4, and the T4 didn't run. Criteria not met; precise mode stays experimental. Rerunning the same model adds nothing; a revised model needs new held-out workloads and the stricter count gate added here. |
-| Default check vs precise mode, one revision | `modal run scripts/modal_mode_compare.py` | H100, A100-80GB and L4, up to 30 minutes each | Every GPU ran; injected-error detection per size for both checks with 95% intervals, clean false alarms, step times; reported as measured (no pass line, rules in METHOD.md written before the run). |
+| Default check vs precise mode, one revision | `modal run scripts/modal_mode_compare.py` | H100, A100-80GB and L4, up to 30 minutes each | Confirm every GPU completed; inspect injected-error detection per size for both checks with nominal pointwise 95% intervals, clean false alarms and step times. Report all missing or unjudged work (no pass line; October 19 rules and October 20 interpretation clarifications in METHOD.md precede the GPU results). |
 | Current public check and cards | `modal run scripts/modal_check.py --phase sweep` | Ten GPUs across nine functions, up to 15 minutes per function | Supported modes actually completed; no unexpected INCOMPLETE or missing cards; all three fingerprint runs recorded; Blackwell running the Triton kernels (or an intentional opt-out) distinct from a broken kernel; board build succeeds. These are healthy-device controls, not measured defective-device recall. |
 | Actual vLLM integration | `modal run scripts/modal_vllm.py --phase vllm` | One H100, up to 75 minutes | `STATUS.json`, both model reports, compared completions, clean alerts, registered layer checks, injected-layer identification, and per-share summaries. A fallback does not validate the default compiled/CUDA-graph behavior: since October 19 the experiment reports a failure when only a fallback mode passed, and keeps every attempt's files (`guarded_compiled.json` and so on); `SUMMARY.json` says which attempt passed. |
 
@@ -62,10 +75,13 @@ explain what it means before changing coefficients. A post-result threshold chan
 round and needs another held-out comparison, including sensitivity. Zero alarms achieved by widening
 thresholds is not sufficient evidence of a useful detector.
 
-The vLLM experiment now requires, per worker, that every registered layer executed its check (GPU-side
-counts from `ServeGuard.coverage_report()`), that no clean-run checksum went unjudged, and, as before, a
-positive residual in every layer. The counts passed on CPU and in Triton's interpreter on October 19 and
-have not run on a GPU or in vLLM yet: until a vLLM run in compiled mode shows them, don't claim them there.
+The vLLM gate snapshots per-layer GPU counts after warm-up and after measured clean traffic. Every registered layer must advance
+its check count during measured clean traffic, worker/layer reports and aggregate counts must agree, and no
+unjudged count may increase after that boundary. Clean alerts, changed-weight reports or failure to identify
+the injected layer also fail the gate. Startup counts remain visible but cannot satisfy traffic coverage.
+A zero residual is valid when its count advances; a positive residual is not an execution requirement.
+The supplied October 19 notes report CPU/interpreter count tests. The October 20 changes still need real
+GPU/vLLM validation, including explicit evidence of CUDA graph capture and replay rather than eager fallback.
 
 `experiments/demo_vllm.py` is a recording aid. Since October 19 it exits 1 unless the healthy answers raised
 no alert and an alert named the flipped layer, but it checks less than `vllm_check.py` (no output comparison,
@@ -95,8 +111,8 @@ a clearly labeled simulated failure, a portable copied evidence bundle and a rep
 enter the node health cache or the quarantine candidate list. Certificate verification must fail for a missing
 or changed declared artifact; use an independently trusted public key when testing issuer trust.
 
-The H200 MPS reproduction's raw output is in `results/mps_bug` (three runs on October 19). The outside
-review's snapshot didn't include it. NVIDIA's own reports verify the external software bug, not this
+The H200 MPS reproduction's raw output is in `results/mps_bug` (three runs on October 19). The earlier
+`b778d27` review did not include it; the supplied `12e23f5` archive does. NVIDIA's own reports verify the external software bug, not this
 project's reproduction or a physical defect. Keep the GPU identity, MPS share, CUDA/cuBLAS versions and known
 algorithm/configuration together.
 

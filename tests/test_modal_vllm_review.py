@@ -179,6 +179,7 @@ def test_experiment_gate_accepts_real_current_serving_report_fields(monkeypatch)
     monkeypatch.setitem(vllm_plugin._STATE, "guard", guard)
     x = torch.randn(4, 16).bfloat16()
     try:
+        startup = experiment._guard_report(None)
         with torch.no_grad():
             layer(x)
         clean = experiment._guard_report(None)
@@ -186,6 +187,7 @@ def test_experiment_gate_accepts_real_current_serving_report_fields(monkeypatch)
             layer.weight[0, 0].add_(100)
             layer(x)
         after = experiment._guard_report(None)
-        assert experiment._guarded_failures({"clean": [clean], "after_flip": [after], "flipped": ["layer"]}) == []
+        assert experiment._guarded_failures({"startup": [startup], "clean": [clean], "after_flip": [after],
+                                            "flipped": ["layer"]}) == []
     finally:
         guard.detach()

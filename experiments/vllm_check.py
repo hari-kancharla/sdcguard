@@ -35,21 +35,40 @@ def _guarded_failures(result: dict) -> list[str]:
         return ["missing clean, injected-fault or worker reports"]
     if len(clean) != len(after) or len(clean) != len(flipped):
         return ["worker report counts differ"]
-    # counts are cumulative; what start-up (vLLM's profiling run, the warm-up) left is reported, not gated
+    # Counts are cumulative. Start-up does not prove the checks execute in measured traffic: every layer
+    # needs a positive difference across the observed warm-up boundary. Zero residual is valid evidence
+    # when the check counter advanced, so a positive numerical score is not an execution gate.
     startup = result.get("startup")
     if not isinstance(startup, list) or len(startup) != len(clean):
-        startup = [{}] * len(clean)
+        return ["missing or mismatched startup reports: no observed warm-up boundary"]
     for i, (c, a, target, s0) in enumerate(zip(clean, after, flipped, startup)):
-        if not isinstance(c, dict) or not isinstance(a, dict):
+        if not isinstance(c, dict) or not isinstance(a, dict) or not isinstance(s0, dict):
             errors.append(f"worker {i}: malformed reports")
             continue
         layers = c.get("layers", 0)
-        if not isinstance(layers, int) or layers <= 0 or c.get("layers_with_executed_checks") != layers:
+        if type(layers) is not int or layers <= 0 or c.get("layers_with_executed_checks") != layers:
             errors.append(f"worker {i}: not every registered layer executed a check")
-        elif c.get("layers_checked_since_last_read") != layers:
-            errors.append(f"worker {i}: not every registered layer demonstrated a check")
-        un, un0 = c.get("unjudged_checksums"), (s0.get("unjudged_checksums") if isinstance(s0, dict) else 0) or 0
-        if not isinstance(un, int) or not isinstance(un0, int) or un - un0 != 0:
+        before, current = s0.get("layer_counts"), c.get("layer_counts")
+        valid_counts = (isinstance(before, dict) and isinstance(current, dict) and len(current) == layers
+                        and set(before) == set(current) and s0.get("layers") == layers)
+        if valid_counts:
+            valid_counts = all(isinstance(v, dict) and all(type(v.get(k)) is int and v[k] >= 0
+                               for k in ("checks", "unjudged")) for group in (before, current)
+                               for v in group.values())
+        if not valid_counts:
+            errors.append(f"worker {i}: missing or malformed per-layer counts across warm-up")
+        else:
+            stopped = [name for name in current if current[name]["checks"] <= before[name]["checks"]]
+            if stopped:
+                errors.append(f"worker {i}: layers without a check after warm-up: {stopped[:6]}")
+            if any(current[name]["unjudged"] != before[name]["unjudged"] for name in current):
+                errors.append(f"worker {i}: per-layer unjudged counts changed after warm-up")
+            for phase, report, counts in (("startup", s0, before), ("clean", c, current)):
+                if any(report.get(total) != sum(v[key] for v in counts.values())
+                       for total, key in (("checks_executed", "checks"), ("unjudged_checksums", "unjudged"))):
+                    errors.append(f"worker {i}: {phase} count totals disagree with per-layer counts")
+        un, un0 = c.get("unjudged_checksums"), s0.get("unjudged_checksums")
+        if type(un) is not int or type(un0) is not int or min(un, un0) < 0 or un - un0 != 0:
             errors.append(f"worker {i}: clean serving after warm-up had checksums that couldn't be judged (or no count)")
         if c.get("alerts") != [] or c.get("changed_weights") != []:
             errors.append(f"worker {i}: clean serving raised alerts or changed weights")
@@ -120,6 +139,7 @@ def _guard_report(_model):
     cov = g.coverage_report()      # counted on the GPU: checks executed per layer, checksums that couldn't be judged
     return {"layers": g.stats["layers"], "layers_checked_since_last_read": sum(1 for z in worst.values() if z > 0),
             "layers_with_executed_checks": cov["layers_checked"], "checks_executed": cov["checks_executed"],
+            "layer_counts": g.counts(),
             "unjudged_checksums": cov["unjudged_checksums"], "never_checked_sample": cov["never_checked"][:6],
             "triton_layers": sum(g.uses_fast(s) for s in range(len(g.layers))),
             "worst_clean_z": max(finite) if finite else None,

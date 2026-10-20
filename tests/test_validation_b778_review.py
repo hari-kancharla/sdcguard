@@ -80,7 +80,10 @@ def _reports():
                 "output_tokens_per_s": 1000.0, "first_outputs": ["hello"]}
     guarded = {**baseline, "share": "1", "clean": [{"layers": 1, "layers_checked_since_last_read": 1,
                "layers_with_executed_checks": 1, "checks_executed": 7, "unjudged_checksums": 0,
+               "layer_counts": {"layer": {"checks": 7, "unjudged": 0}},
                "alerts": [], "changed_weights": [], "worst_clean_z": 0.2, "triton_layers": 0}],
+               "startup": [{"layers": 1, "checks_executed": 2, "unjudged_checksums": 0,
+                            "layer_counts": {"layer": {"checks": 2, "unjudged": 0}}}],
                "flipped": ["layer"], "after_flip": [{"alerts": [{"where": "layer"}],
                                                       "changed_weights": ["layer"]}]}
     return baseline, guarded
@@ -98,16 +101,22 @@ def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         guarded["clean"][0]["alerts"] = [{"where": "layer"}]
     elif fault == "no_checks":
         guarded["clean"][0]["layers_checked_since_last_read"] = 0
+        guarded["clean"][0]["checks_executed"] = 2
+        guarded["clean"][0]["layer_counts"]["layer"]["checks"] = 2
     elif fault == "not_executed":
         guarded["clean"][0]["layers_with_executed_checks"] = 0
     elif fault == "unjudged":
         guarded["clean"][0]["unjudged_checksums"] = 3
     elif fault == "unjudged_at_startup_only":        # vLLM's profiling run, say: reported, not a failure
         guarded["clean"][0]["unjudged_checksums"] = 3
-        guarded["startup"] = [{"unjudged_checksums": 3}]
+        guarded["clean"][0]["layer_counts"]["layer"]["unjudged"] = 3
+        guarded["startup"][0]["unjudged_checksums"] = 3
+        guarded["startup"][0]["layer_counts"]["layer"]["unjudged"] = 3
     elif fault == "unjudged_after_startup":
         guarded["clean"][0]["unjudged_checksums"] = 3
-        guarded["startup"] = [{"unjudged_checksums": 1}]
+        guarded["clean"][0]["layer_counts"]["layer"]["unjudged"] = 3
+        guarded["startup"][0]["unjudged_checksums"] = 1
+        guarded["startup"][0]["layer_counts"]["layer"]["unjudged"] = 1
     elif fault == "no_counts":
         for key in ("layers_with_executed_checks", "unjudged_checksums"):
             del guarded["clean"][0][key]
