@@ -833,11 +833,13 @@ class ServeGuard:
                                   "row": row, "col_block": block, "noise": noise,
                                   "checksum": "plain" if int(flat) % 2 == 0 else "signed",
                                   "weights_changed_since_load": changed,
-                                  "reading": ("the weight fingerprint changed since load (weights changed "
-                                              "without refresh, or the fingerprint computation disagreed)" if changed else
-                                              "checksum disagreement with an unchanged weight fingerprint; "
-                                              "the cause is not established" if changed is False
-                                              else None)},
+                                  "reading": ("the layer's weights no longer match their load-time checksums: "
+                                              "changed in GPU memory, or updated without calling refresh()"
+                                              if changed else
+                                              "the output disagrees with its checksums while the weights are "
+                                              "unchanged: a wrong matmul result, or a fault in the check's own "
+                                              "GPU arithmetic; rerun the request on another GPU to tell which"
+                                              if changed is False else None)},
                           identity=dict(self._identity[key]))
             self.stats["alerts"] += 1
             self.log.add(ev)
