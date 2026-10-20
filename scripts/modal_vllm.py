@@ -1,6 +1,6 @@
 """The sdcguard vLLM plugin on real vLLM 0.31, on a Modal H100.
 
-    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (at most 75 min, about $6)
+    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (75-minute function limit per attempt)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
@@ -8,8 +8,10 @@ vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on
 
 Costs use Modal's prices (H100 $3.95 an hour; CPU $0.0472 a core-hour and memory $0.008 a GiB-hour, so
 these 8-core, 64 GiB machines cost about $4.84 an hour). If vLLM's default compiled mode fails, the experiment
-also tries two fallback modes, which takes longer (the 75-minute limit still caps it), and it then reports a
+also tries two fallback modes, which takes longer (the 75-minute limit applies to each attempt), and it then reports a
 failure: a fallback doesn't validate the default mode.
+Costs assume requested resources. Higher CPU/memory usage, startup/idle time and execution restarts can add
+charges; the roughly $6 of requested resources for a full-length attempt is not a spending cap.
 
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
 hard time limit, and a phase won't start again within an hour of its last start unless you pass --force.
@@ -19,6 +21,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import tarfile
@@ -63,22 +66,46 @@ vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
 VOLS = {V: vol}
 
 
-def _tee(cmd, log_path, env=None, cwd=R):
+def _tee(cmd, log_path, env=None, cwd=R, timeout: float = 15 * 60):
     """Run a command, stream its output, and write each line to the log as it arrives (Modal commits the
-    volume every few seconds, so a hard time limit loses almost nothing). Never raises: every step runs."""
+    volume periodically). A local deadline ends the process group before the function's limit, preserving
+    the log and allowing the next model and final status to run. Output goes directly to the log file so a
+    child retaining a pipe cannot stall timeout cleanup. An escaped process group is not covered by SIGKILL."""
     print("$ " + " ".join(cmd), flush=True)
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     code = 127
     with open(log_path, "w") as f:
+        if timeout <= 0:
+            f.write("not started: no time remains in this function\n[exit code 125]\n")
+            return 125
         try:
-            p = subprocess.Popen(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                 env={**os.environ, **(env or {})})
-            for line in p.stdout:
-                print(line, end="", flush=True)
-                f.write(line)
-                f.flush()
-            p.wait()
-            code = p.returncode
+            deadline = time.monotonic() + timeout
+            p = subprocess.Popen(cmd, cwd=cwd, stdout=f, stderr=subprocess.STDOUT, start_new_session=True,
+                                 env={**os.environ, **(env or {}),
+                                      "SDCGUARD_RUN_DEADLINE_MONOTONIC": str(deadline - 10)})
+            with open(log_path, errors="replace") as reader:
+                while p.poll() is None:
+                    chunk = reader.read()
+                    if chunk:
+                        print(chunk, end="", flush=True)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        try:
+                            os.killpg(p.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            p.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            pass
+                        code = 124
+                        break
+                    time.sleep(min(0.2, remaining))
+                else:
+                    code = p.returncode
+                print(reader.read(), end="", flush=True)
+            if code == 124:
+                f.write(f"\n(stopped after {timeout / 60:.1f} minutes; process group termination requested)\n")
         except OSError as e:
             f.write(f"(could not run: {e})\n")
         f.write(f"\n[exit code {code}]\n")
@@ -105,6 +132,8 @@ def _locked(phase: str, force: bool) -> str | None:
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
 def vllm(force: bool = False) -> str:
+    t0 = time.monotonic()
+    deadline = t0 + 75 * 60 - 120     # final status and volume commit must precede the hard function limit
     msg = _locked("vllm", force)
     if msg:
         raise RuntimeError(msg)
@@ -113,34 +142,38 @@ def vllm(force: bool = False) -> str:
     if os.path.isdir(out):
         shutil.rmtree(out)
     os.makedirs(out, exist_ok=True)
-    t0 = time.time()
     codes = {}
     try:
         codes["entry_points"] = _tee([sys.executable, "-c", "import importlib.metadata as m; "
               "entries=list(m.entry_points(group='vllm.general_plugins')); print(entries); "
               "assert any(e.name == 'sdcguard' for e in entries), 'sdcguard plugin entry point missing'"],
-              f"{out}/entry_points.txt")
+              f"{out}/entry_points.txt", timeout=min(120, max(0, deadline - time.monotonic())))
         # a small model (fast) and a 7B one (per-layer costs like real deployments); each: without sdcguard,
         # with it on every layer, and on 1/8 of the layers, under vLLM's default torch.compile + CUDA graphs
         if codes["entry_points"] == 0:
-            for tag, model in (("qwen1.5b", "Qwen/Qwen2.5-1.5B-Instruct"), ("qwen7b", "Qwen/Qwen2.5-7B-Instruct")):
+            models = (("qwen1.5b", "Qwen/Qwen2.5-1.5B-Instruct"), ("qwen7b", "Qwen/Qwen2.5-7B-Instruct"))
+            for index, (tag, model) in enumerate(models):
+                # A hung first model must leave time to collect the second model's diagnostics.
+                budget = max(0, deadline - time.monotonic()) / (len(models) - index)
                 codes[tag] = _tee([sys.executable, f"{R}/experiments/vllm_check.py", "--out", f"{out}/{tag}",
-                                   "--model", model, "--shares", "0.125"], f"{out}/{tag}.txt", cwd="/root")
+                                   "--model", model, "--shares", "0.125"], f"{out}/{tag}.txt", cwd="/root",
+                                  timeout=budget)
                 vol.commit()
     finally:
         with open(f"{out}/TIME.txt", "w") as f:
-            f.write(f"{(time.time() - t0) / 60:.1f} minutes on {GPU}\n")
+            f.write(f"{(time.monotonic() - t0) / 60:.1f} minutes on {GPU}\n")
         with open(f"{out}/STATUS.json", "w") as f:
             json.dump({"exit_codes": codes, "passed": len(codes) == 3 and all(c == 0 for c in codes.values())}, f)
         vol.commit()
     if len(codes) != 3 or any(code != 0 for code in codes.values()):
         raise RuntimeError(f"vLLM validation failed: {codes}; diagnostics were saved to {out}")
-    return f"vllm finished in {(time.time() - t0) / 60:.1f} minutes"
+    return f"vllm finished in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
 def demo(force: bool = False) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
+    deadline = time.monotonic() + 15 * 60 - 120
     msg = _locked("demo", force)
     if msg:
         raise RuntimeError(msg)
@@ -148,7 +181,8 @@ def demo(force: bool = False) -> str:
     os.makedirs(out, exist_ok=True)
     code = None
     try:
-        code = _tee([sys.executable, f"{R}/experiments/demo_vllm.py"], f"{out}/demo.txt", cwd="/root")
+        code = _tee([sys.executable, f"{R}/experiments/demo_vllm.py"], f"{out}/demo.txt", cwd="/root",
+                    timeout=max(0, deadline - time.monotonic()))
     finally:
         with open(f"{out}/STATUS.json", "w") as f:
             json.dump({"exit_code": code, "passed": code == 0}, f)
@@ -170,8 +204,10 @@ def bundle() -> bytes:
 
 
 ESTIMATES = {
-    "vllm": "about 25 minutes on 1 H100: roughly $2 (hard limit 75 minutes, about $6)",
-    "demo": "about 5 minutes on 1 H100: roughly $0.40 (hard limit 15 minutes, about $1.20)",
+    "vllm": "about 25 minutes on 1 H100: roughly $2 (75-minute function limit; about $6 at requested resources "
+            "for one full-length attempt, not a spending cap)",
+    "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
+            "resources for one full-length attempt, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 

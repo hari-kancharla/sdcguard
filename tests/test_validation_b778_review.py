@@ -135,7 +135,7 @@ def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
         (tmp_path / f"{name}.json").write_text(json.dumps(guarded if role == "guarded" else baseline))
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr(vllm_experiment.subprocess, "run", completed)
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
     monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
     assert vllm_experiment.main() == (0 if fault in (None, "unjudged_at_startup_only") else 1)
 
@@ -144,7 +144,7 @@ def test_vllm_failed_processes_do_not_accept_stale_results(monkeypatch, tmp_path
     baseline, guarded = _reports()
     for name, value in (("baseline", baseline), ("guarded", guarded), ("vanilla", baseline)):
         (tmp_path / f"{name}.json").write_text(json.dumps(value))
-    monkeypatch.setattr(vllm_experiment.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", lambda *a, **k: SimpleNamespace(returncode=1))
     monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
     assert vllm_experiment.main() == 1
 
@@ -158,7 +158,7 @@ def test_vllm_failed_vanilla_process_is_not_reported_as_success(monkeypatch, tmp
         (tmp_path / f"{name}.json").write_text(json.dumps(guarded if role == "guarded" else baseline))
         return SimpleNamespace(returncode=1 if role == "vanilla" else 0)
 
-    monkeypatch.setattr(vllm_experiment.subprocess, "run", completed)
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
     monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
     assert vllm_experiment.main() == 1
 
@@ -176,7 +176,7 @@ def test_vllm_a_pass_only_in_a_fallback_mode_fails_and_keeps_the_default_modes_e
                                                           guarded if role == "guarded" else baseline))
         return SimpleNamespace(returncode=1 if compiled_triton else 0)
 
-    monkeypatch.setattr(vllm_experiment.subprocess, "run", completed)
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
     monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
     assert vllm_experiment.main() == 1
     assert json.loads((tmp_path / "guarded_compiled.json").read_text())["clean"][0]["unjudged_checksums"] == 7

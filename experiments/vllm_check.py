@@ -19,6 +19,7 @@ import json
 import math
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -292,6 +293,32 @@ def add_share(out: str, tag: str):
     return failures
 
 
+def _run_role_process(cmd, *, env, timeout: float) -> subprocess.CompletedProcess:
+    """Run one role with a deadline, keeping its output in the parent experiment's persistent log.
+
+    A timed-out role and its ordinary child processes are stopped before a fallback starts. Processes that
+    deliberately create another process group are outside this cleanup; the enclosing function limit remains.
+    """
+    if timeout <= 0:
+        print("role not started: experiment time budget exhausted", flush=True)
+        return subprocess.CompletedProcess(cmd, 125)
+    process = subprocess.Popen(cmd, env=env, start_new_session=True)
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        print(f"role stopped after {timeout / 60:.1f} minutes; process group termination requested", flush=True)
+        code = 124
+    return subprocess.CompletedProcess(cmd, code)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--role", choices=["baseline", "guarded", "vanilla"])
@@ -303,14 +330,23 @@ def main():
     p.add_argument("--tag", default=None, help="file name for this run's results (default: the role)")
     p.add_argument("--shares", default="", help="after the main pair, extra guarded runs checking only this "
                    "share of layers, e.g. 0.125,0.25")
+    p.add_argument("--role-timeout", type=float, default=15 * 60,
+                   help="maximum seconds for one role, also bounded by the parent experiment's deadline")
     a = p.parse_args()
+    if not math.isfinite(a.role_timeout) or a.role_timeout <= 0:
+        p.error("--role-timeout must be finite and positive")
     if a.role:
         return run_role(a.role, a.out, a.prompts, a.max_tokens, a.model, a.enforce_eager, a.tag)
     shares = [float(x) for x in a.shares.split(",") if x.strip()]
     def go(role, env=None, extra=()):
         cmd = [sys.executable, __file__, "--role", role, "--out", a.out, "--prompts", str(a.prompts),
                "--max-tokens", str(a.max_tokens), "--model", a.model, *extra]
-        return subprocess.run(cmd, env={**os.environ, **(env or {})}).returncode
+        budget = a.role_timeout
+        deadline = os.environ.get("SDCGUARD_RUN_DEADLINE_MONOTONIC")
+        if deadline is not None:
+            # The runner leaves time after this deadline to stop us and preserve model/phase status.
+            budget = min(budget, float(deadline) - time.monotonic() - 5)
+        return _run_role_process(cmd, env={**os.environ, **(env or {})}, timeout=budget).returncode
 
     # Default: vLLM's torch.compile + CUDA graphs, the check as one custom op per layer (the Triton kernel).
     # If a run fails, fall back so one paid run still gives a matched pair: the PyTorch check traced into the
