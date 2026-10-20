@@ -214,3 +214,99 @@ def test_wait_all_gives_up_only_after_the_cap(monkeypatch):
     out = list(module._wait_all([("h100", Never())], cap=3600, say=lambda *a, **k: None))
     assert len(out) == 1 and out[0][0] == "h100" and out[0][1]["run"] == 2
     assert "still not finished after 1.0 hours" in out[0][1]["text"]
+
+
+def _alive(pid):
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            return "\nState:\tZ" not in f.read()
+    except OSError:
+        return False
+
+
+def test_a_step_that_runs_over_is_stopped_with_its_children_and_keeps_its_output(tmp_path, monkeypatch):
+    module = _load("scripts/modal_check.py", monkeypatch)
+    pidfile = tmp_path / "child.pid"
+    script = (f"python3 -c 'import os, time; open(\"{pidfile}\", \"w\").write(str(os.getpid())); time.sleep(60)' & "
+              "echo started; sleep 60")
+    import time as _t
+    t = _t.time()
+    r = module._step(script, 1.0, floor=0.5, shell=True, executable="/bin/bash")
+    assert r.returncode == 124 and "started" in r.stdout and "processes were killed" in r.stderr
+    assert _t.time() - t < 30
+    for _ in range(50):
+        if pidfile.exists() and pidfile.read_text():
+            break
+        _t.sleep(0.1)
+    pid = int(pidfile.read_text())
+    for _ in range(50):
+        if not _alive(pid):
+            break
+        _t.sleep(0.1)
+    assert not _alive(pid), "the step's child kept running after the step was stopped"
+
+
+def test_a_step_that_finishes_returns_its_output_and_exit_code(monkeypatch):
+    module = _load("scripts/modal_check.py", monkeypatch)
+    r = module._step([sys.executable, "-c", "import sys; print('ok'); sys.exit(3)"], 30)
+    assert r.returncode == 3 and r.stdout.strip() == "ok"
+
+
+def test_wait_all_keeps_asking_through_a_dropped_connection(monkeypatch):
+    module = _wait_module(monkeypatch)
+    clock = [0.0]
+    monkeypatch.setattr(module.time, "time", lambda: clock[0])
+
+    class Flaky:
+        def __init__(self):
+            self.n = 0
+
+        def get(self, timeout=None):
+            clock[0] += 60
+            self.n += 1
+            if self.n < 8:                         # about 8 minutes of errors, then the result
+                raise ConnectionError("connection reset")
+            return {"text": "done", "pytest": 0}
+    out = list(module._wait_all([("l4", Flaky())], cap=3600, say=lambda *a, **k: None))
+    assert out == [("l4", {"text": "done", "pytest": 0})]
+
+    class Dead:
+        def get(self, timeout=None):
+            clock[0] += 60
+            raise ConnectionError("connection reset")
+    out = list(module._wait_all([("h100", Dead())], cap=3600, say=lambda *a, **k: None))
+    assert out[0][1]["run"] == 2 and "the same error for 10 minutes" in out[0][1]["text"]
+
+
+def test_the_gpu_tests_function_reports_failed_tests_and_never_reads_stale_files(tmp_path, monkeypatch):
+    module = _load("scripts/modal_check.py", monkeypatch)
+    repo, out = tmp_path / "repo", tmp_path / "out"
+    for d in ("src", "experiments", "tests", "scripts"):
+        (repo / d).mkdir(parents=True)
+        (repo / d / "x.py").write_text("x = 1\n")
+    out.mkdir()
+    (out / "pytest_l4.txt").write_text("an old run's log")
+    (out / "attention_l4").mkdir()
+    (out / "attention_l4" / "attention_calib.json").write_text('{"old": true}')
+    monkeypatch.setattr(module, "R", str(repo))
+    monkeypatch.setattr(module, "OUT", str(out))
+    monkeypatch.setattr(module, "vol", types.SimpleNamespace(commit=lambda: None))
+    calls = []
+
+    def fake_step(cmd, budget, **kw):
+        calls.append(cmd)
+        text = " ".join(cmd) if isinstance(cmd, list) else cmd
+        if "pytest" in text:
+            return module.subprocess.CompletedProcess(cmd, 1, "...F.\nFAILED tests/test_a.py::test_b - boom\n"
+                                                      "1 failed, 4 passed\n", "")
+        if "attention_calib" in text:
+            return module.subprocess.CompletedProcess(cmd, 124, "partial", "stopped")
+        return module.subprocess.CompletedProcess(cmd, 0, "ALL AGREE\n", "")
+    monkeypatch.setattr(module, "_step", fake_step)
+    r = module._tests("l4")
+    assert "FAILED tests/test_a.py::test_b - boom" in r["text"] and r["pytest"] == 1
+    assert r["attention_json"] is None                      # the old file was cleared, the run was stopped
+    assert not (out / "attention_l4").exists() or not (out / "attention_l4" / "attention_calib.json").exists()
+    log = (out / "pytest_l4.txt").read_text()
+    assert log.startswith("code fingerprint ") and "an old run's log" not in log
+    assert any("-rfEs" in c for c in calls if isinstance(c, list))

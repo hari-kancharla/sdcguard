@@ -26,6 +26,12 @@ def run(x, y, cs, cols=STATE_COLS):
 
 def main(device: str = "cpu"):
     dev = torch.device(device)
+    if dev.type == "cuda":
+        # the layer outputs below are made without a guard: keep bf16/fp16 partial sums in fp32, as ServeGuard does
+        # while it serves (one rounding per output, what the noise model assumes), instead of depending on what an
+        # earlier step left set
+        torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+        torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
     ok_all = True
     g = torch.Generator().manual_seed(3)
     cases = [(64, 256, 300, True), (1, 512, 1000, False), (200, 96, 40, True), (7, 300, 5632 // 4, False),

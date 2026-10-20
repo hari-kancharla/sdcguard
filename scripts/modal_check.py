@@ -1,6 +1,6 @@
 """Run `sdcguard check` on every Modal GPU type at once. These are the results the public board starts with.
 
-    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 25 min, about $5
+    modal run scripts/modal_check.py --phase tests   # tests on an L4, an H100 and a B200, about 30 to 35 min, about $5
     modal run scripts/modal_check.py                 # the sweep, about 12 min, about $4.40
     modal run scripts/modal_check.py --phase b200    # B200 rerun plus a diagnostic, about 10 min, about $1.10
     modal run scripts/modal_check.py --phase fetch   # download the sweep's results again
@@ -23,6 +23,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -34,17 +35,28 @@ import modal
 LOCAL = Path(__file__).resolve().parent.parent
 
 
-def _source() -> dict:
-    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+def _digest(root: Path) -> dict:
+    """Fingerprint of the code under root (src, experiments, tests, scripts), to match it to a commit."""
     import hashlib
     h, n = hashlib.sha256(), 0
     for d in ("src", "experiments", "tests", "scripts"):
-        for p in sorted((LOCAL / d).rglob("*.py")):
+        for p in sorted((root / d).rglob("*.py")):
             if "__pycache__" in p.parts or p.name.startswith("._"):
                 continue
-            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            h.update(str(p.relative_to(root)).encode() + b"\0" + p.read_bytes() + b"\0")
             n += 1
     return {"sha256": h.hexdigest(), "files": n}
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run uploads (on the user's machine)."""
+    return _digest(LOCAL)
+
+
+def _fingerprint(root: Path) -> str:
+    """The same fingerprint, short, of the code a GPU actually has (the copy in its image)."""
+    d = _digest(root)
+    return f"{d['sha256'][:12]} ({d['files']} files)"
 
 
 R = "/root/sdcguard"
@@ -161,31 +173,41 @@ TESTS_LIMIT = {"l4": 45 * 60, "h100": 30 * 60, "b200": 30 * 60}     # each tests
 TESTS_WAIT = 3 * 3600      # how long the terminal waits for all of them, GPU queues included (queued time is free)
 
 
-def _wait_all(calls, cap: float, every: float = 20.0, say=print):
+# a result, not a connection problem: the function hit its own time limit, its output expired, or it raised
+FINAL_ERRORS = ("FunctionTimeoutError", "OutputExpiredError", "RemoteError", "ExecutionError", "InputCancellation")
+
+
+def _wait_all(calls, cap: float, every: float = 20.0, say=print, retry_for: float = 600.0):
     """Yield (label, result) for each spawned call as it finishes, in whatever order they finish, printing what's
     still running every 5 minutes. Waiting one call at a time with a fixed timeout gave up on the H100 and the
-    B200 on Oct 19 while they were still queued or running (TimeoutError after 35, 70 and 105 minutes). A call
-    still pending after `cap` seconds is reported as not finished, with where its logs are."""
+    B200 on Oct 19 while they were still queued or running (TimeoutError after 35, 70 and 105 minutes). Modal's
+    TimeoutError from get(timeout=0) means "not finished yet". Any other error that isn't in FINAL_ERRORS (a
+    dropped connection, say) is asked again for up to `retry_for` seconds before it counts, since giving up
+    ends the app and stops the GPUs still running. A call still pending after `cap` seconds is reported as not
+    finished, with where its logs are."""
     pending = dict(calls)
-    errors = {label: 0 for label in pending}
+    failing_since: dict = {}
     t0 = last = time.time()
     while pending:
         for label, call in list(pending.items()):
             try:
                 r = call.get(timeout=0)
             except Exception as e:  # noqa: BLE001
-                if type(e).__name__ == "TimeoutError" and time.time() - t0 < cap:
-                    errors[label] = 0
+                name = type(e).__name__
+                if name == "TimeoutError" and time.time() - t0 < cap:
+                    failing_since.pop(label, None)
                     continue                      # not finished yet (a function's own time limit raises another error)
-                errors[label] += 1
-                if type(e).__name__ != "TimeoutError" and errors[label] < 3:
-                    continue                      # asked again before giving up: a dropped connection isn't a result
-                r = {"text": f"===== {label}\ncould not run: {type(e).__name__}: {e}"
-                             + (f" (still not finished after {cap / 3600:.1f} hours)" if type(e).__name__ ==
-                                "TimeoutError" else "")
+                if name not in FINAL_ERRORS and name != "TimeoutError":
+                    since = failing_since.setdefault(label, time.time())
+                    if time.time() - since < retry_for:
+                        continue                  # asked again later: a dropped connection isn't a result
+                r = {"text": f"===== {label}\ncould not run: {name}: {e}"
+                             + (f" (still not finished after {cap / 3600:.1f} hours)" if name == "TimeoutError" else
+                                "" if name in FINAL_ERRORS else f" (the same error for {retry_for / 60:.0f} minutes)")
                              + f"\nLogs written before it stopped: modal volume get sdcguard-runs "
-                             f"/check_sweep/pytest_{label}.txt results/gpu_tests/ (also fast_compare_, "
-                             f"serve_compare_, wheel_, tests_cli_output_)", "run": 2}
+                             f"/check_sweep/pytest_{label}.txt results/gpu_tests/ (also started_, fast_compare_, "
+                             f"serve_compare_, wheel_, tests_cli_output_; each starts with the code fingerprint "
+                             f"it ran)", "run": 2}
             del pending[label]
             yield label, r
         if pending:
@@ -194,6 +216,32 @@ def _wait_all(calls, cap: float, every: float = 20.0, say=print):
                 say(f"... {(last - t0) / 60:.0f} minutes in, still running or waiting for a GPU: "
                     f"{', '.join(pending)}", flush=True)
             time.sleep(every)
+
+
+def _step(cmd, budget: float, floor: float = 30.0, **kw) -> subprocess.CompletedProcess:
+    """A step with its own time limit: if it runs over, it's stopped (exit code 124, its output so far kept)
+    and the steps after it still run. The step runs in its own process group and the whole group is killed
+    on a timeout: killing only the direct child left its children (a `sdcguard check` under bash, pytest's
+    subprocesses) holding the GPU while the next step ran."""
+    budget = max(floor, budget)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True,
+                         **kw)
+    try:
+        out, err = p.communicate(timeout=budget)
+        return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            out, err = p.communicate(timeout=60)      # what it wrote before it was stopped (nothing is lost)
+        except subprocess.TimeoutExpired as e:        # something outside the group still holds the pipes
+            p.kill()
+            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+            err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        return subprocess.CompletedProcess(cmd, 124, out or "", (err or "") +
+                                           f"\n(stopped after {budget / 60:.1f} minutes; its processes were killed)")
 
 
 def _tests(label: str, with_bench: bool = False) -> dict:
@@ -211,37 +259,47 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     def left() -> float:                     # seconds before the hard limit, keeping 2 minutes to save and return
         return TESTS_LIMIT[label] - (time.time() - t0) - 120
 
-    def run(cmd, budget: float, **kw) -> subprocess.CompletedProcess:
-        """A step with its own time limit: if it runs over, it's stopped (exit code 124, its output so far kept)
-        and the steps after it still run. On Oct 19 two runs hit the function's hard limit and lost everything."""
-        try:
-            return subprocess.run(cmd, capture_output=True, text=True, timeout=max(30.0, budget), **kw)
-        except subprocess.TimeoutExpired as e:
-            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-            err = e.stderr.decode(errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
-            return subprocess.CompletedProcess(e.cmd, 124, out, err + f"\n(stopped after {budget / 60:.1f} minutes)")
+    run = _step
+
+    def stamp(path: str, text: str) -> None:
+        """Write a step's log with the code fingerprint and the time it was written on top (an old log left on the
+        volume can't pass for this run's)."""
+        with open(path, "w") as f:
+            f.write(f"code fingerprint {fingerprint}, written {time.strftime('%Y-%m-%d %H:%M:%S %Z')}, "
+                    f"{(time.time() - t0) / 60:.1f} minutes in\n" + text)
+
+    fingerprint = _fingerprint(Path(R))
 
     os.makedirs(OUT, exist_ok=True)
+    for name in ("pytest", "fast_compare", "serve_compare", "bench", "wheel", "tests_cli_output"):
+        try:                                   # an earlier run's logs must not be read as this run's
+            os.remove(f"{OUT}/{name}_{label}.txt")
+        except OSError:
+            pass
+    shutil.rmtree(f"{OUT}/attention_{label}", ignore_errors=True)
+    stamp(f"{OUT}/started_{label}.txt", "started\n")
+    vol.commit()
     # the suite gets at most half the function's time, so the comparisons, the wheel and `check` always run;
-    # --durations names the slowest tests, and a test still running after 4 minutes gets every thread's stack
-    # printed (pytest's faulthandler_timeout), so a hang shows where it is
-    p = run([sys.executable, "-m", "pytest", "-q", "-rs", "--durations=25", "-o", "faulthandler_timeout=240", "tests",
-             "--ignore", "tests/test_fast.py"], TESTS_LIMIT[label] * 0.5, cwd=R)
-    with open(f"{OUT}/pytest_{label}.txt", "w") as f:
-        f.write(p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
+    # -rfEs names failed, errored and skipped tests in the summary; --durations names the slowest tests, and a
+    # test still running after 4 minutes gets every thread's stack printed (pytest's faulthandler_timeout)
+    p = run([sys.executable, "-m", "pytest", "-q", "-rfEs", "--durations=25", "-o", "faulthandler_timeout=240",
+             "tests", "--ignore", "tests/test_fast.py"], TESTS_LIMIT[label] * 0.5, cwd=R)
+    stamp(f"{OUT}/pytest_{label}.txt", p.stdout + "\n" + p.stderr + f"\n[exit code {p.returncode}]\n")
+    failed_tests = [ln for ln in p.stdout.splitlines() if ln.startswith(("FAILED", "ERROR"))]
     vol.commit()
     env = {**os.environ, "PYTHONPATH": f"{R}/src"}
     fc = run([sys.executable, "tests/_fast_compare.py", "cuda"], min(8 * 60, left() - 10 * 60), cwd=R, env=env)
-    with open(f"{OUT}/fast_compare_{label}.txt", "w") as f:
-        f.write(fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
+    stamp(f"{OUT}/fast_compare_{label}.txt", fc.stdout + "\n" + fc.stderr + f"\n[exit code {fc.returncode}]\n")
     vol.commit()
     sc = run([sys.executable, "tests/_serve_fast_compare.py", "cuda"], min(8 * 60, left() - 8 * 60), cwd=R, env=env)
-    with open(f"{OUT}/serve_compare_{label}.txt", "w") as f:
-        f.write(sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n[{(time.time() - t0) / 60:.1f} minutes in]\n")
+    stamp(f"{OUT}/serve_compare_{label}.txt", sc.stdout + "\n" + sc.stderr + f"\n[exit code {sc.returncode}]\n")
     vol.commit()
-    bench = None
+    bench, bench_note = None, ""
     if with_bench and left() > 15 * 60:      # per-shape time of the Triton check next to the matmul and the plain check
         bench = run([sys.executable, "experiments/bench_kernels.py"], min(8 * 60, left() - 7 * 60), cwd=R, env=env)
+        stamp(f"{OUT}/bench_{label}.txt", bench.stdout + "\n" + bench.stderr + f"\n[exit code {bench.returncode}]\n")
+    elif with_bench:
+        bench_note = f"Kernel timings: not run, {left() / 60:.1f} minutes left (they need 15).\n\n"
     # The wheel, in a clean environment that sees torch but not the source tree. Every step runs without
     # PYTHONPATH and builds from a copy: with the image's PYTHONPATH (the source tree) and the egg-info an
     # in-tree build leaves there, pip sees sdcguard 0.3.0 as "already installed" and skips the wheel
@@ -260,36 +318,34 @@ def _tests(label: str, with_bench: bool = False) -> dict:
         "/tmp/venv/bin/sdcguard selftest; "
         "/tmp/venv/bin/sdcguard check --minutes 0.5 --offline --out /tmp/run/wheel_check",
         min(6 * 60, left() - 4 * 60), shell=True, executable="/bin/bash")
-    with open(f"{OUT}/wheel_{label}.txt", "w") as f:
-        f.write(whl.stdout + "\n" + whl.stderr + f"\n[exit code {whl.returncode}]\n")
+    stamp(f"{OUT}/wheel_{label}.txt", whl.stdout + "\n" + whl.stderr + f"\n[exit code {whl.returncode}]\n")
     if os.path.isdir(f"{OUT}/tests_cli_{label}"):
         shutil.rmtree(f"{OUT}/tests_cli_{label}")
     c = run([sys.executable, "-m", "sdcguard", "check", "--minutes", "1.5", "--offline", "--out",
              f"{OUT}/tests_cli_{label}"], min(6 * 60, left()), cwd=R)
-    with open(f"{OUT}/tests_cli_output_{label}.txt", "w") as f:
-        f.write(c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
+    stamp(f"{OUT}/tests_cli_output_{label}.txt", c.stdout + "\n" + c.stderr + f"\n[exit code {c.returncode}]\n")
     vol.commit()
     # Last, within the time left (so the rest is never lost to it): the attention check's calibration
-    # (experiments/attention_calib.py; its criteria are in its docstring). Exit 3: not enough time to start.
+    # (experiments/attention_calib.py; its criteria are in its docstring). Exit 3: not enough time to start;
+    # 124: stopped at its time limit; 2: no attention kernel ran.
     budget = min(9 * 60, left())
     if budget < 4 * 60:
         ac = subprocess.CompletedProcess([], 3, "", f"not started: {max(0, budget) / 60:.1f} minutes left")
     else:
+        ac = run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
+                  f"{OUT}/attention_{label}"], budget, cwd=R, env=env)
+    att_json = None
+    if ac.returncode in (0, 1):                # only a finished calibration's file (the folder was cleared above)
         try:
-            ac = subprocess.run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
-                                 f"{OUT}/attention_{label}"], cwd=R, capture_output=True, text=True, env=env,
-                                timeout=budget)
-        except subprocess.TimeoutExpired as e:
-            out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-            ac = subprocess.CompletedProcess(e.cmd, 124, out, f"stopped after {budget / 60:.1f} minutes")
-    try:
-        with open(f"{OUT}/attention_{label}/attention_calib.json") as f:
-            att_json = f.read()
-    except OSError:
-        att_json = None
+            with open(f"{OUT}/attention_{label}/attention_calib.json") as f:
+                att_json = f.read()
+        except OSError:
+            pass
     vol.commit()
     mismatches = [ln for ln in fc.stdout.splitlines() if '"agree": false' in ln]
-    text = (f"===== {label}\n" + p.stdout[-3500:] + f"\n[pytest exit code {p.returncode}]\n\n"
+    text = (f"===== {label}\ncode fingerprint on the GPU: {fingerprint}\n" + p.stdout[-3500:]
+            + (f"\n{len(failed_tests)} failed or errored tests:\n" + "\n".join(failed_tests[:60]) if failed_tests else "")
+            + f"\n[pytest exit code {p.returncode}]\n\n"
             + "Triton vs plain checks on this GPU: " + (fc.stdout.strip().splitlines() or ["(no output)"])[-1]
             + "".join("\n  " + ln[:300] for ln in mismatches) + (fc.stderr[-1500:] if fc.returncode else "")
             + f"\n[fast compare exit code {fc.returncode}]\n\n"
@@ -298,15 +354,20 @@ def _tests(label: str, with_bench: bool = False) -> dict:
             + "".join("\n  " + ln[:300] for ln in sc.stdout.splitlines() if '"agree": false' in ln)
             + (sc.stderr[-1500:] if sc.returncode else "") + f"\n[serve compare exit code {sc.returncode}]\n\n"
             + ("" if bench is None else "Kernel timings (experiments/bench_kernels.py):\n" + bench.stdout[-3000:]
-               + bench.stderr[-800:] + f"\n[bench exit code {bench.returncode}]\n\n")
+               + bench.stderr[-800:] + f"\n[bench exit code {bench.returncode}"
+               + (": stopped at its time limit, timing data only, not a failure" if bench.returncode == 124 else "")
+               + "]\n\n") + bench_note
             + "Installed wheel (fresh venv, outside the source tree):\n" + whl.stdout[-2500:] + whl.stderr[-1500:]
             + f"\n[wheel exit code {whl.returncode}]\n\n"
             + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]\n\n"
             + "Attention check calibration (experiments/attention_calib.py):\n" + ac.stdout[-4000:]
             + (ac.stderr[-1500:] if ac.returncode not in (0, 1) else "")
-            + f"\n[attention calibration exit code {ac.returncode}: 0 criteria met, 1 not met, other: error]")
+            + f"\n[attention calibration exit code {ac.returncode}: 0 criteria met, 1 not met, 2 no kernel ran, "
+            f"3 not started (no time left), 124 stopped at its time limit, other: error]")
+    # (kernel timings stopped at their limit are timing data, not a test failure; a crash is)
+    bench_code = {} if bench is None or bench.returncode == 124 else {"bench": bench.returncode}
     return {"text": text, "pytest": p.returncode, "fast_compare": fc.returncode, "serve_compare": sc.returncode,
-            "wheel": whl.returncode, "check": c.returncode, **({} if bench is None else {"bench": bench.returncode}),
+            "wheel": whl.returncode, "check": c.returncode, **bench_code,
             "attention_calibration": ac.returncode, "attention_json": att_json}
 
 
@@ -456,8 +517,8 @@ def _passed(result: dict) -> bool:
 @app.local_entrypoint()
 def main(phase: str = "sweep", force: bool = False):
     if phase == "tests":
-        print("Tests on an L4, an H100 and a B200 at once: about 25 minutes, about $5 (hard limits 45 minutes "
-              "for the L4 and 30 for the others, about $6.40 in all).", flush=True)
+        print("Tests on an L4, an H100 and a B200 at once: about 30 to 35 minutes once they have GPUs, about $5 "
+              "(hard limits 45 minutes for the L4 and 30 for the others, about $6.40 in all).", flush=True)
         src = _source()
         print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
         calls = [("l4", tests.spawn()), ("h100", tests_h100.spawn()), ("b200", tests_b200.spawn())]
@@ -481,8 +542,10 @@ def main(phase: str = "sweep", force: bool = False):
             att[label] = r.get("attention_calibration")
             failed.update({f"{label} {k}": v for k, v in r.items()
                            if k not in ("text", "attention_json", "attention_calibration") and v != 0})
+        verdicts = {0: "MET", 1: "NOT MET", 2: "no kernel ran", 3: "not started (no time left)",
+                    124: "stopped at its time limit", None: "didn't run"}
         print("Attention check criteria (0 clean alarms, worst at most 4): " + ", ".join(
-            f"{k} {'MET' if v == 0 else 'NOT MET' if v == 1 else f'error ({v})'}" for k, v in att.items()), flush=True)
+            f"{k} {verdicts.get(v, f'error ({v})')}" for k, v in att.items()), flush=True)
         if failed:
             print(f"GPU TESTS FAILED: {failed} (exit codes; sdcguard check: 1 FAIL or SUSPECT, 2 INCOMPLETE). Done.",
                   flush=True)

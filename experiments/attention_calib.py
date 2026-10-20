@@ -215,7 +215,7 @@ def calibrate(dev, say=print) -> dict:
     alarms = sum(r["clean"]["alarms"] for r in ran)
     worst = max((r["clean"]["worst"] for r in ran), default=0.0)
     out = {"runs": runs, "clean_checks": sum(r["clean"]["checks"] for r in ran), "alarms": alarms, "worst": worst,
-           "criteria_met": bool(ran) and alarms == 0 and worst <= 4.0}
+           "criteria_met": bool(ran) and alarms == 0 and worst <= 4.0, "nothing_ran": not ran}
     if dev.type == "cuda":
         out.update(gpu=torch.cuda.get_device_name(dev), cc=list(torch.cuda.get_device_capability(dev)),
                    torch=torch.__version__)
@@ -224,8 +224,9 @@ def calibrate(dev, say=print) -> dict:
 
 def markdown(res: dict) -> str:
     lines = [f"## {res.get('gpu', 'CPU')}: {res['clean_checks']} clean attention backward checks, {res['alarms']} "
-             f"alarms, worst {res['worst']} (criteria {'MET' if res['criteria_met'] else 'NOT MET'}: 0 alarms, "
-             f"worst at most 4)", "",
+             f"alarms, worst {res['worst']} (criteria "
+             f"{'not judged: no kernel ran' if res.get('nothing_ran') else 'MET' if res['criteria_met'] else 'NOT MET'}"
+             f": 0 alarms, worst at most 4)", "",
              "| workload | kernel | clean checks | alarms | worst | " + " | ".join(
                  f"{k}" for k in [f"dV + {m} x rms" for m in MULTS] + [f"output x {p}" for p in POW2]) + " |",
              "|---|---|---|---|---|" + "---|" * (len(MULTS) + len(POW2))]
@@ -256,7 +257,8 @@ def main(argv=None) -> int:
             json.dump(res, f, indent=2, default=str)
         with open(os.path.join(a.out, "attention_calib.md"), "w") as f:
             f.write(md)
-    return 0 if res["criteria_met"] else 1
+    # 0 criteria met, 1 not met, 2 nothing ran (every kernel errored: no verdict either way)
+    return 2 if res.get("nothing_ran") else 0 if res["criteria_met"] else 1
 
 
 if __name__ == "__main__":

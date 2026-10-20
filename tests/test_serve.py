@@ -1,4 +1,5 @@
 """ServeGuard (inference) and the vLLM plugin (against a stand-in for vLLM's classes)."""
+import contextlib
 import math
 import os
 import sys
@@ -293,7 +294,22 @@ def test_alert_says_whether_weights_changed():
 cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs an NVIDIA GPU")
 
 
+@contextlib.contextmanager
+def _fp32_partial_sums():
+    """Layer outputs made without a guard: keep bf16/fp16 partial sums in fp32, as ServeGuard does while it serves,
+    so these GPU tests don't depend on what an earlier test left set (vllm_plugin._exact_reductions sets it for the
+    rest of a process)."""
+    m = torch.backends.cuda.matmul
+    saved = (m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction)
+    m.allow_bf16_reduced_precision_reduction = m.allow_fp16_reduced_precision_reduction = False
+    try:
+        yield
+    finally:
+        m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction = saved
+
+
 @cuda
+@_fp32_partial_sums()
 def test_gpu_fast_serving_check_agrees_and_is_used():
     """On a GPU: the Triton check passes its first-use comparison, is used, and gives the PyTorch
     check's answers on clean and corrupted layers."""
@@ -383,6 +399,7 @@ def test_checksums_stay_fp32_under_a_bf16_default_dtype():
 
 
 @cuda
+@_fp32_partial_sums()
 def test_gpu_no_kernel_compile_while_serving():
     """After add_layer() (which compiles the Triton check for the layer's shape), batches of any size
     must not compile anything (vLLM's JIT monitor flagged compiles during inference before this)."""
