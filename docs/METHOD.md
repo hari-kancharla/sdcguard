@@ -66,6 +66,7 @@ model of a faulty GPU, not a faulty GPU, which is why the NVBit runs below injec
 | round 3 training runs | 48,705 | 0 |
 | serving check on clean inputs | 76,500 layer checks | 0 |
 | October 18 vLLM clean-traffic runs | layer shares and compared outputs described below; predates the executed-count gate | 0 |
+| October 20 vLLM runs, Qwen2.5-1.5B and 7B, every layer and 1 in 8 | 170,688 layer checks, 97,536 of them in measured traffic | 0 (worst score 2.93) |
 | `sdcguard check` sweep, 10 GPUs | 1,683,363 | 0 (worst score 3.67) |
 
 ## Incomplete numerical checks (October 19 review)
@@ -108,8 +109,10 @@ doesn't yet assert exactly one graph per call, and it would pass silently on a P
 image pins 2.14.1, which has it). The counts' own
 overhead is not separately measured. The October 20 review adds per-layer count
 differences between the end of vLLM warm-up and the end of measured traffic: startup activity cannot satisfy the gate,
-and a zero residual is valid when its check count advances. The vLLM gate still needs real capture/replay
-validation inside vLLM; a compiled call that falls back to eager execution does not establish it.
+and a zero residual is valid when its check count advances. The vLLM gate then still needed validation inside
+real vLLM; a compiled call that falls back to eager execution does not establish it. On October 20 it passed
+there, in vLLM's default compiled mode, on the first (compiled) attempt
+([below](#vllm-again-october-20-2026-with-the-executed-count-gate)).
 
 ## Training cost
 
@@ -159,6 +162,56 @@ median of 3 runs ([SUMMARY.json](../results/round3_oct18/vllm/qwen7b/SUMMARY.jso
 flipped in a checked layer was caught in that layer as "weights changed in GPU memory". The runs set
 `VLLM_USE_FLASHINFER_SAMPLER=0`, since FlashInfer's sampler compiles with nvcc at warm-up (decoding is
 greedy either way).
+
+### vLLM again, October 20, 2026, with the executed-count gate
+
+Same benchmark, both models, one H100 80GB, vLLM 0.31.0 in its default mode (torch.compile with piecewise and
+full CUDA graphs), on the code of the head-to-head (fingerprint bbdb51c58ac0; the library code in `src/` is
+unchanged since the GPU tests at 74b844ee7ca8, only the runners changed), [results](../results/vllm_oct20).
+The rules were in [vllm_check.py](../experiments/vllm_check.py) before the run. Each guarded run passes only
+if every registered layer executed a check; every layer's count rose between the end of warm-up and the end of
+the timed traffic; no checksum went unjudged after warm-up; clean traffic raised no alert and changed no
+weight; a weight bit flipped afterwards was named by both the serving check and the weight checksums; and the
+64 compared answers matched plain vLLM's. All four guarded runs passed. Function time 11.7 minutes, about
+$0.94 at Modal's October 20 prices.
+
+| model, layers checked | output tokens/s, plain vLLM / with checks | throughput lost | each request takes longer by | worst clean score |
+|---|---|---|---|---|
+| Qwen2.5-7B, every layer (112) | 22,649 / 17,466 | 22.9% | 29.7% | 2.93 |
+| Qwen2.5-7B, 1 in 8 (15) | 22,649 / 21,697 | 4.2% | 4.4% | 2.10 |
+| Qwen2.5-1.5B, every layer (112) | 37,515 / 33,997 | 9.4% | 10.4% | 2.26 |
+| Qwen2.5-1.5B, 1 in 8 (15) | 37,515 / 35,200 | 6.2% | 6.6% | 2.19 |
+
+"Plain vLLM" is vLLM with sdcguard's fp32 reduction setting and no checks, so the table isolates the checks.
+vLLM with PyTorch's default reductions was 0.1% (7B) and 0.7% (1.5B) faster than that, within run-to-run
+noise. Each figure is the median of three timed runs of 1 to 2 seconds; the first run of a configuration is
+up to 6% slower than the other two, and the 1.5B 1-in-8 figure is the noisiest (its runs were 3% to 8% slower
+than plain).
+
+What it shows:
+
+- **The checks ran on the measured requests.** In every guarded run every layer's count rose by exactly 384
+  during the three timed runs, 128 per run, the number of tokens each request generated: the same for every
+  layer, both models and both shares. Startup and warm-up added 288 per layer and are excluded. No checksum
+  went unjudged. One check per layer per forward step would give exactly this if each run's prompts were
+  processed in its first step; vLLM's own step count wasn't logged, so that match, and whether the decode steps
+  ran as CUDA graph replays, are inferences from the counts, not measurements.
+- **No false alarms and no changed answers.** 0 alerts in 170,688 layer checks (97,536 in measured traffic),
+  worst score 2.93 against the alarm line of 6; 64 of 64 compared answers word for word the same as plain
+  vLLM's in all four runs.
+- **The injected fault was named.** A high exponent bit flipped in one weight of `model.layers.10.mlp.down_proj`
+  (`layers.11` in the 1-in-8 runs, the middle checked down projection) was flagged in that layer by the serving
+  check and by the weight checksums. That flip makes outputs non-finite, an easy fault; this run shows nothing
+  about subtle faults inside vLLM.
+- **Cost.** On the 7B model it matches October 18 for every layer (22.9% against 22%), but the 1-in-8 cost of
+  the checks themselves is higher (4.2% against 1.7%). What changed in between includes the per-layer counters
+  added on October 19, whose own cost isn't separately measured. Dividing the extra time of a median run by
+  128 steps and 112 layers gives roughly 30 microseconds per check on the 7B model and 6 on the 1.5B, whose
+  layers are about half as wide: the check's cost grows faster than layer width. That is a tuning target, not
+  yet investigated.
+
+Limits: one H100, the offline API, greedy decoding, one batch shape (256 prompts x 128 tokens), two models,
+synthetic prompts, one injected fault of one kind.
 
 How it works: weights don't change while serving, so the weight side of each check is computed once at
 load. Each checked layer then costs one extra cuBLAS call and one Triton kernel, which reads the layer's input

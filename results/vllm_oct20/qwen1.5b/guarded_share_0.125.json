@@ -1,0 +1,356 @@
+{
+ "role": "guarded",
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "vllm": "0.31.0",
+ "enforce_eager": false,
+ "opaque_op": false,
+ "share": "0.125",
+ "load_seconds": 59.2,
+ "startup": [
+  {
+   "layers": 15,
+   "layers_checked_since_last_read": 15,
+   "layers_with_executed_checks": 15,
+   "checks_executed": 4320,
+   "layer_counts": {
+    "model.layers.0.self_attn.qkv_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.1.self_attn.o_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.3.self_attn.o_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.4.mlp.gate_up_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.6.mlp.gate_up_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.8.mlp.gate_up_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.9.mlp.down_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.11.mlp.down_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.15.self_attn.qkv_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.17.self_attn.qkv_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.18.self_attn.o_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.20.self_attn.o_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.22.self_attn.o_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.23.mlp.gate_up_proj": {
+     "checks": 288,
+     "unjudged": 0
+    },
+    "model.layers.25.mlp.gate_up_proj": {
+     "checks": 288,
+     "unjudged": 0
+    }
+   },
+   "unjudged_checksums": 0,
+   "never_checked_sample": [],
+   "triton_layers": 15,
+   "worst_clean_z": 2.024594783782959,
+   "alerts": [],
+   "changed_weights": [],
+   "names_sample": [
+    "model.layers.0.self_attn.qkv_proj",
+    "model.layers.1.self_attn.o_proj",
+    "model.layers.3.self_attn.o_proj",
+    "model.layers.4.mlp.gate_up_proj",
+    "model.layers.6.mlp.gate_up_proj",
+    "model.layers.8.mlp.gate_up_proj"
+   ]
+  }
+ ],
+ "seconds": 0.931,
+ "seconds_each_run": [
+  0.94,
+  0.931,
+  0.9
+ ],
+ "output_tokens": 32768,
+ "prompt_tokens": 57648,
+ "output_tokens_per_s": 35199.5,
+ "total_tokens_per_s": 97125.2,
+ "first_outputs": [
+  " to improve the performance of a new supercomputer.\n\nThe sentence is a metaphorical statement that compares the process of checking every matrix multiply on thousands of graphics processors to the quick brown fox jumping over a lazy dog. It suggests that the engineers are working hard to improve the performance of a new supercomputer by optimizing matrix multiplication operations on multiple graphics processors. The metaphorical nature of the sentence emphasizes the effort and dedication required to achieve the desired outcome. The sentence is a creative way of conveying the idea of optimizing matrix multiplication operations on multiple graphics processors to improve the performance of a supercomputer. The metaphorical nature of the sentence emphasizes the effort and dedication",
+  " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+  " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+  " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+  " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+  " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+  " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+  " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+  " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+  " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+  " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+  " check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to ensure the numbers are accurate. The quick brown fox jumps over a lazy dog while engineers verify every matrix multiply on thousands of graphics processors to make sure the numbers are correct. The quick brown fox jumps over a lazy dog while engineers validate every matrix multiply on thousands of graphics processors to ensure the numbers are accurate. The quick brown fox jumps over a lazy dog while engineers audit every matrix multiply on thousands of graphics processors to make sure the numbers are correct. The",
+  " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+  " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+  " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+  " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+  " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+  " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+  " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+  " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+  " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+  " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+  " brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox jumps over a lazy dog while the numbers are right the quick brown fox",
+  " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+  " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+  " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+  " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+  " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+  " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+  " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+  " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+  " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+  " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+  " to make sure the numbers are right. The quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to ensure the calculations are accurate. The quick brown fox jumps over a lazy dog while engineers verify the accuracy of every matrix multiply on thousands of graphics processors. The quick brown fox jumps over a lazy dog while engineers ensure the correctness of every matrix multiply on thousands of graphics processors. The quick brown fox jumps over a lazy dog while engineers validate the accuracy of every matrix multiply on thousands of graphics processors. The quick brown fox jumps over a lazy dog while engineers confirm the correctness of every matrix multiply on thousands of",
+  " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+  " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+  " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+  " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+  " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+  " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+  " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+  " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+  " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+  " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+  " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+  " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+  " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+  " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+  " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+  " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+  " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+  " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+  " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+  " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+  " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+  " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+  " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+  " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+  " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+  " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+  " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+  " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+  " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+  " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick"
+ ],
+ "clean": [
+  {
+   "layers": 15,
+   "layers_checked_since_last_read": 15,
+   "layers_with_executed_checks": 15,
+   "checks_executed": 10080,
+   "layer_counts": {
+    "model.layers.0.self_attn.qkv_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.1.self_attn.o_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.3.self_attn.o_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.4.mlp.gate_up_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.6.mlp.gate_up_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.8.mlp.gate_up_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.9.mlp.down_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.11.mlp.down_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.15.self_attn.qkv_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.17.self_attn.qkv_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.18.self_attn.o_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.20.self_attn.o_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.22.self_attn.o_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.23.mlp.gate_up_proj": {
+     "checks": 672,
+     "unjudged": 0
+    },
+    "model.layers.25.mlp.gate_up_proj": {
+     "checks": 672,
+     "unjudged": 0
+    }
+   },
+   "unjudged_checksums": 0,
+   "never_checked_sample": [],
+   "triton_layers": 15,
+   "worst_clean_z": 2.191664457321167,
+   "alerts": [],
+   "changed_weights": [],
+   "names_sample": [
+    "model.layers.0.self_attn.qkv_proj",
+    "model.layers.1.self_attn.o_proj",
+    "model.layers.3.self_attn.o_proj",
+    "model.layers.4.mlp.gate_up_proj",
+    "model.layers.6.mlp.gate_up_proj",
+    "model.layers.8.mlp.gate_up_proj"
+   ]
+  }
+ ],
+ "flipped": [
+  "model.layers.11.mlp.down_proj"
+ ],
+ "after_flip": [
+  {
+   "layers": 15,
+   "layers_checked_since_last_read": 15,
+   "layers_with_executed_checks": 15,
+   "checks_executed": 10320,
+   "layer_counts": {
+    "model.layers.0.self_attn.qkv_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.1.self_attn.o_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.3.self_attn.o_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.4.mlp.gate_up_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.6.mlp.gate_up_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.8.mlp.gate_up_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.9.mlp.down_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.11.mlp.down_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.15.self_attn.qkv_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.17.self_attn.qkv_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.18.self_attn.o_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.20.self_attn.o_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.22.self_attn.o_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.23.mlp.gate_up_proj": {
+     "checks": 688,
+     "unjudged": 0
+    },
+    "model.layers.25.mlp.gate_up_proj": {
+     "checks": 688,
+     "unjudged": 0
+    }
+   },
+   "unjudged_checksums": 0,
+   "never_checked_sample": [],
+   "triton_layers": 15,
+   "worst_clean_z": 2.191664457321167,
+   "alerts": [
+    {
+     "where": "model.layers.11.mlp.down_proj",
+     "max_z": Infinity,
+     "nonfinite": true,
+     "row": 79,
+     "col_block": 0,
+     "noise": Infinity,
+     "checksum": "plain",
+     "weights_changed_since_load": true,
+     "reading": "the layer's weights changed since load (they no longer match their load-time checksums): in GPU memory, or updated without calling refresh()",
+     "gpu": "GPU-535d165f-18c5-feaa-ca18-9243074e5aca",
+     "gpu_name": "NVIDIA H100 80GB HBM3"
+    }
+   ],
+   "changed_weights": [
+    "model.layers.11.mlp.down_proj"
+   ],
+   "names_sample": [
+    "model.layers.0.self_attn.qkv_proj",
+    "model.layers.1.self_attn.o_proj",
+    "model.layers.3.self_attn.o_proj",
+    "model.layers.4.mlp.gate_up_proj",
+    "model.layers.6.mlp.gate_up_proj",
+    "model.layers.8.mlp.gate_up_proj"
+   ]
+  }
+ ]
+}
