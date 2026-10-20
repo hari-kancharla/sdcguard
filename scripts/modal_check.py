@@ -519,12 +519,14 @@ def _download() -> None:
     n = 0
     for card in sorted((dest / "board_seed").glob("*/*/result.json")):
         label, gpu = card.parent.parent.name, card.parent.name
-        if label == "tests_cli":                    # the 1.5-minute test run, not part of the sweep
+        if label == "tests_cli" or label.startswith("tests_cli_"):   # release smoke tests, not the sweep
             continue
         shutil.copy(card, seed / f"modal_{label}_{gpu[-8:]}.json")
         n += 1
     print(f"Results: {dest / 'board_seed'} ({len(data) / 1e6:.1f} MB); {n} result cards in {seed}", flush=True)
-    pngs = sorted((dest / "board_seed").glob("h100_a/*/card.png")) or sorted((dest / "board_seed").glob("*/*/card.png"))
+    pngs = sorted((dest / "board_seed").glob("h100_a/*/card.png")) or [
+        p for p in sorted((dest / "board_seed").glob("*/*/card.png"))
+        if p.parent.parent.name != "tests_cli" and not p.parent.parent.name.startswith("tests_cli_")]
     if pngs:
         (LOCAL / "docs" / "img").mkdir(parents=True, exist_ok=True)
         shutil.copy(pngs[0], LOCAL / "docs" / "img" / "example_card.png")
