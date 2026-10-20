@@ -34,6 +34,7 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 | Attention checks, calibration | Oct 20, L4, H100, B200 | criteria met in bf16 (worst clean backward score 0.139) | positive, limited scope | [METHOD.md](METHOD.md#what-the-calibration-found-october-20-2026) |
 | GPU test suite | Oct 19-20, L4, H100, B200 | passed at fingerprint 74b844ee7ca8 | positive | [results/gpu_tests](../results/gpu_tests) |
 | H200 preflight for the head-to-head | Oct 20, Modal H200 | GO: under MPS below 100%, only cuBLASLt algorithm 66 with 4+ CTA clusters went wrong (20 of 32 runs at 40%, 10 of 32 at 14%); 1x1x1 workaround right; DCGM ran as an MPS client; its Hgemm at 2048 was right at every share | positive (the bug as published) | [result](../results/h2h/preflight_h200_20261020_055833.json) |
+| Head-to-head on cuBLAS known issue 6862950 (one H200, MPS shares 100, 40, 75, 14) | Oct 20, Modal H200 | sdcguard check DETECTED at 40, 75 and 14, passed at 100; DCGM's diagnostic and gpu-burn passed everywhere and were NOT EXERCISED: their own GEMMs were right at every share (DCGM's FP16 GEMMs used algorithm 39, 1x2x1 cluster); one Xid 31 of unknown cause, no step affected | positive, with its limits (one GPU, one bug) | [summary](../results/h2h/h200_20261020_060928.md) |
 | A naturally defective GPU | never | none has been found or tested | gap | |
 | Real users or production incidents | never | none yet | gap | |
 
@@ -43,6 +44,5 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 |---|---|---|
 | Default check vs precise mode on the same matmuls | Oct 19 | [METHOD.md](METHOD.md#the-default-check-and-precise-mode-on-the-same-matmuls-written-october-19-2026-before-any-gpu-run) |
 | vLLM plugin in real vLLM (compiled mode) | Oct 19-20 | scripts/modal_vllm.py |
-| Head-to-head on cuBLAS known issue 6862950: DCGM diagnostic, gpu-burn, sdcguard check | Oct 20 | same |
 
 When a run finishes, its row moves to section 2 with its result, whatever it is.

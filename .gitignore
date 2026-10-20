@@ -17,3 +17,6 @@ screen_out/
 fleet_report/
 *.key
 results/board_seed/
+# raw logs downloaded by the paid runners (gigabytes; they stay on the Modal volumes and on disk)
+results/h2h/*_logs/
+results/h2h/preflight_logs_full/

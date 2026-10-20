@@ -567,6 +567,48 @@ question.
 - Two runner bugs found and fixed before the full run: the raw-log download stopped at the first folder (Modal's
   file type is an integer enum), and the cuBLASLt log summary cut lines before the algorithm field.
 
+**What the head-to-head found** (October 20, 2026, from 05:09 Chicago time, one Modal H200, GPU-06a92759, driver
+610.57.04, code fingerprint bbdb51c58ac0, [summary](../results/h2h/h200_20261020_060928.md),
+[result](../results/h2h/h200_20261020_060928.json)). All 12 planned cells measured; the raw logs (3.8 GB) are on the
+Modal volume sdcguard-h2h and on Hari's disk, not in git.
+
+| share (SMs) | DCGM diagnostic | gpu-burn -tc | sdcguard check | PyTorch's own matmuls (ground truth) |
+|---|---|---|---|---|
+| 100 (132) | NOT EXERCISED, pass | NOT EXERCISED, OK | NOT EXERCISED, PASS | right |
+| 40 (52) | NOT EXERCISED, pass | NOT EXERCISED, OK | **DETECTED**, FAIL | wrong |
+| 75 (98) | NOT EXERCISED, pass | NOT EXERCISED, OK | **DETECTED**, FAIL | wrong (weight gradients) |
+| 14 (18) | NOT EXERCISED, pass | NOT EXERCISED, OK | **DETECTED**, FAIL | wrong |
+
+Extras at 40%: DCGM with FP16 only and gpu-burn's default FP32 mode, both NOT EXERCISED (pass, OK).
+
+- Why DCGM and gpu-burn were NOT EXERCISED, not MISSED: the probe made their exact calls (Hgemm, Sgemm, Sgemm with
+  tensor-op math, Dgemm, at 2048 and 8192) as MPS clients at every share, and every one was right. DCGM's own
+  cuBLASLt log at 40% shows its FP16 GEMMs used algorithm 39 with a 1x2x1 cluster, never algorithm 66, so the bug
+  could not reach its test. Every tool connected as an MPS client at every share (4 new MPS connections during
+  each step). Neither tool was wrong to pass its own test; what this shows is that a diagnostic that runs its own
+  GEMMs can't vouch for the kernels a job runs.
+- What went wrong where it was wrong: FP16 and BF16 GemmEx (PyTorch's path) at 40% and 75%; the 16 x 2048 x 1000
+  layer at 40% and 14% (outputs never written); weight gradients at 75%; FP16, BF16 and FP8 math modes at 40% and
+  75%. cuBLASLt directly: 20 of 32 algorithm runs wrong at 40%, 16 at 75%, 10 at 14%, all algorithm 66 with 4 or
+  more CTAs per cluster; the 1x1x1 workaround right every time.
+- sdcguard check's counts (wrong results in training, serving, stress, math modes): 40%: 130, 14,680, 2,984, 72;
+  75%: 25, 11,980, 0, 72; 14%: 12,288, 3,072, 0, 0. At 40% and 75% most training checks couldn't be judged (the
+  wrong outputs made values non-finite: 67,673 of 67,803 at 40%), and the card says so; the verdict came from the
+  checks that could be judged. At 100%: PASS, 0 wrong, no false alarm.
+- The pre-registered predictions: DCGM at 40% was "about even odds"; it passed, and the probe and its log show
+  why. gpu-burn: pass, as predicted. sdcguard: FAIL at 40% and 75% as predicted, and at 14%, which was
+  "uncertain". 100%: all pass, as predicted.
+- One unexplained event: Modal's host monitor logged an Xid 31 (GPU memory page fault, a write to an unmapped
+  address) on this run's GPU between about minutes 25 and 30, when DCGM's FP16-only and traced runs, gpu-burn's
+  default mode and the start of the 75% share ran. No step reported an error, sdcguard check's hardware-error field
+  stayed empty, and the 100% recheck at the end was right on every call. NVIDIA's Xid catalog says Xid 31 is
+  "typically" an application-level bug but can be a driver or hardware bug; its immediate action is restarting
+  the application, not a reset or RMA ([catalog](https://docs.nvidia.com/deploy/xid-errors/610/analyzing-xid-catalog.html)).
+  Which process caused it isn't known from inside the container; it changes no cell, because each cell is judged
+  against that tool's own GEMMs measured at the same share.
+- Limits: one GPU, one software bug, one run, sdcguard's own author running it. It says nothing about physically
+  defective GPUs or other bugs.
+
 **Cost**, at Modal's prices on October 20: about $5 for a typical hour on the H200. The 80-minute execution limit
 is about $6.60 at the requested CPU and memory. That limit is per attempt, excluding queueing; higher actual use,
 startup and a restart after preemption can add cost. The preflight is about $1 (about $1.65 at its 20-minute limit).
