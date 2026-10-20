@@ -15,15 +15,17 @@ actually checked and the noise model; an alert starts an investigation, rather t
 
 ## Check a GPU
 
+This source tree is an unpublished alpha release candidate. From the reviewed checkout:
+
 ```bash
-pip install sdcguard
+python -m pip install -e ".[all]"
 sdcguard check            # every GPU on this machine, about 5 minutes
-sdcguard check --share    # same, plus a link that posts your result to the public board
+sdcguard check --share    # same, plus an issue link to review and submit to the public board
 ```
 
-This source tree is an alpha release candidate. Until its matching wheel is published, install this checkout
-with `python -m pip install -e ".[all]"`. A package with the same version number is not evidence that it contains
-this checkout's changes.
+Use a published package only after its wheel is matched to the reviewed source. A package with the same
+version number is not evidence that it contains this checkout's changes. GPU validation of the October 20
+review fixes is pending; precise mode and attention checking remain experimental.
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
 
@@ -76,16 +78,16 @@ for step, (x, y) in enumerate(loader):
         print(guard.log.events[0].to_json()); break
 ```
 
-Earlier H100 measurements reported 1.7% overhead on GPT-2 small and 1.3% on a 0.9B model when checking every
+October 18 H100 measurements reported 1.7% overhead on GPT-2 small and 1.3% on a 0.9B model when checking every
 20th step. These measurements apply to the tested default mode and software. The checks only
 read; with `exact_reductions=False` the gradients are bit-identical to a run without sdcguard (one exception:
 a protected layer's weight also used directly by another op in the same autocast region, where the two uses
 get separate bf16 copies of the weight).
 
 `SDCGuard(every=20, precise=True)` checks the fp32 GEMM result consumed by a protected layer before it is
-rounded to bf16/fp16. It is experimental: on October 19 its frozen noise model raised no false alarm in 17,424
+rounded to bf16/fp16. It is experimental: on October 19 its frozen noise model (fingerprint `1265b3e0a385`) raised no false alarm in 17,424
 held-out checks on four GPUs but missed the margin set before the run on the A100 and L4 (worst score 4.27
-against 4), and checking every step made each step 260% to 790% slower. It does not inherit the
+and 4.26 against 4), and checking every step made each step 260% to 790% slower. It does not inherit the
 default mode's overhead or false-alarm results, and it keeps the block-level masking and cancellation limits;
 see [METHOD.md](docs/METHOD.md).
 
@@ -99,7 +101,7 @@ SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
 ```
 
 `SDCGUARD_SHARE=0.125` checks one linear layer in eight, spread over every kind of layer and depth. In
-the earlier vLLM offline benchmark with Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
+the October 18 vLLM offline benchmark with Qwen2.5-7B on an H100 that cost 3% of throughput (22,612 vs 23,294 tokens/s) and the answers compared were
 word for word the same as plain vLLM's. Checking every layer cuts throughput by 22% for now. Weight checksums are computed
 once at load, which can reveal later memory changes affecting selected layers. Checking one layer in eight
 reduces coverage as well as cost; the fault must affect a selected layer and exceed its detection threshold.
@@ -121,6 +123,8 @@ the inputs can explain). The counts are kept on the GPU next to each layer's wor
 it. A worst score of 0 alone (`worst_z()`) can't tell a clean layer from one that never ran; use the counts
 for that. `coverage_report()`, `counts()` and `worst_z()` wait for GPU readback; `poll()` doesn't. (The
 counts are new on October 19: tested on CPU and in Triton's interpreter, GPU run pending.)
+When validating traffic, compare each layer's counts before and after the measured requests. Startup
+profiling can advance lifetime counts without establishing that a check ran on those requests.
 
 ## Across a fleet
 
@@ -165,6 +169,10 @@ GPUs the checks run as Triton kernels, which first have to match the plain PyTor
 is used instead. Serving reads results back without stalling the GPU; training reads them once at the end of
 each checked step.
 
+Some older timing and soak artifacts do not record a source commit or fingerprint, so their exact revision
+cannot be recovered from this review archive. Their dates and linked results identify historical observations;
+they do not validate the patched candidate.
+
 A current software example: NVIDIA's [CUDA 13.4 Update 2 release notes](https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html)
 (updated October 12, 2026) list cuBLAS known issue 6862950: on Hopper, GEMM kernels can produce incorrect FP16,
 BF16 and FP8 results when the process is an MPS client with `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` below 100
@@ -196,9 +204,10 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 | Not supported on checked steps | `torch.func` transforms (vmap, grad) and `torch.compile(fullgraph=True)`: fast mode runs checked steps' linear layers eagerly |
 | Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD, Apple GPUs (only the operator mapping is unit-tested) |
 
-On Blackwell (B200) the Triton kernels run without software pipelining: with it, they hit a "misaligned
-address" fault whose cause isn't known yet ([METHOD.md](docs/METHOD.md#blackwell-the-triton-kernel-fault-bisected-october-19-2026)).
-The full test suite on a B200 with this change is pending; `SDCGUARD_TRITON_NEW_ARCH=0` switches back to the
+On data-center Blackwell (compute capability 10, including B200), the Triton dot-product comparison paths
+use `num_stages=1`. The reported pipelined comparison hit a "misaligned address" fault whose cause isn't
+known yet ([METHOD.md](docs/METHOD.md#blackwell-the-triton-kernel-fault-bisected-october-19-2026)).
+GPU validation of the reviewed candidate on a B200 is pending; `SDCGUARD_TRITON_NEW_ARCH=0` switches back to the
 plain PyTorch checks.
 
 ## More
@@ -210,7 +219,8 @@ plain PyTorch checks.
 - [results/](results/): raw output of the GPU runs (runs since October 19 record the code fingerprint they ran)
 - To reproduce: `pip install -e ".[experiments,dev]" && pytest -q`, then the Modal scripts in
   [scripts/](scripts/). Runner prices are estimates from earlier runs; confirm current rates and the hard
-  time limits before allocating GPUs. Follow [docs/RELEASE_VALIDATION.md](docs/RELEASE_VALIDATION.md) for the release gates.
+  time limits before allocating GPUs. CPU/memory requests and execution timeouts do not form a strict bill cap.
+  Follow [docs/RELEASE_VALIDATION.md](docs/RELEASE_VALIDATION.md) for the release gates.
 
 ## Status
 

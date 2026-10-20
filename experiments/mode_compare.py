@@ -53,10 +53,10 @@ CONFIG = {"cuda": dict(vocab=32000, layers=8, width=1024, heads=16, seq=512, bat
 
 
 def code_digest() -> str:
-    """SHA-256 of the package and this script, so every number here is tied to the code that produced it."""
+    """SHA-256 of the package and experiment helpers, including the step-time implementation."""
     h = hashlib.sha256()
     pkg = os.path.join(HERE, "..", "src", "sdcguard")
-    for f in sorted(os.listdir(pkg)) + ["../../experiments/mode_compare.py"]:
+    for f in sorted(os.listdir(pkg)) + ["../../experiments/mode_compare.py", "../../experiments/precise_models.py"]:
         p = os.path.normpath(os.path.join(pkg, f))
         if p.endswith(".py") and os.path.isfile(p):
             h.update(os.path.basename(p).encode() + b"\0" + open(p, "rb").read() + b"\0")
@@ -76,11 +76,13 @@ def _wilson(k: int, n: int) -> tuple:
 
 def _crossing(rates: list, level: float):
     """The error size at which a check flags `level` of the trials (log-linear between measured sizes)."""
+    if rates and rates[0] is not None and rates[0] >= level:
+        return SIZES[0]                      # already above the level; only an upper bound is measured
     for (s0, r0), (s1, r1) in zip(zip(SIZES, rates), zip(SIZES[1:], rates[1:])):
         if r0 is not None and r1 is not None and r0 < level <= r1:
             t = (level - r0) / (r1 - r0)
             return float(f"{math.exp(math.log(s0) + t * (math.log(s1) - math.log(s0))):.2g}")
-    return SIZES[0] if rates and rates[0] is not None and rates[0] >= level else None
+    return None
 
 
 def _inject_and_check(A, B, C32, bias, nfma, epoch, low, gen, trials):
@@ -99,6 +101,7 @@ def _inject_and_check(A, B, C32, bias, nfma, epoch, low, gen, trials):
         blk = C32[i, lo:min(n, lo + 128)].double()
         typical = float(blk.norm()) / math.sqrt(blk.numel())
         if not (typical > 0 and math.isfinite(typical)):
+            queued.append(("skipped_scale", None, None, None, None))
             continue
         v = C32[i, j].clone()
         for s_i, e in enumerate(SIZES):
@@ -126,7 +129,7 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
     changed = [0] * k_sizes
     clean = {key: {"checks": 0, "false_alarms": 0, "unjudged": 0, "worst_z": 0.0} for key in ("default", "precise")}
     by_pass: dict = {}
-    seen = {"matmuls": 0, "skipped": 0}
+    seen = {"matmuls": 0, "skipped": 0, "capped": 0, "skipped_scale": 0}
 
     def drain(queued, key_pass):
         stats = [s for q in queued for s in (q[2], q[3]) if s is not None]
@@ -136,12 +139,16 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
         flags = [bool(next(bits)) if q[4] is not None else None for q in queued]
         for q, ch in zip(queued, flags):
             kind, s_i = q[0], q[1]
+            if kind == "skipped_scale":
+                seen["skipped_scale"] += 1
+                continue
             zs = {}
             for key, st in (("default", q[2]), ("precise", q[3])):
                 zs[key] = float(next(res).max_z) if st is not None else None
             if kind == "clean":
                 for key, z in zs.items():
                     if z is None:
+                        clean[key]["unjudged"] += 1
                         continue
                     clean[key]["checks"] += 1
                     clean[key]["false_alarms"] += z > ALARM
@@ -157,7 +164,7 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
                 hit = z is not None and z > ALARM
                 tally[key]["flag"][s_i] += hit
                 tally[key]["flag_changed"][s_i] += hit and ch
-                tally[key]["unjudged"][s_i] += z is not None and z < 0
+                tally[key]["unjudged"][s_i] += z is None or z < 0
                 bp[key][s_i] += hit
 
     def grab(self, name, pass_, A, B, C32, bias):
@@ -168,7 +175,7 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
                 drain(q, f"{name.split('.')[-1]} {pass_}")
             seen["matmuls"] += 1
         elif state["active"]:
-            seen["skipped"] += 1
+            seen["capped" if max_matmuls and seen["matmuls"] >= max_matmuls else "skipped"] += 1
         return orig(self, name, pass_, A, B, C32, bias)
 
     state = {"active": True}
@@ -189,19 +196,24 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
             say(f"step {step}: {seen['matmuls']} matmuls, {sum(trials)} corrupted checks of each kind")
     finally:
         state["active"] = False
-        g.unprotect()
-        SDCGuard._accumulator = orig
+        try:
+            g.unprotect()
+        finally:
+            SDCGuard._accumulator = orig
     seconds = round(time.time() - t0, 1)
 
     def rates(counts, denom):
         return [None if d == 0 else c / d for c, d in zip(counts, denom)]
     out = {"sizes": list(SIZES), "trials": trials, "matmuls": seen["matmuls"], "matmuls_not_2d": seen["skipped"],
+           "matmuls_capped": seen["capped"], "trials_skipped_scale": seen["skipped_scale"], "changed_trials": changed,
            "changed_bf16_output": rates(changed, trials), "clean": clean, "dtype": str(low).replace("torch.", ""),
            "config": cfg, "seconds_sensitivity": seconds, "guard_stats": dict(g.stats)}
     for key in ("default", "precise"):
         fr = rates(tally[key]["flag"], trials)
         fc = rates(tally[key]["flag_changed"], changed)
-        out[key] = {"flagged": fr, "flagged_ci95": [_wilson(k, n) for k, n in zip(tally[key]["flag"], trials)],
+        out[key] = {"flagged": fr, "flagged_count": tally[key]["flag"],
+                    "flagged_changed_count": tally[key]["flag_changed"],
+                    "flagged_ci95": [_wilson(k, n) for k, n in zip(tally[key]["flag"], trials)],
                     "flagged_among_changed": fc,
                     "flagged_among_changed_ci95": [_wilson(k, n) for k, n in zip(tally[key]["flag_changed"], changed)],
                     "unjudged": tally[key]["unjudged"],
@@ -210,6 +222,18 @@ def run(dev: torch.device, cfg: dict, say=print, max_matmuls: int = 0) -> dict:
                     "most_caught_at_among_changed": _crossing(fc, 0.9)}
     out["by_layer_and_pass"] = {k: {kk: (vv if kk == "trials" else rates(vv, v["trials"])) for kk, vv in v.items()}
                                 for k, v in sorted(by_pass.items())}
+    missing = []
+    if not seen["matmuls"] or seen["skipped"]:
+        missing.append("no captured matmuls or unsupported matmul dimensions")
+    if seen["skipped_scale"] or any(n != seen["matmuls"] * cfg["trials"] for n in trials):
+        missing.append("not every planned injection had a finite, nonzero block scale")
+    for key in ("default", "precise"):
+        if clean[key]["checks"] != seen["matmuls"] or clean[key]["unjudged"] or any(out[key]["unjudged"]):
+            missing.append(f"{key}: missing or unjudged checks")
+    out.update(complete=not missing, incomplete_reasons=missing)
+    out["interval_scope"] = ("Nominal 95% Wilson intervals for sampled positions in these fixed matmuls. "
+                             "Matmuls have different detection probabilities; these are not uncertainty bounds "
+                             "for new training runs, models, hardware faults or the whole sensitivity curve.")
     return out
 
 
@@ -229,18 +253,39 @@ def markdown(r: dict) -> str:
     for i, e in enumerate(r["sizes"]):
         out.append(f"| {size(e)} | {pct(r['default']['flagged'][i])} | {pct(r['precise']['flagged'][i])} | "
                    f"{pct(r['changed_bf16_output'][i])} |")
+    out += ["", r.get("interval_scope", "Nominal 95% Wilson intervals, conditional on the sampled matmuls."),
+            "Intervals across error sizes share the same injected positions and do not form a simultaneous band.",
+            "| error size | trials | changed trials | default 95% | precise 95% | default 95%, changed | precise 95%, changed |",
+            "|---|---|---|---|---|---|---|"]
+    for i, e in enumerate(r["sizes"]):
+        cis = []
+        for field in ("flagged_ci95", "flagged_among_changed_ci95"):
+            for key in ("default", "precise"):
+                a, b = r[key][field][i]
+                cis.append(f"[{pct(a)}, {pct(b)}]")
+        out.append(f"| {size(e)} | {r['trials'][i]} | {r.get('changed_trials', ['unrecorded'] * len(r['sizes']))[i]} | "
+                   + " | ".join(cis) + " |")
     d, p = r["default"], r["precise"]
-    out += ["", f"Half the errors are flagged from about {size(d['half_caught_at'])} (default) and "
-                f"{size(p['half_caught_at'])} (precise); 90% from {size(d['most_caught_at'])} and "
+    out += ["", f"Descriptive 50% crossings: {size(d['half_caught_at'])} (default) and "
+                f"{size(p['half_caught_at'])} (precise); 90% crossings: {size(d['most_caught_at'])} and "
                 f"{size(p['most_caught_at'])}.",
-            f"Among errors that changed the {lo} output (the ones the model sees): half from "
+            f"Among errors that changed the {lo} output (the ones the model sees): 50% crossings: "
             f"{size(d['half_caught_at_among_changed'])} (default) and {size(p['half_caught_at_among_changed'])} "
-            f"(precise); 90% from {size(d['most_caught_at_among_changed'])} and "
+            f"(precise); 90% crossings: {size(d['most_caught_at_among_changed'])} and "
             f"{size(p['most_caught_at_among_changed'])}."]
+    out.append("Crossings describe this sampled curve with log-linear interpolation. A crossing at the smallest "
+               "tested size is an upper bound on the crossing size; detection need not increase monotonically.")
     c = r["clean"]
     out.append(f"Clean matmuls: default {c['default']['false_alarms']} false alarms in {c['default']['checks']} "
                f"(worst score {c['default']['worst_z']:.2f}), precise {c['precise']['false_alarms']} in "
                f"{c['precise']['checks']} (worst {c['precise']['worst_z']:.2f}); the alarm is at 6.")
+    out.append(f"Unjudged clean checks: default {c['default']['unjudged']}, precise {c['precise']['unjudged']}. "
+               f"Unjudged injected checks by size: default {r['default']['unjudged']}, precise {r['precise']['unjudged']}. "
+               f"Positions with unavailable block scale: {r.get('trials_skipped_scale', 0)}.")
+    if not r.get("complete", True):
+        out.append("INCOMPLETE: " + "; ".join(r.get("incomplete_reasons", [])))
+    if r.get("error"):
+        out.append("INCOMPLETE: " + r["error"])
     oh = r.get("overhead")
     if oh:
         s = oh["seconds_per_step"]
@@ -264,19 +309,28 @@ def main(argv=None) -> int:
              gpu=torch.cuda.get_device_name(dev) if dev.type == "cuda" else (platform.processor() or "CPU"))
     if dev.type == "cuda":
         r["cc"] = list(torch.cuda.get_device_capability(dev))
+    def save():
+        if a.out:
+            os.makedirs(a.out, exist_ok=True)
+            name = (r["gpu"] if dev.type == "cuda" else "cpu").replace(" ", "_").replace("/", "_")
+            for suffix, content in (("json", json.dumps(r, indent=1)), ("md", markdown(r))):
+                path = os.path.join(a.out, f"{name}.{suffix}")
+                with open(path + ".tmp", "w") as f:
+                    f.write(content)
+                os.replace(path + ".tmp", path)
+
+    r["overhead_status"] = "skipped_by_request" if a.no_overhead else "pending"
+    save()                                      # Keep completed sensitivity if timing fails or is interrupted.
     if not a.no_overhead:
         import precise_models
-        r["overhead"] = precise_models.overhead(dev, cfg)
-    md = markdown(r)
-    print(md, flush=True)
-    if a.out:
-        os.makedirs(a.out, exist_ok=True)
-        name = (r["gpu"] if dev.type == "cuda" else "cpu").replace(" ", "_").replace("/", "_")
-        with open(os.path.join(a.out, f"{name}.json"), "w") as f:
-            json.dump(r, f, indent=1)
-        with open(os.path.join(a.out, f"{name}.md"), "w") as f:
-            f.write(md)
-    return 0
+        try:
+            r["overhead"] = precise_models.overhead(dev, cfg)
+            r["overhead_status"] = "complete"
+        except Exception as e:  # noqa: BLE001
+            r.update(overhead_status="failed", error=f"overhead: {type(e).__name__}: {str(e)[:300]}")
+    save()
+    print(markdown(r), flush=True)
+    return 1 if r.get("error") or not r.get("complete", False) else 0
 
 
 if __name__ == "__main__":

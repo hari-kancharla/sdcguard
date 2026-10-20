@@ -3,6 +3,8 @@
 Primary sources opened October 19, 2026. **VERIFIED** below means the linked source was opened and supports
 that description. It does not mean sdcguard has independently reproduced another project's results.
 Product choices and buyer demand remain hypotheses to test.
+Implementation status below was updated October 20 against the supplied `12e23f5` snapshot and local review
+fixes. That update does not establish GPU validation of the patched candidate.
 
 ## The problem is documented; our detection rate is not
 
@@ -59,8 +61,10 @@ alerts do not currently save the original operands. None of those features alone
 
 AEGIS reports that its incident localization depended on fp32 checksums rather than bf16-output checksums.
 That motivates testing sdcguard's precise mode, not assuming it inherits AEGIS's results. The revised noise
-model and actual fp32 execution path still need held-out GPU validation, sensitivity measurements and cost
-measurements on the release source. See [METHOD.md](METHOD.md).
+model already had an October 19 held-out run (fingerprint `1265b3e0a385`): no alarms in 17,424 checks, but the
+A100 and L4 missed the pre-registered margin, and the T4 was incomplete. Precise mode remains experimental.
+The patched release source still needs its own GPU validation and paired sensitivity/cost measurements.
+See [METHOD.md](METHOD.md) and the [historical held-out results](../results/precise_validate/SUMMARY.md).
 
 ## What would establish operator value
 

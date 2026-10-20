@@ -7,6 +7,10 @@ Unless noted: NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1 (CUDA 13.0), Triton
 Measurements below belong to the implementations and workloads that produced them. In particular, the
 October 14-15 soak and October 18 overhead measurements do not validate the later precise-mode refit or
 changes to coverage reporting. Those changes need their own checks on the exact release candidate.
+The October 20 review started from `12e23f5`, fingerprint `750892567560` over 92 Python files. Its patches
+change that fingerprint and have not been run on a GPU. Where a historical artifact does not record a source
+commit or fingerprint, its date and linked artifact are the available provenance; do not assign it the
+current candidate's revision.
 
 ## Pass/fail criteria (written before the first GPU runs)
 
@@ -61,7 +65,7 @@ model of a faulty GPU, not a faulty GPU, which is why the NVBit runs below injec
 | soak: GPT-2 small training, every matmul on every step, 5.14 GPU-hours | 24,580,560 | 0 (worst score 3.54, alarm at 6) |
 | round 3 training runs | 48,705 | 0 |
 | serving check on clean inputs | 76,500 layer checks | 0 |
-| vLLM on clean traffic | every request | 0 |
+| October 18 vLLM clean-traffic runs | layer shares and compared outputs described below; predates the executed-count gate | 0 |
 | `sdcguard check` sweep, 10 GPUs | 1,683,363 | 0 (worst score 3.67) |
 
 ## Incomplete numerical checks (October 19 review)
@@ -89,13 +93,16 @@ Serving scores a checksum it can't judge as zero, since its packed state holds o
 so a worst score alone can't show completeness. Each layer's state row now also counts the checks executed
 (empty batches excluded) and the checksums that couldn't be judged, by the same rule as training
 (`checksum._judge_nonfinite`); the Triton kernel adds them with integer atomics, the PyTorch version with
-one indexed add, both without a host sync, so CUDA graphs capture them. `ServeGuard.coverage_report()`
+one indexed add, both without a host sync and intended to replay inside CUDA graphs. `ServeGuard.coverage_report()`
 returns them; `sdcguard screen` reports measured serving checks instead of passes x layers, and calls a run
 INCOMPLETE when a serving layer never ran its check or a serving checksum went unjudged. The first-use
 comparison requires the Triton counts to equal the PyTorch counts exactly, and
 [the comparison script](../tests/_serve_fast_compare.py) adds an infinite input and an fp16 overflow the
 inputs explain (both unjudged) to its cases. Status, October 19: passes on CPU and in Triton's interpreter;
-not yet run on a GPU, and its overhead is not yet measured.
+not yet run on a GPU, and its overhead is not yet measured. The October 20 review adds per-layer count
+differences between the end of vLLM warm-up and the end of measured traffic: startup activity cannot satisfy the gate,
+and a zero residual is valid when its check count advances. These changes require real capture/replay
+validation; a compiled call that falls back to eager execution does not establish it.
 
 ## Training cost
 
@@ -149,9 +156,11 @@ greedy either way).
 How it works: weights don't change while serving, so the weight side of each check is computed once at
 load. Each checked layer then costs one extra cuBLAS call and one Triton kernel, which reads the layer's input
 and output once and keeps the worst score in a small GPU tensor (an integer atomic max), next to counts of
-checks executed and checksums that couldn't be judged (integer atomic adds), read back without a sync. CUDA graphs capture both. Before first use the kernel has to match the PyTorch version on
-clean and corrupted layers, or the PyTorch version runs; it agreed with the training check in 70 of 70 cases
-on the H100. Layer shares use golden-ratio spacing, so any share spreads over every layer type and depth.
+checks executed and checksums that couldn't be judged (integer atomic adds). Nonblocking polls queue
+readback; explicit counts and coverage queries wait for it. Before first use the kernel has to match the
+PyTorch version on clean and corrupted layers, or the PyTorch version runs. The October 18 version agreed
+with the training check in 70 of 70 cases on the H100; that result predates the new count state and does not
+validate its CUDA-graph replay. Layer shares use golden-ratio spacing to spread checks over layer types and depth.
 
 ## Harm study results
 
@@ -333,11 +342,13 @@ Code fingerprint 1265b3e0a385 ([results](../results/precise_validate/SUMMARY.md)
   which ran the plain PyTorch checks then (see the Blackwell section below). Precise mode computes every
   checked matmul with an fp32 output and checks that, which is where its cost goes. AEGIS reports 1.61% to
   2.35% on average (row, and row-and-column checksums; at most 2.6%) and 0.86% in production with sampling
-  ([OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf), section 7.4); its paper doesn't describe
-  the kernel implementation. Getting near those numbers needs the checksum computed inside the matmul
-  kernel, not a different noise model.
+  ([OSDI, July 13-15, 2026](https://www.usenix.org/system/files/osdi26-lei.pdf), section 7.4). The paper
+  describes float32 checksum accumulation on the chip in section 5.1.1, and row or row-and-column verification
+  task packing plus dynamic sampling in section 6. Those implementation and scheduling choices differ from
+  sdcguard's separate fp32-output GEMM and checker. Its reported overhead cannot be transferred to this path;
+  any kernel integration would need its own coverage, correctness and timing evidence.
 
-As written above: precise mode stays experimental, off by default and out of the README. These workloads have
+As written above: precise mode stays experimental and off by default, with that status disclosed in the README. These workloads have
 now been seen, so a revised model would need new held-out workloads and criteria written before its run.
 
 ## The default check and precise mode on the same matmuls (written October 19, 2026, before any GPU run)
@@ -360,6 +371,19 @@ its cost. Limits: injected errors in one output of a matmul's result, not hardwa
 here is the PyTorch version (the Triton version gives the same scores, tests/_fast_compare.py). A CPU smoke
 run (no tensor cores, so not a result) flagged half the errors from 19% (default) and 0.068% (precise).
 
+Clarification recorded October 20, before any GPU result from this paired experiment: the reported 95%
+Wilson intervals are nominal, pointwise summaries of the sampled positions in these fixed matmuls. Different
+matmuls have different detection probabilities; the intervals do not quantify generalization to new training
+runs, models or hardware faults. The same positions are reused across sizes, so the intervals are not a
+simultaneous confidence band. Three positions per matmul over two steps provide limited within-layer data.
+Keep every planned size and trial visible, including missing scales and unjudged checks; these cannot make
+an apparently complete comparison. Completed sensitivity results are saved before the separate timing run.
+
+The 50% and 90% crossing estimates describe the sampled curve, with log-linear interpolation between tested
+sizes. If the smallest size already reaches the level, the crossing is at or below that size. A non-monotone
+curve can later fall below it again; the crossing is not a guarantee for all larger errors. This clarification
+and its regression fix change no sizes, alarm thresholds, sampling choices or numerical acceptance criteria.
+
 ## Attention checks: calibration criteria (written October 19, 2026, before any GPU run)
 
 The matmul checksums can't see inside fused attention (`scaled_dot_product_attention`), and AEGIS found 3 of
@@ -380,8 +404,15 @@ like exponent-bit changes, and it doesn't cover dQ and dK.
 with every step checked, on each fused kernel the GPU offers (flash, memory-efficient, cuDNN), then injects
 one error per attention call. Criteria: on every GPU and kernel, 0 alarms on clean steps and a worst clean
 backward score of at most 4. Detection rates are reported with no pass line. Until the criteria are met,
-attention checking stays off by default and out of the README. For now it works in the default mode only,
+attention checking stays off by default and is described as experimental in the README. For now it works in the default mode only,
 not with `protect()`.
+
+Completeness reporting clarified October 20, before the planned GPU calibration: each configured clean run
+must record `layers * steps` judged forward checks and the same number of judged backward checks. Partial
+execution, skipped or unjudged checks, and unclassified backend errors are INCOMPLETE; a surviving subset
+cannot meet the overall criteria. This does not classify an unavailable backend as a numerical failure.
+Any future exclusion needs an explicit capability reason, independent of its observed score. The original
+0-alarm and worst-score-at-most-4 requirements remain unchanged, and scores are judged before display rounding.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
@@ -449,5 +480,7 @@ result cards say so.
 The B200's first run stopped in the stress step with a CUDA "misaligned address" fault inside sdcguard's
 Triton training-check kernels. A diagnostic on a second B200 hit the same fault in those kernels and nowhere
 else (cuBLAS, the plain check and the Triton serving kernel were all fine), so it follows the code, not the
-GPU. On compute capability 10 and newer sdcguard now uses the plain PyTorch checks
-(`SDCGUARD_TRITON_NEW_ARCH=1` opts back in). The B200 row above is that rerun.
+GPU. At the time of that sweep, compute capability 10 and newer defaulted to the plain PyTorch checks
+(`SDCGUARD_TRITON_NEW_ARCH=1` opted back in). The B200 row above is that historical rerun. The later
+[Blackwell bisect and current policy](#blackwell-the-triton-kernel-fault-bisected-october-19-2026) enable the
+one-stage Triton path on capability 10; the patched candidate still needs its GPU release checks.
