@@ -1,6 +1,7 @@
 # sdcguard
 
-Detect numerical mismatches in GPU training, serving and screening, and save evidence to investigate them.
+Catch silent wrong math inside your own PyTorch and vLLM jobs, whether a bad GPU or a buggy CUDA library caused
+it, and save the evidence to investigate it.
 
 GPUs can return wrong numbers without crashing. Hardware faults and software defects can both cause this.
 ByteDance documented incidents that caused no visible training failure
@@ -12,6 +13,22 @@ sdcguard checks selected matrix multiplies against checksum identities and a sta
 model. An alert identifies the GPU (UUID, PCI slot), the layer and an output row/block. The inline checksum
 does not require replay, deterministic execution or a framework fork. Detection is limited by the operations
 actually checked and the noise model; an alert starts an investigation, rather than proving a hardware defect.
+
+**What it catches, and what it doesn't**
+
+| | |
+|---|---|
+| Catches | Wrong results in the matmuls it checks, inside real training and vLLM serving, on one GPU, with no replicas or deterministic replay. When a check looked at a corrupted matmul, it caught 99% of injected faults that moved a 128-column output block by 10% or more and 70% of those between 1% and 10% ([harm study](results/harm_study_gpt2/REPORT.md)). Errors that repeat exactly every time (a consistently wrong GPU or library), because each result is checked against the math, not against an earlier run. A real NVIDIA library bug: cuBLAS known issue 6862950 left part of FP16/BF16 outputs unwritten on an H200 under MPS, and sdcguard alerted ([results](results/mps_bug)). |
+| Misses | Small errors: none of the injected faults under 1% of a block. ByteDance reports that in deployment, checksums taken from bf16 outputs located none of its incidents, and every confirmed checksum detection used fp32 accumulators ([AEGIS, section 8](https://www.usenix.org/system/files/osdi26-lei.pdf)); sdcguard's default check works on bf16/fp16 outputs, and its fp32 path (precise mode) is experimental. Operations outside the checked matmuls (attention internals, normalization, fused MoE experts, the optimizer, collectives). Software bugs that feed wrong inputs into correct math (wrong weights, wrong expert, a broken template or quantization). Steps and layers that sampling skips. No naturally defective GPU has been caught yet. |
+
+**How it differs from what you may already run** (from each tool's source and docs, October 2026)
+
+| Tool | What it checks | What it can't see |
+|---|---|---|
+| DCGM diagnostic, gpu-burn | FP16/FP32/FP64 GEMMs on an idle GPU, each result compared with the GPU's own first result ([DCGM](https://github.com/NVIDIA/DCGM/blob/64df9f894541e426e416131a9820cae97aa4dd81/nvvs/plugin_src/diagnostic/compare.cu#L30-L136), [gpu-burn](https://github.com/wilicc/gpu-burn/blob/0d19c94dcb2e9b6858b7586a4c327674cd67113b/compare.cu#L30-L61)) | A wrong answer that repeats exactly; BF16 and FP8; your job's own kernels |
+| Megatron-LM rerun state machine | After a NaN/Inf loss or gradient norm, reruns the step on the same GPU, then another ([source](https://github.com/NVIDIA/Megatron-LM/blob/4dc7e415ff93bd447f7e1f4014c3a734b1083f86/megatron/core/rerun_state_machine.py#L22-L31)) | Finite wrong results (NaN/Inf were about 1% of corruptions in an NVIDIA-coauthored study, [arXiv 2605.04213](https://arxiv.org/abs/2605.04213)) |
+| TorchTitan SDC replayer, lm-resiliency (SCOUT) | Bitwise replay on the same GPU (needs full determinism), or exact comparison across 3 or more matching replicas ([TorchTitan](https://github.com/pytorch/torchtitan/blob/e61df55b600331defa37e6997a4fdfc91cfaec3b/torchtitan/observability/SILENT_DATA_CORRUPTION.md), [SCOUT](https://github.com/LMResiliency/lm-resiliency/blob/eabcc5f2a38ca671aca0c21a757b5f4636cf311c/docs/scout.md#L12-L59)) | An error every replica or rerun shares (a library bug); serving; one or two GPUs. In exchange they see errors of any size on the steps they check |
+| NVSentinel, cloud health checks | Health counters, ECC, Xid, and DCGM/gpu-burn/NCCL tests before, after or between jobs | The math of your job while it runs |
 
 ## Check a GPU
 
