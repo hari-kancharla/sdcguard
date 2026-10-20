@@ -8,7 +8,7 @@ Measurements below belong to the implementations and workloads that produced the
 October 14-15 soak and October 18 overhead measurements do not validate the later precise-mode refit or
 changes to coverage reporting. Those changes need their own checks on the exact release candidate.
 The October 20 review started from `12e23f5`, fingerprint `750892567560` over 92 Python files. Its patches
-change that fingerprint and have not been run on a GPU. Where a historical artifact does not record a source
+changed that fingerprint; the patched code ran the GPU tests on October 20 at fingerprint 74b844ee7ca8. Where a historical artifact does not record a source
 commit or fingerprint, its date and linked artifact are the available provenance; do not assign it the
 current candidate's revision.
 

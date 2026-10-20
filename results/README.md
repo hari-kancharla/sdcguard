@@ -20,7 +20,7 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `math_modes/` | October 19: matmuls in every math mode against a float64 reference, five GPUs | `SUMMARY.md` |
 | `precise_diag/`, `precise_models/`, `precise_validate/` | October 19: precise mode check by check, its noise models on real training matmuls, and its held-out validation (criteria met on 2 of 5 GPUs) | each folder's `SUMMARY.md` |
 | `blackwell_triton/` | October 19: the B200 Triton fault bisect | `docs/METHOD.md`, Blackwell section |
-| `mps_bug/` | October 19: the H200 MPS reproduction, three runs | `docs/RELEASE_VALIDATION.md`, section 5 |
+| `mps_bug/` | October 19: the H200 MPS reproduction, three runs | `docs/METHOD.md`, head-to-head section |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the

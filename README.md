@@ -32,18 +32,15 @@ actually checked and the noise model; an alert starts an investigation, rather t
 
 ## Check a GPU
 
-This source tree is an unpublished alpha release candidate. From the reviewed checkout:
-
 ```bash
-python -m pip install -e ".[all]"
+python -m pip install "sdcguard[all]"
 sdcguard check            # every GPU on this machine, about 5 minutes
 sdcguard check --share    # same, plus an issue link to review and submit to the public board
 ```
 
-Use a published package only after its wheel is matched to the reviewed source. A package with the same
-version number is not evidence that it contains this checkout's changes. The October 20 review fixes passed
-the GPU tests on an L4, an H100 and a B200 ([results](results/gpu_tests), code fingerprint 74b844ee7ca8); the
-same library code then ran inside real vLLM in its default compiled mode on an H100 and passed its
+Version 0.3.0 on PyPI is built by this repository's publish workflow from the `v0.3.0` tag. Its library code
+(`src/`) is the code that passed the GPU tests on an L4, an H100 and a B200 ([results](results/gpu_tests), code
+fingerprint 74b844ee7ca8) and then ran inside real vLLM in its default compiled mode on an H100, passing its
 execution checks ([results](results/vllm_oct20)). Precise mode and attention checking remain experimental.
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
@@ -246,7 +243,6 @@ switches back to the plain PyTorch checks.
 - To reproduce: `pip install -e ".[experiments,dev]" && pytest -q`, then the Modal scripts in
   [scripts/](scripts/). Runner prices are estimates from earlier runs; confirm current rates and the hard
   time limits before allocating GPUs. CPU/memory requests and execution timeouts do not form a strict bill cap.
-  Follow [docs/RELEASE_VALIDATION.md](docs/RELEASE_VALIDATION.md) for the release gates.
 
 ## Status
 

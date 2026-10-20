@@ -109,4 +109,4 @@ are not evidence of a purchase.
   calls for additional diagnostics and evidence that a failure follows a particular board. A simulation and a
   clean replay do not establish that.
 - Earlier clean-run and performance numbers belong to their original workloads and software. New code needs
-  new validation; [RELEASE_VALIDATION.md](RELEASE_VALIDATION.md) lists the remaining gates.
+  new validation; [METHOD.md](METHOD.md) records which code fingerprint each run used.
