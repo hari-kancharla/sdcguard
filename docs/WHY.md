@@ -4,7 +4,8 @@ Primary sources opened October 19, 2026. **VERIFIED** below means the linked sou
 that description. It does not mean sdcguard has independently reproduced another project's results.
 Product choices and buyer demand remain hypotheses to test.
 Implementation status below was updated October 20 against the supplied `12e23f5` snapshot and local review
-fixes. That update does not establish GPU validation of the patched candidate.
+fixes. The patched candidate then passed the GPU test gate on an L4, an H100 and a B200 on October 20 (code
+fingerprint 74b844ee7ca8, [results](../results/gpu_tests)); the vLLM and sweep gates haven't run on it.
 
 ## The problem is documented; our detection rate is not
 
@@ -59,11 +60,20 @@ The current implementation offers single-GPU inline checks, layer/GPU localizati
 math modes, portable training/stress evidence, replay, a public results board and fleet integration. Serving
 alerts do not currently save the original operands. None of those features alone establishes a moat.
 
-AEGIS reports that its incident localization depended on fp32 checksums rather than bf16-output checksums.
-That motivates testing sdcguard's precise mode, not assuming it inherits AEGIS's results. The revised noise
+AEGIS reports from its production deployment that it "did not successfully locate SDC incidents using checksums
+accumulated from bfloat16 outputs"; all its confirmed checksum detections came from fp32 accumulators (section 8
+of the [OSDI '26 paper](https://www.usenix.org/system/files/osdi26-lei.pdf)). Its fault-injection study on a
+healthy machine shows why: over bf16 outputs, injected bit flips are buried in round-off noise (section 5.1.1).
+sdcguard's default check works on bf16/fp16 outputs, so on AEGIS's evidence it should be expected to catch large
+errors (exponent-bit changes, outputs that were never written) rather than the small ones real defects often
+produce; its experimental precise mode checks fp32 outputs instead. AEGIS's deterministic recomputation also
+caught more production incidents (12) than its checksum detection and outlier warnings (6), partly because
+checksum detection was sampled sparingly. That motivates measuring precise mode against the default on the same
+matmuls, not assuming it inherits AEGIS's results, and it means checksums alone shouldn't be expected to find
+most real incidents. The revised noise
 model already had an October 19 held-out run (fingerprint `1265b3e0a385`): no alarms in 17,424 checks, but the
 A100 and L4 missed the pre-registered margin, and the T4 was incomplete. Precise mode remains experimental.
-The patched release source still needs its own GPU validation and paired sensitivity/cost measurements.
+The paired default/precise sensitivity and cost measurement hasn't run on the current source.
 See [METHOD.md](METHOD.md) and the [historical held-out results](../results/precise_validate/SUMMARY.md).
 
 ## What would establish operator value
@@ -87,8 +97,9 @@ are not evidence of a purchase.
 - Attention internals, normalization, convolution and fused MoE are not covered by the inline GEMM check.
   Repeatability and canary fingerprints can reveal some discrepancies, but do not verify every such operation.
   An experimental attention check (the sum of dV over keys against the sum of dO over queries, the invariant
-  AEGIS uses in section 5.1.1, plus forward outputs within the values' range) is off by default until its GPU
-  calibration passes; it catches large errors only and doesn't cover dQ and dK.
+  AEGIS uses in section 5.1.1, plus forward outputs within the values' range) met its clean GPU
+  calibration criteria on an L4, an H100 and a B200 in bf16 (October 20) but stays off by default: it catches
+  large errors only, doesn't cover dQ and dK, works only in the default mode, and its cost isn't measured.
 - A checksum alert can originate in the checked operation, the checking computation, the software stack or
   a violated numerical assumption. Compare against independent evidence before attributing it to hardware.
 - A CPU emulation or an NVBit injection is not a test on a GPU removed from service for a naturally occurring

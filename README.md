@@ -24,8 +24,9 @@ sdcguard check --share    # same, plus an issue link to review and submit to the
 ```
 
 Use a published package only after its wheel is matched to the reviewed source. A package with the same
-version number is not evidence that it contains this checkout's changes. GPU validation of the October 20
-review fixes is pending; precise mode and attention checking remain experimental.
+version number is not evidence that it contains this checkout's changes. The October 20 review fixes passed
+the GPU tests on an L4, an H100 and a B200 ([results](results/gpu_tests), code fingerprint 74b844ee7ca8); the
+real vLLM run on this code is still to come. Precise mode and attention checking remain experimental.
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="600">
 
@@ -122,7 +123,9 @@ once, layers never checked, checks executed, and checksums that couldn't be judg
 the inputs can explain). The counts are kept on the GPU next to each layer's worst score and read back with
 it. A worst score of 0 alone (`worst_z()`) can't tell a clean layer from one that never ran; use the counts
 for that. `coverage_report()`, `counts()` and `worst_z()` wait for GPU readback; `poll()` doesn't. (The
-counts are new on October 19: tested on CPU and in Triton's interpreter, GPU run pending.)
+counts are new on October 19. On October 20 they passed on an L4, an H100 and a B200: the PyTorch and Triton
+checks gave equal counts, and in a compiled model a test counted CUDA graph replays with PyTorch's replay hook
+and saw every layer's check count advance once per call ([results](results/gpu_tests)). They haven't run inside real vLLM yet.)
 When validating traffic, compare each layer's counts before and after the measured requests. Startup
 profiling can advance lifetime counts without establishing that a check ran on those requests.
 
@@ -199,16 +202,17 @@ flagged 30 of 30 steps and named the layer ([results](results/round3_oct18/nvbit
 
 | | |
 |---|---|
-| Earlier tested integrations | PyTorch training in bf16/fp16 (DDP on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4; new changes need validation on the exact release source |
-| Not checked | fp32/TF32 and quantized (FP8, INT4) matmuls in training and serving (`check` tests fp32, TF32 and FP8 one matmul at a time), convolutions, fused MoE experts, vLLM's LM head, the inside of fused attention (only `check`'s repeatability test covers it; an experimental attention check, off by default, is being calibrated, see [METHOD.md](docs/METHOD.md)), `nn.MultiheadAttention`'s output projection and `nn.TransformerEncoderLayer`'s fused inference path (both listed as unchecked, not reported as checked) |
+| Tested integrations | Earlier source: PyTorch training in bf16/fp16 (DDP on 4 H100s, FSDP2 on CPU), Hugging Face and vLLM serving, `sdcguard check` on B200, H200, H100, A100, L40S, L4 and T4. Current source (October 20, code fingerprint 74b844ee7ca8): the GPU test suite, both kernel comparisons, the installed wheel, `sdcguard check` and a compiled CUDA-graph serving test on an L4, an H100 and a B200. vLLM last ran on October 18 code |
+| Not checked | fp32/TF32 and quantized (FP8, INT4) matmuls in training and serving (`check` tests fp32, TF32 and FP8 one matmul at a time), convolutions, fused MoE experts, vLLM's LM head, the inside of fused attention (only `check`'s repeatability test covers it; an experimental attention check, off by default, met its clean calibration criteria on October 20 but catches only large errors, see [METHOD.md](docs/METHOD.md)), `nn.MultiheadAttention`'s output projection and `nn.TransformerEncoderLayer`'s fused inference path (both listed as unchecked, not reported as checked) |
 | Not supported on checked steps | `torch.func` transforms (vmap, grad) and `torch.compile(fullgraph=True)`: fast mode runs checked steps' linear layers eagerly |
 | Not tested yet | Megatron tensor/pipeline parallel, DeepSpeed, multi-node, AMD, Apple GPUs (only the operator mapping is unit-tested) |
 
 On data-center Blackwell (compute capability 10, including B200), the Triton dot-product comparison paths
 use `num_stages=1`. The reported pipelined comparison hit a "misaligned address" fault whose cause isn't
 known yet ([METHOD.md](docs/METHOD.md#blackwell-the-triton-kernel-fault-bisected-october-19-2026)).
-GPU validation of the reviewed candidate on a B200 is pending; `SDCGUARD_TRITON_NEW_ARCH=0` switches back to the
-plain PyTorch checks.
+With this change the test suite and both kernel comparisons passed on a B200 on October 20
+([results](results/gpu_tests/b200_20261019_230435.txt), timings in METHOD.md); `SDCGUARD_TRITON_NEW_ARCH=0`
+switches back to the plain PyTorch checks.
 
 ## More
 

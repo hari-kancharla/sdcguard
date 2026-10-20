@@ -86,8 +86,8 @@ unjudged blocks. Zero and tiny finite outputs remain judged, subject to the docu
 
 [Regression tests](../tests/test_numeric_review_b778.py) cover mixed rows, blocks, remainder blocks and
 batches, including a genuine alarm alongside an unjudged result. They passed on CPU and in the Triton
-interpreter. The changed Triton buffer layout still needs validation on real GPUs; these tests do not
-establish CUDA compilation behavior or the overhead of the change.
+interpreter, and on October 20 on CUDA on an L4, an H100 and a B200 (code fingerprint 74b844ee7ca8). The
+overhead of the change is not measured.
 
 Serving scores a checksum it can't judge as zero, since its packed state holds only non-negative scores,
 so a worst score alone can't show completeness. Each layer's state row now also counts the checks executed
@@ -98,11 +98,18 @@ returns them; `sdcguard screen` reports measured serving checks instead of passe
 INCOMPLETE when a serving layer never ran its check or a serving checksum went unjudged. The first-use
 comparison requires the Triton counts to equal the PyTorch counts exactly, and
 [the comparison script](../tests/_serve_fast_compare.py) adds an infinite input and an fp16 overflow the
-inputs explain (both unjudged) to its cases. Status, October 19: passes on CPU and in Triton's interpreter;
-not yet run on a GPU, and its overhead is not yet measured. The October 20 review adds per-layer count
+inputs explain (both unjudged) to its cases. Status, October 19: passes on CPU and in Triton's interpreter.
+Status, October 20 (code fingerprint 74b844ee7ca8, [results](../results/gpu_tests)): on an L4, an H100 and a B200
+the comparison script agreed on every case, unjudged ones included; the first-use comparison found equal counts;
+and in a compiled model (`torch.compile(mode="reduce-overhead")`, with the Triton check or the PyTorch check
+compiled in), three calls replayed at least three CUDA graphs, counted with PyTorch 2.14.1's graph-replay hook,
+and advanced every layer's check count by exactly three; afterwards a flipped weight bit was caught. The test
+doesn't yet assert exactly one graph per call, and it would pass silently on a PyTorch without the hook (the GPU
+image pins 2.14.1, which has it). The counts' own
+overhead is not separately measured. The October 20 review adds per-layer count
 differences between the end of vLLM warm-up and the end of measured traffic: startup activity cannot satisfy the gate,
-and a zero residual is valid when its check count advances. These changes require real capture/replay
-validation; a compiled call that falls back to eager execution does not establish it.
+and a zero residual is valid when its check count advances. The vLLM gate still needs real capture/replay
+validation inside vLLM; a compiled call that falls back to eager execution does not establish it.
 
 ## Training cost
 
@@ -416,6 +423,38 @@ check runs) is recorded in the results and not counted; any other error, a CUDA 
 included, makes the calibration INCOMPLETE. The original
 0-alarm and worst-score-at-most-4 requirements remain unchanged, and scores are judged before display rounding.
 
+### What the calibration found (October 20, 2026)
+
+Code fingerprint 74b844ee7ca8, PyTorch 2.14.1 (CUDA 13.0), on Modal. Raw output:
+[results/attention_calib](../results/attention_calib), and the end of each log in
+[results/gpu_tests](../results/gpu_tests). All three fused kernels (flash, memory-efficient, cuDNN) ran on every
+GPU; none was reported unavailable, and nothing in the clean runs was partial or unjudged. The detection
+columns count alarms, which never exceeded the number of injected calls.
+
+| GPU | clean backward checks | alarms | worst clean score | criteria |
+|---|---|---|---|---|
+| B200 | 648 | 0 | 0.138 | met |
+| H100 80GB | 648 | 0 | 0.139 | met |
+| L4 | 648 | 0 | 0.125 | met |
+
+Detection, one error per attention call, no pass line. The counts were the same on all three GPUs and all three
+kernels:
+
+| workload | dV + 1, 4 or 16 x rms | dV + 64 x rms | dV + 256 x rms | output x 2 | output x 8 | output x 64 | output x 65,536 |
+|---|---|---|---|---|---|---|---|
+| GPT, 8 layers, width 1,024, 2,048 tokens | 0 of 16 | 1 of 16 | 16 of 16 | 7 of 16 | 11 of 16 | 15 of 16 | 16 of 16 |
+| GQA 16:4, head size 128, 4,096 tokens | 0 of 8 | 0 of 8 | 8 of 8 | 1 of 8 | 5 of 8 | 6 of 8 | 8 of 8 |
+| narrow, 32 heads of 32, 1,024 tokens | 0 of 12 | 12 of 12 | 12 of 12 | 2 of 12 | 5 of 12 | 11 of 12 | 12 of 12 |
+
+The criteria are met for the scope that ran: an L4, an H100 and a B200, bf16 only, 12 steps per workload and
+kernel from initialization. No A100, no fp16 (which T4 and older GPUs use) and no other GPUs. Within that scope,
+this lifts the condition the rules above set for keeping the check off.
+Turning it on by default is a separate decision, not made: it catches only large errors (a dV error of 16 times
+the typical size or less was never caught), its cost hasn't been measured, it doesn't cover dQ and dK, and it
+doesn't work with `protect()` yet. The worst clean score sat about 30 times under the
+line of 4, so the noise model is far more cautious than these workloads needed; a tighter model could catch
+smaller errors, but it would need new held-out workloads and criteria written before its run.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use
@@ -436,8 +475,23 @@ The fault needs software pipelining and the three-part bf16 path together; its r
 pointers were 64-byte aligned). sdcguard now launches the comparison kernels without pipelining on compute
 capability 10 (data-center Blackwell), keeping the bf16 tensor-core path, and turns the Triton kernels on
 there (SDCGUARD_TRITON_NEW_ARCH=0 turns them off). Capability 11 and up, including consumer Blackwell
-(12), keeps the plain checks until tested. Pending: the full test suite, the serving kernel's comparison and
-the kernel timings on a B200 with this change.
+(12), keeps the plain checks until tested.
+
+Ran October 20 with this change (code fingerprint 74b844ee7ca8,
+[results](../results/gpu_tests/b200_20261019_230435.txt)): the test suite passed (569 passed, 1 skipped
+because the optional Accelerate package wasn't installed; on GPUs, tests/test_fast.py's interpreter runs are
+replaced by the same comparison scripts on CUDA), the training and serving Triton checks agreed with the
+plain checks, and the installed wheel's selftest and `sdcguard check` passed. Kernel timings for one checked step of
+a GPT-2-small-shaped model (16,384 tokens, all 219 linear-layer matmuls of the forward and backward passes, each shape timed on its own as the median
+of 10 calls,
+`experiments/bench_kernels.py`): with GPT-2's vocabulary of 50,257, the matmuls took 33.9 ms, the Triton check
+28.2 ms and the plain check 152.6 ms; with the vocabulary padded to 50,304, the matmuls took 10.4 ms and the
+Triton check 23.0 ms. The unpadded output layer is slow on this GPU for cuBLAS and for the check's staging step
+alike (its forward pass: 10.2 ms of matmul and 4.2 ms of staging, against 0.8 and 0.6 ms padded). So on a
+checked step the Triton check is about 5.4 times faster than the plain check, but with a padded vocabulary it
+still takes about 2.2 times as long as the matmuls it checks. The training slowdown depends on how often steps
+are checked and on the time spent outside matmuls; it wasn't measured on the B200 in this run. The root cause of
+the pipelined fault is still unknown.
 
 ## sdcguard check
 
@@ -485,4 +539,5 @@ else (cuBLAS, the plain check and the Triton serving kernel were all fine), so i
 GPU. At the time of that sweep, compute capability 10 and newer defaulted to the plain PyTorch checks
 (`SDCGUARD_TRITON_NEW_ARCH=1` opted back in). The B200 row above is that historical rerun. The later
 [Blackwell bisect and current policy](#blackwell-the-triton-kernel-fault-bisected-october-19-2026) enable the
-one-stage Triton path on capability 10; the patched candidate still needs its GPU release checks.
+one-stage Triton path on capability 10; the patched candidate passed the GPU test gate on a B200 on October 20,
+and the sweep hasn't run on this source yet.

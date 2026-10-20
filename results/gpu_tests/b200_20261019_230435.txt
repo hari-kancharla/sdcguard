@@ -1,0 +1,204 @@
+code fingerprint 74b844ee7ca8d6f5bcf687a00e3ed61d72d817b3b64cd5460348f4e22df3b5fd (108 files)
+===== b200
+code fingerprint on the GPU: 74b844ee7ca8 (108 files)
+r may lead to unexpected behavior.
+  Consider using tensor.detach() first. (Triggered internally at /__w/pytorch/pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:820.)
+    assert float(out.abs().sum()) == 0.0 and type(c[0]) is nn.Linear and type(m[0]) is not nn.Linear
+
+tests/test_integration_b778_review.py::test_zero_channel_linears_preserve_forward_and_backward[False-0-128]
+tests/test_integration_b778_review.py::test_zero_channel_linears_preserve_forward_and_backward[False-64-0]
+tests/test_integration_b778_review.py::test_zero_channel_linears_preserve_forward_and_backward[True-0-128]
+tests/test_integration_b778_review.py::test_zero_channel_linears_preserve_forward_and_backward[True-64-0]
+  /usr/local/lib/python3.12/site-packages/torch/nn/modules/linear.py:124: UserWarning: Initializing zero-element tensors is a no-op
+    init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 25 durations =============================
+44.84s call     tests/test_check.py::test_cli_check_json
+31.64s call     tests/test_check.py::test_check_on_gpu
+19.47s call     tests/test_product.py::test_cli_end_to_end
+13.75s call     tests/test_serve.py::test_gpu_fast_serving_check_agrees_and_is_used
+11.55s call     tests/test_fast_mode.py::test_works_under_torch_compile
+9.34s call     tests/test_check.py::test_many_gpus_path_runs_every_child_and_compares
+8.98s call     tests/test_reports_review.py::test_multi_gpu_certificates_cover_every_phase
+7.40s call     tests/test_experiments.py::test_runs_save_load_and_analyze
+6.09s setup    tests/test_check.py::test_check_on_cpu_writes_card_and_result
+6.01s call     tests/test_b778_evidence_integrity.py::test_partial_fingerprint_run_card_reports_only_completed_runs
+5.87s call     tests/test_edge_cases.py::test_sign_pattern_is_drawn_per_process_unless_pinned
+5.81s call     tests/test_check.py::test_simulated_faults_fail_and_are_kept_off_the_board
+5.73s call     tests/test_review_cases.py::test_unsupported_modes_are_not_errors
+5.73s call     tests/test_check.py::test_a_wrong_math_mode_fails_the_gpu_and_problems_stay_on_the_card
+5.70s call     tests/test_serve.py::test_compile_one_graph_and_still_checks
+5.67s call     tests/test_review_cases.py::test_a_stress_failure_saves_evidence
+5.67s call     tests/test_review_cases.py::test_a_math_mode_failure_saves_evidence_that_replays
+5.66s call     tests/test_check.py::test_check_with_signed_certificate
+5.62s call     tests/test_reports_review.py::test_cards_escape_what_the_user_typed
+5.61s call     tests/test_reports_review.py::test_a_malformed_reference_file_doesnt_lose_the_result[ref0]
+5.61s call     tests/test_reports_review.py::test_a_malformed_reference_file_doesnt_lose_the_result[ref1]
+5.60s call     tests/test_reports_review.py::test_a_math_mode_replay_on_a_device_without_that_mode_says_so
+5.59s call     tests/test_reports_review.py::test_a_malformed_reference_file_doesnt_lose_the_result[ref2]
+5.56s call     tests/test_review_cases.py::test_math_mode_evidence_reaches_the_certificate_and_the_fleet_archive
+5.55s call     tests/test_reports_review.py::test_a_certificate_covers_every_phase_and_the_result_files
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_edge_cases.py:195: could not import 'accelerate': No module named 'accelerate'
+569 passed, 1 skipped, 5 warnings, 2 subtests passed in 325.68s (0:05:25)
+
+[pytest exit code 0]
+
+Triton vs plain checks on this GPU: ALL AGREE
+[fast compare exit code 0]
+
+Triton vs plain serving checks on this GPU: ALL AGREE
+[serve compare exit code 0]
+
+Kernel timings (experiments/bench_kernels.py):
+ard         (16384, 768)     (768, 768)     48     0.024     0.069     0.584      3  {'_stage': 0.011, '_compare_part': 0.017, '_finish': 0.005} stage 2395 GB/s, CPU 63.8 us
+attn q/k/v/proj: input grad      (16384, 768)     (768, 768)     48     0.025     0.071     0.653      3  {'_stage': 0.011, '_compare_part': 0.018, '_finish': 0.006} stage 2395 GB/s, CPU 60.7 us
+attn q/k/v/proj: weight grad     (768, 16384)   (16384, 768)     48     0.031     0.076     0.657     43  {'_stage': 0.014, '_compare_part': 0.019, '_finish': 0.012} stage 1882 GB/s, CPU 60.7 us
+mlp up: forward                  (16384, 768)    (768, 3072)     12     0.057     0.116     0.680      3  {'_stage': 0.04, '_compare_part': 0.035, '_finish': 0.014} stage 2635 GB/s, CPU 60.6 us
+mlp up: input grad              (16384, 3072)    (3072, 768)     12     0.059     0.121     0.651      3  {'_stage': 0.014, '_compare_part': 0.069, '_finish': 0.006} stage 2135 GB/s, CPU 60.9 us
+mlp up: weight grad             (3072, 16384)   (16384, 768)     12     0.055     0.116     0.657     13  {'_stage': 0.016, '_compare_part': 0.064, '_finish': 0.008} stage 1868 GB/s, CPU 60.3 us
+mlp down: forward               (16384, 3072)    (3072, 768)     12     0.059     0.122     0.672      3  {'_stage': 0.014, '_compare_part': 0.069, '_finish': 0.006} stage 2135 GB/s, CPU 60.6 us
+mlp down: input grad             (16384, 768)    (768, 3072)     12     0.055     0.113     0.680      3  {'_stage': 0.039, '_compare_part': 0.035, '_finish': 0.014} stage 2702 GB/s, CPU 60.0 us
+mlp down: weight grad            (768, 16384)  (16384, 3072)     12     0.054     0.144     0.670     47  {'_stage': 0.053, '_compare_part': 0.035, '_finish': 0.03} stage 1988 GB/s, CPU 60.5 us
+head: forward                    (16384, 768)   (768, 50257)      1    10.193     4.909     8.601      1  {'_stage': 4.237, '_compare': 0.649} stage 407 GB/s, CPU 49.5 us
+head: input grad               (16384, 50257)   (50257, 768)      1     8.970     2.790     2.465      3  {'_stage': 0.05, '_compare_part': 2.707, '_finish': 0.007} stage 2047 GB/s, CPU 78.1 us
+head: weight grad              (50257, 16384)   (16384, 768)      1     6.863     1.397     2.527      1  {'_stage': 0.04, '_compare': 1.308} stage 2559 GB/s, CPU 49.7 us
+head padded: forward             (16384, 768)   (768, 50304)      0     0.834     1.269     5.934      1  {'_stage': 0.612, '_compare': 0.65} stage 2820 GB/s, CPU 49.3 us
+head padded: input grad        (16384, 50304)   (50304, 768)      0     0.832     1.314     1.830      3  {'_stage': 0.045, '_compare_part': 1.257, '_finish': 0.007} stage 2276 GB/s, CPU 60.7 us
+head padded: weight grad       (50304, 16384)   (16384, 768)      0     0.818     1.262     1.708      1  {'_stage': 0.04, '_compare': 1.196} stage 2561 GB/s, CPU 47.9 us
+
+Per checked step (all 219 matmuls, vocabulary 50257): matmuls 33.9 ms, Triton check 28.2 ms, plain check 152.6 ms
+Same with the vocabulary padded to 50304: matmuls 10.4 ms, Triton check 23.0 ms
+Handler.cpp:39] profiler_start
+USDT:2026-10-20 03:01:29 1517:1517 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:46] profiler_stop
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:39] profiler_start
+USDT:2026-10-20 03:01:30 1517:1517 SyncActivityProfilerHandler.cpp:46] profiler_stop
+
+[bench exit code 0]
+
+Installed wheel (fresh venv, outside the source tree):
+in one step: {'aten::addmm': 2, 'aten::mm': 3}
+  clean: 25 checks, 0 alerts, worst clean z 1.89 (alert threshold 6.0)
+  faulty: 5 faults injected, 5 alerts
+  plain-check fast GEMM (fp32 output): in use; Triton GPU check: in use (clean z 1.403 vs 1.403; corrupted at row/block 100/2 vs 100/2)
+  [PASS] detector sees matmuls in the forward pass
+  [PASS] detector sees extra matmuls in the backward pass
+  [PASS] detector actually checks them (dtype supported)
+  [PASS] zero false alarms on clean steps
+  [PASS] faults were injected
+  [PASS] injected faults were caught
+  [PASS] no false alarms on tiny values (1e-18 to 1e-26, like collapsed attention gradients)
+  [PASS] no false alarm when fp16 loss scaling overflows (Inf the inputs explain)
+  [PASS] zero false alarms with TF32 turned on
+  [PASS] Triton GPU check passed its first-use comparison with the plain check
+  [PASS] Triton GPU check gives the same answers as the plain check
+  [PASS] Triton GPU check ran with no unexpected fallbacks
+  [PASS] serving Triton check passed its first-use comparison with the PyTorch serving check
+  [PASS] checked step never makes the CPU wait for the GPU
+  [PASS] matmul partial sums kept in fp32 while checking, setting restored after
+ALL PASS
+  NVIDIA B200: fingerprint run 1 of 3
+  NVIDIA B200: memory patterns (1 s)
+  NVIDIA B200: matmul speed (2 s) and memory bandwidth
+  NVIDIA B200: checked matmuls at full power (2 s)
+  NVIDIA B200: matmuls in 7 math modes against a float64 reference (2 s)
+  NVIDIA B200: training and serving workload, every matmul checked (0.3 min)
+sdcguard check  NVIDIA B200  Modal  2026-10-20
+  PASS  no failure detected in completed checks
+  checked     28,109 matmul results (4,280 TFLOP of work), 0 wrong
+  math modes  all 7 modes vs float64: 63 matmuls, 0 wrong, typical sensitivity 0.078% (fp8 0.016%)
+  memory test 141.2 GiB written and read back x3, 0 errors
+  repeatable  3 recorded runs bit-identical, fingerprint c27adbfea641
+  speed       bf16 matmul 1,318.4 TFLOPS (59% of datasheet peak), steady
+  bandwidth   6,427.2 GB/s (80% of datasheet)
+  health      53 C max, 999 W max (limit 1000 W), PCIe Gen5 x16, ECC on
+  headroom    worst clean score 3.21 (alarm at 6): 1.9x margin
+  note        clocks held back by the power limit at full load (normal for big matmuls)
+  files       /tmp/run/wheel_check/GPU-20f4f5c5-1afc-cb4b-8c18-aa6be722034b/ (result.json, card.svg, card.md)
+
+Share it: sdcguard check --share prints a link that posts your card to the public board.
+
+[notice] A new release of pip is available: 25.1.1 -> 26.2.1
+[notice] To update, run: pip install --upgrade pip
+/usr/local/lib/python3.12/site-packages/torch/cuda/__init__.py:1395: UserWarning: Synchronization debug mode is a prototype feature and does not yet detect all synchronizing operations (Triggered internally at /__w/pytorch/pytorch/torch/csrc/cuda/Module.cpp:1080.)
+  torch._C._cuda_set_sync_debug_mode(debug_mode)
+
+[wheel exit code 0]
+
+  NVIDIA B200: fingerprint run 1 of 3
+  NVIDIA B200: memory patterns (4 s)
+  NVIDIA B200: matmul speed (7 s) and memory bandwidth
+  NVIDIA B200: checked matmuls at full power (5 s)
+  NVIDIA B200: matmuls in 7 math modes against a float64 reference (4 s)
+  NVIDIA B200: training and serving workload, every matmul checked (1.0 min)
+sdcguard check  NVIDIA B200  Modal  2026-10-20
+  PASS  no failure detected in completed checks
+  checked     109,560 matmul results (16,893 TFLOP of work), 0 wrong
+  math modes  all 7 modes vs float64: 168 matmuls, 0 wrong, typical sensitivity 0.078% (fp8 0.016%)
+  memory test 141.2 GiB written and read back x8, 0 errors
+  repeatable  3 recorded runs bit-identical, fingerprint c27adbfea641
+  speed       bf16 matmul 1,342.7 TFLOPS (60% of datasheet peak), steady
+  bandwidth   6,427 GB/s (80% of datasheet)
+  health      57 C max, 995 W max (limit 1000 W), PCIe Gen5 x16, ECC on
+  headroom    worst clean score 3.12 (alarm at 6): 1.9x margin
+  files       /vol/check_sweep/tests_cli_b200/GPU-20f4f5c5-1afc-cb4b-8c18-aa6be722034b/ (result.json, card.svg, card.md)
+
+Share it: sdcguard check --share prints a link that posts your card to the public board.
+
+[sdcguard check exit code 0]
+
+Attention check calibration (experiments/attention_calib.py):
+ms 0
+  efficient: step 7: loss 8.068, attention checks 64, worst 0.11, forward alarms 0
+  efficient: step 11: loss 7.507, attention checks 96, worst 0.11, forward alarms 0
+GPT, 8 layers, width 1024, 16 heads, 2,048 tokens, cudnn
+  cudnn: step 3: loss 9.115, attention checks 32, worst 0.10, forward alarms 0
+  cudnn: step 7: loss 8.068, attention checks 64, worst 0.10, forward alarms 0
+  cudnn: step 11: loss 7.507, attention checks 96, worst 0.10, forward alarms 0
+GQA 16:4, head size 128, 4,096 tokens, flash
+  flash: step 3: loss 9.456, attention checks 16, worst 0.10, forward alarms 0
+  flash: step 7: loss 8.144, attention checks 32, worst 0.10, forward alarms 0
+  flash: step 11: loss 7.909, attention checks 48, worst 0.10, forward alarms 0
+GQA 16:4, head size 128, 4,096 tokens, efficient
+  efficient: step 3: loss 9.456, attention checks 16, worst 0.09, forward alarms 0
+  efficient: step 7: loss 8.144, attention checks 32, worst 0.09, forward alarms 0
+  efficient: step 11: loss 7.910, attention checks 48, worst 0.09, forward alarms 0
+GQA 16:4, head size 128, 4,096 tokens, cudnn
+  cudnn: step 3: loss 9.456, attention checks 16, worst 0.08, forward alarms 0
+  cudnn: step 7: loss 8.144, attention checks 32, worst 0.08, forward alarms 0
+  cudnn: step 11: loss 7.910, attention checks 48, worst 0.08, forward alarms 0
+narrow, 32 heads of 32, 1,024 tokens, flash
+  flash: step 3: loss 7.737, attention checks 24, worst 0.12, forward alarms 0
+  flash: step 7: loss 6.820, attention checks 48, worst 0.12, forward alarms 0
+  flash: step 11: loss 6.525, attention checks 72, worst 0.12, forward alarms 0
+narrow, 32 heads of 32, 1,024 tokens, efficient
+  efficient: step 3: loss 7.737, attention checks 24, worst 0.13, forward alarms 0
+  efficient: step 7: loss 6.820, attention checks 48, worst 0.13, forward alarms 0
+  efficient: step 11: loss 6.525, attention checks 72, worst 0.13, forward alarms 0
+narrow, 32 heads of 32, 1,024 tokens, cudnn
+  cudnn: step 3: loss 7.737, attention checks 24, worst 0.14, forward alarms 0
+  cudnn: step 7: loss 6.820, attention checks 48, worst 0.14, forward alarms 0
+  cudnn: step 11: loss 6.525, attention checks 72, worst 0.14, forward alarms 0
+## NVIDIA B200: 648 clean attention backward checks, 0 alarms, worst 0.1378602534532547 (criteria MET: 0 alarms, worst at most 4)
+
+| workload | kernel | clean checks | alarms | worst | dV + 1 x rms | dV + 4 x rms | dV + 16 x rms | dV + 64 x rms | dV + 256 x rms | output x 2 | output x 8 | output x 64 | output x 65536 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| GPT, 8 layers, width 1024, 16 heads, 2,048 tokens | flash_attention | 96 | 0 | 0.10682331770658493 | 0/16 | 0/16 | 0/16 | 1/16 | 16/16 | 7/16 | 11/16 | 15/16 | 16/16 |
+| GPT, 8 layers, width 1024, 16 heads, 2,048 tokens | efficient_attention | 96 | 0 | 0.10805109888315201 | 0/16 | 0/16 | 0/16 | 1/16 | 16/16 | 7/16 | 11/16 | 15/16 | 16/16 |
+| GPT, 8 layers, width 1024, 16 heads, 2,048 tokens | cudnn_attention | 96 | 0 | 0.0992049053311348 | 0/16 | 0/16 | 0/16 | 1/16 | 16/16 | 7/16 | 11/16 | 15/16 | 16/16 |
+| GQA 16:4, head size 128, 4,096 tokens | flash_attention | 48 | 0 | 0.09509678184986115 | 0/8 | 0/8 | 0/8 | 0/8 | 8/8 | 1/8 | 5/8 | 6/8 | 8/8 |
+| GQA 16:4, head size 128, 4,096 tokens | efficient_attention | 48 | 0 | 0.08779340237379074 | 0/8 | 0/8 | 0/8 | 0/8 | 8/8 | 1/8 | 5/8 | 6/8 | 8/8 |
+| GQA 16:4, head size 128, 4,096 tokens | cudnn_attention | 48 | 0 | 0.07763936370611191 | 0/8 | 0/8 | 0/8 | 0/8 | 8/8 | 1/8 | 5/8 | 6/8 | 8/8 |
+| narrow, 32 heads of 32, 1,024 tokens | flash_attention | 72 | 0 | 0.12058789283037186 | 0/12 | 0/12 | 0/12 | 12/12 | 12/12 | 2/12 | 5/12 | 11/12 | 12/12 |
+| narrow, 32 heads of 32, 1,024 tokens | efficient_attention | 72 | 0 | 0.13028305768966675 | 0/12 | 0/12 | 0/12 | 12/12 | 12/12 | 2/12 | 5/12 | 11/12 | 12/12 |
+| narrow, 32 heads of 32, 1,024 tokens | cudnn_attention | 72 | 0 | 0.1378602534532547 | 0/12 | 0/12 | 0/12 | 12/12 | 12/12 | 2/12 | 5/12 | 11/12 | 12/12 |
+
+
+[attention calibration exit code 0: 0 criteria met, 1 not met, 2 INCOMPLETE, 3 not started (no time left), 124 stopped at its time limit, other: error]

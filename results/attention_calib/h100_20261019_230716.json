@@ -1,0 +1,629 @@
+{
+  "runs": [
+    {
+      "config": {
+        "name": "GPT, 8 layers, width 1024, 16 heads, 2,048 tokens",
+        "layers": 8,
+        "width": 1024,
+        "heads": 16,
+        "kv": 16,
+        "seq": 2048,
+        "batch": 4,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 1
+      },
+      "backend": "flash_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 96,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.11276786774396896,
+        "ops": {
+          "aten::_scaled_dot_product_flash_attention": 96,
+          "aten::_scaled_dot_product_flash_attention_backward": 96
+        },
+        "forward_checks": 96,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 1
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        },
+        "output x 2": {
+          "corrupted_calls": 16,
+          "alarms": 7
+        },
+        "output x 8": {
+          "corrupted_calls": 16,
+          "alarms": 11
+        },
+        "output x 64": {
+          "corrupted_calls": 16,
+          "alarms": 15
+        },
+        "output x 65536": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "GPT, 8 layers, width 1024, 16 heads, 2,048 tokens",
+        "layers": 8,
+        "width": 1024,
+        "heads": 16,
+        "kv": 16,
+        "seq": 2048,
+        "batch": 4,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 1
+      },
+      "backend": "efficient_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 96,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.1038740947842598,
+        "ops": {
+          "aten::_scaled_dot_product_efficient_attention": 96,
+          "aten::_scaled_dot_product_efficient_attention_backward": 96
+        },
+        "forward_checks": 96,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 1
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        },
+        "output x 2": {
+          "corrupted_calls": 16,
+          "alarms": 7
+        },
+        "output x 8": {
+          "corrupted_calls": 16,
+          "alarms": 11
+        },
+        "output x 64": {
+          "corrupted_calls": 16,
+          "alarms": 15
+        },
+        "output x 65536": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "GPT, 8 layers, width 1024, 16 heads, 2,048 tokens",
+        "layers": 8,
+        "width": 1024,
+        "heads": 16,
+        "kv": 16,
+        "seq": 2048,
+        "batch": 4,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 1
+      },
+      "backend": "cudnn_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 96,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.09645035117864609,
+        "ops": {
+          "aten::_scaled_dot_product_cudnn_attention": 96,
+          "aten::_scaled_dot_product_cudnn_attention_backward": 96
+        },
+        "forward_checks": 96,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 1
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        },
+        "output x 2": {
+          "corrupted_calls": 16,
+          "alarms": 7
+        },
+        "output x 8": {
+          "corrupted_calls": 16,
+          "alarms": 11
+        },
+        "output x 64": {
+          "corrupted_calls": 16,
+          "alarms": 15
+        },
+        "output x 65536": {
+          "corrupted_calls": 16,
+          "alarms": 16
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "GQA 16:4, head size 128, 4,096 tokens",
+        "layers": 4,
+        "width": 2048,
+        "heads": 16,
+        "kv": 4,
+        "seq": 4096,
+        "batch": 2,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 2
+      },
+      "backend": "flash_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 48,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.09667086601257324,
+        "ops": {
+          "aten::_scaled_dot_product_flash_attention": 48,
+          "aten::_scaled_dot_product_flash_attention_backward": 48
+        },
+        "forward_checks": 48,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        },
+        "output x 2": {
+          "corrupted_calls": 8,
+          "alarms": 1
+        },
+        "output x 8": {
+          "corrupted_calls": 8,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 8,
+          "alarms": 6
+        },
+        "output x 65536": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "GQA 16:4, head size 128, 4,096 tokens",
+        "layers": 4,
+        "width": 2048,
+        "heads": 16,
+        "kv": 4,
+        "seq": 4096,
+        "batch": 2,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 2
+      },
+      "backend": "efficient_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 48,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.0897916704416275,
+        "ops": {
+          "aten::_scaled_dot_product_efficient_attention": 48,
+          "aten::_scaled_dot_product_efficient_attention_backward": 48
+        },
+        "forward_checks": 48,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        },
+        "output x 2": {
+          "corrupted_calls": 8,
+          "alarms": 1
+        },
+        "output x 8": {
+          "corrupted_calls": 8,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 8,
+          "alarms": 6
+        },
+        "output x 65536": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "GQA 16:4, head size 128, 4,096 tokens",
+        "layers": 4,
+        "width": 2048,
+        "heads": 16,
+        "kv": 4,
+        "seq": 4096,
+        "batch": 2,
+        "vocab": 32000,
+        "steps": 12,
+        "seed": 2
+      },
+      "backend": "cudnn_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 48,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.09126506745815277,
+        "ops": {
+          "aten::_scaled_dot_product_cudnn_attention": 48,
+          "aten::_scaled_dot_product_cudnn_attention_backward": 48
+        },
+        "forward_checks": 48,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 0
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        },
+        "output x 2": {
+          "corrupted_calls": 8,
+          "alarms": 1
+        },
+        "output x 8": {
+          "corrupted_calls": 8,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 8,
+          "alarms": 6
+        },
+        "output x 65536": {
+          "corrupted_calls": 8,
+          "alarms": 8
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "narrow, 32 heads of 32, 1,024 tokens",
+        "layers": 6,
+        "width": 1024,
+        "heads": 32,
+        "kv": 32,
+        "seq": 1024,
+        "batch": 8,
+        "vocab": 8192,
+        "steps": 12,
+        "seed": 3
+      },
+      "backend": "flash_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 72,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.13904760777950287,
+        "ops": {
+          "aten::_scaled_dot_product_flash_attention": 72,
+          "aten::_scaled_dot_product_flash_attention_backward": 72
+        },
+        "forward_checks": 72,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "output x 2": {
+          "corrupted_calls": 12,
+          "alarms": 2
+        },
+        "output x 8": {
+          "corrupted_calls": 12,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 12,
+          "alarms": 11
+        },
+        "output x 65536": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "narrow, 32 heads of 32, 1,024 tokens",
+        "layers": 6,
+        "width": 1024,
+        "heads": 32,
+        "kv": 32,
+        "seq": 1024,
+        "batch": 8,
+        "vocab": 8192,
+        "steps": 12,
+        "seed": 3
+      },
+      "backend": "efficient_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 72,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.13028305768966675,
+        "ops": {
+          "aten::_scaled_dot_product_efficient_attention": 72,
+          "aten::_scaled_dot_product_efficient_attention_backward": 72
+        },
+        "forward_checks": 72,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "output x 2": {
+          "corrupted_calls": 12,
+          "alarms": 2
+        },
+        "output x 8": {
+          "corrupted_calls": 12,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 12,
+          "alarms": 11
+        },
+        "output x 65536": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "narrow, 32 heads of 32, 1,024 tokens",
+        "layers": 6,
+        "width": 1024,
+        "heads": 32,
+        "kv": 32,
+        "seq": 1024,
+        "batch": 8,
+        "vocab": 8192,
+        "steps": 12,
+        "seed": 3
+      },
+      "backend": "cudnn_attention",
+      "dtype": "bfloat16",
+      "clean": {
+        "checks": 72,
+        "alarms": 0,
+        "backward_alarms": 0,
+        "forward_alarms": 0,
+        "worst": 0.1302558183670044,
+        "ops": {
+          "aten::_scaled_dot_product_cudnn_attention": 72,
+          "aten::_scaled_dot_product_cudnn_attention_backward": 72
+        },
+        "forward_checks": 72,
+        "unjudged": 0,
+        "skipped": {}
+      },
+      "injected": {
+        "dV + 1 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 4 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 16 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 0
+        },
+        "dV + 64 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "dV + 256 x rms": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        },
+        "output x 2": {
+          "corrupted_calls": 12,
+          "alarms": 2
+        },
+        "output x 8": {
+          "corrupted_calls": 12,
+          "alarms": 5
+        },
+        "output x 64": {
+          "corrupted_calls": 12,
+          "alarms": 11
+        },
+        "output x 65536": {
+          "corrupted_calls": 12,
+          "alarms": 12
+        }
+      }
+    }
+  ],
+  "clean_checks": 648,
+  "alarms": 0,
+  "worst": 0.13904760777950287,
+  "criteria_met": true,
+  "nothing_ran": false,
+  "incomplete": [],
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "cc": [
+    9,
+    0
+  ],
+  "torch": "2.14.1+cu130",
+  "seconds": 35.7
+}
