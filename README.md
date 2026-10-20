@@ -113,7 +113,7 @@ from sdcguard.serve import ServeGuard
 
 guard = ServeGuard().attach(model, share=0.125)   # bf16 or fp16 model on its GPU
 ...                                                # serve as usual, eager or torch.compile
-for event in guard.poll():                         # never stalls the GPU
+for event in guard.poll():                         # asynchronous state readback; handles ready alerts
     print(event.to_json())
 ```
 
@@ -158,7 +158,7 @@ So `check` draws fresh sign patterns for every matmul it tests, and training che
 checked step; a fault that keeps swapping the same two outputs then shows on about half the checked steps
 instead of never. Serving computes its weight checksums once at load, so it keeps one pattern.
 
-bf16 results are rounded, so the two sides never match exactly. sdcguard estimates each block's rounding
+Normal bf16 rounding can make the two sides differ. sdcguard estimates each block's rounding
 noise and only alarms past 6 times that. Six is a calibrated threshold, not a universal six-sigma guarantee.
 In 24.6 million checks over 5 GPU-hours of clean training (Oct 14-15,
 the default mode of that version) it never false-alarmed (worst score 3.54); the board sweep with every phase of

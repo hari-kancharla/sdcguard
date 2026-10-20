@@ -2,11 +2,13 @@
 
 Start with sdcguard's synthetic workloads; no access to customer jobs or data is needed unless you choose
 step 3. Allow time for installation and reviewing the results as well as the check itself.
+The reviewed candidate is unpublished. Use the supplied checkout and record its commit and source fingerprint;
+the same version number on a package index does not establish that it contains these changes.
 
 ## 1. Check every GPU on a few nodes (5 minutes, unattended)
 
 ```bash
-pip install sdcguard
+python -m pip install -e ".[all]"             # from the reviewed checkout
 sdcguard check --offline --out sdcguard_check  # every visible GPU, in parallel; about 5 minutes plus setup
 ```
 

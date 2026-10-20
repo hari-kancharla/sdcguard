@@ -3,10 +3,13 @@
 Use one supported NVIDIA GPU with enough free memory for the selected workload, plus a laptop for the last
 shot. Record the terminal and speed up the waiting parts. Keep the command, revision, device and actual
 verdict visible. A demonstration of a simulated fault is not evidence of a physically defective GPU.
+Install from the reviewed checkout while this candidate is unpublished. A later recording may use a released
+wheel only after its contents and hash have been matched to that source; do not imply the unpushed changes
+are already available from PyPI.
 
 | time | show | command | say |
 |---|---|---|---|
-| 0-8 s | the GPU and the install | `nvidia-smi -L && pip install sdcguard` | A rented GPU. Does it compute correctly? |
+| 0-8 s | the GPU and the install | `nvidia-smi -L`, then `python -m pip install -e ".[all]"` from the reviewed checkout | A rented GPU. Does it compute correctly? |
 | 8-20 s | a real check, sped up | `sdcguard check --offline --minutes 2 --out demo_check` | A two-minute target, plus setup: synthetic training and serving, supported math modes against a float64 reference, memory and repeatability. Show the actual verdict, completed modes and counts. |
 | 20-32 s | a labelled simulated fault | `sdcguard check --offline --minutes 1 --simulate-faults 0.001 --out demo_fail` | Here the configured injection probability is 0.1% per eligible matmul result. This is software simulation. Show the SIMULATED label, actual failures and saved evidence. |
 | 32-42 s | portable evidence | `sdcguard replay /path/to/copied/evidence_0.pt` | I copied one saved incident, with its neighboring JSON metadata, to another directory. Replay checks the recorded output and recomputes the operation. Show the actual mismatch and recomputation counts; the physical cause remains unproven. |

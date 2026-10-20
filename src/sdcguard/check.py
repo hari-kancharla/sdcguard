@@ -191,7 +191,9 @@ def matmul_speed(dev, dtype, seconds: float) -> dict:
     while time.time() < t_end or len(rates) < 3:
         rates.append(2 * n ** 3 * k / _elapsed(dev, burst) / 1e12)
     head, tail = _median(rates[:3]), _median(rates[-3:])
-    return {"tflops": round(_median(rates), 2), "first_tflops": round(head, 2), "last_tflops": round(tail, 2),
+    # Keep measurements in the record. Decimal-place rounding can turn a slow
+    # positive CPU result into zero, removing it from cards and certificates.
+    return {"tflops": _median(rates), "first_tflops": head, "last_tflops": tail,
             "drop_pct": round(max(0.0, (head - tail) / head * 100), 1) if head else None, "size": n,
             "dtype": {"bfloat16": "bf16", "float16": "fp16"}.get(str(dtype).replace("torch.", ""), str(dtype)),
             "windows": len(rates)}
@@ -808,6 +810,8 @@ def _n(x) -> str:
     if x is None:
         return "?"
     if isinstance(x, float) and not x.is_integer():
+        if abs(x) < 1:
+            return f"{x:.3g}"
         return f"{x:,.1f}"
     return f"{int(x):,}"
 
