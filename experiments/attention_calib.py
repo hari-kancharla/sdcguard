@@ -212,14 +212,22 @@ def calibrate(dev, say=print) -> dict:
                 r = run(dev, cfg, be, low, say=lambda s, a=name: say(f"  {a}: {s}"))
             except torch.cuda.OutOfMemoryError as e:
                 r = {"config": cfg, "backend": name, "error": f"out of memory: {str(e).splitlines()[0][:150]}"}
-            except RuntimeError as e:          # e.g. "No available kernel": this GPU doesn't have that backend
-                r = {"config": cfg, "backend": name, "error": f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"}
+            except RuntimeError as e:
+                msg = f"{type(e).__name__}: {str(e).splitlines()[0][:200]}" if str(e) else type(e).__name__
+                if "No available kernel" in str(e):
+                    # PyTorch's own capability answer, given before any check ran: this GPU (or this build) doesn't
+                    # offer that fused kernel. Recorded, and not counted against completeness; any other error is.
+                    r = {"config": cfg, "backend": name, "unavailable": msg}
+                else:
+                    r = {"config": cfg, "backend": name, "error": msg}
             if dev.type == "cuda":
                 torch.cuda.empty_cache()
             runs.append(r)
     ran = [r for r in runs if "clean" in r and r["clean"]["checks"] > 0]
     incomplete = []
     for r in runs:
+        if r.get("unavailable"):
+            continue
         c = r.get("clean", {})
         expected = r["config"]["layers"] * r["config"]["steps"]
         reasons = []
@@ -256,6 +264,9 @@ def markdown(res: dict) -> str:
     for r in res["runs"]:
         if "error" in r:
             lines.append(f"| {r['config']['name']} | {r['backend']} | not run: {r['error']} |")
+            continue
+        if "unavailable" in r:
+            lines.append(f"| {r['config']['name']} | {r['backend']} | not offered on this GPU: {r['unavailable']} |")
             continue
         c = r["clean"]
         cells = [f"{v['alarms']}/{v['corrupted_calls']}" for v in r["injected"].values()]

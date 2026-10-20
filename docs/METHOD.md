@@ -410,8 +410,10 @@ not with `protect()`.
 Completeness reporting clarified October 20, before the planned GPU calibration: each configured clean run
 must record `layers * steps` judged forward checks and the same number of judged backward checks. Partial
 execution, skipped or unjudged checks, and unclassified backend errors are INCOMPLETE; a surviving subset
-cannot meet the overall criteria. This does not classify an unavailable backend as a numerical failure.
-Any future exclusion needs an explicit capability reason, independent of its observed score. The original
+cannot meet the overall criteria. One exclusion has an explicit capability reason, independent of any score:
+a fused kernel PyTorch itself reports as not offered on that GPU ("No available kernel", raised before any
+check runs) is recorded in the results and not counted; any other error, a CUDA fault or running out of memory
+included, makes the calibration INCOMPLETE. The original
 0-alarm and worst-score-at-most-4 requirements remain unchanged, and scores are judged before display rounding.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
