@@ -343,7 +343,7 @@ def _tests(label: str, with_bench: bool = False) -> dict:
     vol.commit()
     # Last, within the time left (so the rest is never lost to it): the attention check's calibration
     # (experiments/attention_calib.py; its criteria are in its docstring). Exit 3: not enough time to start;
-    # 124: stopped at its time limit; 2: no attention kernel ran.
+    # 124: stopped at its time limit; 2: the attention calibration was incomplete.
     budget = min(9 * 60, left())
     if budget < 4 * 60:
         ac = subprocess.CompletedProcess([], 3, "", f"not started: {max(0, budget) / 60:.1f} minutes left")
@@ -351,7 +351,8 @@ def _tests(label: str, with_bench: bool = False) -> dict:
         ac = run([sys.executable, "experiments/attention_calib.py", "--device", "cuda", "--out",
                   f"{OUT}/attention_{label}"], budget, cwd=R, env=env)
     att_json = None
-    if ac.returncode in (0, 1):                # only a finished calibration's file (the folder was cleared above)
+    stamp(f"{OUT}/attention_output_{label}.txt", ac.stdout + "\n" + ac.stderr + f"\n[exit code {ac.returncode}]\n")
+    if ac.returncode in (0, 1, 2):             # completed process, including an explicit incomplete calibration
         try:
             with open(f"{OUT}/attention_{label}/attention_calib.json") as f:
                 att_json = f.read()
@@ -378,7 +379,7 @@ def _tests(label: str, with_bench: bool = False) -> dict:
             + c.stdout[-2500:] + c.stderr[-1500:] + f"\n[sdcguard check exit code {c.returncode}]\n\n"
             + "Attention check calibration (experiments/attention_calib.py):\n" + ac.stdout[-4000:]
             + (ac.stderr[-1500:] if ac.returncode not in (0, 1) else "")
-            + f"\n[attention calibration exit code {ac.returncode}: 0 criteria met, 1 not met, 2 no kernel ran, "
+            + f"\n[attention calibration exit code {ac.returncode}: 0 criteria met, 1 not met, 2 INCOMPLETE, "
             f"3 not started (no time left), 124 stopped at its time limit, other: error]")
     # (kernel timings stopped at their limit are timing data, not a test failure; a crash is)
     bench_code = {} if bench is None or bench.returncode == 124 else {"bench": bench.returncode}
@@ -569,7 +570,7 @@ def main(phase: str = "sweep", force: bool = False):
             att[label] = r.get("attention_calibration")
             failed.update({f"{label} {k}": v for k, v in r.items()
                            if k not in ("text", "attention_json", "attention_calibration") and v != 0})
-        verdicts = {0: "MET", 1: "NOT MET", 2: "no kernel ran", 3: "not started (no time left)",
+        verdicts = {0: "MET", 1: "NOT MET", 2: "INCOMPLETE", 3: "not started (no time left)",
                     124: "stopped at its time limit", None: "didn't run"}
         print("Attention check criteria (0 clean alarms, worst at most 4): " + ", ".join(
             f"{k} {verdicts.get(v, f'error ({v})')}" for k, v in att.items()), flush=True)

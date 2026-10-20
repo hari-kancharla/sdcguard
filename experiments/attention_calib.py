@@ -133,14 +133,19 @@ def run(dev, cfg, backend, low, say=print) -> dict:
     opt = torch.optim.AdamW(model.parameters(), lr=3e-4)
     gen = torch.Generator().manual_seed(cfg["seed"] + 100)
     scores, fwd_alarms, ops = [], 0, {}
+    forward_checks, unjudged = 0, 0
 
     def on_result(detail, res):
-        nonlocal fwd_alarms
+        nonlocal fwd_alarms, forward_checks, unjudged
         kind = detail.get("kind")
-        if kind == "attention_backward" and res.judged:
-            scores.append(res.max_z)
-        elif kind == "attention_forward" and not res.ok:
-            fwd_alarms += 1
+        if kind in ("attention_backward", "attention_forward"):
+            if not res.judged:
+                unjudged += 1
+            elif kind == "attention_backward":
+                scores.append(res.max_z)
+            else:
+                forward_checks += 1
+                fwd_alarms += not res.ok
         if kind:
             ops[detail["op"]] = ops.get(detail["op"], 0) + 1
 
@@ -171,7 +176,8 @@ def run(dev, cfg, backend, low, say=print) -> dict:
                 f"forward alarms {fwd_alarms}")
     clean = {"checks": len(scores), "alarms": sum(z > ALARM for z in scores) + fwd_alarms,
              "backward_alarms": sum(z > ALARM for z in scores), "forward_alarms": fwd_alarms,
-             "worst": round(max(scores, default=0.0), 3), "ops": dict(ops),
+             "worst": max(scores, default=0.0), "ops": dict(ops),
+             "forward_checks": forward_checks, "unjudged": unjudged,
              "skipped": dict(g.attention_skipped)}
     # injected errors (no optimizer step): the share of corrupted calls that alarm
     caught = {}
@@ -212,10 +218,27 @@ def calibrate(dev, say=print) -> dict:
                 torch.cuda.empty_cache()
             runs.append(r)
     ran = [r for r in runs if "clean" in r and r["clean"]["checks"] > 0]
+    incomplete = []
+    for r in runs:
+        c = r.get("clean", {})
+        expected = r["config"]["layers"] * r["config"]["steps"]
+        reasons = []
+        if r.get("error"):
+            reasons.append(r["error"])
+        if expected <= 0 or c.get("checks") != expected or c.get("forward_checks") != expected:
+            reasons.append(f"expected {expected} judged forward and backward checks")
+        if c.get("unjudged", 0) or c.get("skipped"):
+            reasons.append("unjudged or skipped attention checks")
+        z = c.get("worst", float("nan"))
+        if not math.isfinite(z) or z < 0:
+            reasons.append("missing or non-finite clean score")
+        if reasons:
+            incomplete.append({"config": r["config"]["name"], "backend": r["backend"], "reasons": reasons})
     alarms = sum(r["clean"]["alarms"] for r in ran)
     worst = max((r["clean"]["worst"] for r in ran), default=0.0)
     out = {"runs": runs, "clean_checks": sum(r["clean"]["checks"] for r in ran), "alarms": alarms, "worst": worst,
-           "criteria_met": bool(ran) and alarms == 0 and worst <= 4.0, "nothing_ran": not ran}
+           "criteria_met": bool(ran) and not incomplete and alarms == 0 and worst <= 4.0,
+           "nothing_ran": not ran, "incomplete": incomplete}
     if dev.type == "cuda":
         out.update(gpu=torch.cuda.get_device_name(dev), cc=list(torch.cuda.get_device_capability(dev)),
                    torch=torch.__version__)
@@ -225,7 +248,7 @@ def calibrate(dev, say=print) -> dict:
 def markdown(res: dict) -> str:
     lines = [f"## {res.get('gpu', 'CPU')}: {res['clean_checks']} clean attention backward checks, {res['alarms']} "
              f"alarms, worst {res['worst']} (criteria "
-             f"{'not judged: no kernel ran' if res.get('nothing_ran') else 'MET' if res['criteria_met'] else 'NOT MET'}"
+             f"{'INCOMPLETE' if res.get('incomplete') or res.get('nothing_ran') else 'MET' if res['criteria_met'] else 'NOT MET'}"
              f": 0 alarms, worst at most 4)", "",
              "| workload | kernel | clean checks | alarms | worst | " + " | ".join(
                  f"{k}" for k in [f"dV + {m} x rms" for m in MULTS] + [f"output x {p}" for p in POW2]) + " |",
@@ -238,6 +261,8 @@ def markdown(res: dict) -> str:
         cells = [f"{v['alarms']}/{v['corrupted_calls']}" for v in r["injected"].values()]
         lines.append(f"| {r['config']['name']} | {r['backend']} | {c['checks']} | {c['alarms']} | {c['worst']} | "
                      + " | ".join(cells) + " |")
+    for r in res.get("incomplete", []):
+        lines.append(f"\nIncomplete: {r['config']}, {r['backend']}: {'; '.join(r['reasons'])}.")
     return "\n".join(lines) + "\n"
 
 
@@ -257,8 +282,8 @@ def main(argv=None) -> int:
             json.dump(res, f, indent=2, default=str)
         with open(os.path.join(a.out, "attention_calib.md"), "w") as f:
             f.write(md)
-    # 0 criteria met, 1 not met, 2 nothing ran (every kernel errored: no verdict either way)
-    return 2 if res.get("nothing_ran") else 0 if res["criteria_met"] else 1
+    # 0 criteria met, 1 not met, 2 incomplete (including partial execution).
+    return 2 if res.get("nothing_ran") or res.get("incomplete") else 0 if res["criteria_met"] else 1
 
 
 if __name__ == "__main__":
