@@ -184,7 +184,9 @@ def _wait_all(calls, cap: float, every: float = 20.0, say=print, retry_for: floa
     """Yield (label, result) for each spawned call as it finishes, in whatever order they finish, printing what's
     still running every 5 minutes. Waiting one call at a time with a fixed timeout gave up on the H100 and the
     B200 on Oct 19 while they were still queued or running (TimeoutError after 35, 70 and 105 minutes). Modal's
-    TimeoutError from get(timeout=0) means "not finished yet". Any other error that isn't in FINAL_ERRORS (a
+    Built-in TimeoutError from a pending get(timeout=0) means "not finished yet". Our worker wrappers return
+    user-code exceptions as error records, so a worker's own TimeoutError cannot masquerade as a pending poll.
+    Any other error that isn't in FINAL_ERRORS (a
     dropped connection, say) is asked again for up to `retry_for` seconds before it counts, since giving up
     ends the app and stops the GPUs still running. A call still pending after `cap` seconds is reported as not
     finished, with where its logs are."""
@@ -197,16 +199,19 @@ def _wait_all(calls, cap: float, every: float = 20.0, say=print, retry_for: floa
                 r = call.get(timeout=0)
             except Exception as e:  # noqa: BLE001
                 name = type(e).__name__
-                if name == "TimeoutError" and time.time() - t0 < cap:
+                expired = time.time() - t0 >= cap
+                if name == "TimeoutError" and not expired:
                     failing_since.pop(label, None)
-                    continue                      # not finished yet (a function's own time limit raises another error)
+                    continue                      # pending poll; platform execution timeout has another class
                 if name not in FINAL_ERRORS and name != "TimeoutError":
                     since = failing_since.setdefault(label, time.time())
-                    if time.time() - since < retry_for:
+                    if not expired and time.time() - since < retry_for:
                         continue                  # asked again later: a dropped connection isn't a result
                 r = {"text": f"===== {label}\ncould not run: {name}: {e}"
                              + (f" (still not finished after {cap / 3600:.1f} hours)" if name == "TimeoutError" else
-                                "" if name in FINAL_ERRORS else f" (the same error for {retry_for / 60:.0f} minutes)")
+                                "" if name in FINAL_ERRORS else
+                                f" (overall wait limit {cap / 3600:.1f} hours reached)" if expired else
+                                f" (the same error for {retry_for / 60:.0f} minutes)")
                              + f"\nLogs written before it stopped: modal volume get sdcguard-runs "
                              f"/check_sweep/pytest_{label}.txt results/gpu_tests/ (also started_, fast_compare_, "
                              f"serve_compare_, wheel_, tests_cli_output_; each starts with the code fingerprint "
@@ -218,7 +223,7 @@ def _wait_all(calls, cap: float, every: float = 20.0, say=print, retry_for: floa
                 last = time.time()
                 say(f"... {(last - t0) / 60:.0f} minutes in, still running or waiting for a GPU: "
                     f"{', '.join(pending)}", flush=True)
-            time.sleep(every)
+            time.sleep(min(every, max(0.0, cap - (time.time() - t0))))
 
 
 def _step(cmd, budget: float, floor: float = 30.0, **kw) -> subprocess.CompletedProcess:
@@ -382,19 +387,29 @@ def _tests(label: str, with_bench: bool = False) -> dict:
             "attention_calibration": ac.returncode, "attention_json": att_json}
 
 
+def _tests_result(label: str, with_bench: bool = False) -> dict:
+    """Keep a worker exception distinct from the SDK's pending-output polling exception."""
+    try:
+        return _tests(label, with_bench=with_bench)
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        return {"run": 2, "text": f"===== {label}\nworker failed: {type(e).__name__}: {e}\n"
+                                 + traceback.format_exc()[-6000:]}
+
+
 @app.function(gpu="L4", volumes=VOLS, cpu=4, memory=16384, timeout=TESTS_LIMIT["l4"])
 def tests() -> dict:
-    return _tests("l4")
+    return _tests_result("l4")
 
 
 @app.function(gpu="H100!", volumes=VOLS, cpu=4, memory=32768, timeout=TESTS_LIMIT["h100"])
 def tests_h100() -> dict:
-    return _tests("h100")
+    return _tests_result("h100")
 
 
 @app.function(gpu="B200", volumes=VOLS, cpu=4, memory=32768, timeout=TESTS_LIMIT["b200"])
 def tests_b200() -> dict:
-    return _tests("b200", with_bench=True)
+    return _tests_result("b200", with_bench=True)
 
 
 DIAG = r"""
