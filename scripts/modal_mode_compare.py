@@ -7,7 +7,8 @@ criteria on Oct 19).
 
 About 5 to 15 minutes per GPU, about $1.50 in total at Modal's prices (per hour: H100 $3.95, A100 80GB $2.50,
 L4 $0.80, plus about $0.45 per machine for 4 CPU cores at $0.0472 and 32 GiB at $0.008 a GiB). Every function
-stops at 30 minutes, so it can't cost more than about $4.30. There is no pass line (the reporting rules are in the experiment's
+has a 30-minute execution limit: about $4.30 at requested CPU/RAM usage, not a total bill cap. Startup, higher
+actual resource usage and restarts can add cost. There is no pass line (the reporting rules are in the experiment's
 docstring and in docs/METHOD.md, written before the run); the exit code says whether every GPU ran. Results go
 to results/mode_compare/.
 """
@@ -58,25 +59,90 @@ KW = dict(cpu=4, memory=32768, timeout=LIMIT)
 
 
 def _work(label: str) -> dict:
-    import platform
+    """Return saved sensitivity and logs even if timing fails or a child reaches its soft deadline."""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import tempfile
 
-    import torch
-    import mode_compare
-    import precise_models
-    t0 = time.time()
-    dev = torch.device("cuda")
+    t0 = time.monotonic()
+    res = {"label": label}
     try:
-        cfg = dict(mode_compare.CONFIG["cuda"])
-        res = mode_compare.run(dev, cfg, say=lambda s: print(label, s, flush=True))
-        res.update(device="cuda", torch=torch.__version__, code_sha256=mode_compare.code_digest(),
-                   gpu=torch.cuda.get_device_name(dev), cc=list(torch.cuda.get_device_capability(dev)),
-                   python=platform.python_version())
-        res["overhead"] = precise_models.overhead(dev, cfg)
+        with tempfile.TemporaryDirectory(prefix="sdcguard-mode-") as td:
+            dest = Path(td) / "results"
+            with open(Path(td) / "output.txt", "w+") as log:
+                budget = LIMIT - 120 - (time.monotonic() - t0)
+                if budget <= 0:
+                    return {"label": label, "error": "no execution budget remains"}
+                cmd = [sys.executable, f"{R}/experiments/mode_compare.py", "--device", "cuda", "--out", str(dest)]
+                p = subprocess.Popen(cmd, cwd=R, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    code = p.wait(timeout=budget)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(p.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        p.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    code = 124
+                log.seek(0)
+                output = log.read()
+            files = sorted(dest.glob("*.json"))
+            if len(files) == 1:
+                res.update(json.loads(files[0].read_text()))
+                md = files[0].with_suffix(".md")
+                res["markdown"] = md.read_text() if md.exists() else ""
+            if code != 0:
+                res["error"] = (f"worker exited {code}; " + res.get("error", "see partial output"))
+            elif not res.get("complete") or res.get("overhead_status") != "complete":
+                res["error"] = "missing or incomplete sensitivity/timing results"
+            res["output"] = output
     except Exception as e:  # noqa: BLE001
         import traceback
-        return {"label": label, "error": f"{type(e).__name__}: {str(e)[:300]}", "trace": traceback.format_exc()[-2000:]}
-    res.update(label=label, seconds=round(time.time() - t0, 1), markdown=mode_compare.markdown(res))
+        res.update(error=f"{type(e).__name__}: {str(e)[:300]}", trace=traceback.format_exc()[-2000:])
+    res.update(label=label, seconds=round(time.monotonic() - t0, 1))
+    if res.get("error"):
+        res["markdown"] = f"## {label}: INCOMPLETE: {res['error']}\n\n" + res.get("markdown", "")
     return res
+
+
+def _wait_all(calls, cap=3 * 3600, every=20.0, retry_for=600.0):
+    """Poll every call. Queue time is separate from the worker's execution limit.
+
+    Worker failures return error records. Explicit platform terminal errors stop polling; unknown client
+    exceptions remain visible after a bounded retry period. A pending poll can raise built-in TimeoutError.
+    """
+    pending, failing_since = dict(calls), {}
+    start = last = time.monotonic()
+    final = {"FunctionTimeoutError", "OutputExpiredError", "RemoteError", "ExecutionError", "InputCancellation"}
+    while pending:
+        for name, call in list(pending.items()):
+            try:
+                result = call.get(timeout=0)
+            except Exception as e:  # noqa: BLE001
+                now, kind = time.monotonic(), type(e).__name__
+                expired = now - start >= cap
+                if kind == "TimeoutError" and not expired:
+                    failing_since.pop(name, None)
+                    continue
+                if kind not in final and kind != "TimeoutError" and not expired:
+                    if now - failing_since.setdefault(name, now) < retry_for:
+                        continue
+                result = {"label": name, "error": f"{kind}: {e}; result unavailable within the wait/retry limit"}
+            if not isinstance(result, dict):
+                result = {"label": name, "error": "worker returned an invalid result"}
+            del pending[name]
+            yield name, result
+        if pending:
+            now = time.monotonic()
+            if now - last >= 300:
+                print(f"{(now - start) / 60:.0f} minutes: still waiting for {', '.join(pending)}", flush=True)
+                last = now
+            time.sleep(min(every, max(0.0, cap - (now - start))))
 
 
 @app.function(gpu="H100!", **KW)
@@ -105,12 +171,10 @@ def main() -> None:
     dest = LOCAL / "results" / "mode_compare"
     dest.mkdir(parents=True, exist_ok=True)
     text, failed = [], []
-    for name, call in started:
-        try:
-            r = call.get(timeout=LIMIT + 300)
-        except Exception as e:  # noqa: BLE001
-            r = {"label": name, "error": f"{type(e).__name__}: {str(e)[:300]}"}
+    for name, r in _wait_all(started):
         r["source"] = src
+        if not r.get("error") and (not r.get("complete") or r.get("overhead_status") != "complete"):
+            r["error"] = "worker returned incomplete measurements"
         (dest / f"{name}.json").write_text(json.dumps(r, indent=2, default=str))
         if r.get("error"):
             failed.append(name)
