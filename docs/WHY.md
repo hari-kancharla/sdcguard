@@ -66,9 +66,10 @@ of the [OSDI '26 paper](https://www.usenix.org/system/files/osdi26-lei.pdf)). It
 healthy machine shows why: over bf16 outputs, injected bit flips are buried in round-off noise (section 5.1.1).
 sdcguard's default check works on bf16/fp16 outputs, so on AEGIS's evidence it should be expected to catch large
 errors (exponent-bit changes, outputs that were never written) rather than the small ones real defects often
-produce; its experimental precise mode checks fp32 outputs instead. AEGIS's deterministic recomputation also
-caught more production incidents (12) than its checksum detection and outlier warnings (6), partly because
-checksum detection was sampled sparingly. That motivates measuring precise mode against the default on the same
+produce; its experimental precise mode checks fp32 outputs instead. AEGIS's deterministic detection, which compares a
+fingerprint of an operation's output with the recomputation training already performs, flagged more production
+incidents (12) than its sparsely sampled checksum detection and outlier warnings (6); the paper credits its wider
+operator coverage (normalizations among them) and the sparse sampling (section 7.2). That motivates measuring precise mode against the default on the same
 matmuls, not assuming it inherits AEGIS's results, and it means checksums alone shouldn't be expected to find
 most real incidents. The revised noise
 model already had an October 19 held-out run (fingerprint `1265b3e0a385`): no alarms in 17,424 checks, but the
