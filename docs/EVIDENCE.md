@@ -42,5 +42,7 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 |---|---|---|
 | Default check vs precise mode on the same matmuls | Oct 19 | [METHOD.md](METHOD.md#the-default-check-and-precise-mode-on-the-same-matmuls-written-october-19-2026-before-any-gpu-run) |
 | vLLM plugin in real vLLM (compiled mode) | Oct 19-20 | scripts/modal_vllm.py |
+| H200 preflight: MPS, the bug as published, DCGM under MPS | Oct 20 | [METHOD.md](METHOD.md#head-to-head-on-a-real-cublas-bug-written-october-20-2026-before-any-run) |
+| Head-to-head on cuBLAS known issue 6862950: DCGM diagnostic, gpu-burn, sdcguard check | Oct 20 | same |
 
 When a run finishes, its row moves to section 2 with its result, whatever it is.
