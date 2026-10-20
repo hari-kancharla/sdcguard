@@ -23,7 +23,14 @@ which kernel DCGM's cuBLAS picks), and gpu-burn's default FP32 mode. A last shor
 
 Classification rules (written before the run, docs/METHOD.md "Head-to-head on a real cuBLAS bug"): each (tool,
 share) cell is DETECTED, MISSED, NOT EXERCISED, FALSE ALARM, FAIL (NOT ATTRIBUTABLE) or COULD NOT TEST, judged
-against that tool's own ground truth at that share. Nothing is rerun because its result was unwelcome.
+against that tool's own ground truth at that share. Nothing is rerun because its result was unwelcome. A share
+whose MPS daemon didn't start is COULD NOT TEST for every tool.
+
+preflight() is the short check before that run (scripts/modal_h2h.py --phase preflight, about 10 minutes): does
+MPS work in this container, does the bug reproduce the way NVIDIA describes it (only algorithm 66 with 4 or more
+CTAs per cluster wrong, smaller clusters right), does DCGM's diagnostic run here and produce readable results, and
+does it run as an MPS client (new connections in the MPS logs while it runs)? Its decisions say whether the full
+run can answer its question.
 """
 from __future__ import annotations
 
@@ -39,6 +46,10 @@ from pathlib import Path
 SHARES = (100, 40, 75, 14)
 PROBE_CASES = ("hgemm:2048", "sgemm:2048", "sgemmtc:2048", "sgemm:8192", "sgemmtc:8192", "dgemm:8192",
                "ex16:2048", "exbf16:2048")
+# cuBLASLt directly, every algorithm the heuristic offers, PyTorch's linear-layer layout: the public reproduction's
+# layer (16 tokens, 2048 in, 1000 out) and a square 2048 GEMM
+LT_CASES = ("lt16:1000:2048:16", "ltbf16:1000:2048:16", "lt16:2048:2048:2048", "ltbf16:2048:2048:2048")
+PREFLIGHT_SHARES = (100, 40, 14)
 # which probe cases stand for which tool's GEMMs (DCGM's diagnostic on an H200: 2048, half then single then double,
 # tensor-op math switched on halfway; gpu-burn: 8192)
 EXERCISE = {
@@ -281,6 +292,55 @@ def summarize_lt_log(path: Path, limit: int = 60) -> dict:
                                        and re.search(r"CLUSTER_SHAPE_(?!1x1x1|2x1x1|1x2x1)\d", k))}
 
 
+def lt_summary(probe: dict) -> dict:
+    """What the cuBLASLt cases show: which algorithms were wrong, and whether that matches known issue 6862950
+    (only CUBLASLT_ALGO_CONFIG_ID 66 with 4 or more CTAs per cluster)."""
+    rows = [v for k, v in probe.items() if k.split(":")[0] in ("lt16", "ltbf16") and "algo_id" in v]
+    default = [r for r in rows if not r.get("variant")]
+    fixed = [r for r in rows if r.get("variant") == "cluster_1x1x1"]
+
+    def affected(r):
+        return r.get("algo_id") == 66 and (r.get("cluster_ctas") or 0) >= 4
+
+    wrong = [r for r in default if r.get("correct") is False]
+    keep = ("case", "n", "algo_id", "cluster_shape_id", "cluster_ctas", "tile_id", "unwritten", "wrong_sampled",
+            "status", "cuda_error")
+    return {"algorithms_run": len(default), "wrong": len(wrong),
+            "wrong_rows": [{k: r.get(k) for k in keep} for r in wrong][:40],
+            "all_wrong_are_algo66_cluster4plus": bool(wrong) and all(affected(r) for r in wrong),
+            "algo66_cluster4plus_run": sum(affected(r) for r in default),
+            "algo66_cluster4plus_wrong": sum(affected(r) for r in wrong),
+            "wrong_with_1_or_2_cta_clusters": sum((r.get("cluster_ctas") or 0) in (1, 2) for r in wrong),
+            "workaround_runs": len(fixed), "workaround_wrong": sum(r.get("correct") is False for r in fixed),
+            "sms_visible": sorted({r.get("sms_visible") for r in rows if r.get("sms_visible") is not None}),
+            "cublaslt_version": sorted({r.get("cublaslt_version") for r in rows if r.get("cublaslt_version")})}
+
+
+def _mps_log_sizes() -> dict:
+    out = {}
+    for name in ("control.log", "server.log"):
+        p = Path(MPS_LOG) / name
+        out[name] = p.stat().st_size if p.exists() else 0
+    return out
+
+
+def mps_delta(before: dict) -> dict:
+    """MPS log lines written since `before` (sizes): evidence of which processes connected as MPS clients."""
+    res = {"new_text": {}, "connections": 0, "client_lines": 0}
+    for name, size in before.items():
+        p = Path(MPS_LOG) / name
+        if not p.exists():
+            res["new_text"][name] = "(missing)"
+            continue
+        with open(p, "rb") as f:
+            f.seek(size if p.stat().st_size >= size else 0)
+            text = f.read().decode(errors="replace")
+        res["new_text"][name] = text[-3000:]
+        res["connections"] += len(re.findall(r"Accepting connection", text))
+        res["client_lines"] += len(re.findall(r"(?i)\bclient\b", text))
+    return res
+
+
 # ---------------------------------------------------------------- running (GPU container only)
 
 def _env(share: int | None) -> dict:
@@ -415,36 +475,46 @@ def run_all(out_root: str, deadline_s: float, commit=lambda: None, repo: str = "
     check_cmd = [sys.executable, "-m", "sdcguard.check", "--minutes", "5", "--offline", "--json", "--device", "cuda:0"]
 
     def tools_at(share: int, d: Path) -> dict:
-        rec = {}
-        mps.start(share)
+        rec = {"mps_started": mps.start(share), "mps_clients": {}}
+        if not rec["mps_started"]:
+            res["notes"].append(f"share {share}%: the MPS daemon did not start, so every tool at this share is "
+                                "COULD NOT TEST")
+            return rec
         rec["ground"] = run_step("ground_truth", [sys.executable, f"{repo}/experiments/mps_unwritten.py"], d,
                                  min(200.0, left()), env=_env(share), cwd=repo)
         rec["ground_parsed"] = parse_ground(rec["ground"].get("stdout", ""))
         save()
         lt = d / "probe_cublaslt.log"
         penv = dict(_env(share), CUBLASLT_LOG_LEVEL="5", CUBLASLT_LOG_FILE=str(lt))
-        rec["probe"] = run_step("probe", [probe, "scrub", *PROBE_CASES], d, min(360.0, left()), env=penv)
+        rec["probe"] = run_step("probe", [probe, "scrub", *PROBE_CASES, *LT_CASES], d, min(420.0, left()), env=penv)
         rec["probe_parsed"] = parse_probe(rec["probe"].get("stdout", ""))
         rec["probe_lt"] = summarize_lt_log(lt)
+        rec["probe_cublaslt_algorithms"] = lt_summary(rec["probe_parsed"])
         save()
         if dcgm_ok:
             mps.start(share)
+            before = _mps_log_sizes()
             rec["dcgm"] = run_step("dcgm", ["dcgmi", "diag", "-r", "diagnostic", "-i", "0", "-j"] +
                                    (["-p", dcgm_extra.lstrip(";")] if dcgm_extra else []), d, min(480.0, left()),
                                    env=_env(share))
             rec["dcgm_parsed"] = parse_dcgm(rec["dcgm"].get("stdout", "") + rec["dcgm"].get("stderr", ""),
                                             rec["dcgm"].get("exit"), rec["dcgm"].get("timed_out", False))
+            rec["mps_clients"]["dcgm"] = mps_delta(before)
             save()
         mps.start(share)
+        before = _mps_log_sizes()
         rec["gpu_burn_tc"] = run_step("gpu_burn_tc", ["./gpu_burn", "-tc", "60"], d, min(170.0, left()),
                                       env=_env(share), cwd=burn_dir)
         rec["gpu_burn_tc_parsed"] = parse_burn(rec["gpu_burn_tc"].get("stdout", ""),
                                                rec["gpu_burn_tc"].get("timed_out", False))
+        rec["mps_clients"]["gpu_burn_tc"] = mps_delta(before)
         save()
         mps.start(share)
+        before = _mps_log_sizes()
         rec["sdcguard_check"] = run_step("sdcguard_check", check_cmd + ["--out", str(d / "check")], d,
                                          min(660.0, left()), env=_env(share), cwd=repo)
         rec["sdcguard_check_parsed"] = parse_check(rec["sdcguard_check"].get("stdout", ""), d / "check")
+        rec["mps_clients"]["sdcguard_check"] = mps_delta(before)
         save()
         return rec
 
@@ -499,15 +569,156 @@ def run_all(out_root: str, deadline_s: float, commit=lambda: None, repo: str = "
     return res
 
 
+def preflight(out_root: str, deadline_s: float, commit=lambda: None, repo: str = "/root/sdcguard",
+              probe: str = "/opt/h2h/probe", burn_dir: str = "/opt/gpu-burn") -> dict:
+    """The short check before the full run (about 10 minutes). Every step's full output stays in out_root."""
+    t_start = time.monotonic()
+    out = Path(out_root)
+    out.mkdir(parents=True, exist_ok=True)
+
+    def left(reserve: float = 60.0) -> float:
+        return deadline_s - (time.monotonic() - t_start) - reserve
+
+    res = {"started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "setup": {}, "shares": {},
+           "dcgm": {}, "gpu_burn": {}, "notes": []}
+
+    def save():
+        (out / "preflight.json").write_text(json.dumps(res, indent=1, default=str))
+        commit()
+
+    setup = (("nvidia_smi", ["nvidia-smi", "--query-gpu=name,uuid,driver_version,compute_mode,memory.total",
+                             "--format=csv"]),
+             ("user", ["id"]),
+             ("hostengine_running", ["pgrep", "-a", "nv-hostengine"]),
+             ("dcgm_service_account", ["getent", "passwd", "nvidia-dcgm"]),
+             ("dcgmi_version", ["dcgmi", "--version"]),
+             ("cublas_libraries", ["bash", "-c", "ls -l /usr/local/cuda/lib64/libcublas*.so* 2>&1 | head"]),
+             ("dcgm_static_cublas", ["bash", "-c", "for f in $(find /usr -name 'libdcgm_cublas_proxy*.so*' "
+                                     "2>/dev/null); do echo $f; strings $f | grep -i -m 5 -E 'cublas.*(version|1[23]\\.)'; "
+                                     "done"]),
+             ("torch", [sys.executable, "-c", "import torch, sdcguard; print(torch.__version__, torch.version.cuda, "
+                        "sdcguard.__file__)"]))
+    for name, argv in setup:
+        res["setup"][name] = _tail(run_step(name, argv, out / "setup", min(60.0, left()), env=_env(None), floor=5.0))
+    save()
+
+    # DCGM without MPS: does it run here at all, and are its results readable?
+    for name, argv in (("dcgm_software", ["dcgmi", "diag", "-r", "1", "-j"]),
+                       ("dcgm_diagnostic_20s", ["dcgmi", "diag", "-r", "diagnostic", "-i", "0", "-j", "-p",
+                                                "diagnostic.test_duration=20"])):
+        r = run_step(name, argv, out / "dcgm", min(240.0, left()), env=_env(None))
+        res["dcgm"][name] = {"step": _tail(r), "parsed": parse_dcgm(r.get("stdout", "") + r.get("stderr", ""),
+                                                                    r.get("exit"), r.get("timed_out", False))}
+        save()
+
+    mps = MPS(out)
+    for share in PREFLIGHT_SHARES:
+        if left() < 120:
+            res["notes"].append(f"share {share}% not run: no time left")
+            continue
+        d = out / f"share_{share}"
+        rec = {"mps_started": mps.start(share)}
+        if rec["mps_started"]:
+            lt = d / "probe_cublaslt.log"
+            r = run_step("probe", [probe, *LT_CASES, "hgemm:2048", "ex16:2048", "exbf16:2048"], d,
+                         min(300.0, left()), env=dict(_env(share), CUBLASLT_LOG_LEVEL="5", CUBLASLT_LOG_FILE=str(lt)))
+            parsed = parse_probe(r.get("stdout", ""))
+            rec.update(probe=_tail(r), probe_parsed=parsed, algorithms=lt_summary(parsed), cublaslt_log=summarize_lt_log(lt),
+                       legacy_calls={k: {kk: v.get(kk) for kk in ("correct", "unwritten", "wrong_sampled", "error")}
+                                     for k, v in parsed.items() if k in ("hgemm:2048", "ex16:2048", "exbf16:2048")})
+        res["shares"][str(share)] = rec
+        save()
+        if share == 40 and rec["mps_started"]:
+            mps.start(40)
+            before = _mps_log_sizes()
+            lt = d / "dcgm_cublaslt.log"
+            r = run_step("dcgm_under_mps", ["dcgmi", "diag", "-r", "diagnostic", "-i", "0", "-j", "-p",
+                                            "diagnostic.test_duration=20"], d, min(240.0, left()),
+                         env=dict(_env(40), CUBLASLT_LOG_LEVEL="5", CUBLASLT_LOG_FILE=str(lt)))
+            res["dcgm"]["under_mps_40"] = {"step": _tail(r), "mps": mps_delta(before), "cublaslt_log": summarize_lt_log(lt),
+                                           "parsed": parse_dcgm(r.get("stdout", "") + r.get("stderr", ""),
+                                                                r.get("exit"), r.get("timed_out", False))}
+            save()
+            mps.start(40)
+            before = _mps_log_sizes()
+            r = run_step("gpu_burn_tc_10s", ["./gpu_burn", "-tc", "10"], d, min(90.0, left()), env=_env(40),
+                         cwd=burn_dir)
+            res["gpu_burn"]["under_mps_40"] = {"step": _tail(r), "mps": mps_delta(before),
+                                               "parsed": parse_burn(r.get("stdout", ""), r.get("timed_out", False))}
+            save()
+    mps.stop()
+    res["mps_log"] = mps.log
+    for name in ("control.log", "server.log"):
+        p = Path(MPS_LOG) / name
+        res.setdefault("mps_logs", {})[name] = p.read_text(errors="replace")[-6000:] if p.exists() else "(missing)"
+    res["decisions"] = preflight_decisions(res)
+    res["seconds"] = round(time.monotonic() - t_start, 1)
+    save()
+    return res
+
+
+def preflight_decisions(res: dict) -> dict:
+    """Go / no-go facts for the full run, each from evidence in the preflight result (None: not measured)."""
+    sh = res.get("shares") or {}
+    alg = {k: (v.get("algorithms") or {}) for k, v in sh.items()}
+    started = [v.get("mps_started") for v in sh.values()]
+    sms100 = (alg.get("100") or {}).get("sms_visible") or []
+    sms40 = (alg.get("40") or {}).get("sms_visible") or []
+    mps_ok = bool(started) and all(started) and bool(sms100) and bool(sms40) and max(sms40) < min(sms100)
+    clean100 = (alg.get("100") or {}).get("algorithms_run", 0) > 0 and (alg.get("100") or {}).get("wrong") == 0
+    low = [a for k, a in alg.items() if k != "100" and a.get("algorithms_run")]
+    wrong_low = [a for a in low if a.get("wrong")]
+    as_published = (bool(wrong_low) and all(a.get("all_wrong_are_algo66_cluster4plus") for a in wrong_low)
+                    and all(a.get("wrong_with_1_or_2_cta_clusters") == 0 for a in low))
+    workaround = (all(a.get("workaround_wrong") == 0 and a.get("workaround_runs", 0) > 0 for a in wrong_low)
+                  if wrong_low else None)
+    d = res.get("dcgm") or {}
+    diag = (d.get("dcgm_diagnostic_20s") or {}).get("parsed") or {}
+    under = d.get("under_mps_40") or {}
+    burn = (res.get("gpu_burn") or {}).get("under_mps_40") or {}
+    dcgm_lt = (under.get("cublaslt_log") or {})
+    decisions = {
+        "mps_works (daemon started at every share, fewer SMs visible at 40% than at 100%)": mps_ok,
+        "100% control: every cuBLASLt algorithm right": clean100,
+        "bug reproduced as published (wrong only with algorithm 66 and 4+ CTAs per cluster)": as_published if low else None,
+        "documented workaround (1x1x1 cluster) gives right results": workaround,
+        "DCGM diagnostic runs here with readable results (no MPS)": diag.get("status") in ("pass", "warn", "fail"),
+        "DCGM diagnostic runs under MPS at 40% with readable results":
+            ((under.get("parsed") or {}).get("status") in ("pass", "warn", "fail")) if under else None,
+        "DCGM connected as an MPS client (new MPS connections during its run)":
+            ((under.get("mps") or {}).get("connections", 0) > 0) if under else None,
+        "DCGM's cuBLAS calls visible in a cuBLASLt log": (dcgm_lt.get("lines", 0) > 0) if under else None,
+        "gpu-burn runs under MPS with a readable verdict":
+            ((burn.get("parsed") or {}).get("verdict") in ("OK", "FAULTY")) if burn else None,
+    }
+    must = ("mps_works (daemon started at every share, fewer SMs visible at 40% than at 100%)",
+            "100% control: every cuBLASLt algorithm right",
+            "bug reproduced as published (wrong only with algorithm 66 and 4+ CTAs per cluster)")
+    decisions["go: the full head-to-head can answer its question"] = all(decisions[k] is True for k in must)
+    decisions["DCGM cells will be meaningful"] = (
+        decisions["DCGM diagnostic runs under MPS at 40% with readable results"] is True
+        and decisions["DCGM connected as an MPS client (new MPS connections during its run)"] is True)
+    return decisions
+
+
 def cells(res: dict) -> list:
     """One row per (tool, share): the tool's verdict, its ground truth, and the pre-registered classification."""
     rows = []
     for share, rec in (res.get("shares") or {}).items():
+        if rec.get("mps_started") is False:
+            for tool in ("dcgm", "gpu_burn_tc", "sdcguard_check"):
+                rows.append({"share": int(share), "tool": tool, "cell": COULD_NOT_TEST,
+                             "why": "the MPS daemon did not start at this share"})
+            continue
         probe = rec.get("probe_parsed") or {}
         g = rec.get("ground_parsed") or {}
         torch_wrong = ground_wrong(g)
         ex16 = probe_wrong(probe, ("ex16:2048", "exbf16:2048"))
         sdc_ex = True if (torch_wrong or ex16) else (False if torch_wrong is False else None)
+        mcs = rec.get("mps_clients") or {}
+        # the MPS logs show a new connection for each MPS client; if they do for the tools known to be clients
+        # (gpu-burn, sdcguard check) but not for DCGM, DCGM's workload ran outside MPS and can't meet the bug
+        method_ok = any(((mcs.get(t) or {}).get("connections") or 0) > 0 for t in ("gpu_burn_tc", "sdcguard_check"))
         for tool, key, ex in (("dcgm", "dcgm_parsed", probe_wrong(probe, EXERCISE["dcgm"])),
                               ("gpu_burn_tc", "gpu_burn_tc_parsed", probe_wrong(probe, EXERCISE["gpu_burn_tc"])),
                               ("sdcguard_check", "sdcguard_check_parsed", sdc_ex)):
@@ -516,8 +727,13 @@ def cells(res: dict) -> list:
                 rows.append({"share": int(share), "tool": tool, "cell": COULD_NOT_TEST, "why": "not run"})
                 continue
             flag = tool_flag(tool, parsed)
+            mc = mcs.get(tool) or {}
+            note = None
+            if tool == "dcgm" and int(share) < 100 and method_ok and mc.get("connections") == 0:
+                ex, note = False, "not an MPS client: no MPS connection while it ran"
             rows.append({"share": int(share), "tool": tool, "flag": flag, "exercised": ex,
-                         "cell": classify(flag, ex), "verdict": parsed})
+                         "cell": classify(flag, ex), "verdict": parsed, "exercised_note": note,
+                         "mps_connections_during_step": mc.get("connections")})
         alerts = g.get("in_job_alerts") or {}
         if alerts:
             rows.append({"share": int(share), "tool": "sdcguard_in_job (Oct 19 probe)", "alerts": alerts,
@@ -550,6 +766,8 @@ def markdown(res: dict) -> str:
         if r["tool"] == "sdcguard_check" and v.get("wrong"):
             short += f" (wrong {v['wrong']})"
         ex = {True: "yes", False: "no", None: "unknown"}[r.get("exercised")]
+        if r.get("exercised_note"):
+            ex += f" ({r['exercised_note']})"
         lines.append(f"| {r['share']}% | {r['tool']} | **{r['cell']}** | {ex} | {short} |")
     return "\n".join(lines)
 

@@ -2,8 +2,10 @@
 // plugin and gpu-burn make, plus the FP16/BF16 calls known to hit cuBLAS known issue 6862950, and says for each
 // whether the result was right. Host code only (no nvcc needed):
 //
-//   g++ -O2 -std=c++17 h2h_probe.cpp -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublas -lcudart -o probe
+//   g++ -O2 -std=c++17 h2h_probe.cpp -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublasLt -lcublas
+//       -lcudart -o probe
 //   ./probe hgemm:2048 sgemm:2048 sgemmtc:2048 sgemm:8192 sgemmtc:8192 dgemm:8192 ex16:2048 exbf16:2048 scrub
+//   ./probe lt16:1000:2048:16 ltbf16:2048:2048:2048          (preflight: every cuBLASLt algorithm, see below)
 //
 // Each case prints one JSON line. The output buffer is filled with 0xFF bytes first (NaN in FP16, BF16, FP32 and
 // FP64), so elements a GEMM never wrote are counted exactly ("unwritten"). Sampled columns are compared with a
@@ -17,7 +19,14 @@
 //   ex16     cublasGemmEx FP16 in/out, FP32 compute    (what PyTorch fp16 matmul uses; affected per the repro)
 //   exbf16   cublasGemmEx BF16 in/out, FP32 compute    (what PyTorch bf16 matmul uses; affected per the repro)
 //   scrub    is freshly allocated device memory zero? (decides whether self-comparison tools can see holes)
+//   lt16 / ltbf16 M:K:N   cublasLtMatmul FP16 / BF16, FP32 compute, laid out the way PyTorch's linear layer calls
+//            it (op(A) = A^T, M outputs per token, N tokens). Runs every algorithm the heuristic offers (up to 16),
+//            each into a NaN-filled buffer, and prints its CUBLASLT_ALGO_CONFIG_ID and cluster shape with the result;
+//            then the first one again with its cluster forced to 1x1x1 (the documented workaround). Known issue
+//            6862950 says only algorithm 66 with 4 or more CTAs per cluster is affected: this shows whether that
+//            is what goes wrong on this machine.
 #include <cuda_runtime.h>
+#include <cublasLt.h>
 #include <cublas_v2.h>
 
 #include <cmath>
@@ -148,7 +157,7 @@ static void make_inputs(const std::string &kind, int n, std::vector<double> &A, 
                 float f = (float)v;
                 std::memcpy(dst, &f, 4);
                 v = f;
-            } else if (kind == "exbf16") {
+            } else if (kind == "exbf16" || kind == "ltbf16") {
                 uint16_t b = f2bf((float)v);
                 std::memcpy(dst, &b, 2);
                 v = bf2f(b);
@@ -167,14 +176,14 @@ static double decode(const std::string &kind, const unsigned char *p) {
     if (esize == 4) { float f; std::memcpy(&f, p, 4); return f; }
     uint16_t b;
     std::memcpy(&b, p, 2);
-    return kind == "exbf16" ? bf2f(b) : h2f(b);
+    return (kind == "exbf16" || kind == "ltbf16") ? bf2f(b) : h2f(b);
 }
 
 static void encode(const std::string &kind, double v, unsigned char *p) {
     const int esize = elem_size(kind);
     if (esize == 8) { std::memcpy(p, &v, 8); return; }
     if (esize == 4) { float f = (float)v; std::memcpy(p, &f, 4); return; }
-    uint16_t b = kind == "exbf16" ? f2bf((float)v) : f2h((float)v);
+    uint16_t b = (kind == "exbf16" || kind == "ltbf16") ? f2bf((float)v) : f2h((float)v);
     std::memcpy(p, &b, 2);
 }
 
@@ -300,6 +309,151 @@ static void gemm_case(const std::string &kind, int n) {
     account(kind, n, A, B, hC, ver, ms, "gpu");
 }
 
+// ---------------------------------------------------------------- cuBLASLt: which algorithms go wrong
+static int cluster_ctas(int id) {               // CTAs per cluster for a cublasLtClusterShape_t (0: auto/unknown)
+    static const int x[] = {0, 0, 1, 2, 4, 1, 2, 4, 1, 2, 4, 8, 1, 8, 2, 16, 1, 3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15,
+                            3, 5, 6, 7, 1, 2, 3, 4, 5, 3, 1, 2, 3, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 1};
+    static const int y[] = {0, 0, 1, 1, 1, 2, 2, 2, 4, 4, 4, 1, 8, 2, 8, 1, 16, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                            2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 5, 5, 5, 6, 6, 7, 7, 9, 10, 11, 12, 13, 14, 15};
+    if (id < 2 || id >= (int)(sizeof(x) / sizeof(x[0]))) return 0;
+    return x[id] * y[id];
+}
+
+static void lt_case(const std::string &kind, int M, int K, int N) {
+    char label[96];
+    std::snprintf(label, sizeof label, "%dx%dx%d", M, K, N);
+    const char *name = kind.c_str();
+    int n = 0;
+    const bool bf = kind == "ltbf16";
+    const cudaDataType_t t = bf ? CUDA_R_16BF : CUDA_R_16F;
+    // A: K x M (column-major, used transposed), B: K x N, D: M x N
+    std::vector<double> A((size_t)K * M), B((size_t)K * N);
+    std::vector<uint16_t> hA(A.size()), hB(B.size());
+    std::srand(12);
+    for (size_t i = 0; i < A.size(); i++) {
+        float f = (float)((std::rand() % 2001) - 1000) / 2000.0f;
+        hA[i] = bf ? f2bf(f) : f2h(f);
+        A[i] = bf ? bf2f(hA[i]) : h2f(hA[i]);
+    }
+    for (size_t i = 0; i < B.size(); i++) {
+        float f = (float)((std::rand() % 2001) - 1000) / 2000.0f;
+        hB[i] = bf ? f2bf(f) : f2h(f);
+        B[i] = bf ? bf2f(hB[i]) : h2f(hB[i]);
+    }
+    const int cols = N < 32 ? N : 32;            // float64 reference on up to 32 evenly spaced tokens
+    std::vector<int> js(cols);
+    std::vector<double> ref((size_t)M * cols, 0.0);
+    for (int c = 0; c < cols; c++) {
+        js[c] = cols == 1 ? 0 : (int)((long long)c * (N - 1) / (cols - 1));
+        for (int i = 0; i < M; i++) {
+            double s = 0.0;
+            for (int kk = 0; kk < K; kk++) s += A[kk + (size_t)i * K] * B[kk + (size_t)js[c] * K];
+            ref[(size_t)i + (size_t)c * M] = s;
+        }
+    }
+    void *dA = nullptr, *dB = nullptr, *dD = nullptr, *ws = nullptr;
+    const size_t wsize = (size_t)32 << 20;
+    CUDA_OR(cudaMalloc(&dA, A.size() * 2), "cudaMalloc A");
+    CUDA_OR(cudaMalloc(&dB, B.size() * 2), "cudaMalloc B");
+    CUDA_OR(cudaMalloc(&dD, (size_t)M * N * 2), "cudaMalloc D");
+    CUDA_OR(cudaMalloc(&ws, wsize), "cudaMalloc workspace");
+    CUDA_OR(cudaMemcpy(dA, hA.data(), A.size() * 2, cudaMemcpyHostToDevice), "copy A");
+    CUDA_OR(cudaMemcpy(dB, hB.data(), B.size() * 2, cudaMemcpyHostToDevice), "copy B");
+    cublasLtHandle_t lt = nullptr;
+    CUBLAS_OR(cublasLtCreate(&lt), "cublasLtCreate");
+    cublasLtMatmulDesc_t op = nullptr;
+    CUBLAS_OR(cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F), "cublasLtMatmulDescCreate");
+    cublasOperation_t ta = CUBLAS_OP_T, tb = CUBLAS_OP_N;
+    CUBLAS_OR(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSA, &ta, sizeof ta), "set transa");
+    CUBLAS_OR(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSB, &tb, sizeof tb), "set transb");
+    cublasLtMatrixLayout_t la = nullptr, lb = nullptr, ld = nullptr;
+    CUBLAS_OR(cublasLtMatrixLayoutCreate(&la, t, K, M, K), "layout A");
+    CUBLAS_OR(cublasLtMatrixLayoutCreate(&lb, t, K, N, K), "layout B");
+    CUBLAS_OR(cublasLtMatrixLayoutCreate(&ld, t, M, N, M), "layout D");
+    cublasLtMatmulPreference_t pref = nullptr;
+    CUBLAS_OR(cublasLtMatmulPreferenceCreate(&pref), "preference");
+    CUBLAS_OR(cublasLtMatmulPreferenceSetAttribute(pref, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &wsize,
+                                                   sizeof wsize), "set workspace");
+    cublasLtMatmulHeuristicResult_t heur[16] = {};
+    int found = 0;
+    CUBLAS_OR(cublasLtMatmulAlgoGetHeuristic(lt, op, la, lb, ld, ld, pref, 16, heur, &found), "heuristic");
+    int ver = (int)cublasLtGetVersion();
+    int sms = 0, dev = 0;
+    cudaGetDevice(&dev);
+    cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, dev);
+    std::vector<uint16_t> hD((size_t)M * N);
+    auto run = [&](const cublasLtMatmulAlgo_t &algo, int idx, const char *variant) {
+        int32_t algo_id = -1, splitk = 0;
+        uint16_t cluster = 0;
+        uint32_t tile = 0, stages = 0;
+        size_t got = 0;
+        cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_ID, &algo_id, sizeof algo_id, &got);
+        cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_CLUSTER_SHAPE_ID, &cluster, sizeof cluster,
+                                             &got);
+        cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tile, sizeof tile, &got);
+        cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, &stages, sizeof stages, &got);
+        cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_SPLITK_NUM, &splitk, sizeof splitk, &got);
+        cudaMemset(dD, 0xFF, (size_t)M * N * 2);
+        float one = 1.0f, zero = 0.0f;
+        cublasStatus_t st = cublasLtMatmul(lt, op, &one, dA, la, dB, lb, &zero, dD, ld, dD, ld, &algo, ws, wsize, 0);
+        cudaError_t ce = cudaDeviceSynchronize();
+        size_t unwritten = 0, wrong = 0, sampled = 0;
+        double worst = 0.0;
+        if (st == CUBLAS_STATUS_SUCCESS && ce == cudaSuccess) {
+            cudaMemcpy(hD.data(), dD, hD.size() * 2, cudaMemcpyDeviceToHost);
+            for (size_t i = 0; i < hD.size(); i++) unwritten += hD[i] == 0xFFFF;
+            for (int c = 0; c < cols; c++)
+                for (int i = 0; i < M; i++) {
+                    uint16_t v = hD[(size_t)i + (size_t)js[c] * M];
+                    double g = bf ? bf2f(v) : h2f(v), r = ref[(size_t)i + (size_t)c * M];
+                    double e = std::fabs(g - r) / (1.0 + std::fabs(r));
+                    sampled++;
+                    if (!std::isfinite(g) || e > 5e-2) wrong++;
+                    if (std::isfinite(e) && e > worst) worst = e;
+                }
+        }
+        std::printf("{\"case\": \"%s\", \"n\": \"%s#%d%s\", \"variant\": \"%s\", \"cublaslt_version\": %d, "
+                    "\"sms_visible\": %d, \"algo_id\": %d, \"cluster_shape_id\": %u, \"cluster_ctas\": %d, "
+                    "\"tile_id\": %u, \"stages_id\": %u, \"splitk\": %d, \"status\": %d, \"cuda_error\": %d, "
+                    "\"elements\": %zu, \"unwritten\": %zu, \"sampled\": %zu, \"wrong_sampled\": %zu, "
+                    "\"worst_rel_err_finite\": %.3g, \"correct\": %s}\n",
+                    name, label, idx, variant[0] ? "w" : "", variant, ver, sms, algo_id, (unsigned)cluster,
+                    cluster_ctas(cluster), tile, stages, splitk, (int)st, (int)ce, hD.size(), unwritten, sampled,
+                    wrong, worst,
+                    (st == CUBLAS_STATUS_SUCCESS && ce == cudaSuccess && unwritten == 0 && wrong == 0) ? "true"
+                                                                                                    : "false");
+        std::fflush(stdout);
+    };
+    for (int i = 0; i < found; i++)
+        if (heur[i].state == CUBLAS_STATUS_SUCCESS) run(heur[i].algo, i, "");
+    if (found > 0) {                           // the workaround: the first (default) algorithm, cluster 1x1x1
+        cublasLtMatmulAlgo_t a = heur[0].algo;
+        uint16_t c1 = CUBLASLT_CLUSTER_SHAPE_1x1x1;
+        cublasLtMatmulHeuristicResult_t chk = {};
+        if (cublasLtMatmulAlgoConfigSetAttribute(&a, CUBLASLT_ALGO_CONFIG_CLUSTER_SHAPE_ID, &c1, sizeof c1) ==
+                CUBLAS_STATUS_SUCCESS &&
+            cublasLtMatmulAlgoCheck(lt, op, la, lb, ld, ld, &a, &chk) == CUBLAS_STATUS_SUCCESS &&
+            chk.workspaceSize <= wsize)
+            run(a, 0, "cluster_1x1x1");
+        else
+            std::printf("{\"case\": \"%s\", \"n\": \"%s#0w\", \"variant\": \"cluster_1x1x1\", "
+                        "\"error\": \"this algorithm does not accept a 1x1x1 cluster\"}\n", name, label);
+    }
+    std::printf("{\"case\": \"%s_summary\", \"n\": \"%s\", \"algorithms_offered\": %d, \"sms_visible\": %d}\n",
+                name, label, found, sms);
+    std::fflush(stdout);
+    cublasLtMatmulPreferenceDestroy(pref);
+    cublasLtMatrixLayoutDestroy(la);
+    cublasLtMatrixLayoutDestroy(lb);
+    cublasLtMatrixLayoutDestroy(ld);
+    cublasLtMatmulDescDestroy(op);
+    cublasLtDestroy(lt);
+    cudaFree(dA);
+    cudaFree(dB);
+    cudaFree(dD);
+    cudaFree(ws);
+}
+
 int main(int argc, char **argv) {
     for (int a = 1; a < argc; a++) {
         std::string arg = argv[a];
@@ -314,6 +468,12 @@ int main(int argc, char **argv) {
         }
         size_t colon = arg.find(':');
         std::string kind = arg.substr(0, colon);
+        if (kind == "lt16" || kind == "ltbf16") {    // lt16:M:K:N
+            int M = 1000, K = 2048, N = 16;
+            std::sscanf(arg.c_str() + colon + 1, "%d:%d:%d", &M, &K, &N);
+            lt_case(kind, M, K, N);
+            continue;
+        }
         int n = colon == std::string::npos ? 2048 : std::atoi(arg.c_str() + colon + 1);
         if (kind != "hgemm" && kind != "sgemm" && kind != "sgemmtc" && kind != "dgemm" && kind != "ex16" &&
             kind != "exbf16") {

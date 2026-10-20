@@ -79,7 +79,19 @@ def test_complete_vllm_success_has_all_three_results(runner, monkeypatch):
     _fake_tee(runner, monkeypatch, {})
     assert "finished" in runner.vllm()
     status = json.loads((Path(runner.RUNS) / "vllm/STATUS.json").read_text())
-    assert status == {"exit_codes": {"entry_points": 0, "qwen1.5b": 0, "qwen7b": 0}, "passed": True}
+    assert status["exit_codes"] == {"entry_points": 0, "qwen1.5b": 0, "qwen7b": 0} and status["passed"] is True
+    assert {"source", "minutes", "estimated_cost_usd", "cost_note"} <= set(status)
+
+
+def test_a_new_run_keeps_the_earlier_runs_evidence(runner, monkeypatch):
+    _fake_tee(runner, monkeypatch, {})
+    earlier = Path(runner.RUNS) / "vllm"
+    earlier.mkdir(parents=True)
+    (earlier / "qwen7b.txt").write_text("the earlier run's log\n")
+    runner.vllm(source={"sha256": "abc", "files": 1})
+    kept = [p for p in Path(runner.RUNS).iterdir() if p.name.startswith("vllm_before_")]
+    assert len(kept) == 1 and (kept[0] / "qwen7b.txt").read_text() == "the earlier run's log\n"
+    assert json.loads((earlier / "STATUS.json").read_text())["source"] == {"sha256": "abc", "files": 1}
 
 
 @pytest.mark.parametrize("failure", [7, RuntimeError("demo launch failed")])

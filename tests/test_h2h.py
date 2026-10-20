@@ -151,7 +151,7 @@ def test_cells_end_to_end():
     assert cells[(100, "dcgm")] == h.COULD_NOT_TEST         # not run (as when DCGM can't start)
     assert cells[(100, "sdcguard_check")] == h.NOT_EXERCISED
     md = h.markdown(dict(res, cells=h.cells(res)))
-    assert "MISSED" in md and "DETECTED" in md and "—" not in md
+    assert "MISSED" in md and "DETECTED" in md and "\u2014" not in md
 
 
 def test_lt_log_summary(tmp_path):
@@ -181,7 +181,7 @@ def test_run_step_kills_the_whole_group_at_its_limit(tmp_path):
 def test_files_say_what_runs_and_cost_without_dashes():
     for f in ("experiments/h2h_run.py", "experiments/h2h_probe.cpp", "scripts/modal_h2h.py"):
         text = (ROOT / f).read_text()
-        assert "—" not in text and "–" not in text, f
+        assert "\u2014" not in text and "\u2013" not in text, f
     assert "about $5" in (ROOT / "scripts" / "modal_h2h.py").read_text()
 
 
@@ -245,3 +245,110 @@ def test_run_all_with_stand_in_tools(tmp_path, monkeypatch):
     assert cells[(75, "sdcguard_check")] == h.DETECTED      # PyTorch's own matmuls were wrong at 75% on Oct 19
     assert cells[(40, "dcgm_fp16_only")] == h.DETECTED
     assert "DETECTED" in h.markdown(res)
+
+
+def _lt_rows(share: str) -> str:
+    """Probe output for the cuBLASLt cases: algorithm 66 with a 4-CTA cluster wrong below 100%, as published."""
+    sms = {"100": 132, "40": 53, "14": 18}[share]
+    rows = []
+    for case in ("lt16", "ltbf16"):
+        for i, (algo, shape, ctas) in enumerate(((66, 4, 4), (66, 3, 2), (21, 2, 1))):
+            bad = share != "100" and ctas >= 4
+            rows.append({"case": case, "n": f"1000x2048x16#{i}", "variant": "", "algo_id": algo,
+                         "cluster_shape_id": shape, "cluster_ctas": ctas, "sms_visible": sms,
+                         "cublaslt_version": 130101, "unwritten": 11000 if bad else 0, "wrong_sampled": 300 if bad else 0,
+                         "status": 0, "cuda_error": 0, "correct": not bad})
+        rows.append({"case": case, "n": "1000x2048x16#0w", "variant": "cluster_1x1x1", "algo_id": 66,
+                     "cluster_shape_id": 2, "cluster_ctas": 1, "sms_visible": sms, "correct": True})
+    return "\n".join(json.dumps(r) for r in rows)
+
+
+def test_lt_summary_matches_the_published_description_or_says_not():
+    s = h.lt_summary(h.parse_probe(_lt_rows("40")))
+    assert s["algorithms_run"] == 6 and s["wrong"] == 2 and s["all_wrong_are_algo66_cluster4plus"]
+    assert s["wrong_with_1_or_2_cta_clusters"] == 0 and s["workaround_runs"] == 2 and s["workaround_wrong"] == 0
+    assert s["sms_visible"] == [53]
+    other = [json.loads(x) for x in _lt_rows("40").splitlines()]
+    for r in other:
+        if r["cluster_ctas"] == 2:
+            r["correct"] = False                         # a 2-CTA cluster wrong: not what NVIDIA describes
+    s2 = h.lt_summary(h.parse_probe("\n".join(json.dumps(r) for r in other)))
+    assert not s2["all_wrong_are_algo66_cluster4plus"] and s2["wrong_with_1_or_2_cta_clusters"] == 2
+    assert h.lt_summary({})["wrong"] == 0 and not h.lt_summary({})["all_wrong_are_algo66_cluster4plus"]
+
+
+def test_a_share_without_mps_is_could_not_test_for_every_tool():
+    rows = h.cells({"shares": {"40": {"mps_started": False}}})
+    assert {(r["tool"], r["cell"]) for r in rows} == {(t, h.COULD_NOT_TEST)
+                                                      for t in ("dcgm", "gpu_burn_tc", "sdcguard_check")}
+
+
+def _preflight_tools(tmp_path, dcgm_connects: bool):
+    bin_, burn = tmp_path / "bin", tmp_path / "burn"
+    for d in (bin_, burn):
+        d.mkdir(parents=True, exist_ok=True)
+    share = "import os\nS = os.environ.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', '100')\n"
+    connect = ("L = os.environ.get('CUDA_MPS_LOG_DIRECTORY')\n"
+               "if L and 'CUDA_MPS_ACTIVE_THREAD_PERCENTAGE' in os.environ:\n"
+               "    os.makedirs(L, exist_ok=True)\n"
+               "    open(os.path.join(L, 'control.log'), 'a').write('[x] Control 8] Accepting connection...\\n')\n")
+    _script(bin_ / "nvidia-smi", "print('name, uuid\\nNVIDIA H200, GPU-fake')\n")
+    _script(bin_ / "nvidia-cuda-mps-control", "import sys\nif '-d' not in sys.argv: print(sys.stdin.read() and '40')\n")
+    _script(bin_ / "dcgmi", share + (connect if dcgm_connects else "") + "import sys, json\n"
+            f"PASS = {json.dumps(DCGM_PASS)!r}\n"
+            "if '--version' in sys.argv: print('dcgmi version: 4.7.0'); sys.exit(0)\nprint(PASS)\n")
+    rows = {s: _lt_rows(s) for s in ("100", "40", "14")}
+    _script(tmp_path / "probe", share + f"R = {rows!r}\nprint(R[S])\n")
+    _script(burn / "gpu_burn", share + connect + f"print({BURN_OK!r})\n")
+    return bin_, burn
+
+
+@pytest.mark.parametrize("dcgm_connects", [True, False])
+def test_preflight_with_stand_in_tools(tmp_path, monkeypatch, dcgm_connects):
+    bin_, burn = _preflight_tools(tmp_path, dcgm_connects)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    monkeypatch.setattr(h, "MPS_SETTLE", (0.0, 0.0))
+    monkeypatch.setattr(h, "MPS_PIPE", str(tmp_path / "pipe"))
+    monkeypatch.setattr(h, "MPS_LOG", str(tmp_path / "mpslog"))
+    res = h.preflight(str(tmp_path / "out"), deadline_s=600, probe=str(tmp_path / "probe"), burn_dir=str(burn))
+    d = res["decisions"]
+    assert d["go: the full head-to-head can answer its question"] is True, (d, {k: (v.get("mps_started"), v.get(
+        "algorithms")) for k, v in res["shares"].items()}, res["notes"], res["setup"].get("nvidia_smi"))
+    assert d["bug reproduced as published (wrong only with algorithm 66 and 4+ CTAs per cluster)"] is True
+    assert d["documented workaround (1x1x1 cluster) gives right results"] is True
+    assert d["gpu-burn runs under MPS with a readable verdict"] is True
+    assert d["DCGM connected as an MPS client (new MPS connections during its run)"] is dcgm_connects
+    assert d["DCGM cells will be meaningful"] is dcgm_connects
+    assert (tmp_path / "out" / "preflight.json").exists()
+    assert (tmp_path / "out" / "share_40" / "dcgm_under_mps.stdout.txt").exists()
+
+
+def test_preflight_says_no_go_when_the_bug_does_not_look_as_published(tmp_path, monkeypatch):
+    bin_, burn = _preflight_tools(tmp_path, True)
+    rows = {s: _lt_rows("100").replace('"sms_visible": 132', '"sms_visible": ' + str({"100": 132, "40": 53,
+                                                                                         "14": 18}[s]))
+            for s in ("100", "40", "14")}                 # nothing goes wrong at any share
+    _script(tmp_path / "probe", "import os\nS = os.environ.get('CUDA_MPS_ACTIVE_THREAD_PERCENTAGE', '100')\n"
+            f"R = {rows!r}\nprint(R[S])\n")
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    monkeypatch.setattr(h, "MPS_SETTLE", (0.0, 0.0))
+    monkeypatch.setattr(h, "MPS_PIPE", str(tmp_path / "pipe"))
+    monkeypatch.setattr(h, "MPS_LOG", str(tmp_path / "mpslog"))
+    d = h.preflight(str(tmp_path / "out"), deadline_s=600, probe=str(tmp_path / "probe"), burn_dir=str(burn))["decisions"]
+    assert d["bug reproduced as published (wrong only with algorithm 66 and 4+ CTAs per cluster)"] is False
+    assert d["go: the full head-to-head can answer its question"] is False
+
+
+def test_dcgm_outside_mps_is_not_exercised_rather_than_missed():
+    probe = h.parse_probe(PROBE_OUT)                      # its Hgemm was wrong as an MPS client
+    base = {"probe_parsed": probe, "ground_parsed": {}, "dcgm_parsed": h.parse_dcgm(json.dumps(DCGM_PASS), 0),
+            "gpu_burn_tc_parsed": h.parse_burn(BURN_OK), "sdcguard_check_parsed": {"result": "PASS", "wrong": {}}}
+    seen = dict(base, mps_clients={"dcgm": {"connections": 0}, "gpu_burn_tc": {"connections": 1},
+                                   "sdcguard_check": {"connections": 2}})
+    cells = {r["tool"]: r for r in h.cells({"shares": {"40": seen}})}
+    assert cells["dcgm"]["cell"] == h.NOT_EXERCISED and "not an MPS client" in cells["dcgm"]["exercised_note"]
+    # no evidence either way (the logs show no connection for known clients either): the probe decides
+    blind = dict(base, mps_clients={"dcgm": {"connections": 0}, "gpu_burn_tc": {"connections": 0}})
+    assert {r["tool"]: r["cell"] for r in h.cells({"shares": {"40": blind}})}["dcgm"] == h.MISSED
+    connected = dict(base, mps_clients={"dcgm": {"connections": 1}, "gpu_burn_tc": {"connections": 1}})
+    assert {r["tool"]: r["cell"] for r in h.cells({"shares": {"40": connected}})}["dcgm"] == h.MISSED

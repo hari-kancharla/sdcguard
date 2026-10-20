@@ -15,6 +15,9 @@ charges; the roughly $6 of requested resources for a full-length attempt is not 
 
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
 hard time limit, and a phase won't start again within an hour of its last start unless you pass --force.
+A new run never deletes an earlier one: the earlier folder is renamed vllm_before_<time>. STATUS.json records the
+code fingerprint the run used, its exit codes, its measured minutes and the cost those minutes imply at the rates
+above (Modal's usage page has the billed amount).
 """
 from __future__ import annotations
 
@@ -37,6 +40,26 @@ V = "/vol"
 ROUND = "r3"
 DATA, RUNS = f"{V}/data", f"{V}/runs_{ROUND}"
 LOCK_HOURS = 1.5           # longer than any phase's time limit
+RATE_PER_HOUR = 3.95 + 8 * 0.0472 + 64 * 0.008         # H100 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
+
+
+def _source() -> dict:
+    """Fingerprint of the code this run used (src, experiments, tests, scripts), to match it to a commit."""
+    import hashlib
+    h, n = hashlib.sha256(), 0
+    for d in ("src", "experiments", "tests", "scripts"):
+        for p in sorted((LOCAL / d).rglob("*.py")):
+            if "__pycache__" in p.parts or p.name.startswith("._"):
+                continue
+            h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
+            n += 1
+    return {"sha256": h.hexdigest(), "files": n}
+
+
+def _cost(minutes: float) -> dict:
+    return {"minutes": round(minutes, 1), "estimated_cost_usd": round(minutes / 60 * RATE_PER_HOUR, 2),
+            "cost_note": f"function time x ${RATE_PER_HOUR:.2f}/hour (H100, 8 cores, 64 GiB at Oct 20 prices); "
+                         "image pull and startup are billed too and not in this number"}
 
 
 def _skip(p: Path) -> bool:
@@ -131,7 +154,7 @@ def _locked(phase: str, force: bool) -> str | None:
 
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
-def vllm(force: bool = False) -> str:
+def vllm(force: bool = False, source: dict | None = None) -> str:
     t0 = time.monotonic()
     deadline = t0 + 75 * 60 - 120     # final status and volume commit must precede the hard function limit
     msg = _locked("vllm", force)
@@ -139,8 +162,8 @@ def vllm(force: bool = False) -> str:
         raise RuntimeError(msg)
     import shutil
     out = f"{RUNS}/vllm"
-    if os.path.isdir(out):
-        shutil.rmtree(out)
+    if os.path.isdir(out):              # keep the earlier run's evidence; this run starts from an empty folder
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
     os.makedirs(out, exist_ok=True)
     codes = {}
     try:
@@ -163,7 +186,8 @@ def vllm(force: bool = False) -> str:
         with open(f"{out}/TIME.txt", "w") as f:
             f.write(f"{(time.monotonic() - t0) / 60:.1f} minutes on {GPU}\n")
         with open(f"{out}/STATUS.json", "w") as f:
-            json.dump({"exit_codes": codes, "passed": len(codes) == 3 and all(c == 0 for c in codes.values())}, f)
+            json.dump({"exit_codes": codes, "passed": len(codes) == 3 and all(c == 0 for c in codes.values()),
+                       "source": source, **_cost((time.monotonic() - t0) / 60)}, f)
         vol.commit()
     if len(codes) != 3 or any(code != 0 for code in codes.values()):
         raise RuntimeError(f"vLLM validation failed: {codes}; diagnostics were saved to {out}")
@@ -171,9 +195,10 @@ def vllm(force: bool = False) -> str:
 
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
-def demo(force: bool = False) -> str:
+def demo(force: bool = False, source: dict | None = None) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
-    deadline = time.monotonic() + 15 * 60 - 120
+    t0 = time.monotonic()
+    deadline = t0 + 15 * 60 - 120
     msg = _locked("demo", force)
     if msg:
         raise RuntimeError(msg)
@@ -185,7 +210,8 @@ def demo(force: bool = False) -> str:
                     timeout=max(0, deadline - time.monotonic()))
     finally:
         with open(f"{out}/STATUS.json", "w") as f:
-            json.dump({"exit_code": code, "passed": code == 0}, f)
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       **_cost((time.monotonic() - t0) / 60)}, f)
         vol.commit()
     if code != 0:
         raise RuntimeError(f"vLLM demo failed (exit code {code}); diagnostics were saved to {out}")
@@ -217,15 +243,17 @@ def main(phase: str = "vllm", force: bool = False):
     if phase not in ESTIMATES:
         raise SystemExit(f"--phase must be one of {', '.join(ESTIMATES)}")
     print(f"Phase '{phase}': {ESTIMATES[phase]}. Everything shuts down by itself when it's done.", flush=True)
+    src = _source()
+    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
     failures = []
     try:
         if phase == "vllm":
-            message = vllm.remote(force)
+            message = vllm.remote(force, src)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))
         elif phase == "demo":
-            message = demo.remote(force)
+            message = demo.remote(force, src)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))

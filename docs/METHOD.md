@@ -517,9 +517,41 @@ because its result was unwelcome. A tool that cannot run here is "could not test
 one software bug and sdcguard's own author running the comparison. It says nothing about physically defective GPUs
 or about H100.
 
+**Amendments, written October 20 after an outside review and before any run.**
+- MPS evidence: DCGM's diagnostic runs its workload in a child process (nvvs). `dcgmi diag` with no host engine
+  running starts an embedded one, and the child inherits the environment (DCGM source, `dcgmi/Diag.cpp` and
+  `common/ChildProcess`), so it should be an MPS client at the share; that is checked, not assumed. Every tool's
+  step records the new connections in the MPS logs while it ran. If gpu-burn or sdcguard check (known MPS clients)
+  show connections at a share and DCGM shows none, DCGM's workload ran outside MPS and could not meet the bug: that
+  cell is NOT EXERCISED (not an MPS client), never MISSED. Without that evidence the probe rule above applies.
+- A share whose MPS daemon did not start is COULD NOT TEST for every tool.
+- The probe also runs cuBLASLt directly, every algorithm the heuristic offers in PyTorch's linear-layer layout,
+  and prints each algorithm's ID and cluster shape with its result, plus the first one again with a 1x1x1 cluster
+  (NVIDIA's workaround). This is evidence of what goes wrong; it does not change any cell.
+- The run exits with an error and prints INCOMPLETE if any of the 12 planned cells (three tools at four shares)
+  has no measured result. Those cells are COULD NOT TEST, not passes or misses.
+- Every step's full output is downloaded to results/h2h/ with the summary, and the summary records the measured
+  function time and the cost it implies at the rates below.
+
+**Preflight** (`--phase preflight`, one H200, about 10 minutes, written October 20 before it runs). Shares 100, 40
+and 14: the cuBLASLt cases above plus Hgemm and the two GemmEx calls with cuBLASLt logging on; DCGM's software test
+and a 20-second diagnostic without MPS; at 40%, a 20-second DCGM diagnostic and a 10-second gpu-burn under MPS with
+the MPS logs and DCGM's cuBLASLt log recorded. It answers, from that evidence:
+1. Does MPS work here (the daemon starts at every share, fewer SMs are visible at 40% than at 100%)?
+2. Is every algorithm right at 100%?
+3. Does the bug reproduce as NVIDIA describes it: below 100%, wrong results only from algorithm 66 with 4 or more
+   CTAs per cluster, none from 1 or 2 CTA clusters? Does the 1x1x1 workaround give right results?
+4. Does DCGM's diagnostic run here and give readable results, without and with MPS? Did it connect as an MPS client?
+   Are its cuBLAS kernel choices visible in a cuBLASLt log?
+5. Does gpu-burn run under MPS with a readable verdict?
+
+GO for the full run needs 1, 2 and 3. If 4 shows DCGM is not an MPS client, the full run still runs and its DCGM
+cells are reported as above; the write-up says so. If 3 fails (the bug doesn't reproduce, or not as published), the
+full run is not started and that result is published as it is.
+
 **Cost**, at Modal's prices on October 20: about $5 for a typical hour on the H200. The 80-minute execution limit
 is about $6.60 at the requested CPU and memory. That limit is per attempt, excluding queueing; higher actual use,
-startup and a restart after preemption can add cost.
+startup and a restart after preemption can add cost. The preflight is about $1 (about $1.65 at its 20-minute limit).
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
