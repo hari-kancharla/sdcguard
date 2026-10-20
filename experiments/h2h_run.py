@@ -273,23 +273,32 @@ def classify(flag: str, exercised: bool | None) -> str:
 
 
 def summarize_lt_log(path: Path, limit: int = 60) -> dict:
-    """Unique cuBLASLt (computeType, types, shape, algo, cluster) lines with counts, from CUBLASLT_LOG_FILE."""
+    """Unique cuBLASLt matmul calls with counts, from CUBLASLT_LOG_FILE: the call, its types and shapes, and the
+    algorithm and cluster shape when the log prints them (read from the whole line, which can be long)."""
     if not path.exists():
         return {"lines": 0, "unique": [], "note": "no cuBLASLt log was written"}
-    counts, total = {}, 0
+    counts, total, a66, algos = {}, 0, 0, {}
     with open(path, errors="replace") as f:
         for line in f:
-            if "algoId=" not in line and "algo=" not in line:
+            if "Matmul" not in line and "algoId=" not in line:
                 continue
             total += 1
-            key = re.sub(r"\[\d{4}-\d\d-\d\d[^\]]*\]|\bA=0x[0-9a-f]+|\bB=0x[0-9a-f]+|\bC=0x[0-9a-f]+|\bD=0x[0-9a-f]+"
-                         r"|0x[0-9a-f]{6,}|\bthreadId=\d+|\bprocessId=\d+", "", line).strip()
-            key = re.sub(r"\s+", " ", key)[:400]
+            algo = re.search(r"algoId=(\d+)", line)
+            cluster = re.search(r"clusterShape=(?:CLUSTER_SHAPE_)?(\w+)", line) or re.search(r"CLUSTER_SHAPE_(\w+)", line)
+            if algo:
+                tag = f"algoId={algo.group(1)} cluster={cluster.group(1) if cluster else '?'}"
+                algos[tag] = algos.get(tag, 0) + 1
+                if algo.group(1) == "66" and cluster and not re.match(r"(1x1x1|2x1x1|1x2x1|AUTO)", cluster.group(1)):
+                    a66 += 1
+            key = re.sub(r"\[\d{4}-\d\d-\d\d[^\]]*\]|0X[0-9A-F]{6,}|0x[0-9a-f]{6,}|\bthreadId=\d+|\bprocessId=\d+", "",
+                         line).strip()
+            key = re.sub(r"\s+", " ", key)
+            key = (key[:300] + (f" ... algoId={algo.group(1)}" if algo else "") +
+                   (f" cluster={cluster.group(1)}" if cluster else ""))
             counts[key] = counts.get(key, 0) + 1
     uniq = sorted(counts.items(), key=lambda kv: -kv[1])[:limit]
     return {"lines": total, "unique": [{"count": c, "line": k} for k, c in uniq],
-            "algo66_cluster4plus": sum(c for k, c in counts.items() if re.search(r"algoId=66\b", k)
-                                       and re.search(r"CLUSTER_SHAPE_(?!1x1x1|2x1x1|1x2x1)\d", k))}
+            "algorithms": dict(sorted(algos.items(), key=lambda kv: -kv[1])[:30]), "algo66_cluster4plus": a66}
 
 
 def lt_summary(probe: dict) -> dict:

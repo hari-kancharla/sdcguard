@@ -549,6 +549,24 @@ GO for the full run needs 1, 2 and 3. If 4 shows DCGM is not an MPS client, the 
 cells are reported as above; the write-up says so. If 3 fails (the bug doesn't reproduce, or not as published), the
 full run is not started and that result is published as it is.
 
+**What the preflight found** (October 20, 2026, 05:58 Chicago time, Modal H200, driver 610.57.04, container cuBLAS
+13.0.2.14, code fingerprint 28ac0adccafd, [result](../results/h2h/preflight_h200_20261020_055833.json)): GO on every
+question.
+- MPS: 132, 52 and 18 SMs visible at 100%, 40% and 14%.
+- 100%: all 32 cuBLASLt algorithm runs right (FP16 and BF16, both shapes, including 14 of algorithm 66 with 4 or
+  more CTAs per cluster).
+- 40%: 20 of 32 wrong, 14%: 10 of 32 wrong. Every wrong one was algorithm 66 with 4 or 8 CTAs per cluster, most
+  with outputs never written; no run with a 1 or 2 CTA cluster was wrong, and the first algorithm forced to a
+  1x1x1 cluster was right every time. Not every 4+ CTA configuration was wrong (at 40%, 20 of 32). This matches
+  NVIDIA's description of known issue 6862950.
+- The legacy calls: FP16 and BF16 GemmEx (what PyTorch uses) wrong at 40%, right at 14% and 100%; Hgemm at 2048
+  (what DCGM's diagnostic runs) right at all three shares.
+- DCGM 4.7.0: its diagnostic ran and passed with readable JSON, without MPS and at 40%; at 40% the MPS log shows
+  "NEW CLIENT ... from user 0" while it ran, so its workload was an MPS client; its cuBLASLt log shows
+  cublasLtHHHMatmul on 2048 x 2048 FP16. gpu-burn -tc ran under MPS: OK, 0 errors.
+- Two runner bugs found and fixed before the full run: the raw-log download stopped at the first folder (Modal's
+  file type is an integer enum), and the cuBLASLt log summary cut lines before the algorithm field.
+
 **Cost**, at Modal's prices on October 20: about $5 for a typical hour on the H200. The 80-minute execution limit
 is about $6.60 at the requested CPU and memory. That limit is per attempt, excluding queueing; higher actual use,
 startup and a restart after preemption can add cost. The preflight is about $1 (about $1.65 at its 20-minute limit).

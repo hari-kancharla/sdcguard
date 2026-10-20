@@ -33,6 +33,7 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 | cuBLAS known issue 6862950 reproduced | Oct 19, Modal H200 | wrong FP16/BF16/FP8 outputs at some MPS shares; sdcguard alerted; at 20% it alerted while outputs were right (consistent with its own checksum matmul being hit) | positive, with a caveat | [results/mps_bug](../results/mps_bug) |
 | Attention checks, calibration | Oct 20, L4, H100, B200 | criteria met in bf16 (worst clean backward score 0.139) | positive, limited scope | [METHOD.md](METHOD.md#what-the-calibration-found-october-20-2026) |
 | GPU test suite | Oct 19-20, L4, H100, B200 | passed at fingerprint 74b844ee7ca8 | positive | [results/gpu_tests](../results/gpu_tests) |
+| H200 preflight for the head-to-head | Oct 20, Modal H200 | GO: under MPS below 100%, only cuBLASLt algorithm 66 with 4+ CTA clusters went wrong (20 of 32 runs at 40%, 10 of 32 at 14%); 1x1x1 workaround right; DCGM ran as an MPS client; its Hgemm at 2048 was right at every share | positive (the bug as published) | [result](../results/h2h/preflight_h200_20261020_055833.json) |
 | A naturally defective GPU | never | none has been found or tested | gap | |
 | Real users or production incidents | never | none yet | gap | |
 
@@ -42,7 +43,6 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 |---|---|---|
 | Default check vs precise mode on the same matmuls | Oct 19 | [METHOD.md](METHOD.md#the-default-check-and-precise-mode-on-the-same-matmuls-written-october-19-2026-before-any-gpu-run) |
 | vLLM plugin in real vLLM (compiled mode) | Oct 19-20 | scripts/modal_vllm.py |
-| H200 preflight: MPS, the bug as published, DCGM under MPS | Oct 20 | [METHOD.md](METHOD.md#head-to-head-on-a-real-cublas-bug-written-october-20-2026-before-any-run) |
 | Head-to-head on cuBLAS known issue 6862950: DCGM diagnostic, gpu-burn, sdcguard check | Oct 20 | same |
 
 When a run finishes, its row moves to section 2 with its result, whatever it is.

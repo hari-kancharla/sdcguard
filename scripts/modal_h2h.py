@@ -148,7 +148,8 @@ def _download(run_id: str, dest: Path) -> str:
                 f"sdcguard-h2h /{run_id} {dest}")
     n = 0
     for e in entries:
-        if str(getattr(e, "type", "")).endswith("DIRECTORY"):
+        kind = getattr(getattr(e, "type", None), "name", str(getattr(e, "type", "")))
+        if kind != "FILE":                 # (FileEntryType is an IntEnum: str() of it is just "2")
             continue
         rel = str(e.path).lstrip("/")
         rel = rel[len(run_id) + 1:] if rel.startswith(run_id + "/") else rel

@@ -107,7 +107,14 @@ class _H2HVol:
         self.files = files
 
     def listdir(self, path, recursive=False):
-        return [SimpleNamespace(path=p, type="FileEntryType.FILE") for p in self.files]
+        import enum
+
+        class FileEntryType(enum.IntEnum):          # what Modal 1.x returns (str() of it is just the number)
+            FILE = 1
+            DIRECTORY = 2
+        dirs = sorted({p.rsplit("/", 1)[0] for p in self.files})
+        return ([SimpleNamespace(path=d, type=FileEntryType.DIRECTORY) for d in dirs] +
+                [SimpleNamespace(path=p, type=FileEntryType.FILE) for p in self.files])
 
     def read_file_into_fileobj(self, path, f):
         f.write(self.files[path])

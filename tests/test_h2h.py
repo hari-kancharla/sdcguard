@@ -167,6 +167,12 @@ def test_lt_log_summary(tmp_path):
         "unrelated line\n")
     s = h.summarize_lt_log(log)
     assert s["lines"] == 3 and s["unique"][0]["count"] == 2 and s["algo66_cluster4plus"] == 2
+    assert s["algorithms"] == {"algoId=66 cluster=4x1x1": 2, "algoId=21 cluster=1x1x1": 1}
+    long = tmp_path / "long.log"                    # the algorithm comes after hundreds of characters of layouts
+    long.write_text("[cublasLt][207][Trace][cublasLtHHHMatmul] " + "Adesc=[type=R_16F rows=2048] " * 30 +
+                    "algo=[algoId=66 tile=MATMUL_TILE_128x128 clusterShape=CLUSTER_SHAPE_2x2x1]\n")
+    s2 = h.summarize_lt_log(long)
+    assert s2["algo66_cluster4plus"] == 1 and "algoId=66" in s2["unique"][0]["line"]
     assert h.summarize_lt_log(tmp_path / "missing.log")["lines"] == 0
 
 
