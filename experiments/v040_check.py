@@ -259,7 +259,8 @@ def grouped(dev, calls=200, say=print) -> dict:
 def listed_issues_for(wrong: dict, matches: list) -> list:
     """The listed cuBLAS issues (sdcguard.known_issues.match() for this machine) that could explain one wrong
     algorithm: those that apply or may apply here and that NVIDIA ties to the same algorithm (and, where it says
-    so, to clusters of 4 or more CTAs). A candidate explanation, not a diagnosis."""
+    so, to clusters of 4 or more CTAs, or to split-K: an algorithm that ran with SPLITK_NUM 1 can't have hit a
+    split-K bug). A candidate explanation, not a diagnosis."""
     out = []
     for m in matches or []:
         if not isinstance(m, dict) or m.get("status") not in ("applies", "may apply"):
@@ -270,15 +271,26 @@ def listed_issues_for(wrong: dict, matches: list) -> list:
             continue
         if "4 or more CTAs" in what and (wrong.get("cluster_ctas") or 0) < 4:
             continue
+        if "split-K" in what and wrong.get("splitk") is not None and wrong["splitk"] <= 1:
+            continue
         out.append(m.get("id"))
     return out
+
+
+def _config(w: dict) -> str:
+    """What tells one configuration of an algorithm from another in a report line."""
+    parts = [f"{w['cluster_ctas']}-CTA clusters"] if w.get("cluster_ctas") else []
+    if w.get("splitk") is not None:
+        parts.append(f"split-K {w['splitk']}" if w["splitk"] > 1 else "no split-K")
+    return f" ({', '.join(parts)})" if parts else ""
 
 
 def wrong_with_listed_issues(sweeps: list, matches: list) -> list:
     """Every wrong algorithm of some sweeps, with the listed cuBLAS issues that could explain it (none: nothing
     NVIDIA lists accounts for it)."""
-    return [{"shape": sw.get("shape"), "dtype": sw.get("dtype"), "algo_id": w.get("algo_id"),
-             "cluster_ctas": w.get("cluster_ctas"), "listed_issues": listed_issues_for(w, matches)}
+    return [{"shape": sw.get("shape"), "dtype": sw.get("dtype"), "index": w.get("index"), "algo_id": w.get("algo_id"),
+             "cluster_ctas": w.get("cluster_ctas"), "splitk": w.get("splitk"),
+             "listed_issues": listed_issues_for(w, matches)}
             for sw in sweeps or [] if isinstance(sw, dict)
             for w in (sw.get("wrong") or sw.get("wrong_algorithms") or [])]
 
@@ -631,7 +643,7 @@ def criteria(r: dict) -> dict:
     timing = cp.get("check_us") or {}
     c7 = timing["with"] <= 1.05 * timing["without"] if positive(timing, "with") and positive(timing, "without") \
         else None
-    library = [f"{'x'.join(map(str, w['shape'] or []))} {w['dtype']} algorithm {w['algo_id']}: "
+    library = [f"{'x'.join(map(str, w['shape'] or []))} {w['dtype']} algorithm {w['algo_id']}{_config(w)}: "
                + (f"listed cuBLAS issue {', '.join(w['listed_issues'])}" if w["listed_issues"]
                   else "no listed cuBLAS issue")
                for w in (bl.get("wrong_with_listed_issues") or [])]

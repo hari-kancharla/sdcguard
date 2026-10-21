@@ -39,7 +39,10 @@ def test_verdicts():
     r = blas.summarize({"algorithms": [good, bad, workaround]})
     assert r["verdict"] == "FAIL" and r["algorithms_tested"] == 2
     assert r["wrong_algorithms"] == [{"index": 3, "algo_id": 66, "cluster_shape_id": 4, "cluster_ctas": 4,
-                                      "why": None, "unwritten_or_nonfinite": 4096, "wrong_sampled": 12}]
+                                      "splitk": None, "why": None, "unwritten_or_nonfinite": 4096,
+                                      "wrong_sampled": 12}]
+    split = blas.summarize({"algorithms": [dict(bad, splitk=1)]})["wrong_algorithms"][0]
+    assert split["splitk"] == 1                  # what rules a split-K bug in or out for that configuration
     assert blas.summarize({"algorithms": [good, workaround]})["verdict"] == "PASS"
     assert blas.summarize({"algorithms": []})["verdict"] == "COULD NOT TEST"
     assert blas.summarize({"error": "x", "algorithms": [good]})["verdict"] == "COULD NOT TEST"

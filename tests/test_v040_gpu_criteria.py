@@ -212,6 +212,39 @@ def test_wrong_algorithms_are_reported_with_the_listed_cublas_issues_that_match_
     assert "no listed cuBLAS issue" in lines[1] and "algorithm 39" in lines[1]
 
 
+def test_a_split_k_bug_is_not_listed_for_a_configuration_that_ran_without_split_k():
+    """6580689 is a split-K bug in algorithm 66. Every wrong configuration on the H200 at 40% ran with SPLITK_NUM 1
+    (October 21, 2026), yet the summary listed 6580689 for each beside 6862950, and printed configurations that
+    differ in cluster size as the same line, over and over. A configuration that ran without split-K can't have hit
+    a split-K bug; the configurations of one algorithm on one shape are one entry, with their count."""
+    v = _load("experiments/v040_check.py", "v040_check_splitk")
+    env = {"cublas": "13.1.1", "cublas_source": "test", "gpu": "NVIDIA H200", "cc": "9.0", "sms": 52,
+           "mps_share": 40.0, "mps": "partial (52 of 132 SMs visible)"}
+    matches = known_issues.match(env)
+    assert v.listed_issues_for({"algo_id": 66, "cluster_ctas": 8, "splitk": 1}, matches) == ["6862950"]
+    assert "6580689" in v.listed_issues_for({"algo_id": 66, "cluster_ctas": 8, "splitk": 4}, matches)
+    assert "6580689" in v.listed_issues_for({"algo_id": 66, "cluster_ctas": 8}, matches)   # split-K not known
+    sweeps = [{"shape": [1000, 2048, 16], "dtype": "bfloat16", "verdict": "FAIL",
+               "wrong": [{"index": 0, "algo_id": 66, "cluster_ctas": 8, "splitk": 1},
+                         {"index": 1, "algo_id": 66, "cluster_ctas": 4, "splitk": 1}]},
+              {"shape": [4096, 4096, 2048], "dtype": "float16", "verdict": "FAIL",
+               "wrong": [{"index": i, "algo_id": 66, "cluster_ctas": 4 if i % 3 else 8, "splitk": 1}
+                         for i in range(8)]}]
+    wrong = v.wrong_with_listed_issues(sweeps, matches)
+    assert len(wrong) == 10 and all(w["listed_issues"] == ["6862950"] for w in wrong)
+    assert [w["index"] for w in wrong[:2]] == [0, 1] and wrong[0]["splitk"] == 1
+    lines = _launcher("_library_lines")["_library_lines"]("h200 at 40%", wrong)
+    assert lines == [("h200 at 40%: wrong cuBLASLt algorithms that a listed NVIDIA cuBLAS issue accounts for: "
+                      "1000x2048x16 bfloat16 algorithm 66, 2 configurations (clusters of 4 and 8 CTAs, no split-K): "
+                      "6862950; 4096x4096x2048 float16 algorithm 66, 8 configurations (clusters of 4 and 8 CTAs, "
+                      "no split-K): 6862950")]
+    r = _v040_result({"experts": 64, "calls": 200, "clean_alarms": 0, "unjudged": 0, "checks": 3,
+                      "expected_checks": 3, "fault_trials": 100, "faults_caught": 100})
+    r["blas"] = {"sweeps": sweeps, "wrong_with_listed_issues": wrong}
+    report = v.criteria(r)["5 wrong algorithms and the listed cuBLAS issues that match them"]
+    assert report[0] == "1000x2048x16 bfloat16 algorithm 66 (8-CTA clusters, no split-K): listed cuBLAS issue 6862950"
+
+
 def test_each_gpu_function_checks_it_has_the_launched_code(tmp_path):
     """Each GPU function fingerprints its own copy of the code (as scripts/modal_check.py does) and stops before
     any GPU work when it isn't what the launcher fingerprinted; the image carries scripts/ because the

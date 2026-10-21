@@ -1058,7 +1058,11 @@ NVIDIA's (sdcguard's own table lists 6580689, a split-K bug in algorithm 66, as 
 with the image's cuBLAS). So the runners report each wrong algorithm with the listed cuBLAS issues
 (`sdcguard.known_issues`) that apply or may apply to the machine and name that algorithm, and the summary lists
 those apart from wrong algorithms no listed issue accounts for. The criterion stays not met either way; the
-report says whose bug it is likely to be, not that it is settled.
+report says whose bug it is likely to be, not that it is settled. (Changed October 21, after this section's fourth
+run, criteria unchanged: an issue NVIDIA ties to split-K is listed for a wrong configuration only when that
+configuration ran with split-K, and the configurations of one algorithm on one shape and data type are one entry,
+with their count, cluster sizes and split-K. Every wrong configuration on the H200 at 40% in that run had
+SPLITK_NUM 1, which leaves 6862950 the one listed issue that accounts for them.)
 
 **Reporting.** Every criterion on every GPU is published, met or not. If the fused check's cost criterion fails
 again, the kernel timing says whether the GEMM or the epilogue is the cost. Everything new stays experimental

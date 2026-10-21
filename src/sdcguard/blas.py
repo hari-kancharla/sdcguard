@@ -251,10 +251,10 @@ def summarize(out: dict) -> dict:
     ran = [a for a in plain if _ran(a)]
     out["algorithms_tested"] = len(ran)
     out["wrong_algorithms"] = [{k: a.get(k) for k in ("index", "algo_id", "cluster_shape_id", "cluster_ctas",
-                                                      "why", "unwritten_or_nonfinite", "wrong_sampled")}
+                                                      "splitk", "why", "unwritten_or_nonfinite", "wrong_sampled")}
                                for a in ran if not a.get("correct")]
     out["algorithms_not_run"] = [{k: a.get(k) for k in ("index", "algo_id", "cluster_shape_id", "cluster_ctas",
-                                                        "status", "why")} for a in plain if not _ran(a)]
+                                                        "splitk", "status", "why")} for a in plain if not _ran(a)]
     if out.get("error"):
         out["verdict"] = "COULD NOT TEST"
     elif not plain:

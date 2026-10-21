@@ -296,12 +296,27 @@ def _mps_criteria(res: dict) -> dict:
 
 def _library_lines(label: str, wrong) -> list:
     """Summary lines for wrong cuBLASLt algorithms: those a listed NVIDIA cuBLAS issue accounts for (a library bug
-    NVIDIA already lists, not sdcguard's) apart from those none accounts for. They still fail their criterion."""
+    NVIDIA already lists, not sdcguard's) apart from those none accounts for. They still fail their criterion. The
+    configurations of one algorithm on one shape and data type with the same listed issues are one entry: how
+    many there were, their cluster sizes and their split-K."""
     if not isinstance(wrong, list) or not wrong:
         return []
-    show = lambda w: f"{'x'.join(map(str, w.get('shape') or []))} {w.get('dtype')} algorithm {w.get('algo_id')}"  # noqa: E731
-    listed = [f"{show(w)} ({', '.join(w['listed_issues'])})" for w in wrong if w.get("listed_issues")]
-    other = [show(w) for w in wrong if not w.get("listed_issues")]
+    groups: dict = {}
+    for w in wrong:
+        key = ("x".join(map(str, w.get("shape") or [])), w.get("dtype"), w.get("algo_id"),
+               tuple(w.get("listed_issues") or ()))
+        groups.setdefault(key, []).append(w)
+
+    def show(key, ws) -> str:
+        ctas = sorted({w["cluster_ctas"] for w in ws if w.get("cluster_ctas")})
+        splits = sorted({w["splitk"] for w in ws if w.get("splitk") is not None})
+        detail = ["clusters of " + " and ".join(map(str, ctas)) + " CTAs"] if ctas else []
+        if splits:
+            detail.append("no split-K" if splits == [1] else "split-K " + ", ".join(map(str, splits)))
+        n = f"{len(ws)} configurations" if len(ws) > 1 else "1 configuration"
+        return f"{key[0]} {key[1]} algorithm {key[2]}, {n}" + (f" ({', '.join(detail)})" if detail else "")
+    listed = [f"{show(k, ws)}: {', '.join(k[3])}" for k, ws in groups.items() if k[3]]
+    other = [show(k, ws) for k, ws in groups.items() if not k[3]]
     out = []
     if listed:
         out.append(f"{label}: wrong cuBLASLt algorithms that a listed NVIDIA cuBLAS issue accounts for: "
