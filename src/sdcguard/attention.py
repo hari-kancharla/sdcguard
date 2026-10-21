@@ -12,6 +12,10 @@ Forward: every output row is a convex combination of the value rows (the probabi
 1), so each output lies between the smallest and largest value of its head and feature. An output outside
 that range is impossible, whatever the inputs: a cheap test for large errors (exponent bits).
 
+Both identities need every row of P to sum to 1. A query or key that isn't finite, or values so large that the
+logits overflow fp32, breaks that whatever the GPU does, so given Q and K, the heads they feed aren't judged
+(the check is incomplete, as with non-finite inputs to a matmul).
+
 Both read tensors the kernel already wrote; nothing in the model changes. Not checked: attention with
 dropout (the identities hold only without it), with an explicit mask or bias tensor, and variable-length
 (nested) batches; these are counted as skipped.
@@ -82,17 +86,38 @@ def _heads(q_like: torch.Tensor, kv_like: torch.Tensor):
     return b, hq, hk, d
 
 
+def _qk_ok(q, k, scale, b: int, hk: int) -> Optional[torch.Tensor]:
+    """(B, Hk) bool: True where every query of the key/value head's group and every key is finite and the logits
+    can't overflow fp32 (|logit| <= |scale| x d x max|q| x max|k|), so each row of P sums to 1. None without
+    Q and K, or when their shapes don't fit (empty sequences included: no largest value to take)."""
+    if not (isinstance(q, torch.Tensor) and isinstance(k, torch.Tensor)) or q.dim() != 4 or k.dim() != 4:
+        return None
+    if q.numel() == 0 or k.numel() == 0:
+        return None
+    if q.shape[0] != b or k.shape[:2] != (b, hk) or q.shape[1] % hk or q.shape[-1] != k.shape[-1]:
+        return None
+    d = q.shape[-1]
+    s = abs(float(scale)) if scale is not None else 1.0 / math.sqrt(max(1, d))
+    # (largest |value| per head, NaN propagating: one read of Q and of K, no copies)
+    qmax = torch.linalg.vector_norm(q, float("inf"), dim=(-2, -1), dtype=torch.float32)
+    qmax = qmax.view(b, hk, -1).amax(-1)
+    kmax = torch.linalg.vector_norm(k, float("inf"), dim=(-2, -1), dtype=torch.float32)
+    return torch.isfinite(qmax) & torch.isfinite(kmax) & (qmax * kmax * (s * d) < 1e38)
+
+
 def _columns(x: torch.Tensor):
     """Over the sequence axis (-2), in fp32: the sum, the sum of |x|, the 2-norm and the largest |x|."""
     return (x.sum(-2, dtype=torch.float32), torch.linalg.vector_norm(x, 1, dim=-2, dtype=torch.float32),
             torch.linalg.vector_norm(x, 2, dim=-2, dtype=torch.float32), x.abs().amax(-2).float())
 
 
-def backward_stat(dO: torch.Tensor, dV: torch.Tensor, z: float = 6.0,
-                  abs_floor: float = ABS_FLOOR) -> Optional[CheckStat]:
+def backward_stat(dO: torch.Tensor, dV: torch.Tensor, z: float = 6.0, abs_floor: float = ABS_FLOOR,
+                  q: Optional[torch.Tensor] = None, k: Optional[torch.Tensor] = None,
+                  scale: Optional[float] = None) -> Optional[CheckStat]:
     """The backward identity for every (batch, key/value head, feature). dO: (B, Hq, Tq, D), dV: (B, Hk, Tk, D)
     in bf16/fp16. Returns a queued check like checksum.matmul_zscores (rows: batch x head, blocks: features),
-    or None when it can't be judged here (other dtypes or shapes)."""
+    or None when it can't be judged here (other dtypes or shapes). q, k (and the call's softmax scale, None for
+    1/sqrt(D)): heads whose queries or keys break the identity (see the module docstring) aren't judged."""
     if not (isinstance(dO, torch.Tensor) and isinstance(dV, torch.Tensor)):     # (dV not asked for)
         return None
     if dV.dtype not in UNIT_ROUNDOFF or dO.dtype != dV.dtype:
@@ -130,19 +155,24 @@ def backward_stat(dO: torch.Tensor, dV: torch.Tensor, z: float = 6.0,
         too_big = v_max > o_l1 * (1.0 + 2 * u) + tk * tiny + abs_floor     # larger than all of dO allows
         zz = torch.where(o_bad, torch.full_like(zz, -1.0), zz)
         zz = torch.where(~o_bad & (v_bad | too_big), torch.full_like(zz, float("inf")), zz)
-        zz = torch.nan_to_num(zz, nan=-1.0)
+        zz = torch.where(zz == zz, zz, torch.full_like(zz, -1.0))      # (NaN only: an Inf score stays Inf)
+        ok = _qk_ok(q, k, scale, b, hk)
+        if ok is not None:                      # P's rows needn't sum to 1 there: whatever dV is, not judged
+            zz = torch.where(ok.unsqueeze(-1), zz, torch.full_like(zz, -1.0))
         flat = zz.reshape(-1)
         mz, idx = flat.max(0)
-        nz = noise.reshape(-1)[idx]
+        nz = torch.take(noise.reshape(-1), idx)       # (indexing with a GPU scalar would wait for the GPU)
         # as in the matmul checks: a column that couldn't be judged makes the check incomplete unless another
         # column found corruption
         mz = torch.where((flat < 0).any() & (mz <= z), torch.full_like(mz, -1.0), mz)
     return CheckStat(max_z=mz, argmax=idx * 2, noise=nz, spans=((0, 1, d, 0),), m=b * hk, batched=False)
 
 
-def forward_stat(O: torch.Tensor, V: torch.Tensor, abs_floor: float = ABS_FLOOR) -> Optional[CheckStat]:
-    """Outputs outside the range of their head's values: impossible, so z is inf there (0 elsewhere).
-    O: (B, Hq, Tq, D), V: (B, Hk, Tk, D)."""
+def forward_stat(O: torch.Tensor, V: torch.Tensor, abs_floor: float = ABS_FLOOR, q: Optional[torch.Tensor] = None,
+                 k: Optional[torch.Tensor] = None, scale: Optional[float] = None) -> Optional[CheckStat]:
+    """Outputs outside the range of their head's values: impossible, so z is inf there (0 elsewhere, or -1, an
+    incomplete check, when any head and feature couldn't be judged: values that aren't finite, or with q and k
+    given, queries or keys that break the identity). O: (B, Hq, Tq, D), V: (B, Hk, Tk, D)."""
     if not (isinstance(O, torch.Tensor) and isinstance(V, torch.Tensor)):
         return None
     if O.dtype not in UNIT_ROUNDOFF or V.dtype != O.dtype:
@@ -157,15 +187,20 @@ def forward_stat(O: torch.Tensor, V: torch.Tensor, abs_floor: float = ABS_FLOOR)
         vmax = V.amax(-2).float().repeat_interleave(g, dim=1).unsqueeze(-2)     # (B, Hq, 1, D)
         vmin = V.amin(-2).float().repeat_interleave(g, dim=1).unsqueeze(-2)
         v_ok = torch.isfinite(vmax) & torch.isfinite(vmin)
+        ok = _qk_ok(q, k, scale, b, hk)
+        if ok is not None:
+            v_ok = v_ok & ok.repeat_interleave(g, dim=1).view(b, hq, 1, 1)
         tol = 2 * u * torch.maximum(vmax.abs(), vmin.abs()) + abs_floor
         # compared in fp32 element by element, without an fp32 copy of the outputs
         bad = (O > vmax + tol) | (O < vmin - tol) | ~torch.isfinite(O)
         bad = (bad & v_ok).reshape(-1)
         idx = torch.argmax(bad.to(torch.uint8))
-        hit = bad[idx]
-        inf, zero, unjudged = (torch.tensor(x, device=O.device) for x in (float("inf"), 0.0, -1.0))
-        mz = torch.where(hit, inf, torch.where(v_ok.any(), zero, unjudged))       # (no wait for the GPU)
+        hit = torch.take(bad, idx)                  # every step stays on the GPU: no read-back, no host copy
+        one = torch.ones((), device=O.device, dtype=torch.float32)
+        # as in the other checks: a head or feature that couldn't be judged makes the check incomplete unless
+        # another one found corruption
+        mz = torch.where(hit, one * float("inf"), torch.where(v_ok.all(), one * 0.0, one * -1.0))
         row_d = idx % d
-        nz = tol.expand(b, hq, 1, d).reshape(b * hq, d)[(idx // (O.shape[-2] * d)), row_d]
+        nz = torch.take(tol.expand(b, hq, 1, d).reshape(-1), (idx // (O.shape[-2] * d)) * d + row_d)
     return CheckStat(max_z=mz, argmax=idx * 2, noise=nz, spans=((0, 1, d, 0),), m=b * hq * O.shape[-2],
                      batched=False)

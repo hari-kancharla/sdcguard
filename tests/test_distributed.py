@@ -188,3 +188,80 @@ def test_fast_mode_with_fsdp2_and_checkpointing():
     for res in results:
         assert res["checks"] > 0 and res["alerts"] == 0
         assert res["same_loss"] and res["same_grads"]
+
+
+def _guard_replica_worker(rank, init_file, out_dir):
+    """SDCGuard(replicas=True) under DDP: clean checked steps agree; after one rank's optimizer update goes
+    wrong (one flipped bit), the next checked step names that rank on every rank."""
+    from torch.nn.parallel import DistributedDataParallel as DDP
+
+    from sdcguard import SDCGuard
+    dist.init_process_group("gloo", init_method=f"file://{init_file}", rank=rank, world_size=WORLD)
+    model = DDP(_model())
+    opt = torch.optim.SGD(model.parameters(), lr=0.01)
+    seen = []
+    guard = SDCGuard(every=2, replicas=True, on_alert=seen.append).protect(model)
+    x = torch.randn(16, 64, generator=torch.Generator().manual_seed(rank))
+    res = {"alerts_by_step": {}}
+    for step in range(6):
+        before = len(guard.log.events)
+        with guard.on_step(step):
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                loss = model(x).float().pow(2).mean()
+            loss.backward()
+        opt.step()
+        opt.zero_grad()
+        if step == 2 and rank == BAD:                # this rank's weight update went wrong
+            with torch.no_grad():
+                model.module[2].weight.view(-1).view(torch.int32)[11] ^= 1 << 5
+        res["alerts_by_step"][step] = [e.detail.get("suspect_ranks") for e in guard.log.events[before:]
+                                       if e.detector == "replica"]
+    res["stats"] = {k: guard.stats[k] for k in ("replica_checks", "replica_mismatches", "replica_skipped")}
+    rep = [e for e in guard.log.events if e.detector == "replica"]
+    res["named_rank"] = [e.identity.get("rank") for e in rep]
+    res["suspects"] = [e.detail.get("suspects") for e in rep]
+    res["delivered"] = len([e for e in seen if e.detector == "replica"])
+    with open(os.path.join(out_dir, f"rank{rank}.json"), "w") as f:
+        json.dump(res, f)
+    dist.barrier()
+    if tuple(int(x) for x in torch.__version__.split(".")[:2]) >= (2, 6):
+        dist.destroy_process_group()
+
+
+def test_guard_replica_check_names_the_rank_whose_update_went_wrong():
+    with tempfile.TemporaryDirectory() as d:
+        init_file = os.path.join(d, "init")
+        mp.spawn(_guard_replica_worker, args=(init_file, d), nprocs=WORLD, join=True)
+        results = [json.load(open(os.path.join(d, f"rank{r}.json"))) for r in range(WORLD)]
+    for res in results:
+        alerts = res["alerts_by_step"]
+        assert alerts["0"] == [] and alerts["2"] == []          # clean checked steps agree
+        assert alerts["4"] == [[BAD]]                            # the first checked step after the bad update
+        assert res["stats"] == {"replica_checks": 3, "replica_mismatches": 1, "replica_skipped": 0}
+        assert res["named_rank"] == [BAD] and res["suspects"][0][0]["rank"] == BAD   # names the bad GPU
+    assert sum(r["delivered"] for r in results) == 1             # one rank delivers it, not every rank
+
+
+def test_sharded_weights_are_recognized():
+    from sdcguard.replica import is_sharded
+
+    class FakeDTensor(torch.Tensor):
+        placements = ("Shard(0)",)
+
+        def to_local(self):
+            return self
+    assert is_sharded(torch.zeros(2).as_subclass(FakeDTensor)) and not is_sharded(torch.zeros(2))
+
+
+def test_alert_lines_speak_for_their_detector():
+    from sdcguard.alerts import describe
+    from sdcguard.events import SDCEvent
+    rep = SDCEvent(detector="replica", step=4, detail={"suspect_ranks": [2], "world": 3, "clear_majority": True,
+                                                       "where": "data-parallel weights"},
+                   identity={"gpu_uuid": "GPU-bad"})
+    assert "drifted from the other ranks (rank 2 of 3" in describe(rep) and "GPU-bad" in describe(rep)
+    rc = SDCEvent(detector="recompute", step=1, detail={"where": "block.3", "outputs_that_differ": [0, 1]},
+                  identity={})
+    assert "recomputed this checkpointed block" in describe(rc) and "2 of its outputs" in describe(rc)
+    mm = SDCEvent(detector="checksum", step=1, detail={"where": "fc", "max_z": 7.5, "alarm_line": 4.0}, identity={})
+    assert "alarm line 4" in describe(mm)

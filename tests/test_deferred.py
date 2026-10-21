@@ -263,3 +263,26 @@ def test_fp16_gpu_path_blocks_of_very_different_size(monkeypatch, ratio):
     Bf[:, :128] *= ratio
     B = Bf.half()
     assert check_matmul(A, B, (A.float() @ B.float()).half()).ok
+
+
+@pytest.mark.parametrize("protect", [True, False])
+def test_checks_lost_when_the_read_back_fails_are_not_counted_as_checked(monkeypatch, tmp_path, protect):
+    """A step that raised still has its checks read back. When that read-back fails too (a CUDA error after a GPU
+    fault, stood in for here), none of the step's checks was judged: none may stay counted in stats["checked"],
+    and their evidence operands are let go. The step's own error is the one that propagates."""
+    from sdcguard import guard as guard_mod
+    torch.manual_seed(0)
+    m = nn.Sequential(nn.Linear(16, 32), nn.GELU(), nn.Linear(32, 16)).bfloat16()
+    g = SDCGuard(evidence_dir=str(tmp_path))
+    if protect:
+        g.protect(m)
+
+    def boom(*a, **k):
+        raise RuntimeError("CUDA error: an illegal memory access was encountered")
+    monkeypatch.setattr(guard_mod, "resolve", boom)
+    with pytest.raises(ValueError):
+        with g.at_step(0):
+            m(torch.randn(4, 16, dtype=torch.bfloat16)).float().sum().backward()
+            raise ValueError("the step's own error")
+    assert g.stats["matmuls_seen"] > 0 and g.stats["checked"] == 0, g.stats
+    assert g._kept == [] and g._pending == []

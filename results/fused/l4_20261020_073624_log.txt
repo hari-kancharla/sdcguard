@@ -1,0 +1,25 @@
+   83.5s correctness: done in 83 s
+  108.2s calibration shape, seed 41, Zipf tokens: 990 fused checks, guard {'matmuls_seen': 990, 'checked': 990, 'checked_fp32': 990, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 990, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0}
+  138.9s wide, 8,192 tokens, seed 43, Zipf tokens: 306 fused checks, guard {'matmuls_seen': 306, 'checked': 306, 'checked_fp32': 306, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 306, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0}
+  138.9s same_matmuls: done in 55 s
+  147.2s sensitivity 4096x1024x3072: fused 0.005, precise 0.005, default None
+  148.9s sensitivity 4096x1024x4096: fused 0.005, precise 0.005, default None
+  152.5s sensitivity 4096x4096x1024: fused 0.03, precise 0.03, default None
+  152.5s sensitivity: done in 14 s
+  157.4s timing 4096x1024x3072: cuBLAS 0.3727 ms, fused GEMM 0.7281 ms, check 3.1314 ms, fused total 3.7233 ms, precise total 6.6355 ms
+  158.0s timing 4096x1024x4096: cuBLAS 0.4915 ms, fused GEMM 1.0086 ms, check 3.4765 ms, fused total 4.1851 ms, precise total 8.0241 ms
+  158.8s timing 4096x4096x1024: cuBLAS 0.468 ms, fused GEMM 0.7076 ms, check 6.9181 ms, fused total 7.4199 ms, precise total 8.2237 ms
+  159.4s timing 3072x4096x1024: cuBLAS 0.3441 ms, fused GEMM 0.5652 ms, check 4.3418 ms, fused total 4.6715 ms, precise total 5.3371 ms
+  167.9s timing 4096x1024x32000: cuBLAS 4.8384 ms, fused GEMM 7.9534 ms, check 23.082 ms, fused total 30.4118 ms, precise total 59.7084 ms
+  171.0s timing 8192x2048x8192: cuBLAS 4.6971 ms, fused GEMM 6.2935 ms, check 17.1469 ms, fused total 22.8229 ms, precise total 39.5551 ms
+  171.0s timing: done in 19 s
+  174.4s overhead unchecked: 0.2688 s/step
+  185.8s overhead default check: 0.2923 s/step
+  194.8s overhead precise=True: 0.9712 s/step
+  202.4s overhead precise=fused: 0.8003 s/step
+  202.4s overhead: done in 31 s
+  206.5s gradients: max relative difference 0.00657894741743803, losses 10.560029983520508 vs 10.560049057006836
+  206.5s gradients: done in 4 s
+  226.7s gpt2: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': 1.0, 'full check': 10.0}
+  236.8s llama: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': 1.9, 'full check': 16.2}
+  244.4s nondeterminism: {"deterministic algorithms off": {"recomputes_compared": 5, "mismatches": 1, "blocks_that_differed": ["_Scatter"], "deterministic": false, "note": null}, "deterministic algorithms on": {"recomputes_compared": 5, "mismatches": 0, "blocks_that_differed": [], "deterministic": true, "note": null}}

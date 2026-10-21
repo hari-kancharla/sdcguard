@@ -6,8 +6,9 @@ sdcguard (baseline) and once with SDCGUARD=1. Same prompts, greedy decoding. Rep
   - cost           output tokens per second, both runs (default settings: torch.compile + CUDA graphs)
   - quiet          alerts during the guarded run's clean traffic (must be 0)
   - catches        then one high exponent bit is flipped in one weight of one layer (what a memory
-                   error would do); after a few more prompts the alert must name that layer, and
-                   verify_weights() must find the changed weights
+                   error would do); after a few more prompts the alert must name that layer, keep the row
+                   that alarmed (captured inside vLLM's compiled graph) with a recheck that finds the weights
+                   changed, and verify_weights() must find the changed weights
 
     python experiments/vllm_check.py --out runs/vllm            # both runs, then the comparison
     python experiments/vllm_check.py --role guarded --out ...   # one run
@@ -26,6 +27,16 @@ import time
 
 MODEL = "Qwen/Qwen2.5-1.5B-Instruct"     # bf16, public, has biases on q/k/v (tests the bias path)
 FLIP_LAYER = "model.layers.10.mlp.down_proj"
+
+
+def _kept_row(alert, layer: str) -> bool:
+    """Whether an alert on `layer` kept the row that alarmed, with a recheck that found the weights changed since
+    load. A kept row has a place in the layer (row, 128-column block, whether the bias was in it) and a score: an
+    outside review showed any non-empty record passed (October 21, 2026, before any run)."""
+    c = alert.get("captured") if isinstance(alert, dict) and alert.get("where") == layer else None
+    return (isinstance(c, dict) and all(type(c.get(k)) is int and c[k] >= 0 for k in ("row", "col_block"))
+            and type(c.get("with_bias")) is bool and type(c.get("z")) in (int, float) and c["z"] > 0
+            and (alert.get("recheck") or {}).get("verdict") == "weights_changed")
 
 
 def _guarded_failures(result: dict) -> list[str]:
@@ -79,6 +90,10 @@ def _guarded_failures(result: dict) -> list[str]:
         locations = {e.get("where") for e in a.get("alerts", []) if isinstance(e, dict)}
         if target not in locations or target not in a.get("changed_weights", []):
             errors.append(f"worker {i}: the corrupted layer was not identified by both checks")
+        # original-event capture inside vLLM's compiled graphs (added October 21, 2026, before any run): the alert
+        # keeps the row that alarmed, and its recheck finds the weights changed since load
+        if not any(_kept_row(e, target) for e in a.get("alerts", [])):
+            errors.append(f"worker {i}: the corrupted layer's alert kept no row whose recheck says the weights changed")
     return errors
 
 

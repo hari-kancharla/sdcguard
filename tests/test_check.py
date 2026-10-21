@@ -69,18 +69,24 @@ def test_cross_compare_finds_the_odd_gpu():
     assert "odd one out" in rs[2]["notes"][0][1] and "matches 2 other" in rs[0]["cross_gpu"]
     two = [_fake("a"), _fake("b")]
     check.cross_compare(two)
-    assert all(r["result"] == "PASS" and r["notes"][0][0] == "warn" for r in two)   # can't tell which one
+    assert all(r["result"] == "SUSPECT" and r["notes"][0][0] == "bad" for r in two)  # one is wrong: can't tell which
+    for split in (["a", "a", "b", "b"], ["a", "b", "c"]):
+        rs = [_fake(x) for x in split]
+        check.cross_compare(rs)
+        assert all(r["result"] == "SUSPECT" for r in rs), split
     same = [_fake("a"), _fake("a")]
     check.cross_compare(same)
     assert "identical output on all 2" in same[0]["cross_gpu"]
 
 
-def test_board_reference_makes_a_lone_mismatch_suspect():
+def test_board_reference_only_adds_notes():
+    """Board data is posted by anyone: a lone mismatch gets a strong note, never a changed result."""
     ref = {"fingerprints": {"k": {"b": {"gpus": 3, "sources": 2}}},
            "models": {"NVIDIA H100 80GB HBM3": {"runs": 3, "median_tflops": 700}}}
     r = _fake("a")
     check.apply_board(r, ref)
-    assert r["result"] == "SUSPECT" and r["board"]["same_setup_runs"] == 3 and r["board"]["same_fingerprint"] == 0
+    assert r["result"] == "PASS" and r["notes"][0][0] == "bad" and "not verified" in r["notes"][0][1]
+    assert r["board"]["same_setup_runs"] == 3 and r["board"]["same_fingerprint"] == 0
     ok = _fake("b")
     check.apply_board(ok, ref)
     assert ok["result"] == "PASS" and ok["board"]["same_fingerprint"] == 3 and ok["board"]["model_median_tflops"] == 700
@@ -312,3 +318,52 @@ def test_a_wrong_math_mode_fails_the_gpu_and_problems_stay_on_the_card(monkeypat
     labels = [k for k, _ in rows[:check.CARD_ROWS]]
     assert labels[:5] == ["checked", "math modes", "memory test", "bad", "warn"] and rows[-1] == ("note", "x")
     assert "1 WRONG" in dict(rows)["math modes"] and "math modes 1" in dict(rows)["checked"]
+
+
+def test_check_json_is_one_parseable_document(tmp_path):
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, "-m", "sdcguard.check", "--minutes", "0.03", "--size", "tiny", "--offline",
+                        "--json", "--out", str(tmp_path)], capture_output=True, text=True)
+    doc = json.loads(r.stdout)                     # progress lines went to stderr
+    assert doc["result"] in ("PASS", "INCOMPLETE") and r.stderr
+
+
+def test_shareable_card_keeps_switches_not_paths(monkeypatch):
+    monkeypatch.setenv("CUBLASLT_LOG_FILE", "/home/someone/acme-prod-node17/cublas")
+    monkeypatch.setenv("NVIDIA_TF32_OVERRIDE", "0")
+    env = check.software()["matmul"]["env"]
+    assert env == {"CUBLASLT_LOG_FILE": "<set>", "NVIDIA_TF32_OVERRIDE": "0"}
+
+
+def test_a_serving_alert_counted_before_the_gpu_errored_fails_the_check(tmp_path):
+    """screen_one counted serving alerts as max(len(serve_alerts), the guard's own count) and called the workload
+    FAIL, but wrote corrupted_results_serving = len(serve_alerts). They differ when ServeGuard.detach() (whose read
+    of the GPU went only into the guard's log) gets an alert the earlier reads couldn't: here the workload's read
+    and the last one in screen_one raise a CUDA error, and detach's gets through. check_one built its verdict from
+    the counts alone, so the workload's own FAIL became INCOMPLETE (exit 2), while the fleet report said FAIL."""
+    import torch
+    from unittest.mock import patch
+    from sdcguard import serve
+    real_attach, real_poll = serve.ServeGuard.attach, serve.ServeGuard.poll
+    calls = {"n": 0}
+
+    def attach_then_corrupt_weights(self, model, *a, **k):
+        r = real_attach(self, model, *a, **k)
+        with torch.no_grad():
+            next(m for m in model.modules() if isinstance(m, torch.nn.Linear)).weight[0, 0] += 1000.0
+        return r
+
+    def poll_errors_twice(self, *a, **k):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise RuntimeError("CUDA error: an illegal memory access was encountered")
+        return real_poll(self, *a, **k)
+
+    with patch.object(serve.ServeGuard, "attach", attach_then_corrupt_weights), \
+            patch.object(serve.ServeGuard, "poll", poll_errors_twice):
+        code = check.main(["--device", "cpu", "--minutes", "0.01", "--out", str(tmp_path), "--offline"])
+    s = json.load(open(os.path.join(tmp_path, "cpu", "summary.json")))
+    full = json.load(open(os.path.join(tmp_path, "cpu", "check.json")))
+    assert s["result"] == "FAIL" and s["corrupted_results_serving"] >= 1      # the workload says FAIL, and counts it
+    assert full["result"] == "FAIL" and full["wrong"]["workload_serving"] >= 1 and code == 1, full["wrong"]

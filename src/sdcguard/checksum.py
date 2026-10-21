@@ -92,6 +92,18 @@ BIG = 1e18
 _FP32_CHUNK_ELEMS = 1 << 26
 
 
+def l1_floor_coef(k: int) -> float:
+    """Coefficient of the expected side's rounding floor that uses |a_row|_1 x max|checksum column| (see
+    _zscores): 1e-5, or k x 2^-27 once that is larger (k above 1,342). Every running sum of a_row . (checksum
+    column) is at most |a_row|_1 max|column|, and at most half of that when the outputs nearly cancel (the case
+    the floor is for). Tensor cores keep 25 bits below each step's largest term, so each of the k products can
+    lose about 2^-26 of the running sum on average when the running sum dwarfs it: k x 2^-26 x half the bound.
+    (In a CPU emulation of that truncation, on dQ = dS K of an attention backward with a sink and keys that
+    share a large mean, k = 131,072, the expected side's error scored 7.8 against a fixed 1e-5, a false alarm
+    on a clean result, and 0.16 against this: tests/test_checksum.py.)"""
+    return max(1e-5, k * 2.0 ** -27)
+
+
 @dataclass
 class CheckResult:
     ok: bool                 # False means "looks corrupted"
@@ -188,8 +200,8 @@ _CACHE_LOCK = threading.RLock()     # the pattern caches are shared by every thr
 def sign_seed(seed: Optional[int]):
     """Use another process's sign patterns for a while (a replay judging a recorded output with the patterns
     that flagged it). It swaps a process-wide setting: for one-off tools such as `sdcguard replay`, not while
-    other threads are checking matmuls. The Triton checks keep their own copy of the patterns, so use it with
-    CPU tensors."""
+    other threads are checking matmuls. Every pattern cache is emptied on the way in and out, the Triton
+    checks' device tables included."""
     global _SIGN_SEED
     if seed is None:
         yield
@@ -197,15 +209,23 @@ def sign_seed(seed: Optional[int]):
     with _CACHE_LOCK:
         old = _SIGN_SEED
         _SIGN_SEED = int(seed)
-        _SIGNS.clear()
-        _PAIR_W.clear()
+        _clear_sign_caches()
     try:
         yield
     finally:
         with _CACHE_LOCK:
             _SIGN_SEED = old
-            _SIGNS.clear()
-            _PAIR_W.clear()
+            _clear_sign_caches()
+
+
+def _clear_sign_caches() -> None:
+    _SIGNS.clear()
+    _PAIR_W.clear()
+    import sys
+    for name in ("sdcguard._group", "sdcguard.fused"):
+        mod = sys.modules.get(name)
+        if mod is not None and isinstance(getattr(mod, "_SIGNS", None), dict):
+            mod._SIGNS.clear()
 
 
 def _drop_old(cache: dict, epoch: int) -> None:
@@ -239,7 +259,14 @@ def _signs(width: int, device, epoch: int = 0) -> torch.Tensor:
                 g = torch.Generator().manual_seed((_SIGN_SEED + n + 7919 * epoch) % (2 ** 63))
                 base = _SIGNS[("base", n, epoch)] = (torch.randint(0, 2, (n,), generator=g) * 2 - 1).float()
             s = base[:width]
-        out = _SIGNS[key] = s.to(device)
+        dev = torch.device(device)
+        if dev.type == "cuda":
+            # pinned and asynchronous: a new pattern every checked step mustn't make the CPU wait for the GPU
+            # (a blocking copy from pageable memory does). The caching host allocator keeps the pinned copy
+            # until the transfer is done.
+            out = _SIGNS[key] = s.pin_memory().to(dev, non_blocking=True)
+        else:
+            out = _SIGNS[key] = s.to(dev)
     return out
 
 
@@ -444,7 +471,7 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
             bound = bound * abs(alpha)
         if bias is not None and beta != 0:
             if bias.dim() == 1:                                              # (n,)
-                bb = bias[start:end].reshape(nblk, width)
+                bb = torch.broadcast_to(bias, (n,))[start:end].reshape(nblk, width)
             elif bias.dim() <= 2:                                            # (m, n) or (1, n)
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
             else:                                                            # (batch, m, n) and friends: baddbmm
@@ -455,14 +482,23 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
         actual = _pair_sums(Cb, epoch)                                       # (batch, m, nblk, 2)
         # Rounding noise of a block sum ~ unit roundoff x L2 norm of the outputs (same for +-1
         # signs), plus a floor for the fp32 rounding of `expected` itself (matters only when the
-        # outputs nearly cancel): 1e-5 x |alpha| x |a_row| x |checksum column of B|.
+        # outputs nearly cancel). That rounding is at most a small multiple of the largest running sum
+        # of a_row . (checksum column of B), which is at most |a_row|_2 |column|_2 (Cauchy-Schwarz) and
+        # at most |a_row|_1 max|column| (Holder). The floor takes the smaller: 1e-5 x |alpha| x the
+        # first, or l1_floor_coef(k) x |alpha| x the second. The first alone is up to sqrt(k) times too
+        # large when a peaked row of A (attention probabilities with a sink) meets block sums of B that
+        # are small where A is large, and it hid an error 50 times a typical output there.
         cnorm = _norm_fp32(Cb)                                               # (batch, m, nblk)
         noise = (cnorm * u).unsqueeze(-1)                                    # (batch, m, nblk, 1)
         b2n = _norm_fp32(B2, dim=-3).unsqueeze(-3)                           # (bB, 1, nblk, 2)
+        b2max = _norm_fp32(B2, dim=-3, ord=float("inf")).unsqueeze(-3)       # (bB, 1, nblk, 2)
         bound = bound.unsqueeze(-1)                                          # (b, m, nblk, 1)
-        floor = (A_norm * b2n).mul_(1e-5 * abs(alpha))
-        # |a_row| or the checksum column too large to square in fp32: bound the same rounding
-        # with the largest output instead
+        inf = float("inf")
+        f_l2 = (A_norm * b2n).mul_(1e-5 * abs(alpha))
+        f_l1 = (A_l1.unsqueeze(-1) * b2max).mul_(l1_floor_coef(k) * abs(alpha))
+        floor = torch.minimum(torch.where(torch.isfinite(f_l2), f_l2, inf),
+                              torch.where(torch.isfinite(f_l1), f_l1, inf))
+        # both too large for fp32 (|a_row| squared, say): bound the same rounding with the largest output instead
         floor = torch.where(torch.isfinite(floor), floor, bound * (1e-5 * 128))
         h = HALF_TINY_STEP[C3.dtype]
         den = (noise + floor).add_(abs_floor + math.sqrt(width) * h)
@@ -498,8 +534,8 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
 #
 # In precise mode a bf16/fp16 linear layer's matmul keeps its fp32 result (the tensor cores' accumulator)
 # long enough to check it, and only then rounds it to bf16/fp16. That result has 16 more bits than the
-# rounded one, so the check sees far smaller errors (AEGIS, OSDI '26, found its production incidents with
-# checksums over fp32 accumulators, not over bf16 outputs).
+# rounded one, so the check sees far smaller errors (in AEGIS, OSDI '26, every checksum detection confirmed in
+# production came from fp32 accumulators, none from bf16 outputs).
 #
 # Both sides of the identity are added up in float64 (the inputs are bf16/fp16, so A @ (block sums of B)
 # in float64 is all but exact), and the noise is the fp32 accumulation error of the result alone:
@@ -607,8 +643,8 @@ def _acc_zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, nfma, epoch=0)
             expected = expected * alpha
             bound = bound * abs(alpha)
         if bias is not None and beta != 0:
-            if bias.dim() == 1:
-                bb = bias[start:end].reshape(nblk, width)
+            if bias.dim() == 1:                                              # (n,), or (1,) broadcast
+                bb = torch.broadcast_to(bias, (n,))[start:end].reshape(nblk, width)
             elif bias.dim() <= 2:
                 bb = torch.broadcast_to(bias, (m, n))[:, start:end].reshape(m, nblk, width)
             else:
@@ -701,13 +737,16 @@ def check_matmul(
     block: int = 128,
     z: float = 6.0,
     abs_floor: float = ABS_FLOOR,
+    epoch: int = 0,
 ) -> Optional[CheckResult]:
-    """Check C = beta*bias + alpha*(A @ B) and answer immediately. None if dtype unsupported."""
+    """Check C = beta*bias + alpha*(A @ B) and answer immediately. None if dtype unsupported.
+    epoch: which sign pattern the signed checksum uses (a replay passes the recorded one)."""
     if is_empty(C) and C.dtype in UNIT_ROUNDOFF:
         return CheckResult(ok=True, max_z=0.0, nonfinite=False)       # nothing that could be wrong
     if USE_FAST and _group.available(C) and _group.supports(A, B, C, bias, beta, block):
         try:
-            r = _group.check_now(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)
+            r = _group.check_now(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z,
+                                 epoch=epoch)
         except torch.cuda.OutOfMemoryError:
             raise
         except Exception as e:  # noqa: BLE001  (compile or launch problem: plain check from now on)
@@ -718,7 +757,7 @@ def check_matmul(
             finite = math.isfinite(mz)
             return CheckResult(ok=finite and mz <= z, max_z=mz, nonfinite=not finite,
                                batch=int(b) if C.dim() == 3 else None, row=int(row), col_block=int(blk), noise=den)
-    st = matmul_zscores(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z)
+    st = matmul_zscores(A, B, C, bias, alpha=alpha, beta=beta, block=block, abs_floor=abs_floor, z=z, epoch=epoch)
     return None if st is None else resolve([st], z)[0]
 
 

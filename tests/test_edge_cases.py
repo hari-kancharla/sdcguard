@@ -283,3 +283,19 @@ def test_training_guard_counts_unjudged_checks_apart_from_clean_ones():
         model(torch.randn(4, 8).bfloat16())
     assert g.stats["unjudged"] == 1 and not g.log.events
     assert g.max_z_seen >= 0
+
+
+def test_a_one_element_bias_broadcasts_like_pytorch():
+    import torch
+    from sdcguard import SDCGuard
+    torch.manual_seed(0)
+    a, b = torch.randn(32, 64).bfloat16(), torch.randn(64, 256).bfloat16()
+    bias = torch.randn(1).bfloat16()
+    g = SDCGuard()
+    with g.at_step(0):
+        out = torch.addmm(bias, a, b)
+    assert g.stats["checked"] == 1 and g.stats["alerts"] == 0
+    with torch.no_grad():
+        out.view(-1)[7] += 4.0
+    from sdcguard.checksum import check_matmul
+    assert not check_matmul(a, b, out, bias).ok

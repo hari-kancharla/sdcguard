@@ -4,6 +4,7 @@ Run by tests/test_serve.py in a subprocess with TRITON_INTERPRET=1 and SDCGUARD_
 scripts/modal_check.py (`python tests/_serve_fast_compare.py cuda`). Prints one JSON line per case and ALL
 AGREE at the end (exit code 0), or exits 1."""
 import json
+import math
 import sys
 
 import torch
@@ -22,6 +23,28 @@ def run(x, y, cs, cols=STATE_COLS):
     _serve_fast.check(x, y, *cs.tensors(True), fast, 0, 6.0, 1e-20)
     return (_serve_fast.decode(*ref[0].tolist()), _serve_fast.decode(*fast[0].tolist()), ref[0, 2:].tolist(),
             fast[0, 2:].tolist())
+
+
+def captures(x, y, cs):
+    """Both checks with a capture buffer (serve.CAPTURE_SLOTS): for each, (rows captured, whether every captured
+    row and block holds exactly the input row and output block at the place it records). When several blocks are
+    over the line, the Triton check's programs race for the layer's one row, so the two may keep different ones."""
+    out = []
+    width_of = (lambda blk: cs.bs if blk < cs.nbf else cs.rem)
+    for fn in ("plain", "fast"):
+        st = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=x.device)
+        cm, cd = _serve_fast._capture_buffers(x.device, x.shape[1])
+        if fn == "plain":
+            check_static_impl(x, y, *cs.tensors(True), st, 0, 6.0, 1e-20, cm, cd, 128, 2)
+        else:
+            _serve_fast.check(x, y, *cs.tensors(True), st, 0, 6.0, 1e-20, cap_meta=cm, cap_data=cd, cap_w=128,
+                              cap_tag=2)
+        kept = _serve_fast._captured(cm, cd, x.shape[1], width_of)
+        exact = all(rec[0] == 2 and _serve_fast._same(yb, y[rec[1], rec[2] * cs.bs:rec[2] * cs.bs + yb.numel()].float()
+                                                      .cpu())
+                    and _serve_fast._same(xr, x[rec[1]].float().cpu()) for rec, yb, xr in kept)
+        out.append((len(kept), exact))
+    return out
 
 
 def main(device: str = "cpu"):
@@ -48,7 +71,7 @@ def main(device: str = "cpu"):
                 if split:      # the GPU layout: three low-precision parts of the block sums
                     B2 = cs.parts                                   # (on the CPU: plain fp32 block sums)
                     cs.parts = _split3(B2 / cs.scale.view(1, -1), dt).contiguous()
-                for corrupt in (None, "big", "nan", "inf", "zero_block", "small", "huge_pair", "inf_input",
+                for corrupt in (None, "big", "nan", "inf", "huge", "zero_block", "small", "huge_pair", "inf_input",
                                 "overflow"):
                     yy = y.clone()
                     xx = x
@@ -59,6 +82,9 @@ def main(device: str = "cpu"):
                         yy[r, c] = float("nan")
                     elif corrupt == "inf":
                         yy[r, c] = float("inf")
+                    elif corrupt == "huge":
+                        # finite, but far larger than the inputs allow (in bf16 its square overflows fp32)
+                        yy[r, c] = 1e30 if dt == torch.bfloat16 else 6e4
                     elif corrupt == "zero_block":
                         yy[r, :] = 0
                     elif corrupt == "small":
@@ -90,6 +116,7 @@ def main(device: str = "cpu"):
                         if split:
                             cs.parts = _split3(cs.parts / cs.scale.view(1, -1), dt).contiguous()
                     (rz, rf, rn), (fz, ff, fn), rc, fc = run(xx, yy, cs)
+                    (rn_kept, r_exact), (fn_kept, f_exact) = captures(xx, yy, cs)
                     if corrupt in ("inf_input", "overflow"):
                         agree = rc == fc and rc[0] == 1 and rc[1] > 0 and rz <= 6.0 and fz <= 6.0
                     elif corrupt in (None, "small"):
@@ -100,12 +127,18 @@ def main(device: str = "cpu"):
                             (not changed or rz > 6.0 or n == 1 or k == 1)
                     if corrupt not in ("inf_input", "overflow"):
                         agree = agree and rc == fc == [1, 0]      # one check executed, every checksum judged
+                    if corrupt in ("nan", "inf", "huge") and rz == fz == float("inf"):
+                        # the noise kept with an infinite score is NaN for Inf/NaN in the output and only then
+                        # (what ServeGuard reports as nonfinite)
+                        agree = agree and math.isnan(rn) == math.isnan(fn) == (corrupt != "huge")
                     if corrupt is None and m == 64:               # the older two-column state still works
                         (lz, _lf, _), (lfz, _lff, _), lrc, lfc = run(xx, yy, cs, cols=2)
                         agree = agree and lrc == lfc == [] and lz == rz and lfz == fz
+                    # one row kept exactly when over the line, none otherwise, and the numbers are the ones checked
+                    agree = agree and r_exact and f_exact and rn_kept == int(rz > 6.0) and fn_kept == int(fz > 6.0)
                     row = {"dtype": str(dt)[6:], "split": split, "m": m, "k": k, "n": n, "bias": with_bias,
-                           "corrupt": corrupt, "plain": [rz, rf], "fast": [fz, ff], "counts": [rc, fc],
-                           "agree": bool(agree)}
+                           "corrupt": corrupt, "plain": [rz, rf, rn], "fast": [fz, ff, fn], "counts": [rc, fc],
+                           "captured": [rn_kept, fn_kept], "agree": bool(agree)}
                     print(json.dumps(row), flush=True)
                     ok_all &= bool(agree)
     # end to end: a guard on a small model uses the fast check after its first-use comparison

@@ -1,0 +1,340 @@
+{
+  "label": "l4",
+  "function_started_utc": "2026-10-20T12:24:33Z",
+  "control": {
+    "sizes": {
+      "layers": 8,
+      "width": 768,
+      "heads": 12,
+      "seq": 512,
+      "batch": 8,
+      "vocab": 32000
+    },
+    "settings": {
+      "default": {
+        "setting": "default",
+        "models": {
+          "gpt2": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 88,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.010471204188481676,
+              "worst_parameters": {
+                "transformer.h.0.mlp.c_fc.weight": 0.010471204188481676,
+                "transformer.h.0.attn.c_proj.weight": 0.00823045267489712,
+                "transformer.h.1.attn.c_attn.bias": 0.007692307692307693,
+                "transformer.h.1.mlp.c_proj.weight": 0.0070921985815602835,
+                "transformer.h.4.attn.c_proj.weight": 0.00684931506849315
+              },
+              "losses": [
+                10.530900955200195,
+                10.530900955200195
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 78,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.00823045267489712,
+              "worst_parameters": {
+                "transformer.h.0.attn.c_proj.weight": 0.00823045267489712,
+                "transformer.h.1.mlp.c_proj.weight": 0.0070921985815602835,
+                "transformer.h.1.attn.c_attn.weight": 0.006711409395973154,
+                "transformer.h.3.mlp.c_fc.weight": 0.006369426751592357,
+                "transformer.h.1.attn.c_proj.weight": 0.006289308176100629
+              },
+              "losses": [
+                10.530900955200195,
+                10.530900955200195
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 88,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.00823045267489712,
+              "worst_parameters": {
+                "transformer.h.0.attn.c_proj.weight": 0.00823045267489712,
+                "transformer.h.0.mlp.c_proj.weight": 0.007936507936507936,
+                "transformer.h.1.mlp.c_proj.weight": 0.0070921985815602835,
+                "transformer.h.4.attn.c_proj.weight": 0.00684931506849315,
+                "transformer.h.5.attn.c_attn.weight": 0.006802721088435374
+              },
+              "losses": [
+                10.530900955200195,
+                10.530900955200195
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 88,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007633587786259542,
+              "worst_parameters": {
+                "transformer.h.1.attn.c_attn.bias": 0.007633587786259542,
+                "transformer.h.1.mlp.c_proj.weight": 0.0070921985815602835,
+                "transformer.h.4.attn.c_proj.weight": 0.00684931506849315,
+                "transformer.h.1.attn.c_attn.weight": 0.006711409395973154,
+                "transformer.h.3.mlp.c_fc.weight": 0.006369426751592357
+              },
+              "losses": [
+                10.530900955200195,
+                10.530900955200195
+              ],
+              "losses_equal": true
+            }
+          },
+          "llama": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.009345794392523364,
+              "worst_parameters": {
+                "model.layers.0.self_attn.q_proj.weight": 0.009345794392523364,
+                "model.layers.0.self_attn.k_proj.weight": 0.009302325581395349,
+                "model.layers.1.self_attn.k_proj.weight": 0.009036144578313253,
+                "model.layers.2.self_attn.o_proj.weight": 0.008928571428571428,
+                "model.layers.3.self_attn.k_proj.weight": 0.008875739644970414
+              },
+              "losses": [
+                10.521918296813965,
+                10.521918296813965
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.009345794392523364,
+              "worst_parameters": {
+                "model.layers.0.self_attn.q_proj.weight": 0.009345794392523364,
+                "model.layers.0.self_attn.k_proj.weight": 0.009302325581395349,
+                "model.layers.2.self_attn.k_proj.weight": 0.008928571428571428,
+                "model.layers.2.self_attn.v_proj.weight": 0.00819672131147541,
+                "model.layers.3.mlp.gate_proj.weight": 0.00816326530612245
+              },
+              "losses": [
+                10.521918296813965,
+                10.521918296813965
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.009345794392523364,
+              "worst_parameters": {
+                "model.layers.0.self_attn.q_proj.weight": 0.009345794392523364,
+                "model.layers.0.self_attn.k_proj.weight": 0.009302325581395349,
+                "model.layers.1.self_attn.k_proj.weight": 0.009036144578313253,
+                "model.layers.2.self_attn.o_proj.weight": 0.008928571428571428,
+                "model.layers.2.self_attn.k_proj.weight": 0.008928571428571428
+              },
+              "losses": [
+                10.521918296813965,
+                10.521918296813965
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0136986301369863,
+              "worst_parameters": {
+                "model.layers.5.self_attn.q_proj.weight": 0.0136986301369863,
+                "model.layers.0.self_attn.q_proj.weight": 0.009389671361502348,
+                "model.layers.0.self_attn.k_proj.weight": 0.009302325581395349,
+                "model.layers.2.self_attn.o_proj.weight": 0.008928571428571428,
+                "model.layers.2.self_attn.k_proj.weight": 0.008928571428571428
+              },
+              "losses": [
+                10.521918296813965,
+                10.521918296813965
+              ],
+              "losses_equal": true
+            }
+          }
+        },
+        "nondeterminism_warnings": [],
+        "cublas_workspace_config": null
+      },
+      "deterministic": {
+        "setting": "deterministic",
+        "models": {
+          "gpt2": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.540810585021973,
+                10.540810585021973
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.540810585021973,
+                10.540810585021973
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.540810585021973,
+                10.540810585021973
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.540810585021973,
+                10.540810585021973
+              ],
+              "losses_equal": true
+            },
+            "decision": "UNCHANGED"
+          },
+          "llama": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.52573299407959,
+                10.52573299407959
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.52573299407959,
+                10.52573299407959
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.52573299407959,
+                10.52573299407959
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.52573299407959,
+                10.52573299407959
+              ],
+              "losses_equal": true
+            },
+            "decision": "UNCHANGED"
+          }
+        },
+        "nondeterminism_warnings": [],
+        "cublas_workspace_config": ":4096:8"
+      }
+    },
+    "gpu": "NVIDIA L4",
+    "torch": "2.14.1+cu130",
+    "criteria": {
+      "decisions": {
+        "gpt2": "UNCHANGED",
+        "llama": "UNCHANGED"
+      },
+      "3 (follow-up) gradients unchanged by the check, against a deterministic control": true,
+      "complete": true
+    },
+    "markdown": "## recompute gradients with a control, NVIDIA L4\n\n- default, gpt2: A vs B differ (88 of 100, max relative 1.05e-02); A vs C differ (78 of 100, max relative 8.23e-03); A vs D differ (88 of 100, max relative 8.23e-03)\n- default, llama: A vs B differ (66 of 75, max relative 9.35e-03); A vs C differ (66 of 75, max relative 9.35e-03); A vs D differ (66 of 75, max relative 9.35e-03)\n- deterministic, gpt2: A vs B identical (0 of 100, max relative 0.00e+00); A vs C identical (0 of 100, max relative 0.00e+00); A vs D identical (0 of 100, max relative 0.00e+00); **UNCHANGED**\n- deterministic, llama: A vs B identical (0 of 75, max relative 0.00e+00); A vs C identical (0 of 75, max relative 0.00e+00); A vs D identical (0 of 75, max relative 0.00e+00); **UNCHANGED**\n- 3 (follow-up) gradients unchanged by the check, against a deterministic control: met\n- complete: met\n"
+  },
+  "function_seconds": 37.3,
+  "estimated_cost_usd": 0.01,
+  "cost_note": "function time x $1.24/hour (l4, 4 cores, 32 GiB at Oct 20 prices); image pull and startup are billed too and not in this number",
+  "log": [
+    "   19.2s default gpt2: A vs B identical False (88 of 100 differ, max 1.05e-02); A vs C identical False (78 differ, max 8.23e-03); A vs D identical False",
+    "   19.2s default llama: A vs B identical False (66 of 75 differ, max 9.35e-03); A vs C identical False (66 differ, max 9.35e-03); A vs D identical False",
+    "   37.3s deterministic gpt2: A vs B identical True (0 of 100 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED",
+    "   37.3s deterministic llama: A vs B identical True (0 of 75 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED"
+  ],
+  "source": {
+    "sha256": "ca941aadb02644555bbfd1caf92b7a4fa6c6c8a099a88c9334fcf8e7c2c6c8d8",
+    "files": 126
+  }
+}

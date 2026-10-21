@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sdcguard"
-version = "0.3.0"
+version = "0.4.0"
 description = "Catch GPUs that compute wrong answers: in training, in serving (vLLM), and before they go into service."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: System :: Monitoring",
 ]
-dependencies = ["torch>=2.5"]
+dependencies = ["torch>=2.8"]
 
 [project.urls]
 Homepage = "https://github.com/hari-kancharla/sdcguard"
@@ -30,9 +30,10 @@ Issues = "https://github.com/hari-kancharla/sdcguard/issues"
 [project.optional-dependencies]
 certify = ["cryptography>=42"]
 metrics = ["prometheus-client>=0.20"]
-all = ["cryptography>=42", "prometheus-client>=0.20"]
+nvsentinel = ["grpcio>=1.60"]
+all = ["cryptography>=42", "prometheus-client>=0.20", "grpcio>=1.60"]
 experiments = ["numpy", "matplotlib", "tiktoken"]
-dev = ["pytest", "cryptography>=42", "prometheus-client>=0.20"]
+dev = ["pytest", "cryptography>=42", "prometheus-client>=0.20", "grpcio>=1.60"]
 
 [project.scripts]
 sdcguard = "sdcguard.cli:main"

@@ -1,0 +1,72 @@
+# Screen one node's GPUs and hand the result to NVIDIA NVSentinel instead of tainting the node here: a PASS or
+# FAIL goes to the node's platform connector as a health event (agent "sdcguard", check GpuComputeCorrectness)
+# and NVSentinel's own rules decide what happens. By default the event is STORE_AND_ANALYSE (stored, exported,
+# no action); add --remediate below to let a FAIL ask for action (fatal, RUN_FIELDDIAG) and a PASS clear it.
+# NVSentinel cordons only if you add a quarantine rule for agent "sdcguard"; its defaults match its own monitors.
+#   NODE=gpu-node-17 envsubst '${NODE}' < nvsentinel-screen-job.yaml | kubectl apply -f -
+# Needs NVSentinel's platform connector on the node (its socket is the hostPath /var/run/nvsentinel) and its
+# token audience (global.platformConnectorAuth.audience, platform-connector.nvsentinel.nvidia.com by default).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sdcguard-nvsentinel
+  namespace: kube-system
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sdcguard-screen-${NODE}
+  namespace: kube-system
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 2700
+  template:
+    spec:
+      serviceAccountName: sdcguard-nvsentinel
+      nodeName: ${NODE}
+      restartPolicy: Never
+      containers:
+        - name: screen
+          image: <registry>/sdcguard:0.4.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sdcguard nhc --minutes "${SDCGUARD_MINUTES:-10}" --out /var/lib/sdcguard/screen; code=$?
+              # nhc: 0 every GPU correct, 1 a GPU computed wrong results, 2 couldn't tell. The results go to
+              # NVSentinel either way (an INCOMPLETE one is never sent); a delivery that fails (2) is the job's
+              # exit code unless nhc found a FAIL, which it never hides
+              sdcguard nvsentinel /var/lib/sdcguard/screen --socket /var/run/nvsentinel/nvsentinel.sock \
+                || { sent=$?; [ "$code" -eq 1 ] || code=$sent; }
+              exit $code
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            limits:
+              nvidia.com/gpu: 8          # all of the node's GPUs
+          volumeMounts:
+            - name: evidence
+              mountPath: /var/lib/sdcguard
+            - name: nvsentinel-socket
+              mountPath: /var/run/nvsentinel
+            - name: platform-connector-token
+              mountPath: /var/run/secrets/nvsentinel/platform-connector
+              readOnly: true
+      volumes:
+        - name: evidence
+          hostPath:
+            path: /var/lib/sdcguard
+            type: DirectoryOrCreate
+        - name: nvsentinel-socket
+          hostPath:
+            path: /var/run/nvsentinel
+            type: Directory
+        - name: platform-connector-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: platform-connector.nvsentinel.nvidia.com
+                  expirationSeconds: 3600
+                  path: token

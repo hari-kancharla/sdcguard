@@ -18,7 +18,7 @@ from typing import Callable, Optional
 import torch
 import torch.distributed as dist
 
-from .events import SDCEvent, device_identity
+from .events import suspect_event
 
 
 class Canary:
@@ -74,7 +74,8 @@ class Canary:
 
     @torch.no_grad()
     def check(self, batch, group=None, step: Optional[int] = None):
-        """All ranks call this together. Returns (suspect_ranks, first_bad_layer, event)."""
+        """All ranks call this together. Returns (suspect_ranks, first_bad_layer, event): the job's global ranks,
+        also with a group."""
         fp = self.fingerprints(batch)
         dev = next(self.model.parameters()).device
         # all_gather needs equal shapes on the backend's device (NCCL: GPU, gloo: CPU)
@@ -107,9 +108,8 @@ class Canary:
                 else:
                     suspects = list(range(world))   # no clear majority
                 name = self.last_names[li] if li < len(self.last_names) else f"call {li}"
-                event = SDCEvent(detector="canary", step=step,
-                                 detail={"suspect_ranks": suspects, "first_bad_layer": name,
-                                         "world": world},
-                                 identity=device_identity(dev))
-                return suspects, name, event
+                event = suspect_event("canary", step, suspects, world, group, dev,
+                                      {"first_bad_layer": name, "where": name,
+                                       "check": "the same canary batch must give the same outputs on every rank"})
+                return event.detail["suspect_ranks"], name, event
         return [], None, None

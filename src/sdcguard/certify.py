@@ -49,16 +49,22 @@ def key_id(pub) -> str:
 
 
 def keygen(prefix: str) -> tuple[str, str]:
-    """Write <prefix>.key (private, PEM, readable by the owner only) and <prefix>.pub (public, PEM)."""
+    """Write <prefix>.key (private, PEM, readable by the owner only) and <prefix>.pub (public, PEM). Never
+    replaces either file: a replaced key loses the fleet's signing key, and every certificate it signed would then
+    read as signed by another key."""
     serialization, Ed25519PrivateKey, _ = _crypto()
     priv = Ed25519PrivateKey.generate()
     key_path, pub_path = prefix + ".key", prefix + ".pub"
+    for p in (key_path, pub_path):
+        if os.path.lexists(p):
+            raise FileExistsError(f"{p} already exists; keygen never replaces a key (move it away first)")
     pem = priv.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
                              serialization.NoEncryption())
-    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # O_EXCL: a file created in the meantime is never written into (it would keep its own, maybe looser, mode)
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(pem)
-    with open(pub_path, "wb") as f:
+    with open(pub_path, "xb") as f:
         f.write(priv.public_key().public_bytes(serialization.Encoding.PEM,
                                                serialization.PublicFormat.SubjectPublicKeyInfo))
     return key_path, pub_path
@@ -74,6 +80,19 @@ def load_public(path: str):
     serialization, _, _ = _crypto()
     with open(path, "rb") as f:
         return serialization.load_pem_public_key(f.read())
+
+
+def load_trusted(path: str):
+    """The public key certificates must be signed with. Raises when it can't be used (missing, unreadable, a
+    private key given by mistake, not Ed25519): an unusable key is an error, never the same as no key."""
+    _, _, Ed25519PublicKey = _crypto()
+    try:
+        pub = load_public(path)
+    except ValueError as e:
+        raise ValueError(f"{path} is not a PEM public key (a private key, or another file?)") from e
+    if not isinstance(pub, Ed25519PublicKey):
+        raise ValueError(f"{path} is not an Ed25519 public key (from sdcguard keygen)")
+    return pub
 
 
 def canonical(cert: dict) -> bytes:
@@ -169,6 +188,8 @@ def make(summary: dict, issuer: str = "", valid_days: float = 30.0, now: Optiona
         "issued_at": now.isoformat(),
         "valid_until": (now + _dt.timedelta(days=valid_days)).isoformat(),
         "issuer": issuer,
+        # the run it vouches for: a later run's files in the same folder are never judged by it
+        "run_id": (full or {}).get("run_id") or summary.get("run_id"),
         "gpu": {k: g.get(k) for k in ("gpu_uuid", "gpu_name", "serial", "pci_bus_id", "vbios", "driver", "host")},
         "software": {"sdcguard": summary.get("sdcguard"), "torch": summary.get("torch")},
         "workload": {"size": summary.get("size"), "seed": summary.get("seed"), "minutes": summary.get("minutes"),
@@ -231,7 +252,10 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     public key (when one is given), not expired, evidence files and the check's result files (check.json,
     result.json) present and unchanged. ok says the certificate is authentic and its declared artifacts are
     available, not that the GPU
-    passed: read "result" (or use `sdcguard verify --require-pass`)."""
+    passed: read "result" (or use `sdcguard verify --require-pass`). A public key that can't be used raises."""
+    # loaded first, outside the signature check below: a key that can't be used raises (the CLI exits 2) instead
+    # of reading as "the signature doesn't match" with no key to compare against
+    trusted = load_trusted(pubkey_path) if pubkey_path else None
     with open(path) as f:
         cert = json.load(f)
     problems = []
@@ -252,8 +276,7 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
             pub.verify(base64.b64decode(sig), canonical(cert))
             out["signature_valid"] = True
             out["key_id"] = key_id(pub)
-            if pubkey_path:
-                trusted = load_public(pubkey_path)
+            if trusted is not None:
                 out["trusted_key"] = _raw_public(trusted) == _raw_public(pub)
                 if not out["trusted_key"]:
                     problems.append("signed by a different key than the one you trust")
@@ -280,6 +303,8 @@ def verify(path: str, pubkey_path: Optional[str] = None, now: Optional[_dt.datet
     if cert.get("simulated_faults"):
         problems.append("this screen injected SIMULATED faults (a demo, not a real result)")
     out["problems"] = problems
-    out["ok"] = (out["signature_valid"] and out["trusted_key"] is not False and out["expired"] is False and match
+    # with a trusted key given, only a signature made with that key counts
+    key_ok = out["trusted_key"] is True if trusted is not None else True
+    out["ok"] = (out["signature_valid"] and key_ok and out["expired"] is False and match
                  and not cert.get("simulated_faults") and cert.get("format") == FORMAT)
     return out

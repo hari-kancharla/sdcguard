@@ -109,9 +109,14 @@ def test_compile_one_graph_and_still_checks():
     expl = torch._dynamo.explain(m)(torch.randn(8, 256).to(torch.bfloat16))
     assert expl.graph_count == 1 and expl.graph_break_count == 0
     cm = torch.compile(m, fullgraph=True, dynamic=True)
-    with torch.no_grad():
-        cm(torch.randn(8, 256).to(torch.bfloat16))
-        cm(torch.randn(3, 256).to(torch.bfloat16))
+    try:
+        with torch.no_grad():
+            cm(torch.randn(8, 256).to(torch.bfloat16))
+            cm(torch.randn(3, 256).to(torch.bfloat16))
+    except Exception as e:  # noqa: BLE001  (as in test_compile.py)
+        if "compiler" in str(e).lower():
+            pytest.skip(f"no working C++ compiler for Inductor here: {e}")
+        raise
     assert g.poll(wait=True) == []
     with torch.no_grad():
         m[2].weight.view(torch.int16)[9, 9] ^= (1 << 14)
@@ -372,24 +377,32 @@ def test_gpu_compiled_cuda_graphs_catch_a_flip(fast, monkeypatch):
     # The graph path itself, not an eager fallback: the next calls replay a CUDA graph, and each replay runs every
     # layer's check exactly once (outside review, Oct 20: a compiled call that silently ran eagerly passed before)
     hook = getattr(torch.cuda.graphs, "register_graph_replay_start_hook", None)
-    if hook is not None:
-        replays = []
-        handle = hook(lambda graph: replays.append(1))
-        try:
-            before = {k: v["checks"] for k, v in g.counts().items()}
-            with torch.no_grad():
-                for _ in range(3):
-                    cm(x)
-            torch.cuda.synchronize()
-            after = {k: v["checks"] for k, v in g.counts().items()}
-        finally:
-            handle.remove()
-        assert len(replays) >= 3, f"the compiled model ran without replaying a CUDA graph ({len(replays)} replays)"
-        assert all(after[k] - before[k] == 3 for k in after), (before, after)
-    with torch.no_grad():
-        m[2].weight.view(torch.int16)[7, 9] ^= (1 << 14)
-        for _ in range(2):
-            cm(x)
+    if hook is None:                    # say so instead of passing without the replay proof (outside check, Oct 20)
+        g.detach()
+        torch._dynamo.reset()
+        pytest.skip(f"torch {torch.__version__} has no graph-replay hook, so CUDA graph replay can't be proven here")
+    replays = []
+    handle = hook(lambda graph: replays.append(1))
+    try:
+        before = {k: v["checks"] for k, v in g.counts().items()}
+        with torch.no_grad():
+            for _ in range(3):
+                cm(x)
+        torch.cuda.synchronize()
+        after = {k: v["checks"] for k, v in g.counts().items()}
+        clean_replays = len(replays)
+        # the flip is caught in calls that replay a graph too (the hook stays registered through it)
+        with torch.no_grad():
+            m[2].weight.view(torch.int16)[7, 9] ^= (1 << 14)
+            for _ in range(2):
+                cm(x)
+        torch.cuda.synchronize()
+    finally:
+        handle.remove()
+    assert clean_replays >= 3, f"the compiled model ran without replaying a CUDA graph ({clean_replays} replays)"
+    assert all(after[k] - before[k] == 3 for k in after), (before, after)
+    assert len(replays) > clean_replays, "the calls after the flip replayed no CUDA graph"
+    print(f"CUDA graph replays: {clean_replays} for 3 clean calls, {len(replays) - clean_replays} for 2 flipped calls")
     ev = g.poll(wait=True)
     assert {e.detail["where"] for e in ev} == {"2"}
     g.detach()
@@ -437,3 +450,123 @@ def test_gpu_no_kernel_compile_while_serving():
     assert g.read_slot(slot)[0] < 6
     assert before is None or compiled() == before          # (add_layer compiled the variant with counts)
     assert g.counts()["lin"] == {"checks": 8, "unjudged": 0}
+
+
+# ---------------------------------------------------------------- what the plugin leaves out, and its plumbing
+def test_vllm_plugin_reports_quantized_layers_it_cant_check(monkeypatch, tmp_path, caplog):
+    import logging
+    M, Runner = _fake_vllm(monkeypatch)
+    linear = sys.modules["vllm.model_executor.layers.linear"]
+
+    class Fp8LinearMethod:
+        def process_weights_after_loading(self, layer):
+            pass
+
+        def apply(self, layer, x, bias=None):
+            return torch.nn.functional.linear(x, layer.weight, bias)
+    linear.Fp8LinearMethod = Fp8LinearMethod
+    vllm_plugin = _plugin_env(monkeypatch, tmp_path)
+    monkeypatch.setitem(vllm_plugin._STATE, "reported", False)
+    vllm_plugin.register()
+    model = _plugin_model(Fp8LinearMethod, n_layers=4)          # every layer quantized
+    with caplog.at_level(logging.INFO, logger="sdcguard"):
+        Runner(model).execute_model(torch.randn(3, 256).to(torch.bfloat16))
+    r = vllm_plugin._STATE["layers"]
+    assert {k: r[k] for k in ("checked", "total", "share_checked", "unchecked_by_method", "cant_check")} == {
+        "checked": 0, "total": 4, "share_checked": 0.0, "unchecked_by_method": {"Fp8LinearMethod": 4}, "cant_check": 4}
+    assert any("Nothing in this model is being checked" in r.message for r in caplog.records)
+    # SDCGUARD_REQUIRE=1 refuses to serve it
+    monkeypatch.setenv("SDCGUARD_REQUIRE", "1")
+    monkeypatch.setitem(vllm_plugin._STATE, "reported", False)
+    with pytest.raises(RuntimeError, match="SDCGUARD_REQUIRE"):
+        Runner(model).execute_model(torch.randn(3, 256).to(torch.bfloat16))
+
+
+def test_vllm_plugin_mixed_model_counts_both(monkeypatch, tmp_path):
+    M, Runner = _fake_vllm(monkeypatch)
+
+    class AWQLinearMethod:                     # a quantized method: vLLM's are their own classes
+        def process_weights_after_loading(self, layer):
+            pass
+
+        def apply(self, layer, x, bias=None):
+            return torch.nn.functional.linear(x, layer.weight, bias)
+    vllm_plugin = _plugin_env(monkeypatch, tmp_path)
+    monkeypatch.setitem(vllm_plugin._STATE, "reported", False)
+    vllm_plugin.register()
+    model = nn.Sequential(_plugin_model(M, n_layers=3), _plugin_model(AWQLinearMethod, n_layers=1))
+    Runner(model).execute_model(torch.randn(3, 256).to(torch.bfloat16))
+    r = vllm_plugin._STATE["layers"]
+    assert r["checked"] == 3 and r["unchecked_by_method"] == {"AWQLinearMethod": 1}
+    assert vllm_plugin.guard().stats["layers_unchecked"] == 1
+
+
+@pytest.mark.parametrize("text,share", [("0.125", 0.125), ("1/8", 0.125), ("12.5%", 0.125), ("junk", 1.0),
+                                        ("2", 1.0)])
+def test_vllm_share_formats(text, share):
+    from sdcguard.vllm_plugin import _share
+    assert _share(text) == share
+
+
+def test_vllm_metrics_port_follows_local_rank(monkeypatch):
+    from sdcguard.vllm_plugin import _metrics_port
+    monkeypatch.setenv("SDCGUARD_METRICS_PORT", "9400")
+    monkeypatch.setenv("LOCAL_RANK", "3")
+    assert _metrics_port() == 9403
+    monkeypatch.delenv("LOCAL_RANK")
+    assert _metrics_port() == 9400
+
+
+def test_a_taken_metrics_port_keeps_the_webhook(monkeypatch, tmp_path):
+    pytest.importorskip("prometheus_client")
+    import socket
+    s = socket.socket()
+    s.bind(("0.0.0.0", 0))
+    s.listen()
+    port = s.getsockname()[1]
+    try:
+        M, Runner = _fake_vllm(monkeypatch)
+        vllm_plugin = _plugin_env(monkeypatch, tmp_path, SDCGUARD_METRICS_PORT=str(port),
+                                  SDCGUARD_WEBHOOK="https://hooks.example.invalid/T000")
+        monkeypatch.delenv("LOCAL_RANK", raising=False)
+        vllm_plugin.register()
+        _plugin_model(M, n_layers=1)
+        g = vllm_plugin.guard()
+        assert g.webhook is not None and g.metrics is None
+    finally:
+        s.close()
+
+
+def test_attaching_inside_inference_mode_keeps_alerts():
+    from sdcguard.serve import ServeGuard
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(64, 256), nn.GELU(), nn.Linear(256, 64)).bfloat16()
+    with torch.inference_mode():
+        g = ServeGuard().attach(model)
+    with torch.no_grad():
+        model[0].weight.view(torch.int16)[0, 0] ^= 0x4000
+    with torch.inference_mode():
+        model(torch.randn(8, 64).bfloat16())
+    assert len(g.poll(wait=True)) == 1 and g.stats["alerts"] == 1
+
+
+def test_a_webhook_that_cant_start_a_thread_tries_again_next_time(monkeypatch):
+    import threading
+    from sdcguard.alerts import Webhook
+
+    class Event:
+        detail = {"where": "layer"}
+        identity = {"gpu_uuid": "gpu-1"}
+
+        def to_json(self):
+            return '{"message": "fault"}'
+    w = Webhook("https://example.invalid", fmt="json")
+    real = threading.Thread.start
+    monkeypatch.setattr(threading.Thread, "start", lambda self: (_ for _ in ()).throw(OSError("no threads")))
+    w(Event())                                    # never raises into training or serving
+    assert not w._sending and w.failed == 1
+    monkeypatch.setattr(threading.Thread, "start", real)
+    started = []
+    monkeypatch.setattr(Webhook, "_post", lambda self, body, key=None: started.append(key))
+    w(Event())
+    assert started == [("layer", "gpu-1")] or ("layer", "gpu-1") in w._sending

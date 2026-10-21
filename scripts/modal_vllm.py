@@ -1,6 +1,6 @@
 """The sdcguard vLLM plugin on real vLLM 0.31, on a Modal H100.
 
-    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (75-minute function limit per attempt)
+    modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (a 75-minute limit on the whole run)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
@@ -8,10 +8,10 @@ vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on
 
 Costs use Modal's prices (H100 $3.95 an hour; CPU $0.0472 a core-hour and memory $0.008 a GiB-hour, so
 these 8-core, 64 GiB machines cost about $4.84 an hour). If vLLM's default compiled mode fails, the experiment
-also tries two fallback modes, which takes longer (the 75-minute limit applies to each attempt), and it then reports a
-failure: a fallback doesn't validate the default mode.
+also tries two fallback modes, which takes longer (all inside the one function call and its 75-minute limit), and it
+then reports a failure: a fallback doesn't validate the default mode.
 Costs assume requested resources. Higher CPU/memory usage, startup/idle time and execution restarts can add
-charges; the roughly $6 of requested resources for a full-length attempt is not a spending cap.
+charges; the roughly $6 of requested resources for a run that uses the whole limit is not a spending cap.
 
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
 hard time limit, and a phase won't start again within an hour of its last start unless you pass --force.
@@ -231,9 +231,9 @@ def bundle() -> bytes:
 
 ESTIMATES = {
     "vllm": "about 25 minutes on 1 H100: roughly $2 (75-minute function limit; about $6 at requested resources "
-            "for one full-length attempt, not a spending cap)",
+            "for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
-            "resources for one full-length attempt, not a spending cap)",
+            "resources for a run that uses the whole limit, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 

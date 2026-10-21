@@ -1,0 +1,189 @@
+"""Release checks must distinguish unsupported acceleration from failed verification and failed behavior."""
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import torch
+
+from sdcguard import _group, selftest
+
+
+def _triton_environment(monkeypatch, capability=(12, 0)):
+    # (12: a generation the kernels haven't been validated on. Blackwell, 10, runs them since Oct 19.)
+    monkeypatch.setattr(_group, "enabled", lambda: True)
+    monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *_: capability)
+    monkeypatch.setattr(_group, "FALLBACKS", [0])
+    monkeypatch.setattr(_group, "WHY", [])
+    monkeypatch.delenv("SDCGUARD_TRITON_NEW_ARCH", raising=False)
+    monkeypatch.setattr(_group, "available", lambda *_: pytest.fail("policy-disabled kernel was probed"))
+
+
+def test_selftest_distinguishes_an_intentional_fallback_on_a_new_generation(monkeypatch):
+    _triton_environment(monkeypatch)
+    checks, note = selftest._training_triton_checks(torch.device("cuda:0"), torch.bfloat16)
+    assert all(passed for _, passed in checks)
+    assert "intentionally disabled" in note and "plain check" in note
+    assert not any("passed its first-use comparison" in label for label, _ in checks)
+
+
+def test_selftest_blackwell_opted_out_is_an_intentional_fallback(monkeypatch):
+    _triton_environment(monkeypatch, (10, 0))
+    monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "0")
+    checks, note = selftest._training_triton_checks(torch.device("cuda:0"), torch.bfloat16)
+    assert all(passed for _, passed in checks) and "intentionally disabled" in note
+
+
+def test_selftest_does_not_suppress_a_real_fallback_error(monkeypatch):
+    _triton_environment(monkeypatch)
+    _group.FALLBACKS[0] = 1
+    _group.WHY.append("earlier kernel launch failed")
+    checks, _ = selftest._training_triton_checks(torch.device("cuda:0"), torch.bfloat16)
+    assert any(not passed and "earlier kernel launch failed" in label for label, passed in checks)
+
+
+def test_selftest_unknown_capability_is_not_an_intentional_skip(monkeypatch):
+    _triton_environment(monkeypatch)
+
+    def failed(*_):
+        raise RuntimeError("driver query failed")
+
+    monkeypatch.setattr(torch.cuda, "get_device_capability", failed)
+    checks, _ = selftest._training_triton_checks(torch.device("cuda:0"), torch.bfloat16)
+    assert any(not passed and "driver query failed" in label for label, passed in checks)
+
+
+@pytest.mark.parametrize("capability,opt_in", [((9, 0), False), ((10, 0), False), ((12, 0), True)])
+def test_selftest_required_kernel_verification_still_fails(capability, opt_in, monkeypatch):
+    _triton_environment(monkeypatch, capability)
+    if opt_in:
+        monkeypatch.setenv("SDCGUARD_TRITON_NEW_ARCH", "1")
+    monkeypatch.setattr(torch, "empty", lambda *a, **k: object())
+    monkeypatch.setattr(_group, "available", lambda *_: False)
+    monkeypatch.setattr(_group, "status", lambda *_: (False, "clean/corrupt comparison disagreed"))
+    checks, _ = selftest._training_triton_checks(torch.device("cuda:0"), torch.bfloat16)
+    assert any(not passed and "comparison disagreed" in label for label, passed in checks)
+
+
+@pytest.fixture
+def vllm_experiment():
+    path = Path(__file__).resolve().parents[1] / "experiments" / "vllm_check.py"
+    spec = importlib.util.spec_from_file_location("review_vllm_experiment", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _reports():
+    baseline = {"model": "test-model", "vllm": "0.31.0", "enforce_eager": False,
+                "output_tokens_per_s": 1000.0, "first_outputs": ["hello"]}
+    guarded = {**baseline, "share": "1", "clean": [{"layers": 1, "layers_checked_since_last_read": 1,
+               "layers_with_executed_checks": 1, "checks_executed": 7, "unjudged_checksums": 0,
+               "layer_counts": {"layer": {"checks": 7, "unjudged": 0}},
+               "alerts": [], "changed_weights": [], "worst_clean_z": 0.2, "triton_layers": 0}],
+               "startup": [{"layers": 1, "checks_executed": 2, "unjudged_checksums": 0,
+                            "layer_counts": {"layer": {"checks": 2, "unjudged": 0}}}],
+               "flipped": ["layer"],
+               "after_flip": [{"alerts": [{"where": "layer",
+                                           "captured": {"row": 0, "col_block": 0, "with_bias": False, "z": 99.0},
+                                           "recheck": {"verdict": "weights_changed"}}],
+                               "changed_weights": ["layer"]}]}
+    return baseline, guarded
+
+
+@pytest.mark.parametrize("fault", [None, "outputs", "clean_alert", "no_checks", "not_executed", "unjudged",
+                                   "unjudged_at_startup_only", "unjudged_after_startup", "no_counts",
+                                   "missed_fault", "wrong_layer", "missing_worker", "metadata", "no_capture"])
+def test_vllm_experiment_exit_code_tracks_behavior_even_when_processes_succeed(
+        fault, monkeypatch, tmp_path, vllm_experiment):
+    baseline, guarded = _reports()
+    if fault == "outputs":
+        guarded["first_outputs"] = ["different"]
+    elif fault == "clean_alert":
+        guarded["clean"][0]["alerts"] = [{"where": "layer"}]
+    elif fault == "no_checks":
+        guarded["clean"][0]["layers_checked_since_last_read"] = 0
+        guarded["clean"][0]["checks_executed"] = 2
+        guarded["clean"][0]["layer_counts"]["layer"]["checks"] = 2
+    elif fault == "not_executed":
+        guarded["clean"][0]["layers_with_executed_checks"] = 0
+    elif fault == "unjudged":
+        guarded["clean"][0]["unjudged_checksums"] = 3
+    elif fault == "unjudged_at_startup_only":        # vLLM's profiling run, say: reported, not a failure
+        guarded["clean"][0]["unjudged_checksums"] = 3
+        guarded["clean"][0]["layer_counts"]["layer"]["unjudged"] = 3
+        guarded["startup"][0]["unjudged_checksums"] = 3
+        guarded["startup"][0]["layer_counts"]["layer"]["unjudged"] = 3
+    elif fault == "unjudged_after_startup":
+        guarded["clean"][0]["unjudged_checksums"] = 3
+        guarded["clean"][0]["layer_counts"]["layer"]["unjudged"] = 3
+        guarded["startup"][0]["unjudged_checksums"] = 1
+        guarded["startup"][0]["layer_counts"]["layer"]["unjudged"] = 1
+    elif fault == "no_counts":
+        for key in ("layers_with_executed_checks", "unjudged_checksums"):
+            del guarded["clean"][0][key]
+    elif fault == "missed_fault":
+        guarded["after_flip"][0]["alerts"] = []
+    elif fault == "wrong_layer":
+        guarded["after_flip"][0]["alerts"] = [{"where": "other-layer"}]
+    elif fault == "missing_worker":
+        guarded["after_flip"] = []
+    elif fault == "metadata":
+        guarded["enforce_eager"] = True
+    elif fault == "no_capture":                      # the alert names the layer, but kept no row
+        guarded["after_flip"][0]["alerts"][0]["captured"] = None
+
+    def completed(cmd, **_):
+        role = cmd[cmd.index("--role") + 1]
+        name = cmd[cmd.index("--tag") + 1] if "--tag" in cmd else role       # as run_role names its file
+        (tmp_path / f"{name}.json").write_text(json.dumps(guarded if role == "guarded" else baseline))
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
+    monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
+    assert vllm_experiment.main() == (0 if fault in (None, "unjudged_at_startup_only") else 1)
+
+
+def test_vllm_failed_processes_do_not_accept_stale_results(monkeypatch, tmp_path, vllm_experiment):
+    baseline, guarded = _reports()
+    for name, value in (("baseline", baseline), ("guarded", guarded), ("vanilla", baseline)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(value))
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", lambda *a, **k: SimpleNamespace(returncode=1))
+    monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
+    assert vllm_experiment.main() == 1
+
+
+def test_vllm_failed_vanilla_process_is_not_reported_as_success(monkeypatch, tmp_path, vllm_experiment):
+    baseline, guarded = _reports()
+
+    def completed(cmd, **_):
+        role = cmd[cmd.index("--role") + 1]
+        name = cmd[cmd.index("--tag") + 1] if "--tag" in cmd else role       # as run_role names its file
+        (tmp_path / f"{name}.json").write_text(json.dumps(guarded if role == "guarded" else baseline))
+        return SimpleNamespace(returncode=1 if role == "vanilla" else 0)
+
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
+    monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
+    assert vllm_experiment.main() == 1
+
+
+def test_vllm_a_pass_only_in_a_fallback_mode_fails_and_keeps_the_default_modes_evidence(monkeypatch, tmp_path,
+                                                                                        vllm_experiment):
+    baseline, guarded = _reports()
+    bad = {**guarded, "clean": [{**guarded["clean"][0], "unjudged_checksums": 7}]}
+
+    def completed(cmd, **_):
+        role = cmd[cmd.index("--role") + 1]
+        name = cmd[cmd.index("--tag") + 1] if "--tag" in cmd else role
+        compiled_triton = role == "guarded" and "--enforce-eager" not in cmd and name == "guarded_compiled"
+        (tmp_path / f"{name}.json").write_text(json.dumps(bad if compiled_triton else
+                                                          guarded if role == "guarded" else baseline))
+        return SimpleNamespace(returncode=1 if compiled_triton else 0)
+
+    monkeypatch.setattr(vllm_experiment, "_run_role_process", completed)
+    monkeypatch.setattr(vllm_experiment.sys, "argv", ["vllm_check.py", "--out", str(tmp_path)])
+    assert vllm_experiment.main() == 1
+    assert json.loads((tmp_path / "guarded_compiled.json").read_text())["clean"][0]["unjudged_checksums"] == 7
+    summary = json.loads((tmp_path / "SUMMARY.json").read_text())
+    assert summary["attempt_that_passed"] == "compiled_pytorch_check"

@@ -34,14 +34,16 @@ outputs. Inspect and redact these files before explicitly choosing to send them 
 To review a copied incident bundle, extract it and keep each evidence `.pt` beside its `.json`. Select one
 actual file from the extracted directory and run `sdcguard replay /path/to/evidence_0.pt`. Replay recomputes
 the saved operation and reports what the CPU check and current device found. A passing recomputation does
-not establish that the original cause was a physical GPU defect. A signature shown in the fleet page is
-only present, not verified there; use `sdcguard verify /path/to/certificate.json --pubkey /path/to/trusted.pub`
-with the complete bundle and a public key you trust when verification matters.
+not establish that the original cause was a physical GPU defect. The fleet page verifies a certificate's
+signature only against a public key you give it (`sdcguard report ... --pubkey /path/to/trusted.pub`); without
+one, a signature shown there is only present. To check one certificate, use `sdcguard verify
+/path/to/certificate.json --pubkey /path/to/trusted.pub` with the complete bundle.
 
 ## 2. Optional: as a node health check
 
-`sdcguard nhc` runs a short screen and prints one line (exit 0 OK, 1 wrong results, 2 couldn't tell), for
-Kubernetes node-problem-detector or Slurm's HealthCheckProgram. Examples in [deploy/](../deploy/).
+`sdcguard nhc` runs the full `sdcguard check` with a deadline (2 minutes of checks by default) and prints one
+line (exit 0 OK, 1 wrong results, 2 couldn't tell), for Kubernetes node-problem-detector or Slurm's
+HealthCheckProgram. Examples in [deploy/](../deploy/).
 
 ## 3. Optional: inside one training job
 

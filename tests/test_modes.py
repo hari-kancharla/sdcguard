@@ -216,3 +216,44 @@ def test_a_missing_feature_on_an_older_gpu_is_unsupported(monkeypatch):
     _fake_cuda(monkeypatch, (7, 0), RuntimeError("CUDA error: unspecified launch failure"))
     with pytest.raises(modes.ProbeError):
         modes.available("int8", torch.device("cuda"))          # not a missing feature: an error
+
+
+def test_tf32_and_fp32_gemms_work_after_the_new_fp32_precision_api_was_used():
+    """PyTorch 2.9+ raises "mix of the legacy and new APIs" from torch.get_float32_matmul_precision() once a process
+    has set torch.backends.cuda.matmul.fp32_precision (the API PyTorch's docs now recommend, which training
+    scripts set), so a TF32 switch through the legacy calls made the tf32 and fp32 modes errors. gemm() switches
+    through the new API where it exists and puts back both readings as they were. On the CPU gemm() returns
+    before the switch: stood in for with an operand that says it is on CUDA and records the setting it ran with."""
+    mm = torch.backends.cuda.matmul
+    if not hasattr(mm, "fp32_precision"):
+        pytest.skip("this PyTorch has only the legacy TF32 API")
+    seen = []
+
+    class OnCuda:
+        device = torch.device("cuda")
+
+        def __matmul__(self, other):
+            seen.append(mm.fp32_precision)
+            return torch.zeros(1)
+
+    def readings():
+        try:
+            legacy = torch.get_float32_matmul_precision()
+        except RuntimeError:
+            legacy = "raises"
+        return mm.fp32_precision, legacy
+
+    saved_new, saved_legacy = mm.fp32_precision, torch.get_float32_matmul_precision()
+    try:
+        for setup in (lambda: setattr(mm, "fp32_precision", "tf32"),
+                      lambda: torch.set_float32_matmul_precision("high"),
+                      lambda: torch.set_float32_matmul_precision("highest")):
+            setup()
+            before = readings()
+            for mode in ("tf32", "fp32"):
+                modes.gemm(mode, OnCuda(), OnCuda())
+                assert readings() == before, (mode, before, readings())
+        assert seen == ["tf32", "ieee"] * 3
+    finally:
+        torch.set_float32_matmul_precision(saved_legacy)
+        mm.fp32_precision = saved_new

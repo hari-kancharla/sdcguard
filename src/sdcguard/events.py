@@ -58,14 +58,29 @@ class EventLog:
     def __init__(self, path: Optional[str] = None):
         self.path = path
         self.events: list[SDCEvent] = []
+        self.write_errors = 0                 # appends to the file that failed (the events are still kept here)
         if path:
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            try:
+                os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            except OSError:
+                pass                          # reported at the first write that fails
 
     def add(self, event: SDCEvent) -> None:
+        """Keep the event, then append it to the file. A write that fails (a full disk, a path that is a folder)
+        is counted and logged, never raised: an alert must not crash training or serving, nor be lost on the
+        way to on_alert."""
         self.events.append(event)
         if self.path:
-            with open(self.path, "a") as f:
-                f.write(event.to_json() + "\n")
+            try:
+                with open(self.path, "a") as f:
+                    f.write(event.to_json() + "\n")
+            except OSError as e:
+                self.write_errors += 1
+                if self.write_errors == 1:
+                    import logging
+                    logging.getLogger("sdcguard").warning("sdcguard: couldn't write alerts to %s (%s); they are "
+                                                          "still in the guard's log and go to on_alert",
+                                                          self.path, e)
 
     def first_step(self) -> Optional[int]:
         steps = [e.step for e in self.events if e.step is not None]
@@ -86,3 +101,44 @@ def rollback_checkpoint(first_alert_step: int, checkpoint_steps: list[int], chec
     cutoff = first_alert_step - check_every * max(1, windows)
     safe = [s for s in checkpoint_steps if s <= cutoff]
     return max(safe) if safe else None
+
+
+def _global_rank(group, r: int) -> int:
+    """Rank r of `group` as a rank of the whole job (r itself without a group)."""
+    if group is None:
+        return r
+    import torch.distributed as dist
+    get = getattr(dist, "get_global_rank", None) or getattr(dist.distributed_c10d, "_get_global_rank", None)
+    try:
+        return int(get(group, r))
+    except Exception:  # noqa: BLE001  (a group this PyTorch can't map: its own rank is still listed)
+        return r
+
+
+def suspect_event(detector: str, step, suspects: list, world: int, group, device, detail: dict) -> SDCEvent:
+    """An alert from a cross-rank comparison (replica weights, canary outputs). All ranks call it together, after
+    finding the same suspects (ranks of `group`, `world` its size). The event names the suspect GPU (when there is
+    exactly one, with a clear majority) instead of the reporting rank, lists every suspect's identity, and marks
+    one rank as the reporter, the one that delivers it to on_alert (one webhook post per mismatch, not one per
+    rank). Ranks in the event are the job's global ranks, the ones event.identity and the launcher use; with a
+    group, suspect_group_ranks keeps them as ranks of the group."""
+    import torch.distributed as dist
+    me = dict(device_identity(device))
+    ids: list = [None] * world
+    try:
+        dist.all_gather_object(ids, me, group=group)
+    except Exception:  # noqa: BLE001  (identities are best effort; the ranks are still named)
+        ids = [None] * world
+    rank = dist.get_rank(group)
+    clear = len(suspects) < world
+    reporter = min(r for r in range(world) if r not in suspects) if clear else 0
+    who = [{"rank": _global_rank(group, r), **{k: (ids[r] or {}).get(k) for k in ("host", "gpu_uuid", "gpu_name",
+                                                                                   "pci_bus_id")}}
+           for r in suspects]
+    full = {"suspect_ranks": [_global_rank(group, r) for r in suspects], "world": world, "suspects": who,
+            "reported_by_rank": _global_rank(group, rank), "reporter": rank == reporter, "clear_majority": clear}
+    if group is not None:
+        full["suspect_group_ranks"] = list(suspects)
+    full.update(detail)
+    identity = dict(ids[suspects[0]] or me) if clear and len(suspects) == 1 else me
+    return SDCEvent(detector=detector, step=step, detail=full, identity=identity)

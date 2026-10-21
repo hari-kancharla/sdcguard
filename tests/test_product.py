@@ -151,7 +151,7 @@ def test_webhook_and_metrics_on_a_weight_flip():
     srv.shutdown()
     assert _Hook.got and "sdcguard ALERT: 2" in _Hook.got[0]["text"] and "weights changed" in _Hook.got[0]["text"]
     text = generate_latest(g.metrics.registry).decode()
-    assert 'sdcguard_alerts_total{gpu="None",layer="2"} 1.0' in text
+    assert 'sdcguard_alerts_total{UUID="",layer="2"} 1.0' in text          # (no GPU here: no UUID)
 
 
 def test_describe_and_chain():
@@ -165,3 +165,29 @@ def test_describe_and_chain():
     cb = chain(None, seen.append, lambda e: 1 / 0, seen.append)     # a failing callback doesn't stop the others
     cb(ev)
     assert len(seen) == 2
+
+
+def test_a_later_pass_doesnt_clear_an_earlier_failure(tmp_path):
+    """An intermittent GPU: FAIL on Monday, PASS on Tuesday. It stays in quarantine, with Monday's evidence."""
+    import json
+    import os
+    import time
+    from sdcguard import fleet
+    gpu = {"gpu_uuid": "GPU-aaaa-bbbb", "gpu_name": "NVIDIA H100 80GB HBM3", "host": "node17"}
+    for day, res, bad in (("mon", "FAIL", 3), ("tue", "PASS", 0)):
+        d = tmp_path / day / "GPU-aaaa-bbbb"
+        d.mkdir(parents=True)
+        ev = [str(d / "evidence_0")] if bad else []
+        if bad:
+            (d / "evidence_0.json").write_text("{}")
+        (d / "summary.json").write_text(json.dumps({"gpu": gpu, "result": res, "corrupted_results_training": bad,
+                                                    "matmuls_checked": 1000, "evidence": ev}))
+        if day == "mon":
+            old = time.time() - 86400
+            os.utime(d / "summary.json", (old, old))
+    rows = fleet.collect([str(tmp_path / "mon"), str(tmp_path / "tue")])
+    assert [r["result"] for r in rows] == ["SUSPECT"] and "doesn't clear" in rows[0]["notes"][0]
+    assert [h["result"] for h in rows[0]["history"]] == ["FAIL", "PASS"]
+    rep = fleet.write(rows, str(tmp_path / "out"))
+    assert "GPU-aaaa-bbbb" in (tmp_path / "out" / "quarantine.txt").read_text() and rep["rma"]
+    assert fleet.collect([str(tmp_path / "mon"), str(tmp_path / "tue")], window_days=0.5)[0]["result"] == "PASS"

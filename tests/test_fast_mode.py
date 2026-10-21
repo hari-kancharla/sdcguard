@@ -117,12 +117,17 @@ def test_works_under_torch_compile():
     m, x = Net(), torch.randn(16, 256)
     g = SDCGuard().protect(m)
     cm = torch.compile(m)
-    for s in range(2):                      # unchecked, then checked
-        ctx = g.at_step(s) if s == 1 else torch.enable_grad()
-        with ctx:
-            with torch.autocast("cpu", dtype=torch.bfloat16):
-                loss = cm(x).float().pow(2).mean()
-            loss.backward()
+    try:
+        for s in range(2):                      # unchecked, then checked
+            ctx = g.at_step(s) if s == 1 else torch.enable_grad()
+            with ctx:
+                with torch.autocast("cpu", dtype=torch.bfloat16):
+                    loss = cm(x).float().pow(2).mean()
+                loss.backward()
+    except Exception as e:  # noqa: BLE001  (as in test_compile.py)
+        if "compiler" in str(e).lower():
+            pytest.skip(f"no working C++ compiler for Inductor here: {e}")
+        raise
     assert g.stats["checked"] == 5 and g.stats["alerts"] == 0          # a: forward, dW; b: forward, dX, dW
 
 
@@ -186,3 +191,33 @@ def test_no_grad_forward_earlier_in_the_checked_step():
         loss.backward()
     assert all(p.grad is not None for p in m.parameters())
     assert g.stats["alerts"] == 0
+
+
+def test_a_loss_spike_checks_every_following_step():
+    from sdcguard import SDCGuard
+    g = SDCGuard(every=100)
+    rng = __import__("random").Random(0)
+    for step in range(1, 60):
+        assert not g.observe(step, loss=2.0 + 0.01 * rng.random(), grad_norm=1.0 + 0.02 * rng.random())
+    assert not g.should_check(61)
+    assert g.observe(60, loss=9.0) and g.anomalies[-1]["step"] == 60
+    assert all(g.should_check(s) for s in range(61, 111)) and not g.should_check(111)
+    assert g.observe(70, grad_norm=float("nan"))                     # not finite: checked too, window extended
+    assert g.should_check(120) and g.stats["anomaly_windows"] == 2
+    assert not g.observe(71, loss=1.0)                                # a drop isn't a spike
+
+
+def test_every_checked_step_without_checks_is_counted():
+    """A checked step whose protected layers ran no checked matmul is warned about once, but every such step is
+    counted in stats["checked_steps_without_checks"] (as backward_outside_step and the other counts are), so the
+    count says how many checked steps checked nothing."""
+    import warnings
+    m = nn.Linear(8, 8)                              # float32 without autocast: nothing is checked
+    g = SDCGuard(every=1).protect(m)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        for s in range(5):
+            with g.on_step(s):
+                m(torch.randn(2, 8)).sum().backward()
+    assert g.stats["checked"] == 0 and g.stats["checked_steps_without_checks"] == 5, g.stats
+    assert sum("ran no checks" in str(x.message) for x in w) == 1

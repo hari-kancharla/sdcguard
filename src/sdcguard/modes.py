@@ -30,8 +30,8 @@ all-positive inputs the tensor cores' truncation errors would line up and need a
 
 Compared with checking a bf16 result (checksum.py), the fp32 result keeps 16 more bits, so the check sees
 much smaller errors; each mode's card entry says how small (the error, relative to a typical output, that
-would set it off). AEGIS (OSDI '26) found its production incidents with checksums over fp32 accumulators
-and not with ones over bf16 outputs.
+would set it off). In AEGIS (OSDI '26), every checksum detection confirmed in production came from fp32
+accumulators and none from bf16 outputs.
 """
 from __future__ import annotations
 
@@ -163,7 +163,18 @@ def gemm(mode: str, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
                                 use_fast_accum=False)
     if mode == "fp64":
         return a @ b
-    prev = torch.get_float32_matmul_precision()
+    mm = torch.backends.cuda.matmul
+    if hasattr(mm, "fp32_precision"):
+        # PyTorch 2.9+: switched through its new TF32 API. The legacy getter raises ("mix of the legacy and new
+        # APIs") once a process has set this one, as training scripts now do. This setting is the only one changed
+        # and is put back as it was, so the legacy reading (derived from it) comes back unchanged too
+        prev = mm.fp32_precision
+        mm.fp32_precision = "tf32" if mode == "tf32" else "ieee"
+        try:
+            return a @ b
+        finally:
+            mm.fp32_precision = prev
+    prev = torch.get_float32_matmul_precision()   # older PyTorch: only the legacy API
     torch.set_float32_matmul_precision("high" if mode == "tf32" else "highest")
     try:
         return a @ b
@@ -319,20 +330,32 @@ def check_once(mode: str, dev: torch.device, shape: tuple, dist: str, scale: flo
     return r
 
 
+def _software() -> dict:
+    try:
+        from .screen import _software_for_evidence
+        dev = torch.device("cuda", torch.cuda.current_device()) if torch.cuda.is_available() else None
+        return _software_for_evidence(dev)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def save_evidence(out_dir: str, n: int, failure: dict, gpu: dict, meta: dict) -> str:
     """Write a math-mode failure as math_mode_evidence_<n>.pt (inputs, result, sign patterns) and .json."""
     import json
-    import os
-    path = os.path.join(out_dir, f"math_mode_evidence_{n}")
-    torch.save({"kind": "math_mode", **failure}, path + ".pt")
+    from .screen import _claim, _write_atomic
+    path = _claim(out_dir, "math_mode_evidence", n)       # never another process's file; never half written
+    _write_atomic(path + ".pt", lambda t: torch.save({"kind": "math_mode", **failure}, t))
     info = {"what": f"a matmul in {failure['mode']} whose result disagreed with the CPU's float64 answer",
             "mode": failure["mode"], "profile": dict(zip(("inputs", "compute", "result", "reference"),
                                                          PROFILE[failure["mode"]])),
             "shape_mkn": failure["shape"], "input_distribution": f"{failure['dist']} x{failure['scale']:g}",
             "wrong_blocks": failure.get("wrong_blocks"), "worst_z": failure.get("worst_z"), "alarm_line": ALARM,
-            "gpu": gpu, **meta, "replay": f"sdcguard replay {path}.pt"}
-    with open(path + ".json", "w") as f:
-        json.dump(info, f, indent=2, default=str)
+            "gpu": gpu, "software": _software(), **meta, "replay": f"sdcguard replay {path}.pt"}
+
+    def dump(t):
+        with open(t, "w") as f:
+            json.dump(info, f, indent=2, default=str)
+    _write_atomic(path + ".json", dump)
     return path
 
 

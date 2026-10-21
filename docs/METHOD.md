@@ -85,7 +85,7 @@ its tiles and final reduction too. The guard counts the resulting incomplete mat
 which the screening verdict uses. The flag reports that coverage is incomplete; it does not enumerate all
 unjudged blocks. Zero and tiny finite outputs remain judged, subject to the documented absolute noise floor.
 
-[Regression tests](../tests/test_numeric_review_b778.py) cover mixed rows, blocks, remainder blocks and
+[Regression tests](../tests/test_numeric_completeness.py) cover mixed rows, blocks, remainder blocks and
 batches, including a genuine alarm alongside an unjudged result. They passed on CPU and in the Triton
 interpreter, and on October 20 on CUDA on an L4, an H100 and a B200 (code fingerprint 74b844ee7ca8). The
 overhead of the change is not measured.
@@ -508,6 +508,22 @@ doesn't work with `protect()` yet. The worst clean score sat about 30 times unde
 line of 4, so the noise model is far more cautious than these workloads needed; a tighter model could catch
 smaller errors, but it would need new held-out workloads and criteria written before its run.
 
+### The expected side's rounding floor (changed October 21, 2026, before any GPU run)
+
+Each checksum's noise has a floor for the fp32 rounding of the expected side, which matters only when the outputs
+nearly cancel. It was 1e-5 x |a_row|_2 x |checksum column|_2. For a peaked row of A (attention probabilities with
+a sink) that bound is up to sqrt(k) times too large: on CPU, in P @ V with 98% of each query's probability on a
+key whose value row is zero, one output off by 50 times a typical output scored 2.9 at 2,048 tokens, under the
+line. The floor is now the smaller of that and c(k) x |a_row|_1 x max|checksum column|, with c(k) = 1e-5 up to
+k = 1,342 and k x 2^-27 above. The k-scaling is there because on NVIDIA GPUs every check computes the expected
+side on tensor cores (A in its own precision against a three-way split of the block sums), and tensor cores
+truncate each step's sum, an error that grows with k when the running sum dwarfs the products: in a CPU
+emulation of that truncation, a clean dQ = dS K of an attention backward with a sink, at k = 131,072, scored 7.8
+against a fixed 1e-5 (a false alarm) and 0.16 against c(k). The cost is at long sequences: the same 50x error
+in sink P @ V now scores 23 at 2,048 tokens, but 3.1 at 8,192 and 0.37 at 32,768, under the line, so there this
+kind of error in a near-cancelling output is not caught. The training, serving and Triton checks use the same
+floor; [tests/test_checksum.py](../tests/test_checksum.py) has these cases. Not yet run on a GPU.
+
 ## Head-to-head on a real cuBLAS bug (written October 20, 2026, before any run)
 
 The question: when NVIDIA's own GEMM library silently computes wrong results on healthy hardware, which tools notice?
@@ -602,7 +618,7 @@ GO for the full run needs 1, 2 and 3. If 4 shows DCGM is not an MPS client, the 
 cells are reported as above; the write-up says so. If 3 fails (the bug doesn't reproduce, or not as published), the
 full run is not started and that result is published as it is.
 
-**What the preflight found** (October 20, 2026, 05:58 Chicago time, Modal H200, driver 610.57.04, container cuBLAS
+**What the preflight found** (October 20, 2026, 04:58 Chicago time, Modal H200, driver 610.57.04, container cuBLAS
 13.0.2.14, code fingerprint 28ac0adccafd, [result](../results/h2h/preflight_h200_20261020_055833.json)): GO on every
 question.
 - MPS: 132, 52 and 18 SMs visible at 100%, 40% and 14%.
@@ -634,12 +650,14 @@ Modal volume sdcguard-h2h and on Hari's disk, not in git.
 
 Extras at 40%: DCGM with FP16 only and gpu-burn's default FP32 mode, both NOT EXERCISED (pass, OK).
 
-- Why DCGM and gpu-burn were NOT EXERCISED, not MISSED: the probe made their exact calls (Hgemm, Sgemm, Sgemm with
-  tensor-op math, Dgemm, at 2048 and 8192) as MPS clients at every share, and every one was right. DCGM's own
-  cuBLASLt log at 40% shows its FP16 GEMMs used algorithm 39 with a 1x2x1 cluster, never algorithm 66, so the bug
-  could not reach its test. Every tool connected as an MPS client at every share (4 new MPS connections during
-  each step). Neither tool was wrong to pass its own test; what this shows is that a diagnostic that runs its own
-  GEMMs can't vouch for the kernels a job runs.
+- Why DCGM and gpu-burn were NOT EXERCISED, not MISSED: the probe made their calls (Hgemm, Sgemm, Sgemm with
+  tensor-op math, Dgemm, at 2048 and 8192) as MPS clients at every share, and every one was right. The probe links
+  the system cuBLAS, which gpu-burn uses; DCGM links its own static cuBLAS, so for DCGM at 75% and 14% this rests
+  on the probe as a close proxy (setup, step 2). DCGM's own library was logged only at 40%: its cuBLASLt log there
+  shows its FP16 GEMMs used algorithm 39 with a 1x2x1 cluster, never algorithm 66, so the bug could not reach its
+  test. Every tool connected as an MPS client at every share (4 new MPS connections during each step). Neither
+  tool was wrong to pass its own test; what this shows is that a diagnostic that runs its own GEMMs can't vouch
+  for the kernels a job runs.
 - What went wrong where it was wrong: FP16 and BF16 GemmEx (PyTorch's path) at 40% and 75%; the 16 x 2048 x 1000
   layer at 40% and 14% (outputs never written); weight gradients at 75%; FP16, BF16 and FP8 math modes at 40% and
   75%. cuBLASLt directly: 20 of 32 algorithm runs wrong at 40%, 16 at 75%, 10 at 14%, all algorithm 66 with 4 or
@@ -665,6 +683,379 @@ Extras at 40%: DCGM with FP16 only and gpu-burn's default FP32 mode, both NOT EX
 **Cost**, at Modal's prices on October 20: about $5 for a typical hour on the H200. The 80-minute execution limit
 is about $6.60 at the requested CPU and memory. That limit is per attempt, excluding queueing; higher actual use,
 startup and a restart after preemption can add cost. The preflight is about $1 (about $1.65 at its 20-minute limit).
+
+## The fused precise check (written October 20, 2026, before any GPU run)
+
+**Why.** AEGIS reports that in deployment, checksums from bf16 outputs located none of its incidents and every
+confirmed checksum detection used fp32 accumulators ([OSDI '26](https://www.usenix.org/system/files/osdi26-lei.pdf),
+section 8). Precise mode checks the fp32 result, but gets it from a second, fp32-output matmul, and costs +261% to
++790% per checked step (above).
+
+**What it is.** `SDCGuard(precise="fused")` ([fused.py](../src/sdcguard/fused.py)) computes each protected linear
+layer's forward, dX and dW matmuls in a Triton GEMM whose epilogue, before rounding, reduces every 128-column block
+of each output row of the fp32 accumulator to four float64 numbers: the plain sum, the signed sum, the sum of squares
+and the sum of absolute values. The layer's bf16/fp16 output is rounded from the same accumulator. The check then
+applies precise mode's frozen noise model, unchanged, to those numbers.
+
+**What it does not change, and what it gives up.** The expected side is still computed in float64 (the inputs times
+the block sums of the weights), and that may be a large share of precise mode's cost, mostly on GPUs with slow
+float64 such as the L4; this run measures the split. On checked steps those matmuls run in Triton instead of cuBLAS,
+so a defect specific to cuBLAS kernels (like known issue 6862950) is not exercised on them; the default check is the
+one that watches cuBLAS. Output bits on checked steps can differ from cuBLAS's in the last place (a different
+summation order of the same fp32 math).
+
+**Seen so far, in Triton's CPU interpreter only (not a GPU result).** Outputs were the fp32 result rounded to
+nearest; the block statistics matched float64 sums; an error of 0.2% of a typical output in one value, under half a
+bf16 step, scored 21 with the fused check and 0.96 with the default check of the rounded output; in a two-layer
+model every forward, dX and dW matmul went through the fused check, clean, with gradients matching precise=True
+([tests](../tests/_fused_compare.py)). The interpreter rounds fp32 to bf16 by truncation, so the kernel rounds to
+nearest explicitly there, as GPUs do.
+
+**Run:** `scripts/modal_fused.py` on an H100 and an L4 ([runner](../experiments/fused_check.py)). Criteria, per GPU:
+
+1. Correctness: `tests/_fused_compare.py` passes on the GPU.
+2. Clean: on two training workloads not used before (the calibration shape with seed 41 and the wide model with
+   seed 43, both with Zipf tokens), every fused check scores at most 4 (the line the precise-mode validation used),
+   with no alarms, no unjudged checks and no fallback to precise=True.
+3. Same sensitivity: on three real-sized matmuls, the smallest injected error (a share of a typical output) that
+   the fused check flags at least half the time is within a factor of 2 of precise mode's.
+4. Cost: with every step checked, the fused check's overhead per training step is at most half of precise=True's
+   on the same GPU.
+5. Gradients (added October 20 after an outside review, before any run): one training step of the
+   calibration-shape model with precise=True and with precise="fused", same weights and data; every parameter's
+   gradient within 2^-6 of the precise=True one, relative to that parameter's largest gradient (the tolerance the
+   precise-mode tests use against a plain step), with every protected matmul going through the kernel.
+
+What this checks is the Triton kernel's own matmuls, not cuBLAS: the run records how many matmuls went through
+the kernel, and a pass here says nothing about cuBLAS on those calls.
+
+**Reporting.** All four criteria on both GPUs are published, including failures, and so is the Triton kernel's
+speed against cuBLAS, whatever it is. If criterion 4 fails, the timing split (the GEMM against the float64 check)
+says which part to work on next. Criterion 2 can fail on the L4 for the same reason precise mode's validation did
+(4.26 there). Precise mode and the fused check stay experimental whatever this shows: it is not a held-out
+validation of the noise model.
+
+**Cost**, at Modal's prices on October 20 (checked that day): about $2 for both GPUs together with the recompute
+check below, at most about $3.80 at the 40-minute limits. Partial results are saved as each part finishes; a run
+that stops early or misses any criterion exits with an error.
+
+### What the run found (October 20, 2026): as sensitive as precise mode, not cheaper
+
+Code fingerprint 27b4d3e58291, one H100 80GB and one L4, PyTorch 2.14.1, Triton 3.8.0
+([summary](../results/fused/SUMMARY_20261020_073624.md), [H100](../results/fused/h100_20261020_073624.json),
+[L4](../results/fused/l4_20261020_073624.json); every line each GPU printed is in the `_log.txt` files). Function
+time 75 s on the H100 and 245 s on the L4, about $0.17 in total at the rates above.
+
+| criterion | H100 | L4 |
+|---|---|---|
+| 1 correctness | met | met |
+| 2 clean, worst score at most 4 | met (worst 3.38) | **not met** (worst 4.11; precise mode on the same matmul: 4.11) |
+| 3 sensitivity within 2x of precise mode's | met (equal at all three shapes) | met (equal) |
+| 4 overhead at most half of precise=True's | **not met** (+366% against +364%) | **not met** (+198% against +261%) |
+| 5 gradients within 2^-6 of precise=True's | met (identical) | met (largest 0.0066) |
+
+- **Correctness on the GPUs.** An error of 0.2% of a typical output in one value, under half a bf16 step, scored
+  21 with the fused check and 0.91 (H100) or 1.03 (L4) with the default check of the rounded output. Every check
+  of both workloads went through the kernel (990 and 306 on each GPU), with no fallback, no unjudged check and no
+  alarm.
+- **Sensitivity.** At all three shapes the smallest error caught at least half the time was the same for the
+  fused check and precise mode: 0.5% of a typical output in one value at two shapes, 3% at the third. The
+  default check caught none of the injected errors, up to 10% of a typical output in one value.
+- **Where the time goes** (criterion 4 failed; the split was to say which part to work on). The fused GEMM took
+  1.7x to 2.1x cuBLAS's bf16 GEMM on the H100 and 1.3x to 2.1x on the L4; precise mode runs cuBLAS's bf16 GEMM
+  plus an fp32-output one of 1.1x to 1.3x, so the GEMM side came out about even. The step that turns the block
+  statistics into scores, which computes the expected side in float64, took 0.99 to 1.50 ms per matmul on the
+  H100 and 3.1 to 23 ms on the L4: 1.6 to 11.5 times the fused GEMM. Precise mode's own scoring took the same
+  1.0 ms on the H100 at the four smaller shapes, so the two cost the same per matmul there; at the two largest
+  shapes, and on the L4, the fused check cost 51% to 90% of precise mode's time. The scoring step is what to
+  work on next. That it stayed near 1 ms on the H100 across four shapes points at a fixed cost per call
+  (launches or a host sync) rather than arithmetic; the run did not separate the two.
+- **Clean scores.** On the H100 fused and precise scores were equal on the calibration workload (largest gap
+  0.0) and within 0.93 on the wide one. On the L4 the fused scores ran higher than precise mode's on the same
+  matmuls (up to 2.75 against 0.91 on the calibration workload): the frozen noise model, fitted to cuBLAS's fp32
+  accumulators, fits the Triton kernel's on the L4 less well. The L4's worst score, 4.11, came from a matmul where
+  both modes scored 4.11, the same kind of miss as precise mode's held-out run (4.26 on an L4). The alarm line is
+  6; nothing alarmed.
+- **What it checked.** On checked steps all 99 protected matmuls of a step ran in the Triton kernel, not cuBLAS,
+  so this says nothing about cuBLAS on those calls.
+
+Outcome: the fused check matches precise mode's sensitivity and stays below the alarm line, but it is not the
+cheap fp32 check it was built to be. It stays experimental and off by default.
+
+## The recompute check on GPUs (written October 20, 2026, before any GPU run)
+
+**What it is.** `SDCGuard(recompute=True)` ([recompute.py](../src/sdcguard/recompute.py)) fingerprints the outputs of
+every activation-checkpointed block in the forward run and again in the recompute training already does in the
+backward pass, and compares the fingerprints: the method behind 12 of AEGIS's 18 production detections (section
+7.2; AEGIS uses xorsum fingerprints, sdcguard three int64 sums of the raw 16-bit words (bytes for 1-byte types),
+mod 2^64: one plain and two with pseudo-random odd weights of each word's position). Outputs that differ in one
+word always get different fingerprints; outputs that differ in several words get the same one only if the
+difference cancels in both weighted sums, a chance of at most about 2^-48 for each sum if the weights behave like
+random numbers. (The October 20 runs below used the earlier weights, small integers of a row and a column of a
+251-wide view, which structured changes could cancel, such as three neighbouring words changed by +1, -2 and +1;
+changed October 21.) It covers every operation inside those blocks, not just matmuls. It can't see a fault that
+repeats exactly in both runs, blocks that aren't checkpointed, or blocks checkpointed with
+`preserve_rng_state=False` (skipped and counted: their dropout differs by design). A mismatch says the two runs
+differed, not why.
+
+**Found and fixed on CPU before any GPU run** ([tests](../tests/test_recompute_models.py)). Hugging Face's
+`gradient_checkpointing_enable()` and torch's `checkpoint_wrapper` store a partial of `torch.utils.checkpoint`
+on each module, so a check installed afterwards compared nothing (shown on GPT-2: 0 blocks). The check now routes
+those references when it is given the model (`protect()`, `watch()`, `install(model)`), and a checked step that
+compares no block warns. On GPT-2 and Llama configurations (reentrant and not), torch's checkpoint_wrapper and an
+explicit `early_stop=True`: every block compared, no false alarm with dropout on, a fault in the forward run or
+in the recompute caught and its block named, gradients bit-identical with and without the check.
+
+**Run:** the same Modal run as the fused check (`scripts/modal_fused.py`, H100 and L4;
+[runner](../experiments/recompute_check.py)). GPT-2 and Llama configurations with random weights, 8 layers,
+width 768, 8 sequences of 512 tokens, bf16 autocast, dropout 0.1, gradient checkpointing turned on before the
+check. Criteria, per GPU:
+
+1. Clean: 10 steps per model, every checkpointed block compared, 0 mismatches.
+2. Faults: 8 trials per model, a value change in one call of one module inside one block, in the forward run or
+   the recompute (alternating), in a different layer each time: all 8 caught, and the block named right.
+3. Gradients: bit-identical with and without the check, same seeds.
+
+Reported with no pass line: the share of parameters inside compared blocks; seconds per step with plain
+checkpointing, with early stop off only (the check makes the recompute run the whole block) and with the full
+check; and a block with `index_add_` (atomic adds on CUDA) calibrated with deterministic algorithms off (expected
+to differ between runs: legitimate nondeterminism, which is what `calibrate()` exists for) and on.
+
+**Reporting.** All three criteria on both GPUs, including failures. If 1 fails, the block that differed is
+named and the check stays experimental. The recompute check stays experimental and off by default whatever this
+shows: two random-weight configurations are not production models.
+
+### What the run found (October 20, 2026): criterion 3 not met, and the test couldn't say why
+
+Same run and files as the fused check above.
+
+| criterion | H100 | L4 |
+|---|---|---|
+| 1 clean | met: 0 mismatches in 160 compares (80 per model) | met: 0 in 160 |
+| 2 faults caught, block named | met: 16 of 16 | met: 16 of 16 |
+| 3 gradients bit-identical with and without the check | **not met** (both models) | **not met** (both models) |
+
+- **Coverage.** All 8 checkpointed blocks were compared on every step; 69% of GPT-2's parameters and 58% of
+  Llama's sit inside them (the embeddings, the final norm and the LM head are outside).
+- **Cost, every step checked.** +20.3% (GPT-2) and +16.0% (Llama) per step on the H100, +10.0% and +16.2% on
+  the L4. Turning early stop off alone changed the step time by -2.8% to +1.9%, so the cost is the
+  fingerprints. AEGIS's 0.86% is with sampling; checking a share of steps would cut this in proportion (not
+  measured).
+- **Legitimate nondeterminism.** The `index_add_` block differed in 1 of 5 recomputes with deterministic
+  algorithms off (the block named `_Scatter`) and in 0 of 5 with them on, on both GPUs, as expected.
+- **Criterion 3.** The runner compared one step with the check against one step without it and kept only
+  whether every gradient matched bit for bit. It ran no control (two steps without the check), so it can't tell
+  a change made by the check from the GPU's own run-to-run differences, and those exist here: PyTorch 2.14.1
+  documents `nn.Embedding`'s backward on CUDA as nondeterministic unless deterministic algorithms are on, and
+  treats SDPA's memory-efficient attention as a nondeterministic algorithm
+  ([pytorch#91979](https://github.com/pytorch/pytorch/pull/91979)). On CPU, where the kernels are
+  deterministic, the gradients matched bit for bit. That was a gap in the test's design, written before the run.
+  The criterion stays not met; the follow-up below is written to separate the two causes.
+
+### Follow-up: gradients with a control run (written October 20, 2026, after the run above, before this one)
+
+**Question.** Did the check change the gradients, or do two steps without it already differ on these GPUs?
+
+**Run:** `scripts/modal_grad_control.py` on an H100 and an L4 ([runner](../experiments/recompute_grad_control.py)),
+the same models and sizes. Per model and setting: one warm-up backward pass, discarded, then four backward passes
+of one step with the same weights, data and seeds: A without the check, B without it again (the control), C with
+it, and D without it after it was uninstalled. Two settings, each in its own process: PyTorch's defaults, as in
+the first run, and a deterministic one (deterministic algorithms on, with warnings about operations that still
+ran nondeterministically recorded; `CUBLAS_WORKSPACE_CONFIG=:4096:8`; cuDNN deterministic; attention on SDPA's
+math backend).
+
+**Decision, per GPU and model, from the deterministic setting:** INCONCLUSIVE if C didn't compare every block
+cleanly or A and B differ; UNCHANGED if A = B and C and D both equal A; CHANGED if A = B and C or D differs.
+Criterion 3 counts as met in the follow-up only if both models are UNCHANGED on both GPUs; the first run's "not
+met" stays in the record either way. The default setting is reported with no pass line.
+
+**Predictions.** Default setting: A and B differ, and A and C differ by an amount of the same order. Deterministic
+setting: A = B, and both models UNCHANGED. If A and B still differ there, the recorded warnings should name what
+didn't run deterministically.
+
+On CPU every comparison is bit-identical, and a check rigged to change one gradient by one bit comes out CHANGED
+([tests](../tests/test_grad_control.py)).
+
+**Cost**, at Modal's prices on October 20: about $0.25 for both GPUs, at most about $1.40 at the 15-minute
+limits. A run that stops early, or doesn't come out UNCHANGED everywhere, exits with an error.
+
+#### What the follow-up found (October 20, 2026): UNCHANGED on both GPUs, as predicted
+
+Code fingerprint ca941aadb026, one H100 80GB and one L4 ([summary](../results/grad_control/SUMMARY_20261020_082418.md),
+[H100](../results/grad_control/h100_20261020_082418.json), [L4](../results/grad_control/l4_20261020_082418.json)).
+Function time 30 s and 37 s, about $0.05.
+
+| setting, model | A vs B (control) | A vs C (with the check) | A vs D (after it) | decision |
+|---|---|---|---|---|
+| default, GPT-2, H100 | 89 of 100 differ, max 7.5e-3 | 90 differ, max 7.2e-3 | 90 differ | |
+| default, Llama, H100 | 63 of 75 differ, max 9.4e-3 | 66 differ, max 9.3e-3 | 66 differ | |
+| default, GPT-2, L4 | 88 of 100 differ, max 1.1e-2 | 78 differ, max 8.2e-3 | 88 differ | |
+| default, Llama, L4 | 66 of 75 differ, max 9.4e-3 | 66 differ, max 9.4e-3 | 66 differ | |
+| deterministic, both models, both GPUs | identical | identical | identical | **UNCHANGED** |
+
+(Differences are relative to each parameter's largest gradient.) In PyTorch's default setting two steps without
+the check already differ from each other about as much as a step with it, while the losses were identical: the
+differences come from the backward kernels, not the check. In the deterministic setting every comparison was
+bit-identical, the check compared all 8 blocks of every model with no mismatch, and no nondeterminism warning
+was recorded. So the first run's criterion 3 failure came from the test's missing control, not from the check;
+the check leaves gradients bit-identical wherever the training itself is deterministic. The first run's "not
+met" stays above as it was recorded. The recompute check stays experimental and off by default.
+
+## 0.4.0 on GPUs (written October 20, 2026, before any GPU run)
+
+**What changed since the runs above.** The fused check now scores its fp32 accumulator inside the kernel (the
+expected side, the noise model and the score, with no float64 and no extra pass), because the October 20 run
+showed the float64 scoring was the cost; that is the default, and `SDCGUARD_FUSED_FP64=1` keeps the version the
+October 20 run measured. In it, the expected side, x times the block sums of W, is accumulated in fp32
+by a second, narrow dot in the same loop over k, each block sum split into three bf16 or fp16 parts that add up
+to it exactly (in fp16 the block sums are first divided by a power of two, also exactly, so sums above fp16's
+65504 still fit: that needs the block's largest |W| first, so fp16 reads W twice, and the dot's result is
+multiplied back). The noise is precise mode's frozen model, unchanged, plus the same model's term for that dot's
+own fp32 accumulation, `0.6 sqrt(k) u |x_row| |block sums|_2` (the block's column of sums over k in place of
+the block of W); the alarm line is unchanged. (Changed October 21, before any GPU run: that term used the
+largest block sum in place of the 2-norm, up to sqrt(k) times smaller, and fp16 layers whose block sums passed
+65504 went unjudged.) The recompute check fingerprints with one Triton pass instead of several PyTorch
+reductions, by default on CUDA. The GPU results above belong to the earlier versions. Both changes are tested so
+far on CPU only (the kernels in Triton's CPU interpreter), and so are these, new in 0.4.0: `protect()` under
+`torch.compile(fullgraph=True)` (a custom operator on checked steps), tensor parallel (each rank checks its own
+shard, inside a compiled graph too, through DTensor sharding rules for the checked operator), MoE grouped GEMMs checked
+per expert, and a known-issue report that matches the machine against NVIDIA's cuBLAS known issues. `sdcguard
+blas` (every cuBLASLt algorithm for a shape: every output checked for having been written, a sample of up to 32
+rows against float64) hasn't run anywhere yet: its cuBLASLt calls need a GPU, and its CPU tests cover only shape
+parsing, the verdicts and the no-GPU path, with the sweep itself replaced by a stand-in.
+
+**Run:** `scripts/modal_v040.py`: one H100, two H100s in one machine, and one H200 under MPS, in parallel
+([runners](../experiments/v040_check.py), [tensor parallel](../experiments/v040_tp.py)). Criteria:
+
+H100, the fused check (`experiments/fused_check.py`, its criteria above, unchanged, plus the in-kernel scoring):
+criteria 1, 2, 4 and 5 as written above; criterion 3 must hold for both the old scoring and the in-kernel one,
+each measured in this run (a result with no in-kernel measurement doesn't meet it).
+What this can't show: the in-kernel scoring computes the expected side in the same kernel, on the same GPU, as
+the output it checks, so a fault that corrupts both the same way stays invisible to it. The default check
+(cuBLAS's output against a separate checksum matmul) and the CPU recheck of saved evidence don't share that
+path, which is one reason the fused check stays experimental and off by default whatever this run shows.
+**Prediction:** criterion 4 (overhead at most half of precise=True's) is met now; the Triton GEMM itself took
+1.3x to 2.1x cuBLAS's time on October 20, so the checked step can't get cheaper than that.
+
+H100, the recompute check (`experiments/recompute_check.py` and `experiments/recompute_grad_control.py`):
+1. clean: 0 mismatches; 2. every injected fault caught and its block named; 3. gradients UNCHANGED against the
+deterministic control, as in the follow-up above; 4. with every step checked, at most 10% per step on both
+models (it was +20.3% and +16.0% with the PyTorch fingerprints). **Prediction:** 1 to 3 met, and 4 met.
+
+H100, `experiments/v040_check.py`:
+1. the fingerprint kernel equals the PyTorch version bit for bit on every tensor `tests/_fingerprint_compare.py`
+   tries, and is the one in use;
+2. a model compiled with `torch.compile(fullgraph=True)` and Inductor runs the same number of checks on each
+   checked step as eager, none on unchecked steps, no alarm and nothing unjudged in 40 steps, and a wrong output
+   inside a compiled checked step is caught 5 times out of 5;
+3. a compiled unchecked step takes at most 2% (plus 0.5 ms) longer than the same step compiled without sdcguard;
+4. `torch._grouped_mm` with 64 experts in bf16, forward and backward, random routing: no alarm and nothing
+   unjudged in 200 calls, with every expert that got tokens checked in all three matmuls of every call (an expert
+   with no tokens adds one check, of its weight gradient, which must be all zeros; counted since October 21), and one
+   wrong value in one expert's output, changing its 128-column block by 10% of the block's L2 norm, caught in at
+   least 99 of 100 trials. That is the harm study's measure of a fault's size (the norm of the change over the
+   norm of the block, `inject._rel_change`), at which the default check caught 99% of faults there. (A CPU smoke
+   test of this runner showed a wrong value of 10% of one typical output is below what the bf16 output check
+   sees, so the first draft of this line, which used that size, was corrected before any GPU run. The second
+   draft added 10% of the block's absolute sum, which is about 90% on the harm study's scale, not 10%; corrected
+   October 21, 2026, before any run, for every wrong value injected in this section.)
+5. `sdcguard blas` on its four default shapes, bf16 and fp16, with the GPU to itself: every algorithm right.
+
+Added October 21, 2026, before any run, for original-event capture in serving (`serve.CAPTURE_SLOTS`: when a
+layer's check alarms, the check itself copies that row of the layer's input and that block of its output into a
+small buffer on the GPU, and the alert carries `screen.cpu_recheck` of them):
+
+6. the serving check's first-use comparison, which now also requires the Triton check's captured rows to be the
+   PyTorch check's bit for bit, passes in bf16 and fp16, and the Triton check is the one in use; then a bf16
+   stack of 4 linear layers, 4096 wide, batch 8, attached to a ServeGuard and captured once in a CUDA graph,
+   replayed 200 times with fresh inputs copied into its input buffer. On one replay the graph makes one wrong
+   value in layer 1's output, as large as that 128-column block's L2 norm (a fault tensor it adds, zero on every
+   other replay); on another, layer 2's check has a wrong expected side for that replay only. Met when there are
+   exactly two alerts, those two: the first with its captured row and block where the wrong value was made, the
+   recheck finding exactly one output outside the rounding envelope (verdict `output_wrong`), and its evidence
+   file holding the wrong value; the second with verdict `output_agrees` (the output isn't blamed);
+7. the Triton check of one of those layers takes at most 5% longer with the capture buffer than without it, on
+   clean inputs (median of 5 rounds of 200 calls). The copy itself runs only when a row is over the line.
+
+Added October 21, 2026, after this section's first run and before this criterion's first run, as that day's
+outside review asked (criteria 1 to 7 as written are unchanged):
+
+8. capture under contention, in a CUDA graph of 6 bf16 linear layers side by side (4096 to 4096, each applied to the
+   same input of batch 8, so no layer's wrong value becomes another's input) with the Triton check on every one,
+   read after every replay unless said (each wrong value as large as its block's L2 norm, as in 6): (a) every row of
+   one layer wrong once in every block, so every program of that layer's check is over the line at once and they
+   race for the layer's one record: exactly one alert, on that layer, keeping one of the rows and blocks made wrong,
+   with the recheck finding exactly one output of that block outside the rounding envelope; (b) one wrong value in
+   each of 4 layers: four alerts, each keeping its own row and block; (c) one in each of the 6 layers, more than the
+   4 records: four alerts keep theirs, the other two say the buffer was full, and a replay after it with one wrong
+   value in one layer keeps that row again; (d) one wrong value in a layer, read without waiting, then one in
+   another layer, read without waiting, then a read that waits: the two alerts in order, each with its own row.
+   Clean replays before and between raise no alert. Every kept row's recheck says `output_wrong` with exactly one
+   output outside the envelope (so the input row and the output block kept belong together).
+
+What 8 can't show: races between streams (everything here runs on one), or between graphs replayed concurrently.
+What (a) checks is a property worth stating: when several rows of a layer alarm in one read, the Triton check keeps
+the row of whichever program claims the layer's record first, which need not be the row the alert names as the
+worst; the PyTorch check keeps the worst.
+
+Spelled out October 21, 2026, after the first run, from an outside review: the runner's judging of criteria 1 to 7
+met some with a stage missing or cut short (no capture timing, no CUDA graph, a single blas sweep, no fault trials,
+fewer calls or steps than the protocol runs). Each is now met only by its stage run in full as written above; the
+first run's H100 report gets the same verdicts on criteria 1 to 7 from both versions.
+
+And in the next vLLM run (`experiments/vllm_check.py`, as on October 20), inside vLLM's own compiled graphs: the
+alert that names the layer whose weight had a bit flipped must also keep its row, with a recheck that finds the
+weights changed since load.
+
+What 6 and 7 can't show: the wrong values are made by sdcguard's own injection, not by a faulty GPU; the
+captured numbers are copied by the GPU being suspected, so a fault that also hit the copy would make a right
+output look wrong; the recheck uses the weights as they are when the alert is read (an alert says when they
+changed since load). Public sources show related work (checked October 21, 2026): ByteDance's AEGIS (OSDI '26)
+keeps a small slice of a failing matmul's inputs and outputs in training and confirms it by replaying on the GPU;
+FP-Sketch (arXiv, September 2026) rechecks at fp32 on the same GPU and keeps no copy. None of them, as far as
+public sources show, keeps the failing row inside a CUDA graph during serving and rechecks it in float64 to tell a
+wrong output from the check's own side.
+
+Two H100s, tensor parallel over NCCL (`experiments/v040_tp.py`), in both `protect()` and the default mode: no
+alarm in 50 clean steps with every step checked and every matmul checked as a local shard (none skipped); with
+`exact_reductions=False`, gradients bit-identical to the same tensor-parallel model without sdcguard; one wrong
+value in rank 1's local output, changing its 128-column block by 10% of the block's L2 norm, on 10 checked steps
+caught on rank 1 all 10 times and never on rank 0. (The injected wrong values in this section, compile included,
+are all that size.) How the runner reads "every matmul checked (none skipped)", spelled out October 21 before any
+run: on each rank, the checked count and the tensor-parallel checked count both equal 50 steps times the 23 local
+matmuls of a step (8 linear layers, forward, dX and dW, less the first layer's dX), and the skipped counts
+(tensor-parallel, out of memory, data type) are all 0; the first version only asked for at least one. Added
+October 21, before any run: the same model with `protect()` under `torch.compile(fullgraph=True)` and Inductor,
+with the same clean and fault criteria (the wrong value made inside the checked operator, where the GPU computes
+the layer, and no compiled tensor-parallel layer skipped); no gradient comparison there, since Inductor's own
+kernels may round differently from the operator's cuBLAS calls.
+
+H200 under MPS: at 100% of the SMs, `sdcguard blas` finds every algorithm right on the bug's shape
+(1000x2048x16) and on 4096x4096x2048; at 40%, at least one algorithm is wrong, every wrong one is algorithm 66
+with a cluster of 4 or more CTAs, and the 1x1x1-cluster workaround is right; `sdcguard issues` says 6862950
+applies at 40% and not at 100%. **Prediction:** all met; this is the same bug the head-to-head caught.
+(Spelled out October 21, before any run: the workaround counts only when it was run on an algorithm-66
+configuration with 4 or more CTAs. `sdcguard blas` had run it on the heuristic's first algorithm, whatever that
+was; it now reruns every algorithm-66 configuration with 4 or more CTAs with a 1x1x1 cluster.)
+
+A wrong algorithm in H100 criterion 5 or at 100% on the H200 fails that criterion even when the cause is
+NVIDIA's (sdcguard's own table lists 6580689, a split-K bug in algorithm 66, as matching compute capability 9.0
+with the image's cuBLAS). So the runners report each wrong algorithm with the listed cuBLAS issues
+(`sdcguard.known_issues`) that apply or may apply to the machine and name that algorithm, and the summary lists
+those apart from wrong algorithms no listed issue accounts for. The criterion stays not met either way; the
+report says whose bug it is likely to be, not that it is settled.
+
+**Reporting.** Every criterion on every GPU is published, met or not. If the fused check's cost criterion fails
+again, the kernel timing says whether the GEMM or the epilogue is the cost. Everything new stays experimental
+and off by default (except where it only adds coverage: tensor parallel, compile, grouped GEMMs, and the
+reports) until a run like this one passes.
+
+**Cost**, at Modal's prices on October 20 (H100 $3.95 an hour, H200 $4.54, plus about $0.45 an hour for the CPU
+and memory of each one-GPU machine and $0.70 for the pair's 64 GiB): usually about $5, at most about $8.50 at the
+functions' limits (60, 20 and 15 minutes). Each function first checks that the code it has is the code the
+launcher fingerprinted and stops before any GPU work if not; the launcher records its git commit and whether the
+tree had changes (or that it isn't a git checkout). A run that stops early or misses any criterion exits with an
+error.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
@@ -712,9 +1103,9 @@ inverse; sustained 8,192 x 8,192 bf16 matmul TFLOPS (fp16 on GPUs without bf16) 
 device-to-device copy for bandwidth; and a repeatability test. That last one runs a fixed model (6 layers,
 width 1,024, seeded weights) plus one fused attention call three times (before the speed tests, after the
 stress test, at the end) with deterministic algorithms and `CUBLAS_WORKSPACE_CONFIG=:4096:8`, and hashes the
-outputs. The three runs must match, GPUs of the same model in one machine must match, and a result that
-differs from at least 3 agreeing GPUs of the identical setup (from at least 2 sources) on the board is
-SUSPECT. Datasheet peaks are dense numbers from nvidia.com, listed with their pages in `gpuinfo.py`.
+outputs. The three runs must match and GPUs of the same model in one machine must match (SUSPECT otherwise).
+A result that differs from at least 3 agreeing GPUs of the identical setup (from at least 2 sources) on the
+board gets a note; board data is posted by anyone, so since 0.4.0 it never changes a result. Datasheet peaks are dense numbers from nvidia.com, listed with their pages in `gpuinfo.py`.
 
 Criteria for the first sweep, written before it ran: every GPU PASS (a FAIL or SUSPECT on a healthy cloud GPU
 is a false alarm to fix before launch); 3 of 3 identical fingerprints on every GPU; the two H100s match and

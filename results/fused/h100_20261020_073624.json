@@ -1,0 +1,794 @@
+{
+  "label": "h100",
+  "function_started_utc": "2026-10-20T11:36:31Z",
+  "fused": {
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "cc": [
+      9,
+      0
+    ],
+    "torch": "2.14.1+cu130",
+    "triton": "3.8.0",
+    "correctness": {
+      "passed": true,
+      "exit": 0,
+      "output": "sub-rounding error 1.49e-03 (0.2% of a typical output): fused z=21.0, ordinary check of the bf16 output z=0.91, outputs changed: 1\nfused guard stats: {'matmuls_seen': 10, 'checked': 10, 'checked_fp32': 10, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 10, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0}\nALL AGREE\n"
+    },
+    "same_matmuls": [
+      {
+        "name": "calibration shape, seed 41, Zipf tokens",
+        "checks": 990,
+        "guard_stats": {
+          "matmuls_seen": 990,
+          "checked": 990,
+          "checked_fp32": 990,
+          "unjudged": 0,
+          "skipped_dtype": 0,
+          "skipped_oom": 0,
+          "alerts": 0,
+          "attention_checked": 0,
+          "attention_skipped": 0,
+          "checked_fused": 990,
+          "fused_fallbacks": 0,
+          "recompute_compared": 0,
+          "recompute_mismatches": 0,
+          "recompute_steps_without_blocks": 0
+        },
+        "fused_alarms": 0,
+        "precise_alarms": 0,
+        "fused_unjudged": 0,
+        "fused_worst": 1.493,
+        "precise_worst": 1.493,
+        "largest_score_gap": 0.0,
+        "median_share_of_outputs_with_other_bits": 0.0,
+        "worst_by_layer_and_pass": {
+          "qkv backward dW": {
+            "fused": 1.492979645729065,
+            "precise": 1.4929797649383545
+          },
+          "down backward dW": {
+            "fused": 1.2743146419525146,
+            "precise": 1.274314522743225
+          },
+          "head backward dW": {
+            "fused": 0.9674626588821411,
+            "precise": 0.9674626588821411
+          },
+          "head forward": {
+            "fused": 0.7222857475280762,
+            "precise": 0.7222857475280762
+          },
+          "proj backward dW": {
+            "fused": 0.48922255635261536,
+            "precise": 0.48922255635261536
+          },
+          "up backward dW": {
+            "fused": 0.3704705536365509,
+            "precise": 0.3704705536365509
+          },
+          "down backward dX": {
+            "fused": 0.2266460806131363,
+            "precise": 0.2266460806131363
+          },
+          "head backward dX": {
+            "fused": 0.21483884751796722,
+            "precise": 0.21483884751796722
+          },
+          "down forward": {
+            "fused": 0.20326220989227295,
+            "precise": 0.20326220989227295
+          },
+          "up forward": {
+            "fused": 0.1877923458814621,
+            "precise": 0.1877923458814621
+          },
+          "qkv backward dX": {
+            "fused": 0.17426742613315582,
+            "precise": 0.17426742613315582
+          },
+          "up backward dX": {
+            "fused": 0.1480523943901062,
+            "precise": 0.1480523943901062
+          }
+        }
+      },
+      {
+        "name": "wide, 8,192 tokens, seed 43, Zipf tokens",
+        "checks": 306,
+        "guard_stats": {
+          "matmuls_seen": 306,
+          "checked": 306,
+          "checked_fp32": 306,
+          "unjudged": 0,
+          "skipped_dtype": 0,
+          "skipped_oom": 0,
+          "alerts": 0,
+          "attention_checked": 0,
+          "attention_skipped": 0,
+          "checked_fused": 306,
+          "fused_fallbacks": 0,
+          "recompute_compared": 0,
+          "recompute_mismatches": 0,
+          "recompute_steps_without_blocks": 0
+        },
+        "fused_alarms": 0,
+        "precise_alarms": 0,
+        "fused_unjudged": 0,
+        "fused_worst": 3.381,
+        "precise_worst": 3.381,
+        "largest_score_gap": 0.929,
+        "median_share_of_outputs_with_other_bits": 0.0,
+        "worst_by_layer_and_pass": {
+          "down backward dW": {
+            "fused": 3.3814423084259033,
+            "precise": 3.3814423084259033
+          },
+          "qkv backward dW": {
+            "fused": 2.747391939163208,
+            "precise": 2.747391939163208
+          },
+          "proj backward dW": {
+            "fused": 1.8538209199905396,
+            "precise": 1.8538209199905396
+          },
+          "head backward dW": {
+            "fused": 1.7310370206832886,
+            "precise": 0.8490389585494995
+          },
+          "up backward dW": {
+            "fused": 1.2693012952804565,
+            "precise": 1.2693012952804565
+          },
+          "down backward dX": {
+            "fused": 1.1954452991485596,
+            "precise": 1.1954452991485596
+          },
+          "head forward": {
+            "fused": 1.0852773189544678,
+            "precise": 2.0142858028411865
+          },
+          "up forward": {
+            "fused": 0.6041368842124939,
+            "precise": 0.6041368842124939
+          },
+          "down forward": {
+            "fused": 0.4340130090713501,
+            "precise": 0.4340130090713501
+          },
+          "qkv backward dX": {
+            "fused": 0.35005322098731995,
+            "precise": 0.35005322098731995
+          },
+          "head backward dX": {
+            "fused": 0.2941213548183441,
+            "precise": 0.28925591707229614
+          },
+          "proj backward dX": {
+            "fused": 0.26238328218460083,
+            "precise": 0.26238328218460083
+          }
+        }
+      }
+    ],
+    "sensitivity": {
+      "trials": 16,
+      "fractions": [
+        0.0003,
+        0.001,
+        0.002,
+        0.003,
+        0.005,
+        0.01,
+        0.03,
+        0.1
+      ],
+      "shapes": [
+        {
+          "shape": [
+            4096,
+            1024,
+            3072
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.005,
+          "smallest_caught_half_the_time_precise": 0.005,
+          "smallest_caught_half_the_time_default": null
+        },
+        {
+          "shape": [
+            4096,
+            1024,
+            4096
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.005,
+          "smallest_caught_half_the_time_precise": 0.005,
+          "smallest_caught_half_the_time_default": null
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            1024
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.03,
+          "smallest_caught_half_the_time_precise": 0.03,
+          "smallest_caught_half_the_time_default": null
+        }
+      ]
+    },
+    "timing": [
+      {
+        "shape": [
+          4096,
+          1024,
+          3072
+        ],
+        "cublas_bf16_ms": 0.0485,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.112,
+          "64x128x32 w8": 0.1301,
+          "128x128x32 w8": 0.1296,
+          "64x128x64 w4": 0.1001,
+          "128x128x64 w8": 0.1085
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.1001,
+        "check_from_stats_ms": 0.9866,
+        "fused_total_ms": 1.0959,
+        "precise_fp32_gemm_ms": 0.0645,
+        "precise_total_ms": 1.0862
+      },
+      {
+        "shape": [
+          4096,
+          1024,
+          4096
+        ],
+        "cublas_bf16_ms": 0.0613,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.144,
+          "64x128x32 w8": 0.1593,
+          "128x128x32 w8": 0.1535,
+          "64x128x64 w4": 0.1251,
+          "128x128x64 w8": 0.1274
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.1251,
+        "check_from_stats_ms": 0.995,
+        "fused_total_ms": 1.1059,
+        "precise_fp32_gemm_ms": 0.0778,
+        "precise_total_ms": 1.0886
+      },
+      {
+        "shape": [
+          4096,
+          4096,
+          1024
+        ],
+        "cublas_bf16_ms": 0.0551,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1643,
+          "64x128x32 w8": 0.1482,
+          "128x128x32 w8": 0.1527,
+          "64x128x64 w4": 0.1257,
+          "128x128x64 w8": 0.114
+        },
+        "fused_best_tile": "128x128x64 w8",
+        "fused_gemm_best_ms": 0.114,
+        "check_from_stats_ms": 0.9951,
+        "fused_total_ms": 1.0966,
+        "precise_fp32_gemm_ms": 0.0628,
+        "precise_total_ms": 1.0877
+      },
+      {
+        "shape": [
+          3072,
+          4096,
+          1024
+        ],
+        "cublas_bf16_ms": 0.0459,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1037,
+          "64x128x32 w8": 0.1451,
+          "128x128x32 w8": 0.1485,
+          "64x128x64 w4": 0.0861,
+          "128x128x64 w8": 0.1104
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.0861,
+        "check_from_stats_ms": 0.988,
+        "fused_total_ms": 1.0959,
+        "precise_fp32_gemm_ms": 0.0532,
+        "precise_total_ms": 1.098
+      },
+      {
+        "shape": [
+          4096,
+          1024,
+          32000
+        ],
+        "cublas_bf16_ms": 0.3877,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.8111,
+          "64x128x32 w8": 0.9187,
+          "128x128x32 w8": 0.9075,
+          "64x128x64 w4": 0.6759,
+          "128x128x64 w8": 0.6962
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.6759,
+        "check_from_stats_ms": 1.4952,
+        "fused_total_ms": 2.1759,
+        "precise_fp32_gemm_ms": 0.4708,
+        "precise_total_ms": 3.5083
+      },
+      {
+        "shape": [
+          8192,
+          2048,
+          8192
+        ],
+        "cublas_bf16_ms": 0.3771,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.9058,
+          "64x128x32 w8": 1.0923,
+          "128x128x32 w8": 1.1374,
+          "64x128x64 w4": 0.6673,
+          "128x128x64 w8": 0.8205
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.6673,
+        "check_from_stats_ms": 1.0414,
+        "fused_total_ms": 1.7052,
+        "precise_fp32_gemm_ms": 0.4169,
+        "precise_total_ms": 2.2623
+      }
+    ],
+    "overhead": {
+      "workload": "calibration shape, seed 41, Zipf tokens",
+      "seconds_per_step": {
+        "unchecked": 0.0281,
+        "default check": 0.0357,
+        "precise=True": 0.1303,
+        "precise=fused": 0.131
+      },
+      "overhead_pct": {
+        "default check": 27.0,
+        "precise=True": 363.7,
+        "precise=fused": 366.2
+      },
+      "fused_checks_in_timed_run": 792,
+      "fused_fallbacks": 0
+    },
+    "gradients": {
+      "stats_True": {
+        "checked": 99,
+        "checked_fp32": 99,
+        "checked_fused": null,
+        "alerts": 0,
+        "fused_fallbacks": null
+      },
+      "loss_True": 10.560026168823242,
+      "stats_fused": {
+        "checked": 99,
+        "checked_fp32": 99,
+        "checked_fused": 99,
+        "alerts": 0,
+        "fused_fallbacks": 0
+      },
+      "loss_fused": 10.560026168823242,
+      "max_relative_difference": 0.0,
+      "worst_parameters": {
+        "tok.weight": 0.0,
+        "pos.weight": 0.0,
+        "blocks.0.ln1.weight": 0.0,
+        "blocks.0.ln1.bias": 0.0,
+        "blocks.0.ln2.weight": 0.0,
+        "blocks.0.ln2.bias": 0.0,
+        "blocks.0.qkv.weight": 0.0,
+        "blocks.0.proj.weight": 0.0
+      },
+      "parameters_compared": 85,
+      "matmuls_in_the_triton_kernel": 99
+    },
+    "criteria": {
+      "1 correctness": true,
+      "2 clean, worst score at most 4": true,
+      "3 same sensitivity as precise mode (within 2x)": true,
+      "4 overhead at most half of precise=True's": false,
+      "5 gradients within 2^-6 of precise=True's (relative to each parameter's largest)": true,
+      "all met": false
+    },
+    "markdown": "##  NVIDIA H100 80GB HBM3\n\n- 1 correctness: met\n- 2 clean, worst score at most 4: met\n- 3 same sensitivity as precise mode (within 2x): met\n- 4 overhead at most half of precise=True's: not met\n- 5 gradients within 2^-6 of precise=True's (relative to each parameter's largest): met\n- all met: not met\n\n- calibration shape, seed 41, Zipf tokens: 990 checks, fused alarms 0 (worst 1.493), precise alarms 0 (worst 1.493), largest gap 0.0\n- wide, 8,192 tokens, seed 43, Zipf tokens: 306 checks, fused alarms 0 (worst 3.381), precise alarms 0 (worst 3.381), largest gap 0.929\n- (4096, 1024, 3072): smallest error caught half the time (share of a typical output): fused 0.005, precise 0.005, default None\n- (4096, 1024, 4096): smallest error caught half the time (share of a typical output): fused 0.005, precise 0.005, default None\n- (4096, 4096, 1024): smallest error caught half the time (share of a typical output): fused 0.03, precise 0.03, default None\n- (4096, 1024, 3072) ms: cuBLAS bf16 0.0485, fused GEMM 0.1001 (64x128x64 w4), check from stats 0.9866, fused total 1.0959, precise total 1.0862\n- (4096, 1024, 4096) ms: cuBLAS bf16 0.0613, fused GEMM 0.1251 (64x128x64 w4), check from stats 0.995, fused total 1.1059, precise total 1.0886\n- (4096, 4096, 1024) ms: cuBLAS bf16 0.0551, fused GEMM 0.114 (128x128x64 w8), check from stats 0.9951, fused total 1.0966, precise total 1.0877\n- (3072, 4096, 1024) ms: cuBLAS bf16 0.0459, fused GEMM 0.0861 (64x128x64 w4), check from stats 0.988, fused total 1.0959, precise total 1.098\n- (4096, 1024, 32000) ms: cuBLAS bf16 0.3877, fused GEMM 0.6759 (64x128x64 w4), check from stats 1.4952, fused total 2.1759, precise total 3.5083\n- (8192, 2048, 8192) ms: cuBLAS bf16 0.3771, fused GEMM 0.6673 (64x128x64 w4), check from stats 1.0414, fused total 1.7052, precise total 2.2623\n- gradients vs precise=True: max relative difference 0; 99 matmuls ran in the Triton kernel, not cuBLAS\n- step overhead (calibration shape, seed 41, Zipf tokens): default check +27.0%, precise=True +363.7%, precise=fused +366.2%\n"
+  },
+  "recompute": {
+    "sizes": {
+      "layers": 8,
+      "width": 768,
+      "heads": 12,
+      "seq": 512,
+      "batch": 8,
+      "vocab": 32000
+    },
+    "models": [
+      {
+        "model": "gpt2",
+        "layers": 8,
+        "clean": {
+          "recomputes_compared": 80,
+          "mismatches": 0,
+          "blocks_that_differed": [],
+          "deterministic": true,
+          "note": null
+        },
+        "coverage": {
+          "blocks_compared": 8,
+          "blocks_skipped_rng": 0,
+          "parameter_share_inside_compared_blocks": 0.6943,
+          "module_types_with_parameters_outside": [
+            "Embedding",
+            "LayerNorm",
+            "Linear"
+          ]
+        },
+        "faults": {
+          "trials": 8,
+          "caught": 8,
+          "right_block": 8,
+          "detail": [
+            {
+              "layer": 0,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 1,
+              "right_block": true
+            },
+            {
+              "layer": 1,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 2,
+              "right_block": true
+            },
+            {
+              "layer": 2,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 3,
+              "right_block": true
+            },
+            {
+              "layer": 3,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 4,
+              "right_block": true
+            },
+            {
+              "layer": 4,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 5,
+              "right_block": true
+            },
+            {
+              "layer": 5,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 6,
+              "right_block": true
+            },
+            {
+              "layer": 6,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 7,
+              "right_block": true
+            },
+            {
+              "layer": 7,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 8,
+              "right_block": true
+            }
+          ]
+        },
+        "gradients_bit_identical": false,
+        "seconds_per_step": {
+          "plain checkpointing": 0.02459,
+          "early stop off only": 0.02461,
+          "full check": 0.02958
+        },
+        "overhead_pct": {
+          "early stop off only": 0.1,
+          "full check": 20.3
+        }
+      },
+      {
+        "model": "llama",
+        "layers": 8,
+        "clean": {
+          "recomputes_compared": 80,
+          "mismatches": 0,
+          "blocks_that_differed": [],
+          "deterministic": true,
+          "note": null
+        },
+        "coverage": {
+          "blocks_compared": 8,
+          "blocks_skipped_rng": 0,
+          "parameter_share_inside_compared_blocks": 0.582,
+          "module_types_with_parameters_outside": [
+            "Embedding",
+            "Linear",
+            "LlamaRMSNorm"
+          ]
+        },
+        "faults": {
+          "trials": 8,
+          "caught": 8,
+          "right_block": 8,
+          "detail": [
+            {
+              "layer": 0,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 1,
+              "right_block": true
+            },
+            {
+              "layer": 1,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 2,
+              "right_block": true
+            },
+            {
+              "layer": 2,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 3,
+              "right_block": true
+            },
+            {
+              "layer": 3,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 4,
+              "right_block": true
+            },
+            {
+              "layer": 4,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 5,
+              "right_block": true
+            },
+            {
+              "layer": 5,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 6,
+              "right_block": true
+            },
+            {
+              "layer": 6,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 7,
+              "right_block": true
+            },
+            {
+              "layer": 7,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 8,
+              "right_block": true
+            }
+          ]
+        },
+        "gradients_bit_identical": false,
+        "seconds_per_step": {
+          "plain checkpointing": 0.02878,
+          "early stop off only": 0.02796,
+          "full check": 0.03339
+        },
+        "overhead_pct": {
+          "early stop off only": -2.8,
+          "full check": 16.0
+        }
+      }
+    ],
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "torch": "2.14.1+cu130",
+    "transformers": "5.20.1",
+    "nondeterminism": {
+      "deterministic algorithms off": {
+        "recomputes_compared": 5,
+        "mismatches": 1,
+        "blocks_that_differed": [
+          "_Scatter"
+        ],
+        "deterministic": false,
+        "note": null
+      },
+      "deterministic algorithms on": {
+        "recomputes_compared": 5,
+        "mismatches": 0,
+        "blocks_that_differed": [],
+        "deterministic": true,
+        "note": null
+      }
+    },
+    "criteria": {
+      "1 clean: no mismatch on any clean step": true,
+      "2 every injected fault caught and its block named": true,
+      "3 gradients bit-identical with and without the check": false,
+      "all met": false
+    },
+    "markdown": "## recompute check NVIDIA H100 80GB HBM3\n\n- 1 clean: no mismatch on any clean step: met\n- 2 every injected fault caught and its block named: met\n- 3 gradients bit-identical with and without the check: not met\n- all met: not met\n- gpt2: 80 clean compares, 0 mismatches; faults 8/8 caught; parameters inside compared blocks 69%; overhead {'early stop off only': 0.1, 'full check': 20.3}\n- llama: 80 clean compares, 0 mismatches; faults 8/8 caught; parameters inside compared blocks 58%; overhead {'early stop off only': -2.8, 'full check': 16.0}\n"
+  },
+  "function_seconds": 74.8,
+  "estimated_cost_usd": 0.09,
+  "cost_note": "function time x $4.39/hour (h100, 4 cores, 32 GiB at Oct 20 prices); image pull and startup are billed too and not in this number",
+  "log": [
+    "   30.4s correctness: done in 30 s",
+    "   36.4s calibration shape, seed 41, Zipf tokens: 990 fused checks, guard {'matmuls_seen': 990, 'checked': 990, 'checked_fp32': 990, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 990, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0}",
+    "   40.9s wide, 8,192 tokens, seed 43, Zipf tokens: 306 fused checks, guard {'matmuls_seen': 306, 'checked': 306, 'checked_fp32': 306, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 306, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0}",
+    "   40.9s same_matmuls: done in 11 s",
+    "   44.2s sensitivity 4096x1024x3072: fused 0.005, precise 0.005, default None",
+    "   44.6s sensitivity 4096x1024x4096: fused 0.005, precise 0.005, default None",
+    "   45.7s sensitivity 4096x4096x1024: fused 0.03, precise 0.03, default None",
+    "   45.7s sensitivity: done in 5 s",
+    "   47.0s timing 4096x1024x3072: cuBLAS 0.0485 ms, fused GEMM 0.1001 ms, check 0.9866 ms, fused total 1.0959 ms, precise total 1.0862 ms",
+    "   47.2s timing 4096x1024x4096: cuBLAS 0.0613 ms, fused GEMM 0.1251 ms, check 0.995 ms, fused total 1.1059 ms, precise total 1.0886 ms",
+    "   47.3s timing 4096x4096x1024: cuBLAS 0.0551 ms, fused GEMM 0.114 ms, check 0.9951 ms, fused total 1.0966 ms, precise total 1.0877 ms",
+    "   47.5s timing 3072x4096x1024: cuBLAS 0.0459 ms, fused GEMM 0.0861 ms, check 0.988 ms, fused total 1.0959 ms, precise total 1.098 ms",
+    "   49.1s timing 4096x1024x32000: cuBLAS 0.3877 ms, fused GEMM 0.6759 ms, check 1.4952 ms, fused total 2.1759 ms, precise total 3.5083 ms",
+    "   49.5s timing 8192x2048x8192: cuBLAS 0.3771 ms, fused GEMM 0.6673 ms, check 1.0414 ms, fused total 1.7052 ms, precise total 2.2623 ms",
+    "   49.5s timing: done in 4 s",
+    "   50.4s overhead unchecked: 0.0281 s/step",
+    "   54.5s overhead default check: 0.0357 s/step",
+    "   56.1s overhead precise=True: 0.1303 s/step",
+    "   57.8s overhead precise=fused: 0.131 s/step",
+    "   57.8s overhead: done in 8 s",
+    "   59.3s gradients: max relative difference 0.0, losses 10.560026168823242 vs 10.560026168823242",
+    "   59.3s gradients: done in 1 s",
+    "   66.6s gpt2: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': 0.1, 'full check': 20.3}",
+    "   69.2s llama: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': -2.8, 'full check': 16.0}",
+    "   73.0s nondeterminism: {\"deterministic algorithms off\": {\"recomputes_compared\": 5, \"mismatches\": 1, \"blocks_that_differed\": [\"_Scatter\"], \"deterministic\": false, \"note\": null}, \"deterministic algorithms on\": {\"recomputes_compared\": 5, \"mismatches\": 0, \"blocks_that_differed\": [], \"deterministic\": true, \"note\": null}}"
+  ],
+  "source": {
+    "sha256": "27b4d3e582919f52bb68f5d318532af2fd05006d69c9af93b4df06f8e8b2510d",
+    "files": 123
+  }
+}

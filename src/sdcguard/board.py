@@ -26,6 +26,7 @@ import html
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from typing import Optional
@@ -77,7 +78,7 @@ def _shape_problem(r: dict) -> Optional[str]:
         return "minutes is not a number"
     for k, v in (r.get("speed") or {}).items():
         if k != "dtype" and not _num_ok(v, -1e9, 1e9):
-            return f"speed.{k} is not a number"
+            return f"speed.{_shown(k)} is not a number"
     for part in ("checked", "wrong", "headroom"):
         for k, v in (r.get(part) or {}).items():
             if part == "checked" and k == "memory_skipped":       # (why the memory test didn't run, or None)
@@ -85,7 +86,7 @@ def _shape_problem(r: dict) -> Optional[str]:
                     return "checked.memory_skipped is malformed"
                 continue
             if not _num_ok(v, -1e18, 1e18):
-                return f"{part}.{k} is not a number"
+                return f"{part}.{_shown(k)} is not a number"
     if r.get("stopped") is not None and not isinstance(r.get("stopped"), dict):
         return "stopped is malformed"
     mm = r.get("math_modes")
@@ -177,12 +178,18 @@ def _consistency_problem(r: dict) -> Optional[str]:
             cap = None
         for m in (mm.get("not_checked") or {}):
             if cap is None or expected(m, cap):
-                return f"says PASS, but the {m} math mode didn't run on a GPU that supports it"
+                return f"says PASS, but the {_shown(m)} math mode didn't run on a GPU that supports it"
     if res == "FAIL" and not sum(wrong.values()) and not r.get("hardware_errors"):
         return "says FAIL, but counts no wrong results"
     if res == "SUSPECT" and r.get("repeatable") is not False and not b.get("disagrees_with_majority") and not odd:
         return "says SUSPECT, but nothing on it disagrees"
     return None
+
+
+def _shown(key) -> str:
+    """A field name from a posted card, safe to repeat in the bot's comment (no mentions, links or long text)."""
+    k = str(key)
+    return k if re.fullmatch(r"[A-Za-z0-9_]{1,32}", k) else "(a field with an unexpected name)"
 
 
 def validate(r: dict) -> Optional[str]:
@@ -198,7 +205,8 @@ def validate(r: dict) -> Optional[str]:
     # Reject unknown card fields while retaining the board's own provenance metadata.
     extra = set(r) - _KEYS - {"_source"}
     if extra:
-        return "malformed card (fields the check doesn't write: " + ", ".join(sorted(map(str, extra)))[:120] + ")"
+        names = ", ".join(sorted({_shown(k) for k in extra}))       # (never a posted name as it was written)
+        return "malformed card (fields the check doesn't write: " + names[:120] + ")"
     if not _all_finite(r):
         return "malformed card (NaN, Infinity, an oversized text or deep nesting)"
     shape = _shape_problem(r)

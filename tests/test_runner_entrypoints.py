@@ -12,6 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 needs_fused = pytest.mark.skipif(not (ROOT / "scripts" / "modal_fused.py").exists(), reason="next branch only")
+needs_gc = pytest.mark.skipif(not (ROOT / "scripts" / "modal_grad_control.py").exists(), reason="next branch only")
 
 
 class _Builder:
@@ -163,3 +164,54 @@ def test_h2h_preflight_no_go_exits_with_an_error(monkeypatch, tmp_path, capsys):
         mod.main("preflight")
     out = capsys.readouterr().out
     assert "NO GO" in out and "[yes] mps_works" in out and "[NO] go:" in out
+
+
+GC_KEY = "3 (follow-up) gradients unchanged by the check, against a deterministic control"
+
+
+def _gc_ok(label, decisions=("UNCHANGED", "UNCHANGED")):
+    d = dict(zip(("gpt2", "llama"), decisions))
+    return {"label": label, "control": {"criteria": {"decisions": d, GC_KEY: all(v == "UNCHANGED" for v in d.values())},
+                                        "markdown": f"## {label}\n"},
+            "function_seconds": 120.0, "estimated_cost_usd": 0.1, "log": [f"{label} line"]}
+
+
+def _gc(monkeypatch, tmp_path, h100, l4, vol=None):
+    mod = _load(monkeypatch, "modal_grad_control", vol or _Builder())
+    monkeypatch.setattr(mod, "LOCAL", tmp_path)
+    monkeypatch.setattr(mod, "_source", lambda: {"sha256": "c" * 64, "files": 1})
+    monkeypatch.setattr(mod, "h100", SimpleNamespace(spawn=lambda run_id: _Call(h100)))
+    monkeypatch.setattr(mod, "l4", SimpleNamespace(spawn=lambda run_id: _Call(l4)))
+    return mod
+
+
+@needs_gc
+def test_grad_control_passes_only_when_both_models_are_unchanged_on_both_gpus(monkeypatch, tmp_path, capsys):
+    mod = _gc(monkeypatch, tmp_path, _gc_ok("h100"), _gc_ok("l4"))
+    mod.main()
+    assert "Both models UNCHANGED on both GPUs. Done." in capsys.readouterr().out
+    assert len(list((tmp_path / "results" / "grad_control").glob("*_log.txt"))) == 2
+
+
+@needs_gc
+def test_grad_control_inconclusive_is_not_a_pass(monkeypatch, tmp_path, capsys):
+    mod = _gc(monkeypatch, tmp_path, _gc_ok("h100"), _gc_ok("l4", ("UNCHANGED", "INCONCLUSIVE")))
+    with pytest.raises(SystemExit):
+        mod.main()
+    assert "NOT UNCHANGED EVERYWHERE" in capsys.readouterr().out
+
+
+@needs_gc
+def test_grad_control_timeout_keeps_what_was_saved_and_fails(monkeypatch, tmp_path, capsys):
+    saved = _gc_ok("l4")
+
+    class Vol:
+        def read_file_into_fileobj(self, path, f):
+            assert path.endswith("/grad_control_l4.json")
+            f.write(json.dumps(saved).encode())
+    mod = _gc(monkeypatch, tmp_path, _gc_ok("h100"), RuntimeError("FunctionTimeoutError"), vol=Vol())
+    with pytest.raises(SystemExit):
+        mod.main()
+    l4 = json.loads(next((tmp_path / "results" / "grad_control").glob("l4_*.json")).read_text())
+    assert l4["partial"] is True and "FunctionTimeoutError" in l4["error"]
+    assert "NOT UNCHANGED EVERYWHERE" in capsys.readouterr().out

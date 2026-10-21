@@ -8,7 +8,8 @@ them becomes most of the cost. Here:
                               the output C, and plain/signed sums and the largest |value| of every
                               block of each row of B (and of the bias)
                    _compare   expected = alpha * A @ (block sums of B) + beta * (bias sums),
-                              |a_row|, |checksum column of B|, z = |expected - actual| / noise,
+                              |a_row|_2 and _1, |checksum column of B|_2 and its largest entry (the
+                              floor for expected's own rounding), z = |expected - actual| / noise,
                               the largest output the inputs allow (|A| @ block maxima of |B|, for
                               judging Inf/NaN outputs: see checksum.py), worst z of every tile
   at the flush     _worst     worst z of every check of the step, and where it is (one launch
@@ -99,6 +100,50 @@ def pipeline_stages(device, default: int):
         return 1 if _major(device) >= 10 else default
     except Exception:  # noqa: BLE001
         return default
+
+
+_ACT: list = [None]         # torch.distributed's AsyncCollectiveTensor class, once looked up (() where there is none)
+
+
+def ready(t):
+    """A tensor whose collective may still be running, waited for. Tensor parallel hands such tensors over: DTensor's
+    to_local(), and the local operands DTensor gives an operator with sharding rules, can be AsyncCollectiveTensors,
+    wrappers that have no memory of their own until their collective is done. PyTorch's to_local() documentation
+    says to call wait() on one: that is the tensor itself (on CUDA the current stream waits for the collective; the
+    host doesn't). Anything else is returned as it is."""
+    if t is None or type(t) is torch.Tensor or type(t) is torch.nn.Parameter:
+        return t
+    act = _ACT[0]
+    if act is None:
+        try:
+            from torch.distributed._functional_collectives import AsyncCollectiveTensor as act
+        except Exception:  # noqa: BLE001  (a PyTorch built without torch.distributed has none)
+            act = ()
+        _ACT[0] = act
+    return t.wait() if act and isinstance(t, act) else t
+
+
+def own_memory(*ts) -> bool:
+    """Whether every tensor given (None skipped) is an ordinary tensor with memory of its own: the only kind a Triton
+    kernel can be handed, since it gets each tensor's address. A tensor subclass with its own dispatch (DTensor, an
+    AsyncCollectiveTensor not waited for, FakeTensor, quantized wrappers) can have none: its data_ptr() is 0, and a
+    kernel handed it reads address 0, an illegal memory access that ends the process (the two-H100 tensor-parallel
+    run on October 21, 2026, before ready() was used). Those go through the PyTorch version of the check instead,
+    which computes through the subclass's own dispatch."""
+    if torch.compiler.is_compiling():   # being traced: the compiler unwraps subclasses itself, and no tensor has an
+        return True                     # address yet (asking for one would break the graph)
+    plain = torch.Tensor.__torch_dispatch__
+    for t in ts:
+        if t is None:
+            continue
+        if getattr(type(t), "__torch_dispatch__", plain) is not plain:
+            return False
+        try:
+            if t.numel() and not t.data_ptr():
+                return False
+        except Exception:  # noqa: BLE001  (a tensor whose address can't be read: not for a kernel either)
+            return False
+    return True
 
 
 def available(C: torch.Tensor) -> bool:
@@ -199,11 +244,13 @@ def _probe(device: torch.device, dtype: torch.dtype):
 
 
 def supports(A: torch.Tensor, B: torch.Tensor, C: torch.Tensor, bias, beta: float, block: int = 128) -> bool:
-    """No bias, or a bias vector of length n; blocks up to 128 columns. Anything else (and empty
-    matmuls): plain check."""
+    """No bias, or a bias vector of length n; blocks up to 128 columns; tensors with memory of their own
+    (own_memory). Anything else (and empty matmuls): plain check."""
     if not 1 <= block <= 128 or C.numel() == 0 or A.shape[-1] == 0:
         return False
     if A.dim() not in (2, 3) or B.dim() not in (2, 3):
+        return False
+    if not own_memory(A, B, C, bias if beta != 0 else None):
         return False
     return bias is None or beta == 0 or (bias.numel() == C.shape[-1] and bias.dim() == 1)
 
@@ -331,9 +378,10 @@ if HAVE_TRITON:
     # Memory layout of a check's work buffer W (fp32), rows of JS = J rounded up to 16 entries so
     # loads can be wide: R (outputs' block sums, nb*m rows of JS) | Q (sums of squares, nb*m*nblk) |
     # L1 (sums of |outputs|, nb*m*nblk) | B2 (B's block sums, bB*kb rows of JS, row k = bias) |
-    # BQ (sums of squares of B2 over each tile of BR rows of B, bB*nkb rows of JS) | MX (largest |B|
-    # per tile of BR rows and block, bB*(nkb+1)*nblk, row nkb = bias). On sm80+ in bf16, B2 also
-    # goes to P16 as three bf16 parts (hi, mid, lo), each bB*kb rows of JS, `pst` apart.
+    # BQ (sums of squares of B2 over each tile of BR rows of B, bB*nkb rows of JS) | BM2 (largest |B2|
+    # over each tile of BR rows, bB*nkb rows of JS) | MX (largest |B| per tile of BR rows and block,
+    # bB*(nkb+1)*nblk, row nkb = bias). On sm80+ in bf16, B2 also goes to P16 as three bf16 parts (hi,
+    # mid, lo), each bB*kb rows of JS, `pst` apart.
 
     @triton.jit
     def _stage_c_part(pid, C_ptr, S_ptr, W_ptr, m, n, bs, nblk, rem, s_full, s_last, s_cb, s_cm, s_cn,
@@ -378,7 +426,7 @@ if HAVE_TRITON:
 
     @triton.jit
     def _stage_b_part(pid, B_ptr, bias_ptr, S_ptr, W_ptr, P16_ptr, n, k, kb, bs, nblk, rem, s_full, s_last,
-                      s_bb, s_bk, s_bn, s_bias, has_bias, b2_off, bq_off, mx_off, JS, pst,
+                      s_bb, s_bk, s_bn, s_bias, has_bias, b2_off, bq_off, b2m_off, mx_off, JS, pst,
                       BR: tl.constexpr, BW: tl.constexpr, NATIVE: tl.constexpr):
         jb = pid % nblk
         t = pid // nblk
@@ -413,10 +461,15 @@ if HAVE_TRITON:
             _bf16_parts(P16_ptr + o + 1, pst, s_sum, kmask)
         nkb = (k + BR - 1) // BR
         if tk * BR < k:
-            # sums of squares of this tile's block sums (B's rows only), for |checksum column of B|
+            # sums of squares and largest |values| of this tile's block sums (B's rows only), for
+            # |checksum column of B|_2 and its largest entry (NaN counts as Inf)
             q = W_ptr + bq_off + (bb * nkb + tk) * JS + 2 * jb
             tl.store(q, tl.sum(tl.where(in_k, p_sum * p_sum, 0.0), axis=0))
             tl.store(q + 1, tl.sum(tl.where(in_k, s_sum * s_sum, 0.0), axis=0))
+            q = W_ptr + b2m_off + (bb * nkb + tk) * JS + 2 * jb
+            tl.store(q, tl.max(tl.where(in_k, tl.where(p_sum == p_sum, tl.abs(p_sum), float("inf")), 0.0), axis=0))
+            tl.store(q + 1, tl.max(tl.where(in_k, tl.where(s_sum == s_sum, tl.abs(s_sum), float("inf")), 0.0),
+                                   axis=0))
         if jb == nblk - 1:
             rows = (bb * kb + rk) * JS
             _zero_pad(W_ptr + b2_off + rows, 2 * nblk, JS, kmask)
@@ -425,6 +478,8 @@ if HAVE_TRITON:
                     _zero_pad(P16_ptr + i * pst + rows, 2 * nblk, JS, kmask)
             if tk * BR < k:
                 qrow = W_ptr + bq_off + (bb * nkb + tk) * JS + tl.arange(0, 1)
+                _zero_pad(qrow, 2 * nblk, JS, tl.arange(0, 1) == 0)
+                qrow = W_ptr + b2m_off + (bb * nkb + tk) * JS + tl.arange(0, 1)
                 _zero_pad(qrow, 2 * nblk, JS, tl.arange(0, 1) == 0)
         # Largest |value| of this tile of B in this block (NaN counts as Inf), and of the bias:
         # rows 0..nkb-1 of the maxima are B's tiles of BR rows, row nkb is the bias.
@@ -442,8 +497,8 @@ if HAVE_TRITON:
     # rows of JS) are left to Triton to specialize: a multiple of 16 lets it read 16 bytes at a time.
     @triton.jit(do_not_specialize=["kb", "nblk", "rem", "s_bias", "n_c", "q_off", "l1_off", "mx_off"])
     def _stage(C_ptr, B_ptr, bias_ptr, S_ptr, W_ptr, P16_ptr, m, n, k, kb, bs, nblk, rem, s_full, s_last,
-               s_cb, s_cm, s_cn, s_bb, s_bk, s_bn, s_bias, has_bias, n_c, q_off, l1_off, b2_off, bq_off, mx_off,
-               JS, pst, BR: tl.constexpr, BW: tl.constexpr, NATIVE: tl.constexpr):
+               s_cb, s_cm, s_cn, s_bb, s_bk, s_bn, s_bias, has_bias, n_c, q_off, l1_off, b2_off, bq_off, b2m_off,
+               mx_off, JS, pst, BR: tl.constexpr, BW: tl.constexpr, NATIVE: tl.constexpr):
         """Programs [0, n_c): sums of C's blocks. The rest: block sums of B (and the bias)."""
         pid = tl.program_id(0)
         if pid < n_c:
@@ -451,27 +506,30 @@ if HAVE_TRITON:
                           q_off, l1_off, JS, BR, BW)
         else:
             _stage_b_part(pid - n_c, B_ptr, bias_ptr, S_ptr, W_ptr, P16_ptr, n, k, kb, bs, nblk, rem, s_full,
-                          s_last, s_bb, s_bk, s_bn, s_bias, has_bias, b2_off, bq_off, mx_off, JS, pst,
+                          s_last, s_bb, s_bk, s_bn, s_bias, has_bias, b2_off, bq_off, b2m_off, mx_off, JS, pst,
                           BR, BW, NATIVE)
 
     @triton.jit
     def _accum(A_ptr, W_ptr, P16_ptr, bi, rm, rj, mmask, jmask, k_lo, k_hi, k, nblk, s_ab, s_am, s_ak, b_step,
-               bq_step, b2_off, bq_off, mx_off, mx_step, JS, pst, BM: tl.constexpr, BK: tl.constexpr,
+               bq_step, b2_off, bq_off, b2m_off, mx_off, mx_step, JS, pst, BM: tl.constexpr, BK: tl.constexpr,
                BJ: tl.constexpr, BR: tl.constexpr, PREC: tl.constexpr, NATIVE: tl.constexpr,
                EMULATE: tl.constexpr):
         """Rows k_lo..k_hi-1 (k_lo a multiple of BK) of the sum: A @ (block sums of B), |a_row|^2,
-        |a_row|_1, |checksum column|^2, and the largest |B| per block."""
+        |a_row|_1, |checksum column|^2, the largest |B| per block and the largest |entry| of each checksum
+        column."""
         nkb = (k + BR - 1) // BR
         a_base = A_ptr + bi * s_ab
         b_base = W_ptr + b2_off + bi * b_step
         p_base = P16_ptr + bi * b_step
         q_base = W_ptr + bq_off + bi * bq_step
+        m_base = W_ptr + b2m_off + bi * bq_step
         x_base = W_ptr + mx_off + bi * mx_step
         acc = tl.zeros((BM, BJ), dtype=tl.float32)
         asq = tl.zeros((BM,), dtype=tl.float32)
         asum = tl.zeros((BM,), dtype=tl.float32)
         bsq = tl.zeros((BJ,), dtype=tl.float32)
         bmax = tl.zeros((BJ,), dtype=tl.float32)
+        b2m = tl.zeros((BJ,), dtype=tl.float32)
         for k0 in range(k_lo, k_hi, BK):
             k0 = tl.multiple_of(k0, BK)
             rk = k0 + tl.arange(0, BK).to(tl.int64)
@@ -504,14 +562,16 @@ if HAVE_TRITON:
             rt = k0 // BR + tl.arange(0, BK // BR)
             bsq += tl.sum(tl.load(q_base + rt[:, None] * JS + rj[None, :],
                                   mask=(rt < nkb)[:, None] & (rj < JS)[None, :], other=0.0), axis=0)
+            b2m = tl.maximum(b2m, tl.max(tl.load(m_base + rt[:, None] * JS + rj[None, :],
+                                                 mask=(rt < nkb)[:, None] & (rj < JS)[None, :], other=0.0), axis=0))
             xm = tl.load(x_base + rt[:, None] * nblk + (rj // 2)[None, :],
                          mask=(rt < nkb)[:, None] & jmask[None, :], other=0.0)
             bmax = tl.maximum(bmax, tl.max(xm, axis=0))
-        return acc, asq, asum, bsq, bmax
+        return acc, asq, asum, bsq, bmax, b2m
 
     @triton.jit
-    def _judge(acc, asq, asum, bsq, bmax, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs,
-               rem, b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor,
+    def _judge(acc, asq, asum, bsq, bmax, b2m, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs,
+               rem, b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor, l1c,
                half_tiny, out_max, zt, n2, BM: tl.constexpr, BJ: tl.constexpr, BR: tl.constexpr):
         """z of every checksum in the tile; stores the worst one, its noise and where it is."""
         nkb = (k + BR - 1) // BR
@@ -529,9 +589,13 @@ if HAVE_TRITON:
         actual = tl.load(W_ptr + rrow[:, None] * JS + rj[None, :], mask=mmask[:, None] & (rj < JS)[None, :],
                          other=0.0)
         sq = tl.load(W_ptr + q_off + rrow[:, None] * nblk + (rj // 2)[None, :], mask=both, other=0.0)
-        # fp32 rounding of `expected` (matters when outputs nearly cancel). If |a_row| or the
-        # checksum column is too large to square in fp32, bound it with the largest output instead.
-        floor_c = 1e-5 * tl.abs(alpha) * tl.sqrt(asq)[:, None] * tl.sqrt(bsq)[None, :]
+        # fp32 rounding of `expected` (matters when outputs nearly cancel): the smaller of 1e-5 x |a_row|_2 x
+        # |checksum column|_2 and l1c x |a_row|_1 x its largest entry (checksum._zscores explains). If both are
+        # too large for fp32, bound it with the largest output instead.
+        f_l2 = 1e-5 * tl.abs(alpha) * tl.sqrt(asq)[:, None] * tl.sqrt(bsq)[None, :]
+        f_l1 = l1c * tl.abs(alpha) * asum[:, None] * b2m[None, :]
+        floor_c = tl.minimum(tl.where(f_l2 < float("inf"), f_l2, float("inf")),
+                             tl.where(f_l1 < float("inf"), f_l1, float("inf")))
         floor_c = tl.where(floor_c < float("inf"), floor_c, 1e-5 * 128.0 * lim)
         # tiny fp16 outputs round on a fixed grid: half a subnormal step each (checksum.py explains)
         wblk = tl.where(((rj // 2) == nblk - 1) & (rem > 0), rem, bs).to(tl.float32)
@@ -589,22 +653,22 @@ if HAVE_TRITON:
     @triton.jit(do_not_specialize=["p_off", "nblk", "bs", "rem", "q_off", "l1_off", "mx_off", "mx_step",
                                    "ntm", "ntj", "n2"])
     def _compare(A_ptr, W_ptr, P16_ptr, P_ptr, p_off, m, k, nblk, bs, rem, s_ab, s_am, s_ak, b_step, bq_step,
-                 q_off, l1_off, b2_off, bias_off, bq_off, mx_off, mx_step, JS, pst, has_bias, alpha, beta, u, abs_floor,
-                 half_tiny, out_max, zt, ntm, ntj, n2, BM: tl.constexpr, BK: tl.constexpr, BJ: tl.constexpr,
-                 BR: tl.constexpr, PREC: tl.constexpr, NATIVE: tl.constexpr, EMULATE: tl.constexpr):
+                 q_off, l1_off, b2_off, bias_off, bq_off, b2m_off, mx_off, mx_step, JS, pst, has_bias, alpha, beta, u,
+                 abs_floor, l1c, half_tiny, out_max, zt, ntm, ntj, n2, BM: tl.constexpr, BK: tl.constexpr,
+                 BJ: tl.constexpr, BR: tl.constexpr, PREC: tl.constexpr, NATIVE: tl.constexpr, EMULATE: tl.constexpr):
         """One program per tile of BM rows x BJ checksums: the whole sum, then the judgement."""
         pid = tl.program_id(0)
         bi, rm, rj, mmask, jmask = _tile(pid, m, nblk, ntm, ntj, BM, BJ)
-        acc, asq, asum, bsq, bmax = _accum(A_ptr, W_ptr, P16_ptr, bi, rm, rj, mmask, jmask, 0, k, k, nblk, s_ab,
-                                           s_am, s_ak, b_step, bq_step, b2_off, bq_off, mx_off, mx_step, JS, pst,
-                                           BM, BK, BJ, BR, PREC, NATIVE, EMULATE)
-        _judge(acc, asq, asum, bsq, bmax, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs, rem,
-               b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor, half_tiny,
-               out_max, zt, n2, BM, BJ, BR)
+        acc, asq, asum, bsq, bmax, b2m = _accum(A_ptr, W_ptr, P16_ptr, bi, rm, rj, mmask, jmask, 0, k, k, nblk,
+                                                s_ab, s_am, s_ak, b_step, bq_step, b2_off, bq_off, b2m_off, mx_off,
+                                                mx_step, JS, pst, BM, BK, BJ, BR, PREC, NATIVE, EMULATE)
+        _judge(acc, asq, asum, bsq, bmax, b2m, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs,
+               rem, b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor, l1c,
+               half_tiny, out_max, zt, n2, BM, BJ, BR)
 
     @triton.jit(do_not_specialize=["nblk", "mx_off", "mx_step", "ntm", "ntj", "steps", "splits"])
     def _compare_part(A_ptr, W_ptr, P16_ptr, X_ptr, m, k, nblk, s_ab, s_am, s_ak, b_step, bq_step, b2_off, bq_off,
-                      mx_off, mx_step, JS, pst, ntm, ntj, steps, splits, BM: tl.constexpr, BK: tl.constexpr,
+                      b2m_off, mx_off, mx_step, JS, pst, ntm, ntj, steps, splits, BM: tl.constexpr, BK: tl.constexpr,
                       BJ: tl.constexpr, BR: tl.constexpr, PREC: tl.constexpr, NATIVE: tl.constexpr,
                       EMULATE: tl.constexpr):
         """Matmuls that are short and deep (weight gradients: few rows, a long sum) leave most of
@@ -616,10 +680,10 @@ if HAVE_TRITON:
         bi, rm, rj, mmask, jmask = _tile(tile, m, nblk, ntm, ntj, BM, BJ)
         k_lo = sp * steps * BK
         k_hi = tl.minimum(k_lo + steps * BK, k)
-        acc, asq, asum, bsq, bmax = _accum(A_ptr, W_ptr, P16_ptr, bi, rm, rj, mmask, jmask, k_lo, k_hi, k, nblk,
-                                           s_ab, s_am, s_ak, b_step, bq_step, b2_off, bq_off, mx_off, mx_step, JS,
-                                           pst, BM, BK, BJ, BR, PREC, NATIVE, EMULATE)
-        o = X_ptr + pid.to(tl.int64) * (BM * BJ + 2 * BM + 2 * BJ)
+        acc, asq, asum, bsq, bmax, b2m = _accum(A_ptr, W_ptr, P16_ptr, bi, rm, rj, mmask, jmask, k_lo, k_hi, k,
+                                                nblk, s_ab, s_am, s_ak, b_step, bq_step, b2_off, bq_off, b2m_off,
+                                                mx_off, mx_step, JS, pst, BM, BK, BJ, BR, PREC, NATIVE, EMULATE)
+        o = X_ptr + pid.to(tl.int64) * (BM * BJ + 2 * BM + 3 * BJ)
         i = tl.arange(0, BM)
         j = tl.arange(0, BJ)
         tl.store(o + i[:, None] * BJ + j[None, :], acc)
@@ -627,11 +691,12 @@ if HAVE_TRITON:
         tl.store(o + BM * BJ + BM + i, asum)
         tl.store(o + BM * BJ + 2 * BM + j, bsq)
         tl.store(o + BM * BJ + 2 * BM + BJ + j, bmax)
+        tl.store(o + BM * BJ + 2 * BM + 2 * BJ + j, b2m)
 
     @triton.jit(do_not_specialize=["p_off", "m", "k", "nblk", "bs", "rem", "q_off", "l1_off", "mx_off", "mx_step",
                                    "ntm", "ntj", "n2", "splits"])
     def _finish(X_ptr, W_ptr, P_ptr, p_off, m, k, nblk, bs, rem, b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS,
-                has_bias, alpha, beta, u, abs_floor, half_tiny, out_max, zt, ntm, ntj, n2, splits,
+                has_bias, alpha, beta, u, abs_floor, l1c, half_tiny, out_max, zt, ntm, ntj, n2, splits,
                 BM: tl.constexpr, BJ: tl.constexpr, BR: tl.constexpr):
         """Adds up the parts of every tile, then the judgement."""
         pid = tl.program_id(0)
@@ -643,16 +708,18 @@ if HAVE_TRITON:
         asum = tl.zeros((BM,), dtype=tl.float32)
         bsq = tl.zeros((BJ,), dtype=tl.float32)
         bmax = tl.zeros((BJ,), dtype=tl.float32)
+        b2m = tl.zeros((BJ,), dtype=tl.float32)
         for sp in range(0, splits):
-            o = X_ptr + (pid.to(tl.int64) * splits + sp) * (BM * BJ + 2 * BM + 2 * BJ)
+            o = X_ptr + (pid.to(tl.int64) * splits + sp) * (BM * BJ + 2 * BM + 3 * BJ)
             acc += tl.load(o + i[:, None] * BJ + j[None, :])
             asq += tl.load(o + BM * BJ + i)
             asum += tl.load(o + BM * BJ + BM + i)
             bsq += tl.load(o + BM * BJ + 2 * BM + j)
             bmax = tl.maximum(bmax, tl.load(o + BM * BJ + 2 * BM + BJ + j))
-        _judge(acc, asq, asum, bsq, bmax, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs, rem,
-               b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor, half_tiny,
-               out_max, zt, n2, BM, BJ, BR)
+            b2m = tl.maximum(b2m, tl.load(o + BM * BJ + 2 * BM + 2 * BJ + j))
+        _judge(acc, asq, asum, bsq, bmax, b2m, W_ptr, P_ptr, p_off, pid, bi, rm, rj, mmask, jmask, m, k, nblk, bs,
+               rem, b_step, q_off, l1_off, bias_off, mx_off, mx_step, JS, has_bias, alpha, beta, u, abs_floor, l1c,
+               half_tiny, out_max, zt, n2, BM, BJ, BR)
 
     @triton.jit
     def _worst(T_ptr, OUT_ptr, CH: tl.constexpr):
@@ -718,6 +785,7 @@ class Group:
 
     def add(self, A, B, C, bias, alpha: float, beta: float) -> int:
         """Check C = beta*bias + alpha*(A @ B): queue the GPU work now. Returns the check's index."""
+        from .checksum import l1_floor_coef
         if A.dtype != self.dtype:
             A = A.to(self.dtype)
         if B.dtype != self.dtype:
@@ -738,7 +806,8 @@ class Group:
         b2_off = _round16(l1_off + nb * m * nblk)
         bq_off = b2_off + bB * kb * JS
         bias_off = b2_off + k * JS                      # the bias is row k of B2
-        mx_off = bq_off + bB * nkb * JS
+        b2m_off = bq_off + bB * nkb * JS
+        mx_off = b2m_off + bB * nkb * JS
         W = torch.empty(mx_off + bB * (nkb + 1) * nblk, device=self.device, dtype=torch.float32)
         prec = _precision(self.device)
         # bf16 tensor cores (sm80+). Tests can run the same math in Triton's CPU interpreter,
@@ -760,23 +829,24 @@ class Group:
             _stage[(n_c + n_b,)](
                 C, B, bias if hb else B, self._signs(), W, P16, m, n, k, kb, bs, nblk, rem,
                 _sign_offset(bs), _sign_offset(rem) if rem else 0, c[1], c[4], c[5], b[1], b[4], b[5],
-                bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, mx_off, JS, pst, BR=BR,
+                bias.stride(0) if hb else 0, hb, n_c, q_off, l1_off, b2_off, bq_off, b2m_off, mx_off, JS, pst, BR=BR,
                 BW=128 if bs > 64 else 64, NATIVE=native)
             off = self._space(4 * n2)
             bk, stages, warps = _cfg(bj, self.device)
             s_ab = a[1] if a[0] > 1 else 0
             splits, steps = _splits(n2, k, bk, self.device)
-            judge = (hb, float(alpha), float(beta), self.u, float(self.abs_floor), self.half_tiny, self.out_max,
-                     float(self.z), ntm, ntj, n2)
+            judge = (hb, float(alpha), float(beta), self.u, float(self.abs_floor), l1_floor_coef(k), self.half_tiny,
+                     self.out_max, float(self.z), ntm, ntj, n2)
             if splits == 1:
                 _compare[(n2,)](
                     A, W, P16, self._buf, off, m, k, nblk, bs, rem, s_ab, a[4], a[5], b_step, bq_step, q_off,
-                    l1_off, b2_off, bias_off, bq_off, mx_off, mx_step, JS, pst, *judge, BM=BM, BK=bk, BJ=bj, BR=BR,
-                    PREC=prec, NATIVE=native, EMULATE=emulate, num_warps=warps, num_stages=stages)
+                    l1_off, b2_off, bias_off, bq_off, b2m_off, mx_off, mx_step, JS, pst, *judge, BM=BM, BK=bk, BJ=bj,
+                    BR=BR, PREC=prec, NATIVE=native, EMULATE=emulate, num_warps=warps, num_stages=stages)
             else:
-                X = torch.empty(n2 * splits * (BM * bj + 2 * BM + 2 * bj), device=self.device, dtype=torch.float32)
+                X = torch.empty(n2 * splits * (BM * bj + 2 * BM + 3 * bj), device=self.device, dtype=torch.float32)
                 _compare_part[(n2 * splits,)](
-                    A, W, P16, X, m, k, nblk, s_ab, a[4], a[5], b_step, bq_step, b2_off, bq_off, mx_off, mx_step,
+                    A, W, P16, X, m, k, nblk, s_ab, a[4], a[5], b_step, bq_step, b2_off, bq_off, b2m_off, mx_off,
+                    mx_step,
                     JS, pst, ntm, ntj, steps, splits, BM=BM, BK=bk, BJ=bj, BR=BR, PREC=prec, NATIVE=native,
                     EMULATE=emulate, num_warps=warps, num_stages=stages)
                 _finish[(n2,)](

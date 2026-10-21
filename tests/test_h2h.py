@@ -88,7 +88,7 @@ def test_burn_parsing():
 
 
 def test_check_parsing(tmp_path):
-    card = json.loads((ROOT / "docs" / "board" / "seed" / "modal_h100_a_45b2fbe6.json").read_text())
+    card = json.loads((ROOT / "tests" / "fixtures" / "check_card_h100.json").read_text())   # a real H100 card
     c = h.parse_check("progress line\n" + json.dumps(card) + "\n")
     assert c["result"] == "PASS" and h.tool_flag("sdcguard_check", c) == "passed"
     bad = dict(card, result="FAIL", wrong=dict(card["wrong"], math_modes=24))
@@ -227,7 +227,7 @@ def test_run_all_with_stand_in_tools(tmp_path, monkeypatch):
     _script(repo / "experiments" / "mps_unwritten.py", share + "import json\n"
             f"R = {json.dumps({k: runs[k] for k in ('100', '40', '75', '14')})!r}\n"
             "print(json.dumps(json.loads(R)[S]))\n")
-    card = json.loads((ROOT / "docs" / "board" / "seed" / "modal_h100_a_45b2fbe6.json").read_text())
+    card = json.loads((ROOT / "tests" / "fixtures" / "check_card_h100.json").read_text())   # a real H100 card
     bad = dict(card, result="FAIL", wrong=dict(card["wrong"], math_modes=24))
     (pkg / "sdcguard" / "__init__.py").write_text("")
     (pkg / "sdcguard" / "check.py").write_text(share + "import json\n"

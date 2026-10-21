@@ -10,7 +10,7 @@ Checking and screening (command line):
   sdcguard check    is this GPU computing correctly, and at full speed? (five minutes, a shareable card)
   sdcguard screen   check GPUs with a real workload and keep replayable evidence
 """
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # Imported on first use, so commands that don't need PyTorch (`sdcguard nhc --cached`, `sdcguard board`)
 # start instantly.

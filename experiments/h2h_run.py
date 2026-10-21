@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -401,6 +402,27 @@ def _tail(rec: dict) -> dict:
     return r
 
 
+
+def _kill_matching(pattern: str) -> None:
+    """pkill -9 -f <pattern>; where pkill isn't installed (slim images have no procps), the same through /proc."""
+    if shutil.which("pkill"):
+        subprocess.run(["pkill", "-9", "-f", pattern], capture_output=True)
+        return
+    me = os.getpid()
+    for pid in os.listdir("/proc") if os.path.isdir("/proc") else ():
+        if not pid.isdigit() or int(pid) == me:
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if pattern in cmd:
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except OSError:
+                pass
+
 class MPS:
     """One MPS control daemon in this container; restarted with the share before every tool."""
 
@@ -416,7 +438,7 @@ class MPS:
         except (subprocess.TimeoutExpired, OSError):
             pass
         time.sleep(MPS_SETTLE[0])
-        subprocess.run(["pkill", "-9", "-f", "nvidia-cuda-mps"], capture_output=True)
+        _kill_matching("nvidia-cuda-mps")
         time.sleep(MPS_SETTLE[1])
 
     def start(self, share: int) -> bool:

@@ -90,11 +90,12 @@ if HAVE_TRITON:
 
     # m (rows: tokens in the batch) changes with every batch, so nothing may depend on its value: then the
     # variants compiled by warm() at load time cover every batch size (no compile while serving)
-    @triton.jit(do_not_specialize=["slot", "jbp", "nb", "rem", "s_last", "m", "sc"])
-    def _check(X, Y, E, S, SCALE, B2N, BMAX, BMB, BSUM, STATE, slot, sc, m, k, n, nb, bs, rem, s_full, s_last,
-               sxm, sxk, sym, syn, es, two_nb, jbp, u, h, abs_floor, zt, lim_a, lim_big,
+    @triton.jit(do_not_specialize=["slot", "jbp", "nb", "rem", "s_last", "m", "sc", "cst", "cw", "ctag", "cfo", "ncap"])
+    def _check(X, Y, E, S, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, n, nb, bs, rem, s_full, s_last,
+               sxm, sxk, sym, syn, es, two_nb, jbp, u, h, abs_floor, l1c, zt, lim_a, lim_big,
+               CAPM, CAPD, cst, cw, ctag, cfo, ncap,
                BM: tl.constexpr, BKX: tl.constexpr, CB: tl.constexpr, BW: tl.constexpr, NPARTS: tl.constexpr,
-               COUNTS: tl.constexpr):
+               COUNTS: tl.constexpr, CAPTURE: tl.constexpr):
         pm = tl.program_id(0)
         pj = tl.program_id(1)
         rm = pm.to(tl.int64) * BM + tl.arange(0, BM)
@@ -149,10 +150,17 @@ if HAVE_TRITON:
             bound = asum[:, None] * tl.load(BMAX + jb, mask=bmask, other=0.0)[None, :] + \
                 tl.load(BMB + jb, mask=bmask, other=0.0)[None, :]
             noise = tl.sqrt(sq) * u
+            # fp32 rounding of `expected`: the smaller of two bounds of it (checksum._zscores explains)
             fl0 = xn[:, None] * tl.load(B2N + 2 * jb, mask=bmask, other=0.0)[None, :] * 1e-5
             fl1 = xn[:, None] * tl.load(B2N + 2 * jb + 1, mask=bmask, other=0.0)[None, :] * 1e-5
-            fl0 = tl.where(tl.abs(fl0) < float("inf"), fl0, bound * (1e-5 * 128))
-            fl1 = tl.where(tl.abs(fl1) < float("inf"), fl1, bound * (1e-5 * 128))
+            hl0 = asum[:, None] * tl.load(B2M + 2 * jb, mask=bmask, other=0.0)[None, :] * l1c
+            hl1 = asum[:, None] * tl.load(B2M + 2 * jb + 1, mask=bmask, other=0.0)[None, :] * l1c
+            fl0 = tl.minimum(tl.where(tl.abs(fl0) < float("inf"), fl0, float("inf")),
+                             tl.where(tl.abs(hl0) < float("inf"), hl0, float("inf")))
+            fl1 = tl.minimum(tl.where(tl.abs(fl1) < float("inf"), fl1, float("inf")),
+                             tl.where(tl.abs(hl1) < float("inf"), hl1, float("inf")))
+            fl0 = tl.where(fl0 < float("inf"), fl0, bound * (1e-5 * 128))
+            fl1 = tl.where(fl1 < float("inf"), fl1, bound * (1e-5 * 128))
             wf = wid.to(tl.float32)
             tail = (abs_floor + tl.sqrt(wf) * h)[None, :]
             den0 = (noise + fl0) + tail
@@ -200,7 +208,8 @@ if HAVE_TRITON:
             # worst of this chunk (the plain checksum on ties), its position and noise
             sec = z1 > z0
             zc = tl.where(sec, z1, z0)
-            dc = tl.where(sec, den1, den0)
+            # (NaN where the output's checksum was Inf/NaN, as in serve.check_static_impl)
+            dc = tl.where(sec, tl.where(a_bad1, float("nan"), den1), tl.where(a_bad0, float("nan"), den0))
             rmax, rcol = tl.max(zc, axis=1, return_indices=True)
             mx, r = tl.max(rmax, axis=0, return_indices=True)
             c = tl.sum(tl.where(ri == r, rcol, 0), axis=0)
@@ -220,16 +229,42 @@ if HAVE_TRITON:
             first = (pm == 0) & (pj == 0)
             tl.atomic_add(STATE + slot * sc + 2, tl.where(first, 1, 0).to(tl.int64), mask=first)
             tl.atomic_add(STATE + slot * sc + 3, unk_n.to(tl.int64), mask=unk_n > 0)
+        if CAPTURE:          # (serve.CAPTURE_SLOTS: only a program whose worst row is over the line gets here)
+            if best > zt:
+                taken = tl.atomic_xchg(CAPM + cfo + slot, 1)          # the layer's first row since the last read?
+                if taken == 0:
+                    c = tl.atomic_add(CAPM, 1)                        # a record of its own
+                    if c < ncap:
+                        bi = best_i // 2
+                        crow = bi // nb
+                        cblk = bi % nb
+                        rec = CAPM + 2 + c * 6
+                        tl.store(rec, ctag.to(tl.int64))
+                        tl.store(rec + 1, crow.to(tl.int64))
+                        tl.store(rec + 2, cblk.to(tl.int64))
+                        tl.store(rec + 3, best_i.to(tl.int64))
+                        tl.store(rec + 4, zbits)
+                        tl.store(rec + 5, tl.load(CAPM + 1))
+                        dst = CAPD + c.to(tl.int64) * cst
+                        cwid = tl.where((cblk == nb - 1) & (rem > 0), rem, bs)
+                        yv1 = tl.load(Y + crow * sym + (cblk * bs + w) * syn, mask=w < cwid, other=0.0)
+                        tl.store(dst + w, yv1.to(tl.float32), mask=w < cwid)
+                        for k0 in range(0, k, BKX):
+                            rk = k0 + tl.arange(0, BKX)
+                            xv1 = tl.load(X + crow * sxm + rk * sxk, mask=rk < k, other=0.0)
+                            tl.store(dst + cw + rk, xv1.to(tl.float32), mask=rk < k)
 
 
 def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor,
-          scale: torch.Tensor, b2n: torch.Tensor, bmax: torch.Tensor, bmax_bias: torch.Tensor, bsum: torch.Tensor,
-          wsq: torch.Tensor, width: torch.Tensor, state: torch.Tensor, slot: int, z: float, abs_floor: float,
-          _bm: Optional[int] = None) -> None:
+          scale: torch.Tensor, b2n: torch.Tensor, b2max: torch.Tensor, bmax: torch.Tensor, bmax_bias: torch.Tensor,
+          bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor, state: torch.Tensor, slot: int, z: float,
+          abs_floor: float, _bm: Optional[int] = None, cap_meta: Optional[torch.Tensor] = None,
+          cap_data: Optional[torch.Tensor] = None, cap_w: int = 0, cap_tag: int = 0) -> None:
     """Same arguments and result as serve.check_static_impl (the state row gets the worst z, and with
-    serve.STATE_COLS columns the counts of checks executed and checksums that couldn't be judged)."""
-    from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF
-    from .serve import STATE_COLS
+    serve.STATE_COLS columns the counts of checks executed and checksums that couldn't be judged; with cap_meta
+    and cap_data, a row over the line is captured as serve.CAPTURE_SLOTS describes)."""
+    from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF, l1_floor_coef
+    from .serve import CAP_FLAGS, CAPTURE_SLOTS, STATE_COLS
     counts = state.dim() == 2 and state.shape[1] >= STATE_COLS
     m, n = y2.shape
     if m == 0 or n == 0:     # nothing to check (and not counted as a check, as in the plain check)
@@ -255,14 +290,20 @@ def check(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: to
     BM, BKX, CB, BW, jbp, rows_p, col_p, warps = config(m, k, nb, bs, y2.device, _bm)
     st = _group.pipeline_stages(y2.device, None)          # 1 on Blackwell (_group.pipeline_stages explains)
     stages = {} if st is None else {"num_stages": st}
+    capture = cap_meta is not None and cap_data is not None
+    if capture and not (cap_meta.dtype == torch.int64 and cap_data.dtype == torch.float32 and cap_w >= bs
+                        and cap_data.shape[1] >= cap_w + k and cap_meta.numel() > CAP_FLAGS + slot):
+        raise ValueError("the capture buffer doesn't fit this layer")
     with _group._on(y2.device):
         _check[(rows_p, col_p)](
-            x2, y2, E, _group._sign_table(y2.device), scale, b2n, bmax, bmax_bias, bsum, state, slot,
+            x2, y2, E, _group._sign_table(y2.device), scale, b2n, b2max, bmax, bmax_bias, bsum, state, slot,
             state.stride(0), m, k, n, nb,
             bs, rem, _group._sign_offset(bs), _group._sign_offset(rem) if rem else 0, x2.stride(0), x2.stride(1),
             y2.stride(0), y2.stride(1), E.stride(0), 2 * nb, jbp, float(UNIT_ROUNDOFF[dt]), float(HALF_TINY_STEP[dt]),
-            float(abs_floor), float(z), float(min(DTYPE_MAX[dt], BIG)), float(BIG),
-            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, COUNTS=counts, num_warps=warps, **stages)
+            float(abs_floor), float(l1_floor_coef(k)), float(z), float(min(DTYPE_MAX[dt], BIG)), float(BIG),
+            cap_meta if capture else state, cap_data if capture else E,
+            cap_data.stride(0) if capture else 0, int(cap_w), int(cap_tag), CAP_FLAGS, CAPTURE_SLOTS,
+            BM=BM, BKX=BKX, CB=CB, BW=BW, NPARTS=nparts, COUNTS=counts, CAPTURE=capture, num_warps=warps, **stages)
 
 
 def verified(device: torch.device, dtype: torch.dtype) -> bool:
@@ -299,9 +340,32 @@ def decode(key_i: int, key_d: int, *counts: int):
     return z, int(key_i) & 0xFFFFFFFF, nz
 
 
+def _capture_buffers(device: torch.device, k: int, slots: int = 1):
+    """A capture buffer (serve.CAPTURE_SLOTS) for `slots` layers with inputs up to k long."""
+    from .serve import CAP_FLAGS, CAPTURE_SLOTS
+    return (torch.zeros(CAP_FLAGS + slots, dtype=torch.int64, device=device),
+            torch.zeros(CAPTURE_SLOTS + 1, 128 + k, dtype=torch.float32, device=device))
+
+
+def _captured(cm: torch.Tensor, cd: torch.Tensor, k: int, width_of) -> list:
+    """(record, row of y, row of x) of every row a capture buffer kept (on the CPU)."""
+    from .serve import CAP_FLAGS, CAP_HEAD, CAP_REC, CAPTURE_SLOTS
+    head = cm[:CAP_FLAGS].cpu()
+    n = min(int(head[0]), CAPTURE_SLOTS)
+    recs = head[CAP_HEAD:CAP_FLAGS].view(CAPTURE_SLOTS + 1, CAP_REC)[:n].tolist()
+    data = cd[:n].cpu()
+    return [(r, data[i, :width_of(r[2])], data[i, 128:128 + k]) for i, r in enumerate(recs)]
+
+
+def _same(a: torch.Tensor, b: torch.Tensor) -> bool:
+    """Equal values, NaN where the other has NaN (a NaN's payload may change when it is widened to fp32)."""
+    return a.shape == b.shape and bool(((a == b) | (a.isnan() & b.isnan())).all())
+
+
 def _probe(device: torch.device, dtype: torch.dtype):
     """Clean and corrupted layers: shapes with a partial last block, a bias, one row, narrow layers, and
-    every number of rows per program (1 to 16; the corrupted row lands inside a multi-row tile)."""
+    every number of rows per program (1 to 16; the corrupted row lands inside a multi-row tile). The rows they
+    capture (serve.CAPTURE_SLOTS) must be the same, bit for bit."""
     from .serve import STATE_COLS, LayerChecksums, check_static_impl
     g = torch.Generator().manual_seed(11)
     T = _group._target_programs(device)
@@ -322,10 +386,22 @@ def _probe(device: torch.device, dtype: torch.dtype):
                 yy[r, c] = yy[r, c] + 50.0 if n % 2 else float("nan")
             ref = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=device)
             fast = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=device)
-            check_static_impl(x, yy, *cs.tensors(True), ref, 0, 6.0, 1e-20)
-            check(x, yy, *cs.tensors(True), fast, 0, 6.0, 1e-20, _bm=bm)
+            rcap, fcap = _capture_buffers(device, k), _capture_buffers(device, k)
+            tag = 3 if with_bias else 2
+            check_static_impl(x, yy, *cs.tensors(True), ref, 0, 6.0, 1e-20, *rcap, 128, tag)
+            check(x, yy, *cs.tensors(True), fast, 0, 6.0, 1e-20, _bm=bm, cap_meta=fcap[0], cap_data=fcap[1],
+                  cap_w=128, cap_tag=tag)
             rz, rf, _ = decode(*ref[0, :2].tolist())
             fz, ff, _ = decode(*fast[0, :2].tolist())
+            width_of = (lambda blk, cs=cs: cs.bs if blk < cs.nbf else cs.rem)
+            rc, fc = _captured(*rcap, k, width_of), _captured(*fcap, k, width_of)
+            same = len(rc) == len(fc) == (1 if corrupted else 0) and all(
+                # (tag, row, block and epoch; the scores themselves may differ in their last bits, as above)
+                a[0][:3] == b[0][:3] and a[0][5] == b[0][5] and _same(a[1], b[1]) and _same(a[2], b[2])
+                for a, b in zip(rc, fc))
+            if not same:
+                return False, (f"({m}, {k}, {n}, rows per program {bm}) {'corrupted' if corrupted else 'clean'}: "
+                               f"captured rows differ (fast {[c[0] for c in fc]}, plain {[c[0] for c in rc]})")
             if ref[0, 2:].tolist() != fast[0, 2:].tolist():
                 return False, (f"({m}, {k}, {n}, rows per program {bm}) {'corrupted' if corrupted else 'clean'}: "
                                f"fast counts {fast[0, 2:].tolist()}, plain counts {ref[0, 2:].tolist()}")
@@ -343,8 +419,8 @@ _WARM: set = set()
 
 
 def warm(parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor, scale: torch.Tensor, b2n: torch.Tensor,
-         bmax: torch.Tensor, bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor,
-         k: int, n: int, dtype: torch.dtype) -> None:
+         b2max: torch.Tensor, bmax: torch.Tensor, bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor,
+         width: torch.Tensor, k: int, n: int, dtype: torch.dtype) -> None:
     """Compile the kernel for this layer shape at load time, for every rows-per-program setting config()
     can choose. Only the number of rows changes between batches and nothing depends on its value, so no
     batch size needs a compile while serving (vLLM's JIT monitor flagged those in the round 3 rerun)."""
@@ -358,9 +434,10 @@ def warm(parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor, s
         y = torch.zeros(16, n, device=dev, dtype=dtype)
         from .serve import STATE_COLS
         st = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=dev)    # (the layout the guard's state has)
+        cm, cd = _capture_buffers(dev, k)                                  # (the guard always passes one)
         for bm in (1, 2, 4, 8, 16):
-            check(x, y, parts, pair_full, pair_rem, scale, b2n, bmax, bmax_bias, bsum, wsq, width, st, 0, 6.0, 1e-20,
-                  _bm=bm)
+            check(x, y, parts, pair_full, pair_rem, scale, b2n, b2max, bmax, bmax_bias, bsum, wsq, width, st, 0, 6.0,
+                  1e-20, _bm=bm, cap_meta=cm, cap_data=cd, cap_w=128, cap_tag=2)
     _WARM.add(key)
 
 

@@ -1,0 +1,4 @@
+   15.7s default gpt2: A vs B identical False (89 of 100 differ, max 7.45e-03); A vs C identical False (90 differ, max 7.19e-03); A vs D identical False
+   15.7s default llama: A vs B identical False (63 of 75 differ, max 9.39e-03); A vs C identical False (66 differ, max 9.30e-03); A vs D identical False
+   30.1s deterministic gpt2: A vs B identical True (0 of 100 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED
+   30.1s deterministic llama: A vs B identical True (0 of 75 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED

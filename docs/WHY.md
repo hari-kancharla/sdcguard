@@ -5,7 +5,9 @@ that description. It does not mean sdcguard has independently reproduced another
 Product choices and buyer demand remain hypotheses to test.
 Implementation status below was updated October 20 against the supplied `12e23f5` snapshot and local review
 fixes. The patched candidate then passed the GPU test gate on an L4, an H100 and a B200 on October 20 (code
-fingerprint 74b844ee7ca8, [results](../results/gpu_tests)); the vLLM and sweep gates haven't run on it.
+fingerprint 74b844ee7ca8, [results](../results/gpu_tests)), and later code passed the vLLM gate in real vLLM on
+an H100 the same day (fingerprint bbdb51c58ac0, [results](../results/vllm_oct20)). The 10-GPU `sdcguard check`
+sweep hasn't been rerun since October 18.
 
 ## The problem is documented; our detection rate is not
 

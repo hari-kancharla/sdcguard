@@ -31,11 +31,13 @@ screen's summary.json and any evidence.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import html
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 import time
@@ -288,18 +290,167 @@ def software() -> dict:
         except md.PackageNotFoundError:
             pass
     from . import __version__
-    # what decides which units a "fp32" matmul really runs on: TF32, and (CUDA 12.9 and later) cuBLAS emulation
-    # of FP32/FP64 on lower-precision tensor cores, which environment variables can switch on
-    mm = {"allow_tf32": bool(torch.backends.cuda.matmul.allow_tf32)}
-    fp32p = getattr(torch.backends.cuda.matmul, "fp32_precision", None)
-    if fp32p is not None:
-        mm["fp32_precision"] = str(fp32p)
-    env = {k: v[:40] for k, v in sorted(os.environ.items()) if k.startswith(("CUBLAS_", "CUBLASLT_", "NVIDIA_TF32"))
-           and k != "CUBLAS_WORKSPACE_CONFIG"}
+    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas,
+            "matmul": gemm_settings()}
+
+
+# The PyTorch settings that change which GEMM kernel runs or how it accumulates. Each is read on its own: a
+# setting this PyTorch doesn't have is left out (unknown), never guessed. The *_split_k halves exist from
+# PyTorch 2.10; fp32_precision is PyTorch 2.9's new TF32 API (reading allow_tf32 after it was used raises).
+_GEMM_FLAGS = ("fp32_precision", "allow_tf32", "allow_bf16_reduced_precision_reduction",
+               "allow_bf16_reduced_precision_reduction_split_k", "allow_fp16_reduced_precision_reduction",
+               "allow_fp16_reduced_precision_reduction_split_k", "allow_fp16_accumulation",
+               "prefer_cublaslt_grouped_gemm")
+# environment variables that pick or change GEMM kernels: cuBLAS and cuBLASLt switches (FP32 emulation, TF32
+# override, workspace, logging aside) and PyTorch's BLAS backend choice. They are read when the library starts,
+# so a replay can't set them for itself: they are compared, and the casefile says when they differ
+_GEMM_ENV = ("CUBLAS_", "CUBLASLT_", "NVIDIA_TF32", "TORCH_BLAS_", "TORCH_CUBLAS", "TORCH_ALLOW_TF32",
+             "DISABLE_ADDMM_CUDA_LT", "PYTORCH_TUNABLEOP")
+
+
+def gemm_settings() -> dict:
+    """What decides which units a matmul really runs on and how it sums, as set right now: TF32 (both APIs), the
+    bf16/fp16 reduced-precision and split-K reductions, fp16 accumulation, the preferred BLAS library, the
+    grouped-GEMM backend, and the environment variables that switch cuBLAS kernels (CUDA 12.9 and later can
+    emulate FP32/FP64 on lower-precision tensor cores through them). Recorded with evidence when the checked
+    matmul ran, and applied by `sdcguard replay` so a recomputation runs the same way."""
+    torch = _torch()
+    m = torch.backends.cuda.matmul
+    mm: dict = {}
+    for name in _GEMM_FLAGS:
+        try:
+            v = getattr(m, name)
+        except Exception:  # noqa: BLE001  (not in this PyTorch, or unreadable after the other TF32 API was used)
+            continue
+        mm[name] = str(v) if name == "fp32_precision" else bool(v)
+    if "allow_tf32" not in mm and "fp32_precision" in mm:
+        mm["allow_tf32"] = mm["fp32_precision"] == "tf32"
+    try:   # (reading resolves PyTorch's "default" to the backend it stands for, as the first GEMM would)
+        mm["blas_library"] = str(getattr(torch.backends.cuda.preferred_blas_library(), "name", "")).lower() or None
+    except Exception:  # noqa: BLE001
+        pass
+    try:   # TunableOp picks each GEMM's implementation by timing them: a replay needs the same choice
+        if torch.cuda.is_available():
+            mm["tunableop"] = bool(torch.cuda.tunable.is_enabled())
+    except Exception:  # noqa: BLE001
+        pass
+    # these settings go on the shareable card: short switch values are kept (NVIDIA_TF32_OVERRIDE=0), anything
+    # else (a log file path, a hostname) is recorded only as set
+    env = {k: (v if re.fullmatch(r"[A-Za-z0-9_.,:+-]{1,24}", v) else "<set>") for k, v in sorted(os.environ.items())
+           if k.startswith(_GEMM_ENV) and k != "CUBLAS_WORKSPACE_CONFIG"}
     if env:
         mm["env"] = env
-    return {"sdcguard": __version__, "torch": torch.__version__, "cuda": torch.version.cuda, "cublas": cublas,
-            "matmul": mm}
+    return mm
+
+
+def tf32_of(mm: Optional[dict]) -> Optional[bool]:
+    """Whether fp32 matmuls run on TF32 under these recorded settings (the new API decides once it was used)."""
+    if not isinstance(mm, dict):
+        return None
+    p = mm.get("fp32_precision")
+    if p not in (None, "none"):
+        return p == "tf32"
+    return bool(mm["allow_tf32"]) if "allow_tf32" in mm else None
+
+
+def gemm_effective(mm: Optional[dict]) -> Optional[dict]:
+    """The recorded GEMM settings as what they do (TF32 on or off, each reduction mode, ...), so two records
+    written through different APIs compare equal when the matmuls ran the same way. None when nothing was
+    recorded; a setting one PyTorch didn't have is left out."""
+    if not isinstance(mm, dict) or not mm:
+        return None
+    out = {"tf32": tf32_of(mm)}
+    for kind in ("bf16", "fp16"):
+        key = f"allow_{kind}_reduced_precision_reduction"
+        if key in mm:
+            out[f"{kind}_reduced_precision_reduction"] = bool(mm[key])
+            if not mm[key]:
+                out[f"{kind}_split_k"] = bool(mm.get(key + "_split_k", True))
+    for key in ("allow_fp16_accumulation", "prefer_cublaslt_grouped_gemm", "blas_library", "tunableop"):
+        if key in mm:
+            out[key] = mm[key]
+    out["env"] = dict(mm.get("env") or {})
+    return out
+
+
+@contextlib.contextmanager
+def gemm_settings_applied(recorded: Optional[dict]):
+    """Run with the GEMM settings an evidence file recorded, as far as a process can set them for itself (the
+    flags; not the environment variables, which cuBLAS reads when it starts). Yields what was applied; puts every
+    setting back afterwards. Settings this PyTorch doesn't have are skipped."""
+    torch = _torch()
+    m = torch.backends.cuda.matmul
+    undo, applied = [], {}
+
+    def put(name, value, setter, getter):
+        try:
+            before = getter()
+            if before == value:
+                applied[name] = value
+                return
+            setter(value)
+            undo.append((setter, before))
+            applied[name] = value
+        except Exception:  # noqa: BLE001
+            pass
+
+    rec = recorded if isinstance(recorded, dict) else {}
+    try:
+        want = tf32_of(rec)
+        if want is not None and tf32_of(gemm_settings()) != want:
+            # either API changes both readings (the legacy flag sets fp32_precision): put back both as they were
+            before = {k: v for k, v in gemm_settings().items() if k in ("fp32_precision", "allow_tf32")}
+
+            def restore_tf32(before=before):
+                if "allow_tf32" in before:
+                    try:
+                        m.allow_tf32 = before["allow_tf32"]
+                    except Exception:  # noqa: BLE001
+                        pass
+                if "fp32_precision" in before:
+                    m.fp32_precision = before["fp32_precision"]
+            try:
+                if "fp32_precision" in before:
+                    m.fp32_precision = "tf32" if want else "ieee"
+                else:
+                    m.allow_tf32 = want
+                undo.append((lambda _v: restore_tf32(), None))
+                applied["tf32"] = want
+            except Exception:  # noqa: BLE001
+                restore_tf32()
+        elif want is not None:
+            applied["tf32"] = want
+        for kind in ("bf16", "fp16"):
+            key = f"allow_{kind}_reduced_precision_reduction"
+            if key not in rec:
+                continue
+            want = (bool(rec[key]), bool(rec.get(key + "_split_k", True)))
+
+            def get(key=key):
+                return (bool(getattr(m, key)), bool(getattr(m, key + "_split_k", True)))
+
+            def set_(v, key=key):
+                try:
+                    setattr(m, key, v)                    # PyTorch 2.10+: (reduced precision, split-K)
+                except TypeError:
+                    if not v[1]:
+                        raise
+                    setattr(m, key, v[0])
+            put(key, want, set_, get)
+        for key in ("allow_fp16_accumulation", "prefer_cublaslt_grouped_gemm"):
+            if key in rec:
+                put(key, bool(rec[key]), lambda v, key=key: setattr(m, key, v), lambda key=key: bool(getattr(m, key)))
+        if rec.get("blas_library"):
+            lib = torch.backends.cuda.preferred_blas_library
+            put("blas_library", rec["blas_library"], lambda v: lib(v),
+                lambda: str(getattr(lib(), "name", "")).lower())
+        yield applied
+    finally:
+        for setter, before in reversed(undo):
+            try:
+                setter(before)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 class Fingerprinter:
@@ -450,6 +601,10 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     if tag is not None:          # (a child of a multi-GPU check: tell the parent where this GPU's results go now,
         with open(os.path.join(out_root, f".child_{tag}.json"), "w") as f:     # in case this process dies)
             json.dump({"out_dir": out_dir, "run_id": run_id}, f)
+    _started(out_dir, {"result": "INCOMPLETE", "running": True, "run_id": run_id, "device": str(dev), "gpu": ident,
+                       "simulated_faults": simulate_faults > 0,
+                       "notes": [["bad", "this check hadn't finished (still running, or stopped before it could "
+                                         "report)"]]})
     ev_meta = {"sdcguard": sw.get("sdcguard"), "torch": sw.get("torch"), "seed": seed, "run_id": run_id}
     evidence: list = []
     stopped: dict = {}
@@ -494,6 +649,10 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         {"matmuls": 0, "wrong": 0, "modes": {}, "ran": [], "not_checked": {}, "errors": {}, "not_run": True}
     for i, fail in enumerate(math_modes.pop("failures", [])):
         evidence.append(save_mode_evidence(out_dir, i, fail, ident, {**ev_meta, "phase": "math modes"}))
+    library: dict = {"not_run": "no CUDA GPU"}
+    if dev.type == "cuda" and not stopped:
+        say(f"{name}: every cuBLASLt algorithm for {len(LIBRARY_SHAPES)} matmul shapes against a float64 reference")
+        library = phase("library", lambda: library_sweep(dev, dtype)) or {"not_run": "stopped"}
     if fp is not None and prints:
         p1 = phase("fingerprint", fp.run)
         if p1 is not None:
@@ -539,9 +698,13 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
                   or verdict.from_counts(0, stress["matmuls_checked"], stress["unjudged"]) == "INCOMPLETE"
                   or bool(math_modes.get("errors")) or not math_modes.get("ran") and not math_modes.get("unsupported")
                   or not mem_ran or repeatable is None)
-    result = ("FAIL" if any(wrong.values()) or hw_errors else "SUSPECT" if repeatable is False else
+    # the workload's own verdict counts too (it judges its counts the same way, so they normally agree)
+    workload_fail = summary.get("result") == "FAIL"
+    result = ("FAIL" if any(wrong.values()) or hw_errors or workload_fail else "SUSPECT" if repeatable is False else
               "INCOMPLETE" if incomplete else "PASS")
     notes = _notes(static, before, after, live, speed, spec)
+    if workload_fail and not (wrong["workload_training"] or wrong["workload_serving"]):
+        notes.insert(0, ["bad", "the workload found corrupted results it couldn't count by phase (see summary.json)"])
     for m, err in (math_modes.get("errors") or {}).items():
         notes.insert(0, ["bad", f"the {m} math-mode check couldn't run ({err[:80]}): that part wasn't checked"])
     notes[:0] = verdict.unjudged_note(unj_train, summary.get("matmuls_checked") or 0, "workload training")
@@ -571,6 +734,35 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         notes.insert(0, ["bad", "the same model on the same input gave different outputs on this GPU" + where])
     for text in hw_errors:
         notes.insert(0, ["bad", text])
+    known: dict = {}
+    if dev.type == "cuda":
+        try:
+            from . import known_issues
+            known = known_issues.report(dev)
+        except Exception as e:  # noqa: BLE001
+            known = {"error": error_text(e)}
+    for m in (known.get("matches") or []):
+        if m["status"] == "applies":
+            notes.insert(0, ["bad", f"NVIDIA cuBLAS known issue {m['id']} applies here: {m['what']}"
+                                    + (f" (workaround: {m['workaround']})" if m.get("workaround") else "")])
+    maybe = [m["id"] for m in (known.get("matches") or []) if m["status"] == "may apply"]
+    if maybe:
+        notes.append(["info", f"{len(maybe)} listed cuBLAS wrong-result issue(s) may apply, depending on what your "
+                              f"jobs run ({', '.join(maybe)}): `sdcguard issues` says when"])
+    if library.get("wrong"):
+        w0 = library["wrong"][0]
+        notes.insert(0, ["bad", f"{len(library['wrong'])} cuBLASLt algorithm(s) computed wrong results here (first: "
+                                f"algorithm {w0.get('algo_id')}, {w0.get('cluster_ctas')} CTA cluster, shape "
+                                f"{w0.get('shape')}): a library or configuration defect (NVIDIA known issue 6862950 "
+                                "under MPS looked like this). Frameworks run an algorithm only when cuBLAS picks it "
+                                "for a shape; `sdcguard blas` shows every one"])
+    health_read = any(k.startswith(("ecc.", "remapped_rows", "retired_pages")) and v is not None
+                      and str(v).strip() not in ("", "[N/A]", "N/A", "[Not Supported]")
+                      for k, v in {**(before or {}), **(after or {})}.items())
+    if dev.type == "cuda" and not health_read:
+        notes.insert(0, ["warn", "the driver's ECC and row-remapping counters couldn't be read (no nvidia-smi here, "
+                                 "a MIG instance, or a GPU without ECC): memory errors the driver saw aren't part "
+                                 "of this result"])
     if stopped:
         notes.insert(0, ["bad", f"the check stopped in the {stopped['phase']} part with an error ({stopped['error']}); "
                                 "the parts after it didn't run"])
@@ -586,8 +778,10 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
         "fingerprints": prints, "fingerprint_key": fp_key, "fingerprint_weights": fp.weights if fp else None,
         "fingerprint_config": fp.config if fp else None,
         "worst_clean_score": round(worst, 3), "alarm_line": 6.0,
-        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "math_modes": math_modes, "datasheet": spec,
-        "health_before": before, "health_after": after, "live": live, "notes": notes, "board": None,
+        "memory": mem, "speed": speed, "bandwidth": bw, "stress": stress, "math_modes": math_modes,
+        "library": library, "known_issues": known, "datasheet": spec,
+        "health_before": before, "health_after": after, "health_counters_read": health_read, "live": live,
+        "notes": notes, "board": None,
         "workload": {k: summary.get(k) for k in ("size", "seed", "training_steps", "serving_passes", "matmuls_checked",
                                                   "linear_layer_checks_while_serving", "approx_matmul_tflop",
                                                   "evidence", "dtype", "unjudged_training_checks",
@@ -607,6 +801,39 @@ def check_one(device, minutes: float = 5.0, size: Optional[str] = None, out_root
     return full
 
 
+LIBRARY_SHAPES = [(4096, 4096, 512), (1000, 2048, 16)]      # (out, in, tokens): a projection and an odd decode
+
+
+def library_sweep(dev, dtype) -> dict:
+    """Every cuBLASLt algorithm the heuristic offers for a few shapes, each checked against float64 (blas.py).
+    Reported with notes, not in the verdict yet: a wrong algorithm is a library or configuration defect, and the
+    sweep's own limits are still being measured on GPUs."""
+    from . import blas
+    ok, why = blas.available()
+    if not ok:
+        return {"not_run": why}
+    torch = _torch()
+    dt = dtype if dtype in (torch.bfloat16, torch.float16) else torch.bfloat16
+    tested, wrong, problems = 0, [], []
+    for m, k, n in LIBRARY_SHAPES:
+        try:
+            r = blas.sweep(m, k, n, dtype=dt, device=dev, max_algos=16)
+        except Exception as e:  # noqa: BLE001  (the rest of the check goes on)
+            problems.append(f"{m}x{k}x{n}: {type(e).__name__}: {str(e)[:100]}")
+            continue
+        if r.get("error"):
+            problems.append(f"{m}x{k}x{n}: {r['error']}")
+            continue
+        tested += r.get("algorithms_tested", 0)
+        wrong += [{**w, "shape": f"{m}x{k}x{n}"} for w in r.get("wrong_algorithms", [])]
+        # an algorithm whose call returned an error status wasn't tested: never PASS, never a wrong result
+        problems += [f"{m}x{k}x{n}: algorithm {x.get('algo_id')} didn't run ({x.get('why')})"
+                     for x in r.get("algorithms_not_run", [])]
+    verdict = "FAIL" if wrong else ("PASS" if tested and not problems else "COULD NOT TEST")
+    return {"verdict": verdict, "algorithms_tested": tested, "wrong": wrong, "problems": problems,
+            "dtype": str(dt).replace("torch.", "")}
+
+
 def hardware_errors(before: dict, after: dict) -> list:
     """Memory faults the driver itself reported during the check. NVIDIA's guidance treats an uncorrectable ECC
     error as an event that needs action and a row-remapping failure as grounds to replace the GPU, so either
@@ -621,8 +848,12 @@ def hardware_errors(before: dict, after: dict) -> list:
     return out
 
 
+CERTIFICATE = {"always": False, "valid_days": 30.0}   # set by --certificate and --valid-days (sdcguard certify)
+
+
 def write_result(full: dict, key_path: Optional[str] = None, issuer: str = "") -> dict:
-    """check.json, result.json, the cards and (with a key or issuer) the certificate, for one GPU."""
+    """check.json, result.json, the cards and (with a key, an issuer or --certificate) the certificate, for one
+    GPU."""
     out_dir = full["out_dir"]
     pub = public(full)
     with open(os.path.join(out_dir, "check.json"), "w") as f:
@@ -630,16 +861,38 @@ def write_result(full: dict, key_path: Optional[str] = None, issuer: str = "") -
     with open(os.path.join(out_dir, "result.json"), "w") as f:
         json.dump(pub, f, indent=2)
     write_cards(pub, out_dir)
-    if key_path is not None or issuer:
+    if not (key_path is not None or issuer or CERTIFICATE["always"]):
+        # an earlier run's certificate doesn't describe these files: left here, it would judge them
+        with contextlib.suppress(FileNotFoundError):
+            os.remove(os.path.join(out_dir, "certificate.json"))
+    else:
         from . import certify
         try:
-            certify.write(_summary_of(full), out_dir, key_path=key_path, issuer=issuer, check=pub, full=full)
+            certify.write(_summary_of(full), out_dir, key_path=key_path, issuer=issuer,
+                          valid_days=CERTIFICATE["valid_days"], check=pub, full=full)
         except Exception as e:  # noqa: BLE001  (the result stands; the missing certificate is reported)
             from .screen import error_text
             full["certificate_error"] = error_text(e)
             full["notes"].insert(0, ["warn", f"the certificate couldn't be written ({full['certificate_error']})"])
             return write_result(full)
     return pub
+
+
+def _started(out_dir: str, record: dict) -> None:
+    """What a GPU's folder says while its check runs: INCOMPLETE, under this run's id. A check that is killed (a
+    deadline, the OOM killer, a hung driver call) leaves this, never the previous run's check.json or certificate
+    for a report to read. Its own result replaces it when it finishes."""
+    from .screen import _write_atomic
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(os.path.join(out_dir, "certificate.json"))
+    rec = {"schema": SCHEMA.replace("check/", "check-full/"),
+           "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "wrong": {}, "evidence": [], "out_dir": out_dir,
+           **record}
+
+    def dump(t):
+        with open(t, "w") as f:
+            json.dump(rec, f, indent=2, default=str)
+    _write_atomic(os.path.join(out_dir, "check.json"), dump)
 
 
 def _summary_of(full: dict) -> dict:
@@ -657,17 +910,19 @@ def _summary_of(full: dict) -> dict:
 
 def apply_board(full: dict, reference: dict) -> None:
     """Compare a result with the public board's reference data (fingerprints of the identical setup,
-    medians for the GPU model). It only turns a PASS into SUSPECT when at least 3 distinct GPUs, shared by
-    at least 2 different people, all agree on one other fingerprint; any other disagreement is a note."""
+    medians for the GPU model). The board is built from cards anyone can post, so it only adds notes: it never
+    changes the result (a few forged cards could otherwise turn honest PASS results into SUSPECT). When at
+    least 3 distinct GPUs, shared by at least 2 different people, all agree on one other fingerprint, the note
+    says so plainly."""
     if not isinstance(reference, dict) or not full.get("fingerprints") or not full.get("fingerprint_key"):
         return
     b = _compare(reference, full["fingerprint_key"], full["fingerprints"][0]["output"],
                  (full.get("gpu") or {}).get("gpu_name"))
     full["board"] = b
-    if b.get("disagrees_with_majority") and full["result"] in ("PASS", "INCOMPLETE"):
-        full["result"] = "SUSPECT"
+    if b.get("disagrees_with_majority"):
         full["notes"].insert(0, ["bad", f"this GPU's output fingerprint differs from {b['other_gpus']} other GPUs "
-                                        "of the identical setup on the public board"])
+                                        "of the identical setup on the public board (posted results, not "
+                                        "verified: rerun, or compare with a GPU you trust)"])
     elif b.get("same_fingerprint") == 0 and b.get("other_gpus"):
         full["notes"].insert(0, ["warn", f"this GPU's output fingerprint differs from {b['other_gpus']} other "
                                          "GPUs of the identical setup on the public board"])
@@ -1110,8 +1365,13 @@ def cross_compare(results: list) -> None:
             elif len(rs) >= 3 and n_top > len(rs) / 2:
                 r["cross_gpu"] = f"matches {n_top - 1} other GPUs of this model here"
             else:
+                # the same deterministic workload, the same GPU model and software, different outputs: at least
+                # one of them computed it wrong, and nothing here says which, so none of them passes
                 r["cross_gpu"] = "GPUs of this model here disagree and there's no clear majority"
-                r["notes"].insert(0, ["warn", r["cross_gpu"] + "; rerun to see which one changes"])
+                r["notes"].insert(0, ["bad", r["cross_gpu"] + "; at least one computed the workload wrong. Rerun "
+                                             "to see which one changes, or compare with the board"])
+                if r["result"] in ("PASS", "INCOMPLETE"):
+                    r["result"] = "SUSPECT"
 
 
 def _children(args) -> tuple:
@@ -1138,8 +1398,9 @@ def _children(args) -> tuple:
             cmd += ["--provider", args.provider]
         logs.append(open(os.path.join(args.out, f"child_{i}.log"), "w"))
         procs.append(subprocess.Popen(cmd, env=env, stdout=logs[-1], stderr=subprocess.STDOUT))
-    print(f"sdcguard check: {len(ids)} GPUs in parallel, about {args.minutes:g} minutes", flush=True)
-    limit = time.time() + max(900.0, args.minutes * 60 * 3)
+    print(f"sdcguard check: {len(ids)} GPUs in parallel, about {args.minutes:g} minutes", flush=True,
+          file=sys.stderr if getattr(args, "json", False) else sys.stdout)
+    limit = time.time() + worker_limit(args.minutes)
     codes = []
     for p in procs:
         try:
@@ -1164,6 +1425,8 @@ def _children(args) -> tuple:
                 raise ValueError("check.json without a result")
             if not run_id or r.get("run_id") != run_id:
                 raise ValueError("check.json belongs to a previous run")
+            if r.get("running"):
+                raise ValueError("the check didn't finish")
             if code != 0:
                 r.setdefault("notes", []).insert(0, ["bad", f"the GPU worker exited unexpectedly ({code}); "
                                                       "the saved result may be incomplete"])
@@ -1174,27 +1437,10 @@ def _children(args) -> tuple:
         except (OSError, ValueError, KeyError, TypeError):
             pass
         # the child process died (or hung) before writing its result: whatever it saved still counts
-        bad = 0
-        if out_dir:
-            try:
-                with open(os.path.join(out_dir, "summary.json")) as f:
-                    s = json.load(f)
-                if run_id and s.get("run_id") == run_id:
-                    bad = (s.get("corrupted_results_training") or 0) + (s.get("corrupted_results_serving") or 0)
-            except (OSError, ValueError, AttributeError):
-                pass
-            # Old evidence can remain beside this run after a rerun. Only count
-            # an incident explicitly tagged with this worker's run identifier.
-            for name in os.listdir(out_dir):
-                if not name.startswith(("evidence_", "math_mode_evidence_")) or not name.endswith(".json"):
-                    continue
-                try:
-                    with open(os.path.join(out_dir, name)) as f:
-                        ev = json.load(f)
-                    if run_id and ev.get("run_id") == run_id:
-                        bad += 1
-                except (OSError, ValueError, AttributeError):
-                    pass
+        bad, died = 0, None
+        if out_dir and run_id:
+            died = _died_worker(out_dir, run_id, code, log)
+            bad = sum(died["wrong"].values())
         if bad:
             failed += 1
             problems.append(f"GPU {ids[i]}: FAIL: it computed wrong results and then its check died (exit {code}); "
@@ -1204,11 +1450,90 @@ def _children(args) -> tuple:
     return found, problems, failed
 
 
+def worker_limit(minutes: float) -> float:
+    """How long one GPU's worker may run: its budget plus room for loading and the slowest phase. Two minutes
+    less than the deadline `sdcguard nhc` and `sdcguard certify` give the whole check (cli._deadline), so this
+    process always gets to stop a hung worker and report what the others found."""
+    return 60.0 * float(minutes) * 1.5 + 480.0
+
+
+def saved_failures(out_dir: str, run_id: str) -> tuple:
+    """What a run that stopped before it reported had saved: (failed results by phase, evidence paths), from the
+    evidence files tagged with its run id. Old evidence can remain beside this run after a rerun: only an incident
+    explicitly tagged with this run's identifier counts."""
+    counts = {"workload_training": 0, "workload_serving": 0, "stress": 0, "math_modes": 0}
+    paths = []
+    try:
+        names = sorted(os.listdir(out_dir))
+    except OSError:
+        names = []
+    for name in names:
+        if not name.startswith(("evidence_", "math_mode_evidence_")) or not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(out_dir, name)) as f:
+                ev = json.load(f)
+            if not run_id or ev.get("run_id") != run_id:
+                continue
+        except (OSError, ValueError, AttributeError):
+            continue
+        paths.append(os.path.join(out_dir, name[:-len(".json")]))
+        phase = {"stress": "stress", "math modes": "math_modes", "serving": "workload_serving"}.get(ev.get("phase"),
+                                                                                                 "workload_training")
+        counts[phase] += 1
+    return counts, paths
+
+
+def _died_worker(out_dir: str, run_id: str, code, log: str) -> dict:
+    """check.json for a GPU whose worker died (or hung and was stopped) before it reported: FAIL when it had
+    already computed wrong results (its summary's counts, and evidence tagged with this run), else INCOMPLETE.
+    Written to its folder, so `sdcguard nhc` and the fleet report see the same result this check prints."""
+    from .screen import _write_atomic
+    wrong = {"workload_training": 0, "workload_serving": 0, "stress": 0, "math_modes": 0, "memory_words": 0}
+    gpu, simulated = {}, False
+    for name in ("check.json", "summary.json"):           # (its own placeholder and workload summary, this run's)
+        try:
+            with open(os.path.join(out_dir, name)) as f:
+                rec = json.load(f)
+            if not isinstance(rec, dict) or rec.get("run_id") != run_id:
+                continue
+            gpu = rec.get("gpu") if isinstance(rec.get("gpu"), dict) else gpu
+            simulated = simulated or bool(rec.get("simulated_faults") or rec.get("SIMULATED_FAULTS"))
+            if name == "summary.json":
+                wrong["workload_training"] = int(rec.get("corrupted_results_training") or 0)
+                wrong["workload_serving"] = int(rec.get("corrupted_results_serving") or 0)
+        except (OSError, ValueError, TypeError):
+            pass
+    seen, evidence = saved_failures(out_dir, run_id)
+    for k, n in seen.items():        # each saved failure is a wrong result, so the counts are at least these
+        wrong[k] = max(wrong[k], n)
+    failed = any(wrong.values())
+    why = (f"the GPU worker died (exit {code}) before it reported" if code != "timeout" else
+           "the GPU worker didn't finish in time and was stopped")
+    record = {"schema": SCHEMA.replace("check/", "check-full/"), "result": "FAIL" if failed else "INCOMPLETE",
+              "time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "run_id": run_id, "gpu": gpu,
+              "wrong": wrong, "evidence": evidence, "out_dir": out_dir, "simulated_faults": simulated,
+              "stopped": {"phase": "worker", "error": why},
+              "notes": [["bad", why + (": it had already computed wrong results (at least the counts here; "
+                                       "evidence saved)" if failed else ": not checked") + f"; see {log}"]]}
+
+    def dump(t):
+        with open(t, "w") as f:
+            json.dump(record, f, indent=2, default=str)
+    try:
+        _write_atomic(os.path.join(out_dir, "check.json"), dump)
+    except OSError:
+        pass
+    return record
+
+
 def main(argv=None) -> int:
     want = ":4096:8"                              # deterministic cuBLAS, same workspace as everyone else's run
+    json_out = "--json" in (sys.argv[1:] if argv is None else argv)
+    say = (lambda *x, **k: print(*x, file=sys.stderr, **k)) if json_out else print   # --json: stdout is JSON only
     if os.environ.get("CUBLAS_WORKSPACE_CONFIG", want) != want:
-        print(f"sdcguard check: using CUBLAS_WORKSPACE_CONFIG={want} (was {os.environ['CUBLAS_WORKSPACE_CONFIG']}) "
-              "so fingerprints compare with other runs")
+        say(f"sdcguard check: using CUBLAS_WORKSPACE_CONFIG={want} (was {os.environ['CUBLAS_WORKSPACE_CONFIG']}) "
+            "so fingerprints compare with other runs")
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = want
     p = argparse.ArgumentParser(prog="sdcguard check", description=__doc__.split("\n\n")[0])
     p.add_argument("--minutes", type=float, default=5.0)
@@ -1223,16 +1548,19 @@ def main(argv=None) -> int:
     p.add_argument("--key", default=None, help="also write a signed certificate (key from `sdcguard keygen`)")
     p.add_argument("--issuer", default="")
     p.add_argument("--json", action="store_true", help="print the shareable result as JSON")
+    p.add_argument("--certificate", action="store_true", help="write certificate.json per GPU (signed with --key)")
+    p.add_argument("--valid-days", type=float, default=30.0, help="how long a certificate is valid")
     p.add_argument("--simulate-faults", type=float, default=0.0, help="demo only: corrupt this share of matmul outputs")
     p.add_argument("--child", default=None, help=argparse.SUPPRESS)
     a = p.parse_args(argv)
+    CERTIFICATE.update(always=bool(a.certificate), valid_days=float(a.valid_days))
     torch = _torch()
     if a.key and a.child is None:              # a key that can't sign is found now, not after the whole check
         try:
             from . import certify
             certify.load_private(a.key)
         except Exception as e:  # noqa: BLE001
-            print(f"sdcguard check: can't sign with --key {a.key}: {type(e).__name__}: {e}")
+            say(f"sdcguard check: can't sign with --key {a.key}: {type(e).__name__}: {e}")
             return 2
     ref = None if (a.offline or a.child is not None) else fetch_reference()
     problems: list = []
@@ -1241,7 +1569,7 @@ def main(argv=None) -> int:
     if multi:
         results, problems, died_failed = _children(a)
         if not results:
-            print("sdcguard check: could not run\n  " + "\n  ".join(problems))
+            say("sdcguard check: could not run\n  " + "\n  ".join(problems))
             return 1 if died_failed else 2
         cross_compare(results)
         for r in results:
@@ -1254,14 +1582,14 @@ def main(argv=None) -> int:
     else:
         dev = a.device or ("cuda" if torch.cuda.is_available() else "cpu")
         if a.child is None and not torch.cuda.is_available():
-            print("sdcguard check: no CUDA GPU found, checking the CPU instead (a demo of what the check does)")
+            say("sdcguard check: no CUDA GPU found, checking the CPU instead (a demo of what the check does)")
         try:
             results = [check_one(dev, a.minutes, a.size, a.out, a.seed, a.simulate_faults, a.provider, ref,
                                  None if a.child is not None else a.key, "" if a.child is not None else a.issuer,
-                                 progress=None if a.child is not None else (lambda s: print("  " + s, flush=True)),
+                                 progress=None if a.child is not None else (lambda s: say("  " + s, flush=True)),
                                  tag=a.child)]
         except Exception as e:  # noqa: BLE001
-            print(f"sdcguard check: could not run on {dev}: {type(e).__name__}: {e}")
+            say(f"sdcguard check: could not run on {dev}: {type(e).__name__}: {e}")
             return 2
         if a.child is not None:
             return 0
@@ -1270,16 +1598,19 @@ def main(argv=None) -> int:
         pub = public(r)
         pubs.append(pub)
         if a.json:
-            print(json.dumps(pub, indent=2))
+            continue                                # printed below as one document
         else:
             print(terminal(pub, r["out_dir"]))
             if r.get("cross_gpu"):
                 print(f"  {'this node':<11} {r['cross_gpu']}")
             print()
         if a.share:
-            print(f"Post this card to the public board ({BOARD_URL}):\n{share_url(pub)}\n")
+            say(f"Post this card to the public board ({BOARD_URL}):\n{share_url(pub)}\n")
+    if a.json:                                     # one GPU: its card; several: one array of cards
+        print(json.dumps(pubs[0] if len(pubs) == 1 and not problems else
+                         pubs + [{"result": "COULD NOT RUN", "problem": pr} for pr in problems], indent=2))
     for pr in problems:
-        print(f"sdcguard check: {pr}")
+        say(f"sdcguard check: {pr}")
     if (len(pubs) > 1 or problems) and not a.json:
         c = {k: sum(x["result"] == k for x in pubs) for k in ("PASS", "FAIL", "SUSPECT", "INCOMPLETE")}
         print(f"sdcguard check: {len(pubs) + len(problems)} GPUs, {c['PASS']} PASS, {c['FAIL'] + died_failed} FAIL, "
