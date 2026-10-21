@@ -912,7 +912,15 @@ to it exactly (in fp16 the block sums are first divided by a power of two, also 
 65504 still fit: that needs the block's largest |W| first, so fp16 reads W twice, and the dot's result is
 multiplied back). The noise is precise mode's frozen model, unchanged, plus the same model's term for that dot's
 own fp32 accumulation, `0.6 sqrt(k) u |x_row| |block sums|_2` (the block's column of sums over k in place of
-the block of W); the alarm line is unchanged. (Changed October 21, before any GPU run: that term used the
+the block of W); the alarm line is unchanged. (Changed October 21, 2026, after this section's second run and
+before its third: each step of that dot, 32 terms of k on the tensor cores, is now added into a running sum
+compensated for its rounding (Neumaier's version of Kahan's summation, plain fp32 adds), so the term is
+`0.6 sqrt(32) u |x_row| |block sums|_2 + 4 u |expected|`: sqrt(k/32) times smaller, 5.7 at k = 1024 and 16 at
+8192. In both runs on October 21 the in-kernel scoring caught single wrong values 2 to 3.3 times as large as
+precise mode did, criterion 3 allowing 2; in Triton's CPU interpreter the change takes its scores from 1.9 times
+below the float64 scoring's to 1.1 to 1.16 times below. **Prediction:** criterion 3 met, and the worst clean
+score rises toward precise mode's, 3.4 on the wide shape in the second run, within criterion 2's 4. Criteria
+unchanged.) (Changed October 21, before any GPU run: that term used the
 largest block sum in place of the 2-norm, up to sqrt(k) times smaller, and fp16 layers whose block sums passed
 65504 went unjudged.) The recompute check fingerprints with one Triton pass instead of several PyTorch
 reductions, by default on CUDA. The GPU results above belong to the earlier versions. Both changes are tested so
@@ -941,6 +949,13 @@ H100, the recompute check (`experiments/recompute_check.py` and `experiments/rec
 1. clean: 0 mismatches; 2. every injected fault caught and its block named; 3. gradients UNCHANGED against the
 deterministic control, as in the follow-up above; 4. with every step checked, at most 10% per step on both
 models (it was +20.3% and +16.0% with the PyTorch fingerprints). **Prediction:** 1 to 3 met, and 4 met.
+(Changed October 21, 2026, after this section's third run and before its fourth, criteria unchanged. The cost:
+the three runs that day measured GPT-2 at 9.2%, 7.2% and 8.8% and Llama at 16.1%, 6.8% and 11.2% with the same
+check, while the plain step's own time moved by up to 30% between runs; the time the check added was steadier,
+about 2.5 ms a step on GPT-2. Two changes: the end-of-step comparison now takes every block's fingerprints in one
+comparison and one read-back (4 operations for 8 blocks instead of 73); and the three variants are timed one step
+of each in turn, 30 rounds, medians, instead of three blocks of 10 steps one after another, which put whatever
+drifted during the measurement on the last block. **Prediction:** criterion 4 met on both models.)
 
 H100, `experiments/v040_check.py`:
 1. the fingerprint kernel equals the PyTorch version bit for bit on every tensor `tests/_fingerprint_compare.py`

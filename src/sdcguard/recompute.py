@@ -362,27 +362,23 @@ class RecomputeCheck:
             self.stats["never_recomputed"] += never
         if not pending:
             return []
+        # every fingerprint of a device in one comparison and one read-back: the step's blocks together, not a
+        # stack, compare and reduction per block (about 70 small GPU operations a step for 8 blocks, which cost
+        # more than the fingerprints did)
         by_dev: dict = {}
         for i, p in enumerate(pending):
-            by_dev.setdefault(str(p[4]), []).append(i)
+            if p[2]:
+                by_dev.setdefault(str(p[2][0].device), []).append(i)
         verdicts: dict = {}
         for idxs in by_dev.values():
-            stacks = []
-            for i in idxs:
-                _, _, a, b, _ = pending[i]
-                if a:
-                    d0 = a[0].device
-                    stacks.append(torch.stack([torch.stack([x.to(d0) for x in a]), torch.stack([x.to(d0) for x in b])]))
-                else:
-                    stacks.append(torch.zeros((2, 0, 3), dtype=torch.int64))
-            # one read-back per device: per pending entry, which outputs differ
-            flat = [s.reshape(2, -1, 3) for s in stacks]
-            diffs = [(s[0] != s[1]).any(dim=-1) for s in flat]
-            cat = torch.cat([d.view(-1) for d in diffs]).cpu().tolist() if diffs else []
+            d0 = pending[idxs[0]][2][0].device
+            first = [x.to(d0) for i in idxs for x in pending[i][2]]
+            again = [x.to(d0) for i in idxs for x in pending[i][3]]
+            differ = (torch.stack(first) != torch.stack(again)).any(dim=-1).cpu().tolist()
             pos = 0
-            for i, d in zip(idxs, diffs):
-                k = d.numel()
-                verdicts[i] = [j for j, bad in enumerate(cat[pos:pos + k]) if bad]
+            for i in idxs:
+                k = len(pending[i][2])
+                verdicts[i] = [j for j, bad in enumerate(differ[pos:pos + k]) if bad]
                 pos += k
         events = []
         err = None

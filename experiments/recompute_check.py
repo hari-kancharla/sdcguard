@@ -75,17 +75,59 @@ def _sync(dev):
         torch.cuda.synchronize()
 
 
-def _median_seconds(fn, dev, n):
-    fn()
-    _sync(dev)
-    ts = []
-    for _ in range(n):
-        t0 = time.perf_counter()
-        fn()
-        _sync(dev)
-        ts.append(time.perf_counter() - t0)
-    ts.sort()
-    return round(ts[len(ts) // 2], 5)
+def _interleaved_medians(variants: dict, dev, rounds: int) -> dict:
+    """Seconds per call of each variant (name: (call, setup or None, teardown or None)): the median of `rounds`,
+    one call of each per round in an order that rotates, so whatever drifts while they're measured (the GPU's
+    clocks, the allocator's caches) falls on all of them alike. Timed in blocks one after another, as until
+    October 21, 2026, it fell on whichever block came last: the plain step's own time moved by up to 30% between
+    runs, and the same code's cost read 6.8% to 16.1%. Round 0 warms every variant up and isn't counted; setup and
+    teardown aren't timed."""
+    names = list(variants)
+    times: dict = {n: [] for n in names}
+    for r in range(rounds + 1):
+        for n in names[r % len(names):] + names[:r % len(names)]:
+            call, setup, teardown = variants[n]
+            if setup is not None:
+                setup()
+            try:
+                _sync(dev)
+                t0 = time.perf_counter()
+                call()
+                _sync(dev)
+                dt = time.perf_counter() - t0
+            finally:
+                if teardown is not None:
+                    teardown()
+            if r:
+                times[n].append(dt)
+    return {n: round(sorted(ts)[len(ts) // 2], 5) for n, ts in times.items()}
+
+
+def _host_profile(variants: dict, dev, top: int = 15) -> dict:
+    """Where one step's host time goes (torch.profiler, one step of each variant after a warm-up step): the total
+    and the operations with the most self CPU time. Reported only; no criterion reads it."""
+    out = {}
+    try:
+        from torch.profiler import ProfilerActivity, profile
+        for name, (call, setup, teardown) in variants.items():
+            if setup is not None:
+                setup()
+            try:
+                call()
+                _sync(dev)
+                with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+                    call()
+                    _sync(dev)
+            finally:
+                if teardown is not None:
+                    teardown()
+            rows = sorted(prof.key_averages(), key=lambda e: -e.self_cpu_time_total)
+            out[name] = {"self_cpu_ms_total": round(sum(e.self_cpu_time_total for e in rows) / 1e3, 3),
+                         "top": [{"op": e.key[:80], "calls": e.count,
+                                  "self_cpu_ms": round(e.self_cpu_time_total / 1e3, 3)} for e in rows[:top]]}
+    except Exception as e:  # noqa: BLE001  (a profile that can't be taken costs the run nothing)
+        out["error"] = f"{type(e).__name__}: {str(e)[:200]}"
+    return out
 
 
 def _fault(module, call, delta):
@@ -152,25 +194,27 @@ def one_model(kind, dev, sz, steps, trials, say=print) -> dict:
         return g
     a, b = grads(False), grads(True)
     r["gradients_bit_identical"] = len(a) == len(b) and all(torch.equal(x, y) for x, y in zip(a, b))
-    # cost: plain checkpointing, early stop off only, the full check
-    n = max(3, steps)
-    plain = _median_seconds(f, dev, n)
+    # cost: plain checkpointing, early stop off only (the one change the check makes to checkpointing, by itself:
+    # no faster recompute that stops early, which on small blocks is slightly faster, since stopping early raises
+    # an exception), the full check; one step of each in turn (_interleaved_medians)
+    rc = RecomputeCheck()
 
     def no_early():
         with tuc.set_checkpoint_early_stop(False):
             f()
-    full_recompute = _median_seconds(no_early, dev, n)
-    rc = RecomputeCheck().install(m)
 
     def checked():
         f()
         rc.flush()
-    try:
-        full = _median_seconds(checked, dev, n)
-    finally:
-        rc.uninstall()
-    r["seconds_per_step"] = {"plain checkpointing": plain, "early stop off only": full_recompute,
-                             "full check": full}
+    secs = _interleaved_medians({"plain checkpointing": (f, None, None), "early stop off only": (no_early, None, None),
+                                 "full check": (checked, lambda: rc.install(m), rc.uninstall)},
+                                dev, max(5, 3 * steps))
+    plain, full_recompute, full = (secs[k] for k in ("plain checkpointing", "early stop off only", "full check"))
+    r["seconds_per_step"] = secs
+    r["timed_rounds"] = max(5, 3 * steps)
+    if dev.type == "cuda":
+        r["host_profile"] = _host_profile({"plain checkpointing": (f, None, None),
+                                           "full check": (checked, lambda: rc.install(m), rc.uninstall)}, dev)
     r["overhead_pct"] = {"early stop off only": round(100 * (full_recompute / plain - 1), 1),
                          "full check": round(100 * (full / plain - 1), 1)}
     say(f"{kind}: clean {r['clean']['mismatches']} mismatches in {r['clean']['recomputes_compared']} compares, "

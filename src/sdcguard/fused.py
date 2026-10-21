@@ -253,16 +253,20 @@ def check_linear_fused(x: torch.Tensor, w: torch.Tensor, bias: Optional[torch.Te
 # October 20 GPU run found takes most of the time (about 1 ms per matmul on an H100, 3 to 23 ms on an L4) and made
 # the check cost as much as precise mode. Following what AEGIS (OSDI '26) and FP-Sketch (arXiv 2609.19758) do,
 # this version never computes a high-precision reference:
-#   - the expected side x . (block sums of W) is accumulated in fp32 on the tensor cores by a second, narrow dot
-#     in the same K loop: each block sum (computed once per call from W, in fp32) is split into three bf16 or
+#   - the expected side x . (block sums of W) is computed in fp32 on the tensor cores by a second, narrow dot
+#     in the same K loop, each step's result (BK terms) added into a running sum compensated for its rounding
+#     (Neumaier's version of Kahan's summation; since October 21, 2026, when its plain fp32 accumulation over
+#     all of K had made the check about half as sensitive as precise mode): each block sum (computed once per
+#     call from W, in fp32) is split into three bf16 or
 #     fp16 parts whose sum is exact, so the narrow dot sees the full fp32 value. In fp16 the block sums are first
 #     divided by a power of two that puts the block's largest possible sum (128 x max|W|) between 2^14 and 2^15,
 #     and the narrow dot's result is multiplied back (both exact): fp16 stops at 65504, and a block sum above
 #     that made its parts infinite and left the check of an ordinary finite layer unjudged;
 #   - precise mode's frozen noise model (checksum._acc_zscores: C1 sqrt(k) u |x| |W_block| for the accumulation,
 #     |c| (C2 sqrt(k) + C3 steps + sqrt(width)) u per output) gets one more term for the expected side's own
-#     fp32 accumulation, C1 sqrt(k) u |x| |block sums|_2 (the same model applied to the dot product x . sums,
-#     where the column of block sums plays the part of a column of W), and the z-scores are computed in the
+#     rounding, C1 sqrt(BK) u |x| |block sums|_2 + 4 u |expected| (the same model applied to each step's dot
+#     product x . sums, where the column of block sums plays the part of a column of W, and the compensated
+#     sum's last roundings), and the z-scores are computed in the
 #     kernel's epilogue with the same rules for Inf/NaN and impossible values as the other checks;
 #   - per call, besides the kernel: one small pass over W (block sums and norms; two in fp16, since the scale
 #     needs the block's max|W| first), two row norms of x, and a max over the scores, all without a host sync.
@@ -332,7 +336,7 @@ if _HAVE_TRITON:
     def _fused_check_kernel(X, W, BIAS, SIGNS, BX, AUX, ANORM, AL1, Y, Z, DEN, M, N, K,
                             sxm, sxk, swn, swk, sym, syn, s_xk, s_xb, s_xc, s_zm, s_zb, s_dm,
                             inj_m, inj_n, inj_v,
-                            k_f, steps, u, c1, c2, c3, abs_floor, zthr, dt_max, big,
+                            k_f, k_chunk, steps, u, c1, c2, c3, abs_floor, zthr, dt_max, big,
                             HAS_BIAS: tl.constexpr, INJECT: tl.constexpr, EMULATE: tl.constexpr,
                             ROUND_BF16: tl.constexpr, BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr,
                             NXC: tl.constexpr, SCALED: tl.constexpr):
@@ -345,7 +349,12 @@ if _HAVE_TRITON:
         mm = offs_m < M
         mn = offs_n < N
         acc = tl.zeros((BM, BN), dtype=tl.float32)
-        accx = tl.zeros((BM, NXC), dtype=tl.float32)
+        # the expected side, x times the block sums' parts: each step's narrow dot (BK terms, fp32 on the tensor
+        # cores) is added into a running sum compensated for its rounding (Neumaier's version of Kahan's
+        # summation), so its own error is that of BK terms, not K: plain fp32 adds, cheap on every GPU, where
+        # float64 is slow on most (1/64 of the fp32 rate on an L4)
+        sx = tl.zeros((BM, NXC), dtype=tl.float32)
+        cx = tl.zeros((BM, NXC), dtype=tl.float32)
         for k0 in range(0, K, BK):
             kk = k0 + offs_k
             mk = kk < K
@@ -355,14 +364,19 @@ if _HAVE_TRITON:
                          mask=mk[:, None] & (offs_x[None, :] < 6), other=0.0)
             if EMULATE:          # tests only: Triton's CPU interpreter gets bf16 dots wrong
                 acc = tl.dot(a.to(tl.float32), b.to(tl.float32), acc, input_precision="ieee")
-                accx = tl.dot(a.to(tl.float32), bx.to(tl.float32), accx, input_precision="ieee")
+                part = tl.dot(a.to(tl.float32), bx.to(tl.float32), input_precision="ieee")
             else:
                 acc = tl.dot(a, b, acc)
-                accx = tl.dot(a, bx, accx)
+                part = tl.dot(a, bx)
+            t = sx + part
+            cx += tl.where(tl.abs(sx) >= tl.abs(part), (sx - t) + part, (part - t) + sx)
+            sx = t
         s = tl.load(SIGNS + offs_n, mask=mn, other=0.0).to(tl.float32)
         cols = tl.arange(0, NXC)
-        e_p = tl.sum(tl.where(cols[None, :] < 3, accx, 0.0), axis=1)
-        e_s = tl.sum(tl.where((cols[None, :] >= 3) & (cols[None, :] < 6), accx, 0.0), axis=1)
+        plain = cols[None, :] < 3
+        signed = (cols[None, :] >= 3) & (cols[None, :] < 6)
+        e_p = tl.sum(tl.where(plain, sx, 0.0), axis=1) + tl.sum(tl.where(plain, cx, 0.0), axis=1)
+        e_s = tl.sum(tl.where(signed, sx, 0.0), axis=1) + tl.sum(tl.where(signed, cx, 0.0), axis=1)
         bmax = tl.load(AUX + pid_n * 4 + 3)
         if SCALED:                                   # the parts were made from block sums / this power of two
             sc = _pow2_scale(bmax)
@@ -404,10 +418,12 @@ if _HAVE_TRITON:
         prod = tl.where(prod == prod, prod, bound * (u * 128.0))
         prod = tl.where(tl.abs(prod) < float("inf"), prod, bound * (u * 128.0))
         noise = cn * (per_out * u) + prod
-        # the expected side's own fp32 accumulation (the same model, for the dot product x . sums), with the
-        # same stand-in as prod's when the squares don't fit in fp32
-        ex_p = an * bsn_p * (c1 * sk * u)
-        ex_s = an * bsn_s * (c1 * sk * u)
+        # the expected side's own rounding: the same model for each step's dot (x . sums over k_chunk terms), and
+        # the compensated sum's and the parts' last roundings (a few u of the sum), with the same stand-in as
+        # prod's when the squares don't fit in fp32
+        skc = tl.sqrt(k_chunk)
+        ex_p = an * bsn_p * (c1 * skc * u) + 4.0 * u * tl.abs(e_p)
+        ex_s = an * bsn_s * (c1 * skc * u) + 4.0 * u * tl.abs(e_s)
         ex_p = tl.where(tl.abs(ex_p) < float("inf"), ex_p, bound * (u * 128.0))
         ex_s = tl.where(tl.abs(ex_s) < float("inf"), ex_s, bound * (u * 128.0))
         noise_p = noise + ex_p
@@ -509,7 +525,8 @@ def fused_mm_checked(A: torch.Tensor, B: torch.Tensor, bias: Optional[torch.Tens
         A.stride(0), A.stride(1), B.stride(1), B.stride(0), C.stride(0), C.stride(1),
         BX.stride(0), BX.stride(1), BX.stride(2), Zt.stride(0), Zt.stride(1), DEN.stride(0),
         int(im), int(inn), float(iv),
-        float(K), float(steps), cs.ACC_UNIT, cs.ACC_C1, cs.ACC_C2, cs.ACC_C3, float(abs_floor), float(z),
+        float(K), float(min(bk, K)), float(steps), cs.ACC_UNIT, cs.ACC_C1, cs.ACC_C2, cs.ACC_C3, float(abs_floor),
+        float(z),
         float(cs.DTYPE_MAX[torch.float32]), float(cs.BIG),
         HAS_BIAS=bias is not None, INJECT=inject is not None, EMULATE=dev.type == "cpu",
         ROUND_BF16=dev.type == "cpu" and A.dtype == torch.bfloat16, BM=bm, BN=BLOCK, BK=bk, NXC=NX, SCALED=scaled,
