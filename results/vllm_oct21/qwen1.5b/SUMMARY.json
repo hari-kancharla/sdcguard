@@ -1,0 +1,96 @@
+{
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "vllm": "0.31.0",
+ "guarded_mode": "torch.compile + CUDA graphs",
+ "attempt_that_passed": "compiled",
+ "triton_layers": 112,
+ "same_outputs": "64/64",
+ "output_tokens_per_s": {
+  "without": 31824.6,
+  "with": 30723.6
+ },
+ "slowdown_pct": 3.58,
+ "layers_checked": 112,
+ "layers_that_actually_ran_checks": 112,
+ "layers_with_a_nonzero_residual": 112,
+ "checks_executed": 75264,
+ "unjudged_checksums": 0,
+ "unjudged_checksums_at_startup": 0,
+ "worst_clean_z": 2.1721854209899902,
+ "clean_alerts": 0,
+ "flipped_layer": [
+  "model.layers.10.mlp.down_proj"
+ ],
+ "flagged_after_flip": [
+  "model.layers.10.mlp.down_proj"
+ ],
+ "verify_weights_after_flip": [
+  "model.layers.10.mlp.down_proj"
+ ],
+ "alert_example": {
+  "where": "model.layers.10.mlp.down_proj",
+  "max_z": Infinity,
+  "nonfinite": false,
+  "row": 79,
+  "col_block": 0,
+  "noise": Infinity,
+  "checksum": "plain",
+  "weights_changed_since_load": true,
+  "weights_rewritten_since_load": false,
+  "captured": {
+   "row": 36,
+   "col_block": 0,
+   "with_bias": false,
+   "z": Infinity
+  },
+  "recheck": {
+   "by": "screen.cpu_recheck on the CPU: the captured row of x and block of y, with the layer's weights as they are at the alert",
+   "columns": [
+    0,
+    128
+   ],
+   "cpu": {
+    "done": true,
+    "outputs_outside_rounding_envelope": 0,
+    "outputs_in_block": 128,
+    "worst_error_over_envelope": 0.07395316708988746,
+    "judged": false,
+    "reading": "the CPU couldn't judge this block either (values that aren't finite in the inputs)"
+   },
+   "verdict": "weights_changed",
+   "why": "the layer's weights changed since load, so a recheck with today's weights can't say whether this output was right when it was computed"
+  },
+  "evidence": null,
+  "capture_missing": null,
+  "reading": "the layer's weights changed since load (they no longer match their load-time checksums): in GPU memory, or updated without calling refresh()",
+  "gpu": "GPU-df58414f-7e5b-0619-a83d-c3ad2b155d92",
+  "gpu_name": "NVIDIA H100 80GB HBM3"
+ },
+ "validation": {
+  "passed": true,
+  "errors": []
+ },
+ "vanilla_output_tokens_per_s": 32363.2,
+ "fp32_reductions_alone_slowdown_pct": 1.69,
+ "slowdown_vs_vanilla_pct": 5.34,
+ "shares": {
+  "0.125": {
+   "same_outputs": "64/64",
+   "output_tokens_per_s": 32941.3,
+   "slowdown_pct": -3.39,
+   "layers_checked": 15,
+   "clean_alerts": 0,
+   "worst_clean_z": 2.0318474769592285,
+   "flagged_after_flip": [
+    "model.layers.11.mlp.down_proj"
+   ],
+   "verify_weights_after_flip": [
+    "model.layers.11.mlp.down_proj"
+   ],
+   "validation": {
+    "passed": true,
+    "errors": []
+   }
+  }
+ }
+}

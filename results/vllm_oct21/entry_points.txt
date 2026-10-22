@@ -1,0 +1,3 @@
+[EntryPoint(name='sdcguard', value='sdcguard.vllm_plugin:register', group='vllm.general_plugins'), EntryPoint(name='lora_filesystem_resolver', value='vllm.plugins.lora_resolvers.filesystem_resolver:register_filesystem_resolver', group='vllm.general_plugins'), EntryPoint(name='lora_hf_hub_resolver', value='vllm.plugins.lora_resolvers.hf_hub_resolver:register_hf_hub_resolver', group='vllm.general_plugins')]
+
+[exit code 0]

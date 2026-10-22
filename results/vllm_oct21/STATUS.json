@@ -1,0 +1,1 @@
+{"exit_codes": {"entry_points": 0, "qwen1.5b": 0, "qwen7b": 0}, "passed": true, "source": {"sha256": "8d34bf97fcf7228d982b9d9e901cebe90f1f779f28c2ecc1e4f9f39e8fb42b59", "files": 165}, "minutes": 13.1, "estimated_cost_usd": 1.06, "cost_note": "function time x $4.84/hour (H100, 8 cores, 64 GiB at Oct 20 prices); image pull and startup are billed too and not in this number"}

@@ -3,7 +3,7 @@
 Raw output of the GPU runs behind the numbers in the README, copied unchanged, so paths inside the
 files refer to the original run folders (`calibration/ts-gpt2/CALIBRATION.md` is
 `false_alarms_and_slowdown_gpt2/CALIBRATION.md` here). NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1
-(CUDA 13.0), October 14-15, 2026, except `round3_oct18/` and the October 19-20 folders at the end of the table,
+(CUDA 13.0), October 14-15, 2026, except `round3_oct18/` and the October 19-21 folders at the end of the table,
 which record their own GPUs. Most runs since October 19 also record the code fingerprint they ran
 (math_modes, precise_diag and the first two mps_bug files don't).
 
@@ -21,6 +21,11 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `precise_diag/`, `precise_models/`, `precise_validate/` | October 19: precise mode check by check, its noise models on real training matmuls, and its held-out validation (criteria met on 2 of 5 GPUs) | each folder's `SUMMARY.md` |
 | `blackwell_triton/` | October 19: the B200 Triton fault bisect | `docs/METHOD.md`, Blackwell section |
 | `mps_bug/` | October 19: the H200 MPS reproduction, three runs | `docs/METHOD.md`, head-to-head section |
+| `h2h/` | October 20: the head-to-head on cuBLAS known issue 6862950 on an H200 (sdcguard check, DCGM, gpu-burn at four MPS shares), with its preflight | `h200_20261020_060928.md` |
+| `vllm_oct20/` | October 20: vLLM 0.31 with Qwen2.5 1.5B and 7B, every layer and 1 in 8 checked | each model's `SUMMARY.json` |
+| `fused/`, `grad_control/` | October 20: the first fused precise check on an H100 and an L4, and the recompute check's gradient control run | each folder's `SUMMARY_*.md` |
+| `v040/` | October 21: the 0.4.0 runs on one H100, two H100s and an H200 under MPS. Five runs, every criterion met in the last two; the last is the released code (fingerprint 8d34bf97fcf7) | `SUMMARY_20261021_194128.md`, and `docs/METHOD.md`, 0.4.0 section |
+| `vllm_oct21/` | October 21: vLLM 0.31 with Qwen2.5 1.5B and 7B on the 0.4.0 code, including capture of the alerting row inside vLLM | each model's `SUMMARY.json` |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the

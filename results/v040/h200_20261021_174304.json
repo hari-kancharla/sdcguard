@@ -1,0 +1,2606 @@
+{
+  "label": "h200",
+  "source_on_gpu": {
+    "sha256": "9eb5a762ca46c7f7825b20f99711d32ecdec17b5371aa91d98563a090f1e8a3a",
+    "files": 165,
+    "matches_launcher": true
+  },
+  "runs": [
+    {
+      "share": 100,
+      "blas_exit": 0,
+      "blas_output": "NVIDIA H200, MPS share 100%:\n        1000x2048x16  bfloat16: PASS, all 8 algorithms right\n        1000x2048x16   float16: PASS, all 8 algorithms right\n      4096x4096x2048  bfloat16: PASS, all 8 algorithms right\n      4096x4096x2048   float16: PASS, all 8 algorithms right\n",
+      "blas": [
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "bfloat16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "100",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [],
+          "algorithms_not_run": [],
+          "verdict": "PASS"
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "float16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "100",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [],
+          "algorithms_not_run": [],
+          "verdict": "PASS"
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "100",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [],
+          "algorithms_not_run": [],
+          "verdict": "PASS"
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 5,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 9,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 3,
+              "cluster_ctas": 2,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "100",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [],
+          "algorithms_not_run": [],
+          "verdict": "PASS"
+        }
+      ],
+      "known_issues": {
+        "environment": {
+          "cublas": "13.1.1",
+          "cublas_source": "loaded cuBLASLt",
+          "gpu": "NVIDIA H200",
+          "cc": "9.0",
+          "sms": 132,
+          "sms_full": 132,
+          "mps_share": 100.0,
+          "mps": "full"
+        },
+        "matches": [
+          {
+            "id": "6580689",
+            "status": "may apply",
+            "what": "cublasLtMatmul() can return incorrect output with split-K when SPLITK_NUM doesn't divide K and K / SPLITK_NUM is a multiple of the stage size (algorithm 66)",
+            "when": "cuBLASLt picks a split-K algorithm for one of the job's shapes",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, fixed in 13.8.0)",
+              "compute capability 9.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5845724",
+            "status": "may apply",
+            "what": "the cuBLASLt matmul API could give incorrect results with C broadcasting (LDC = 0)",
+            "when": "matmuls that broadcast C",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.3.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6207926",
+            "status": "may apply",
+            "what": "cublasZgemv() with CUBLAS_OP_C and incy > 1 gave incorrect results with FP64 fixed-point emulation on (CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH, eager strategy)",
+            "when": "complex matrix-vector products (Zgemv, conjugate transpose) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.7.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6155165",
+            "status": "may apply",
+            "what": "cublasXt<t>spmm() could give incorrect results with m greater than 46340",
+            "when": "the job calls cublasXt spmm",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "CUB-9942",
+            "status": "may apply",
+            "what": "cublasLtMatmul() could run an unsupported type combination (an FP32-like compute type, FP32 C and D, non-FP32 A and B), reading A and B as FP32 matrices",
+            "when": "matmuls with FP32 C and D and A and B of another type under an FP32-like compute type",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5720478",
+            "status": "may apply",
+            "what": "complex FP64 GEMMs with fixed-point emulation (cublasZgemm, cublasZtrsm, cublasGemmEx, cublasLtMatmul) could give incorrect results when 2*m*n + m exceeded UINT_MAX (an integer overflow)",
+            "when": "very large complex FP64 matmuls (m*n above 2^31) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.3.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6862950",
+            "status": "not active",
+            "what": "GEMM kernels can produce incorrect results on Hopper GPUs for FP16, BF16 and FP8 when the process runs as an MPS client with CUDA_MPS_ACTIVE_THREAD_PERCENTAGE below 100 (cuBLASLt algorithm 66, clusters of 4 or more CTAs)",
+            "when": "the process runs under MPS with less than 100% of the SMs",
+            "workaround": "use cluster configurations with 1 or 2 CTAs in affected processes (NVIDIA), or run at 100% of the SMs",
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, not fixed in a CUDA toolkit yet)",
+              "compute capability 9.0",
+              "this process can use every SM: not an MPS client below 100%"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          }
+        ],
+        "table_from": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html and https://docs.nvidia.com/cuda/cublas-patch-release-notes/ (read Oct 20, 2026)"
+      },
+      "wrong_with_listed_issues": []
+    },
+    {
+      "share": 40,
+      "blas_exit": 1,
+      "blas_output": "NVIDIA H200, MPS share 40%:\n        1000x2048x16  bfloat16: FAIL, 2 of 8 algorithms wrong: algo 66 (8 CTA cluster), algo 66 (4 CTA cluster)\n        1000x2048x16   float16: FAIL, 2 of 8 algorithms wrong: algo 66 (8 CTA cluster), algo 66 (4 CTA cluster)\n      4096x4096x2048  bfloat16: FAIL, 8 of 8 algorithms wrong: algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster)\n      4096x4096x2048   float16: FAIL, 8 of 8 algorithms wrong: algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster), algo 66 (4 CTA cluster)\nAt least one cuBLASLt algorithm computed wrong results here. PyTorch may or may not pick it for your job: that depends on shape, data type and settings. Rerun under the job's exact settings, and see NVIDIA's cuBLAS known issues for your CUDA version.\n",
+      "blas": [
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "bfloat16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 7808,
+              "sampled": 8000,
+              "wrong_sampled": 3904,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": false
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 640,
+              "sampled": 8000,
+              "wrong_sampled": 320,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": false
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.638273063802954,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "40",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [
+            {
+              "index": 0,
+              "algo_id": 66,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "why": null,
+              "unwritten_or_nonfinite": 7808,
+              "wrong_sampled": 3904
+            },
+            {
+              "index": 1,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 640,
+              "wrong_sampled": 320
+            }
+          ],
+          "algorithms_not_run": [],
+          "verdict": "FAIL"
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "float16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 7808,
+              "sampled": 8000,
+              "wrong_sampled": 3904,
+              "worst_error_over_bound": 0.19438711686253296,
+              "correct": false
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 640,
+              "sampled": 8000,
+              "wrong_sampled": 320,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": false
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 8000,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.19470942726151474,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "40",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [
+            {
+              "index": 0,
+              "algo_id": 66,
+              "cluster_shape_id": 7,
+              "cluster_ctas": 8,
+              "why": null,
+              "unwritten_or_nonfinite": 7808,
+              "wrong_sampled": 3904
+            },
+            {
+              "index": 1,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 640,
+              "wrong_sampled": 320
+            }
+          ],
+          "algorithms_not_run": [],
+          "verdict": "FAIL"
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 983040,
+              "sampled": 131072,
+              "wrong_sampled": 15360,
+              "worst_error_over_bound": 0.48705349234594136,
+              "correct": false
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 786432,
+              "sampled": 131072,
+              "wrong_sampled": 12288,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 786432,
+              "sampled": 131072,
+              "wrong_sampled": 12288,
+              "worst_error_over_bound": 0.48705349234594136,
+              "correct": false
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 491520,
+              "sampled": 131072,
+              "wrong_sampled": 7680,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 442368,
+              "sampled": 131072,
+              "wrong_sampled": 6912,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 393216,
+              "sampled": 131072,
+              "wrong_sampled": 6144,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 589824,
+              "sampled": 131072,
+              "wrong_sampled": 9216,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 589824,
+              "sampled": 131072,
+              "wrong_sampled": 9216,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": false
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.49769161355226954,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "40",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [
+            {
+              "index": 0,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 983040,
+              "wrong_sampled": 15360
+            },
+            {
+              "index": 1,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 786432,
+              "wrong_sampled": 12288
+            },
+            {
+              "index": 2,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 786432,
+              "wrong_sampled": 12288
+            },
+            {
+              "index": 3,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 491520,
+              "wrong_sampled": 7680
+            },
+            {
+              "index": 4,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 442368,
+              "wrong_sampled": 6912
+            },
+            {
+              "index": 5,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 393216,
+              "wrong_sampled": 6144
+            },
+            {
+              "index": 6,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 589824,
+              "wrong_sampled": 9216
+            },
+            {
+              "index": 7,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 589824,
+              "wrong_sampled": 9216
+            }
+          ],
+          "algorithms_not_run": [],
+          "verdict": "FAIL"
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "gpu": "NVIDIA H200",
+          "cublaslt_version": 130101,
+          "algorithms": [
+            {
+              "index": 0,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 983040,
+              "sampled": 131072,
+              "wrong_sampled": 15360,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 1,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 786432,
+              "sampled": 131072,
+              "wrong_sampled": 12288,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 2,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 786432,
+              "sampled": 131072,
+              "wrong_sampled": 12288,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 3,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 491520,
+              "sampled": 131072,
+              "wrong_sampled": 7680,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 4,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 442368,
+              "sampled": 131072,
+              "wrong_sampled": 6912,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 5,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 393216,
+              "sampled": 131072,
+              "wrong_sampled": 6144,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 6,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 589824,
+              "sampled": 131072,
+              "wrong_sampled": 9216,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 7,
+              "variant": "",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "status": 0,
+              "unwritten_or_nonfinite": 589824,
+              "sampled": 131072,
+              "wrong_sampled": 9216,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": false
+            },
+            {
+              "index": 0,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 1,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 2,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 3,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 4,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 5,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 6,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            },
+            {
+              "index": 7,
+              "variant": "cluster_1x1x1",
+              "algo_id": 66,
+              "tile_id": 0,
+              "stages_id": 0,
+              "splitk": 1,
+              "cluster_shape_id": 2,
+              "cluster_ctas": 1,
+              "status": 0,
+              "unwritten_or_nonfinite": 0,
+              "sampled": 131072,
+              "wrong_sampled": 0,
+              "worst_error_over_bound": 0.10959248740389979,
+              "correct": true
+            }
+          ],
+          "mps_active_thread_percentage": "40",
+          "algorithms_tested": 8,
+          "wrong_algorithms": [
+            {
+              "index": 0,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 983040,
+              "wrong_sampled": 15360
+            },
+            {
+              "index": 1,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 786432,
+              "wrong_sampled": 12288
+            },
+            {
+              "index": 2,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 786432,
+              "wrong_sampled": 12288
+            },
+            {
+              "index": 3,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 491520,
+              "wrong_sampled": 7680
+            },
+            {
+              "index": 4,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 442368,
+              "wrong_sampled": 6912
+            },
+            {
+              "index": 5,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 393216,
+              "wrong_sampled": 6144
+            },
+            {
+              "index": 6,
+              "algo_id": 66,
+              "cluster_shape_id": 4,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 589824,
+              "wrong_sampled": 9216
+            },
+            {
+              "index": 7,
+              "algo_id": 66,
+              "cluster_shape_id": 8,
+              "cluster_ctas": 4,
+              "why": null,
+              "unwritten_or_nonfinite": 589824,
+              "wrong_sampled": 9216
+            }
+          ],
+          "algorithms_not_run": [],
+          "verdict": "FAIL"
+        }
+      ],
+      "known_issues": {
+        "environment": {
+          "cublas": "13.1.1",
+          "cublas_source": "loaded cuBLASLt",
+          "gpu": "NVIDIA H200",
+          "cc": "9.0",
+          "sms": 52,
+          "sms_full": 132,
+          "mps_share": 40.0,
+          "mps": "partial (52 of 132 SMs visible)"
+        },
+        "matches": [
+          {
+            "id": "6862950",
+            "status": "applies",
+            "what": "GEMM kernels can produce incorrect results on Hopper GPUs for FP16, BF16 and FP8 when the process runs as an MPS client with CUDA_MPS_ACTIVE_THREAD_PERCENTAGE below 100 (cuBLASLt algorithm 66, clusters of 4 or more CTAs)",
+            "when": "the process runs under MPS with less than 100% of the SMs",
+            "workaround": "use cluster configurations with 1 or 2 CTAs in affected processes (NVIDIA), or run at 100% of the SMs",
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, not fixed in a CUDA toolkit yet)",
+              "compute capability 9.0",
+              "MPS partial (52 of 132 SMs visible), share 40%"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6580689",
+            "status": "may apply",
+            "what": "cublasLtMatmul() can return incorrect output with split-K when SPLITK_NUM doesn't divide K and K / SPLITK_NUM is a multiple of the stage size (algorithm 66)",
+            "when": "cuBLASLt picks a split-K algorithm for one of the job's shapes",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, fixed in 13.8.0)",
+              "compute capability 9.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5845724",
+            "status": "may apply",
+            "what": "the cuBLASLt matmul API could give incorrect results with C broadcasting (LDC = 0)",
+            "when": "matmuls that broadcast C",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.3.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6207926",
+            "status": "may apply",
+            "what": "cublasZgemv() with CUBLAS_OP_C and incy > 1 gave incorrect results with FP64 fixed-point emulation on (CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH, eager strategy)",
+            "when": "complex matrix-vector products (Zgemv, conjugate transpose) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.7.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6155165",
+            "status": "may apply",
+            "what": "cublasXt<t>spmm() could give incorrect results with m greater than 46340",
+            "when": "the job calls cublasXt spmm",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "CUB-9942",
+            "status": "may apply",
+            "what": "cublasLtMatmul() could run an unsupported type combination (an FP32-like compute type, FP32 C and D, non-FP32 A and B), reading A and B as FP32 matrices",
+            "when": "matmuls with FP32 C and D and A and B of another type under an FP32-like compute type",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5720478",
+            "status": "may apply",
+            "what": "complex FP64 GEMMs with fixed-point emulation (cublasZgemm, cublasZtrsm, cublasGemmEx, cublasLtMatmul) could give incorrect results when 2*m*n + m exceeded UINT_MAX (an integer overflow)",
+            "when": "very large complex FP64 matmuls (m*n above 2^31) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.3.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          }
+        ],
+        "table_from": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html and https://docs.nvidia.com/cuda/cublas-patch-release-notes/ (read Oct 20, 2026)"
+      },
+      "wrong_with_listed_issues": [
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 8,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 8,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "algo_id": 66,
+          "cluster_ctas": 4,
+          "listed_issues": [
+            "6862950",
+            "6580689"
+          ]
+        }
+      ]
+    }
+  ],
+  "function_seconds": 14.5,
+  "source": {
+    "sha256": "9eb5a762ca46c7f7825b20f99711d32ecdec17b5371aa91d98563a090f1e8a3a",
+    "files": 165,
+    "git_head": "3506c12eaa94c95c742c65e1ae94e1031ed9a1f2",
+    "git_dirty": false
+  },
+  "criteria": {
+    "1 at 100% every algorithm right": true,
+    "2 at 40% the wrong ones are algorithm 66 with clusters of 4 or more CTAs, and the 1x1x1 cluster workaround is right": true,
+    "3 the known-issue report says 6862950 applies at 40% and is not active at 100%": true,
+    "all met": true
+  }
+}

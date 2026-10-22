@@ -1,0 +1,125 @@
+{
+  "label": "h100x2",
+  "source_on_gpu": {
+    "sha256": "9eb5a762ca46c7f7825b20f99711d32ecdec17b5371aa91d98563a090f1e8a3a",
+    "files": 165,
+    "matches_launcher": true
+  },
+  "exit": 0,
+  "output": "{\"rank\": 0, \"fast\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": true, \"fault_steps\": 10, \"steps_with_alert\": 0}}\n{\"rank\": 1, \"fast\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": true, \"fault_steps\": 10, \"steps_with_alert\": 10}}\n{\"rank\": 0, \"default\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": true, \"fault_steps\": 10, \"steps_with_alert\": 0}}\n{\"rank\": 1, \"default\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": true, \"fault_steps\": 10, \"steps_with_alert\": 10}}\n{\"rank\": 1, \"compiled\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": null, \"fault_steps\": 10, \"steps_with_alert\": 10}}{\"rank\": 0, \"compiled\": {\"clean\": {\"checked\": 1150, \"checked_dtensor\": 1150, \"skipped_dtensor\": 0, \"skipped_oom\": 0, \"skipped_dtype\": 0, \"skipped_dtensor_compiled\": 0, \"alerts\": 0, \"unjudged\": 0}, \"grads_identical_to_unguarded_tp\": null, \"fault_steps\": 10, \"steps_with_alert\": 0}}\n\n{\"criteria all met\": true}\n",
+  "errors": "",
+  "tp": {
+    "ranks": [
+      {
+        "rank": 0,
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "torch": "2.14.1+cu130",
+        "fast": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": true,
+          "fault_steps": 10,
+          "steps_with_alert": 0
+        },
+        "default": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": true,
+          "fault_steps": 10,
+          "steps_with_alert": 0
+        },
+        "compiled": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": null,
+          "fault_steps": 10,
+          "steps_with_alert": 0
+        }
+      },
+      {
+        "rank": 1,
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "torch": "2.14.1+cu130",
+        "fast": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": true,
+          "fault_steps": 10,
+          "steps_with_alert": 10
+        },
+        "default": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": true,
+          "fault_steps": 10,
+          "steps_with_alert": 10
+        },
+        "compiled": {
+          "clean": {
+            "checked": 1150,
+            "checked_dtensor": 1150,
+            "skipped_dtensor": 0,
+            "skipped_oom": 0,
+            "skipped_dtype": 0,
+            "skipped_dtensor_compiled": 0,
+            "alerts": 0,
+            "unjudged": 0
+          },
+          "grads_identical_to_unguarded_tp": null,
+          "fault_steps": 10,
+          "steps_with_alert": 10
+        }
+      }
+    ],
+    "clean steps": 50,
+    "matmuls checked per step and rank": 23,
+    "all met": true
+  },
+  "function_seconds": 60.7,
+  "source": {
+    "sha256": "9eb5a762ca46c7f7825b20f99711d32ecdec17b5371aa91d98563a090f1e8a3a",
+    "files": 165,
+    "git_head": "3506c12eaa94c95c742c65e1ae94e1031ed9a1f2",
+    "git_dirty": false
+  }
+}

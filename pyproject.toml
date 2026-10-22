@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sdcguard"
 version = "0.4.0"
-description = "Catch GPUs that compute wrong answers: in training, in serving (vLLM), and before they go into service."
+description = "Catch GPUs that give wrong answers without crashing, in PyTorch training and vLLM serving."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Hari Krishna Kancharla" }]
-keywords = ["pytorch", "gpu", "silent data corruption", "sdc", "abft", "training", "reliability"]
+keywords = ["pytorch", "vllm", "gpu", "cuda", "silent data corruption", "sdc", "abft", "reliability"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

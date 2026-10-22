@@ -1,0 +1,2151 @@
+{
+  "label": "h100",
+  "source_on_gpu": {
+    "sha256": "8d34bf97fcf7228d982b9d9e901cebe90f1f779f28c2ecc1e4f9f39e8fb42b59",
+    "files": 165,
+    "matches_launcher": true
+  },
+  "log": [
+    "    7.6s fingerprints: done in 7 s",
+    "   68.7s compile: {'eager_checks_per_step': 99, 'checks_per_checked_step': [99, 99, 99, 99], 'checks_on_unchecked_steps': 0, 'alerts': 0, 'unjudged': 0, 'ms_unguarded': 13.04, 'ms_unchecked': 13.06, 'ms_checked': 39.2, 'fault_trials': 5, 'faults_caught': 5}",
+    "   68.7s compile: done in 61 s",
+    "  283.5s grouped: {'experts': 64, 'shape': [8192, 1024, 2048], 'calls': 200, 'clean_alarms': 0, 'unjudged': 0, 'checks': 38196, 'expected_checks': 38196, 'ms_plain': 1.27, 'ms_checked': 32.64, 'fault_trials': 100, 'faults_caught': 100}",
+    "  283.5s grouped: done in 215 s",
+    "  326.0s capture: 2 alerts, 2 captured",
+    "  326.0s capture: done in 42 s",
+    "  326.6s capture stress: {'alerts': 14, 'captured': 12, 'captures_dropped': 2, 'checks_executed': 90}",
+    "  326.6s capture_stress: done in 1 s",
+    "  326.7s blas (4096, 4096, 2048) torch.bfloat16: PASS (8 algorithms)",
+    "  326.9s blas (4096, 4096, 2048) torch.float16: PASS (8 algorithms)",
+    "  327.3s blas (11008, 4096, 512) torch.bfloat16: PASS (8 algorithms)",
+    "  327.6s blas (11008, 4096, 512) torch.float16: PASS (8 algorithms)",
+    "  327.7s blas (1000, 2048, 16) torch.bfloat16: PASS (8 algorithms)",
+    "  327.7s blas (1000, 2048, 16) torch.float16: PASS (8 algorithms)",
+    "  327.8s blas (2048, 2048, 2048) torch.bfloat16: PASS (8 algorithms)",
+    "  327.8s blas (2048, 2048, 2048) torch.float16: PASS (8 algorithms)",
+    "  327.8s blas: done in 1 s",
+    "  370.3s correctness: done in 41 s",
+    "  378.3s calibration shape, seed 41, Zipf tokens: 990 fused checks, guard {'matmuls_seen': 990, 'checked': 990, 'checked_fp32': 990, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 990, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0, 'replica_checks': 0, 'replica_mismatches': 0, 'replica_skipped': 0}",
+    "  384.5s wide, 8,192 tokens, seed 43, Zipf tokens: 306 fused checks, guard {'matmuls_seen': 306, 'checked': 306, 'checked_fp32': 306, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 306, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0, 'replica_checks': 0, 'replica_mismatches': 0, 'replica_skipped': 0}",
+    "  384.5s same_matmuls: done in 14 s",
+    "  390.2s sensitivity 4096x1024x3072: fused 0.005, checked 0.005, precise 0.005, default None",
+    "  392.6s sensitivity 4096x1024x4096: fused 0.005, checked 0.005, precise 0.005, default None",
+    "  393.2s sensitivity 4096x4096x1024: fused 0.03, checked 0.03, precise 0.03, default None",
+    "  393.2s sensitivity: done in 9 s",
+    "  395.5s timing 4096x1024x3072: cuBLAS 0.052 ms, fused GEMM 0.1145 ms, check 1.395 ms, fused total 1.4854 ms, precise total 1.4918 ms",
+    "  396.4s timing 4096x1024x4096: cuBLAS 0.0628 ms, fused GEMM 0.1369 ms, check 1.2746 ms, fused total 1.4183 ms, precise total 1.4365 ms",
+    "  397.3s timing 4096x4096x1024: cuBLAS 0.0575 ms, fused GEMM 0.1219 ms, check 1.3506 ms, fused total 1.4053 ms, precise total 1.4213 ms",
+    "  397.5s timing 3072x4096x1024: cuBLAS 0.0484 ms, fused GEMM 0.0956 ms, check 1.2992 ms, fused total 1.5379 ms, precise total 1.5281 ms",
+    "  400.4s timing 4096x1024x32000: cuBLAS 0.3829 ms, fused GEMM 0.6893 ms, check 1.5236 ms, fused total 2.1828 ms, precise total 3.5226 ms",
+    "  400.8s timing 8192x2048x8192: cuBLAS 0.3765 ms, fused GEMM 0.6781 ms, check 1.3432 ms, fused total 1.7257 ms, precise total 2.2697 ms",
+    "  400.8s timing: done in 8 s",
+    "  401.8s overhead unchecked: 0.0282 s/step",
+    "  402.9s overhead default check: 0.0412 s/step",
+    "  405.0s overhead precise=True: 0.1815 s/step",
+    "  406.2s overhead precise=fused: 0.0616 s/step",
+    "  406.2s overhead: done in 5 s",
+    "  407.9s gradients: max relative difference 0.0, losses 10.560026168823242 vs 10.560026168823242",
+    "  407.9s gradients: done in 2 s",
+    "  418.0s gpt2: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': -4.9, 'full check': 5.2}",
+    "  427.2s llama: clean 0 mismatches in 80 compares, faults 8/8 caught (8 named right), gradients identical False, overhead {'early stop off only': -3.1, 'full check': 4.0}",
+    "  432.0s nondeterminism: {\"deterministic algorithms off\": {\"recomputes_compared\": 5, \"mismatches\": 3, \"blocks_that_differed\": [\"_Scatter\"], \"deterministic\": false, \"note\": null}, \"deterministic algorithms on\": {\"recomputes_compared\": 5, \"mismatches\": 0, \"blocks_that_differed\": [], \"deterministic\": true, \"note\": null}}",
+    "  442.6s default gpt2: A vs B identical False (90 of 100 differ, max 7.41e-03); A vs C identical False (88 differ, max 7.41e-03); A vs D identical False",
+    "  442.6s default llama: A vs B identical False (66 of 75 differ, max 9.39e-03); A vs C identical False (66 differ, max 7.41e-03); A vs D identical False",
+    "  452.0s deterministic gpt2: A vs B identical True (0 of 100 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED",
+    "  452.0s deterministic llama: A vs B identical True (0 of 75 differ, max 0.00e+00); A vs C identical True (0 differ, max 0.00e+00); A vs D identical True; decision UNCHANGED"
+  ],
+  "v040": {
+    "torch": "2.14.1+cu130",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "cc": [
+      9,
+      0
+    ],
+    "fingerprints": {
+      "agree": true,
+      "output": "ALL AGREE (18 tensors, kernel status (True, ''))\n",
+      "ms_64mib_kernel": 0.125,
+      "ms_64mib_torch": 6.079,
+      "kernel_used": true
+    },
+    "compile": {
+      "eager_checks_per_step": 99,
+      "checks_per_checked_step": [
+        99,
+        99,
+        99,
+        99
+      ],
+      "checks_on_unchecked_steps": 0,
+      "alerts": 0,
+      "unjudged": 0,
+      "ms_unguarded": 13.04,
+      "ms_unchecked": 13.06,
+      "ms_checked": 39.2,
+      "fault_trials": 5,
+      "faults_caught": 5
+    },
+    "grouped": {
+      "experts": 64,
+      "shape": [
+        8192,
+        1024,
+        2048
+      ],
+      "calls": 200,
+      "clean_alarms": 0,
+      "unjudged": 0,
+      "checks": 38196,
+      "expected_checks": 38196,
+      "ms_plain": 1.27,
+      "ms_checked": 32.64,
+      "fault_trials": 100,
+      "faults_caught": 100
+    },
+    "capture": {
+      "layers": 4,
+      "width": 4096,
+      "batch": 8,
+      "replays": 200,
+      "graph": true,
+      "first_use_comparison": {
+        "bfloat16": true,
+        "float16": true
+      },
+      "uses_fast": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "fault": {
+        "replay": 66,
+        "layer": "1",
+        "row": 5,
+        "col": 1000,
+        "added": 4.154120445251465
+      },
+      "checker_fault": {
+        "replay": 133,
+        "layer": "2",
+        "block": 7
+      },
+      "alerts": [
+        {
+          "replay": 66,
+          "where": "1",
+          "captured": {
+            "row": 5,
+            "col_block": 7,
+            "with_bias": true,
+            "z": 166.6999969482422
+          },
+          "verdict": "output_wrong",
+          "outside_envelope": 1,
+          "evidence": "/tmp/sdcguard_capture_g7326rce/evidence_0"
+        },
+        {
+          "replay": 133,
+          "where": "2",
+          "captured": {
+            "row": 4,
+            "col_block": 7,
+            "with_bias": true,
+            "z": 591.8692626953125
+          },
+          "verdict": "output_agrees",
+          "outside_envelope": 0,
+          "evidence": "/tmp/sdcguard_capture_g7326rce/evidence_1"
+        }
+      ],
+      "evidence_holds_the_wrong_value": true,
+      "stats": {
+        "alerts": 2,
+        "captured": 2,
+        "captures_dropped": 0,
+        "checks_executed": 813
+      },
+      "check_us": {
+        "without": 79.66832160949707,
+        "with": 80.41215896606445
+      }
+    },
+    "capture_stress": {
+      "layers": 6,
+      "k": 4096,
+      "n": 4096,
+      "batch": 8,
+      "graph": true,
+      "slots": 4,
+      "uses_fast": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "clean_before": 0,
+      "a": {
+        "made": 256,
+        "alerts": [
+          {
+            "where": 3,
+            "row": 2,
+            "col_block": 9,
+            "captured": {
+              "row": 5,
+              "col_block": 17,
+              "with_bias": true,
+              "z": 170.6903076171875
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ],
+        "captured_was_made_wrong": true
+      },
+      "clean_between": [
+        0,
+        0,
+        0
+      ],
+      "b": {
+        "made": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            2,
+            2
+          ],
+          [
+            3,
+            3,
+            3
+          ]
+        ],
+        "alerts": [
+          {
+            "where": 0,
+            "row": 0,
+            "col_block": 0,
+            "captured": {
+              "row": 0,
+              "col_block": 0,
+              "with_bias": true,
+              "z": 150.44520568847656
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 1,
+            "row": 1,
+            "col_block": 1,
+            "captured": {
+              "row": 1,
+              "col_block": 1,
+              "with_bias": true,
+              "z": 153.98658752441406
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 2,
+            "row": 2,
+            "col_block": 2,
+            "captured": {
+              "row": 2,
+              "col_block": 2,
+              "with_bias": true,
+              "z": 161.34396362304688
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 3,
+            "row": 3,
+            "col_block": 3,
+            "captured": {
+              "row": 3,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 165.8424072265625
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ]
+      },
+      "c": {
+        "made": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            2,
+            2
+          ],
+          [
+            3,
+            3,
+            3
+          ],
+          [
+            4,
+            4,
+            4
+          ],
+          [
+            5,
+            5,
+            5
+          ]
+        ],
+        "alerts": [
+          {
+            "where": 0,
+            "row": 0,
+            "col_block": 0,
+            "captured": {
+              "row": 0,
+              "col_block": 0,
+              "with_bias": true,
+              "z": 155.54469299316406
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 1,
+            "row": 1,
+            "col_block": 1,
+            "captured": {
+              "row": 1,
+              "col_block": 1,
+              "with_bias": true,
+              "z": 169.80247497558594
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 2,
+            "row": 2,
+            "col_block": 2,
+            "captured": {
+              "row": 2,
+              "col_block": 2,
+              "with_bias": true,
+              "z": 164.4716339111328
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 3,
+            "row": 3,
+            "col_block": 3,
+            "captured": {
+              "row": 3,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 177.8099822998047
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 4,
+            "row": 4,
+            "col_block": 4,
+            "captured": null,
+            "capture_missing": "the capture buffer was full (2 rows not kept)",
+            "verdict": null,
+            "outside_envelope": null
+          },
+          {
+            "where": 5,
+            "row": 5,
+            "col_block": 5,
+            "captured": null,
+            "capture_missing": "the capture buffer was full (2 rows not kept)",
+            "verdict": null,
+            "outside_envelope": null
+          }
+        ],
+        "then": {
+          "made": [
+            [
+              5,
+              1,
+              2
+            ]
+          ],
+          "alerts": [
+            {
+              "where": 5,
+              "row": 1,
+              "col_block": 2,
+              "captured": {
+                "row": 1,
+                "col_block": 2,
+                "with_bias": true,
+                "z": 159.90142822265625
+              },
+              "capture_missing": null,
+              "verdict": "output_wrong",
+              "outside_envelope": 1
+            }
+          ]
+        },
+        "dropped": 2
+      },
+      "d": {
+        "made": [
+          [
+            0,
+            2,
+            3
+          ],
+          [
+            1,
+            3,
+            4
+          ]
+        ],
+        "alerts_first_read": [],
+        "alerts_second_read": [
+          {
+            "where": 0,
+            "row": 2,
+            "col_block": 3,
+            "captured": {
+              "row": 2,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 161.62454223632812
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ],
+        "alerts_last_read": [
+          {
+            "where": 1,
+            "captured": {
+              "row": 3,
+              "col_block": 4,
+              "with_bias": true,
+              "z": 175.74508666992188
+            },
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ]
+      },
+      "stats": {
+        "alerts": 14,
+        "captured": 12,
+        "captures_dropped": 2,
+        "checks_executed": 90
+      }
+    },
+    "blas": {
+      "sweeps": [
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            2048
+          ],
+          "dtype": "float16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            11008,
+            4096,
+            512
+          ],
+          "dtype": "bfloat16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            11008,
+            4096,
+            512
+          ],
+          "dtype": "float16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "bfloat16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            1000,
+            2048,
+            16
+          ],
+          "dtype": "float16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            2048,
+            2048,
+            2048
+          ],
+          "dtype": "bfloat16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        },
+        {
+          "shape": [
+            2048,
+            2048,
+            2048
+          ],
+          "dtype": "float16",
+          "verdict": "PASS",
+          "algorithms_tested": 8,
+          "wrong": [],
+          "error": null
+        }
+      ],
+      "known_issues": {
+        "environment": {
+          "cublas": "13.1.1",
+          "cublas_source": "loaded cuBLASLt",
+          "gpu": "NVIDIA H100 80GB HBM3",
+          "cc": "9.0",
+          "sms": 132,
+          "sms_full": 132,
+          "mps_share": null,
+          "mps": "full"
+        },
+        "matches": [
+          {
+            "id": "6580689",
+            "status": "may apply",
+            "what": "cublasLtMatmul() can return incorrect output with split-K when SPLITK_NUM doesn't divide K and K / SPLITK_NUM is a multiple of the stage size (algorithm 66)",
+            "when": "cuBLASLt picks a split-K algorithm for one of the job's shapes",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, fixed in 13.8.0)",
+              "compute capability 9.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5845724",
+            "status": "may apply",
+            "what": "the cuBLASLt matmul API could give incorrect results with C broadcasting (LDC = 0)",
+            "when": "matmuls that broadcast C",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.3.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6207926",
+            "status": "may apply",
+            "what": "cublasZgemv() with CUBLAS_OP_C and incy > 1 gave incorrect results with FP64 fixed-point emulation on (CUBLAS_FP64_EMULATED_FIXEDPOINT_MATH, eager strategy)",
+            "when": "complex matrix-vector products (Zgemv, conjugate transpose) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.7.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6155165",
+            "status": "may apply",
+            "what": "cublasXt<t>spmm() could give incorrect results with m greater than 46340",
+            "when": "the job calls cublasXt spmm",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "CUB-9942",
+            "status": "may apply",
+            "what": "cublasLtMatmul() could run an unsupported type combination (an FP32-like compute type, FP32 C and D, non-FP32 A and B), reading A and B as FP32 matrices",
+            "when": "matmuls with FP32 C and D and A and B of another type under an FP32-like compute type",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (NVIDIA gives no first version, fixed in 13.6.0)"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "5720478",
+            "status": "may apply",
+            "what": "complex FP64 GEMMs with fixed-point emulation (cublasZgemm, cublasZtrsm, cublasGemmEx, cublasLtMatmul) could give incorrect results when 2*m*n + m exceeded UINT_MAX (an integer overflow)",
+            "when": "very large complex FP64 matmuls (m*n above 2^31) run with FP64 emulation",
+            "workaround": null,
+            "why": [
+              "cuBLAS 13.1.1 (from 13.1.0, fixed in 13.3.0): NVIDIA gives no first version; FP64 emulation arrived in cuBLAS 13.1.0"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          },
+          {
+            "id": "6862950",
+            "status": "not active",
+            "what": "GEMM kernels can produce incorrect results on Hopper GPUs for FP16, BF16 and FP8 when the process runs as an MPS client with CUDA_MPS_ACTIVE_THREAD_PERCENTAGE below 100 (cuBLASLt algorithm 66, clusters of 4 or more CTAs)",
+            "when": "the process runs under MPS with less than 100% of the SMs",
+            "workaround": "use cluster configurations with 1 or 2 CTAs in affected processes (NVIDIA), or run at 100% of the SMs",
+            "why": [
+              "cuBLAS 13.1.1 (from 12.6.3, not fixed in a CUDA toolkit yet)",
+              "compute capability 9.0",
+              "this process can use every SM: not an MPS client below 100%"
+            ],
+            "source": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html"
+          }
+        ],
+        "table_from": "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html and https://docs.nvidia.com/cuda/cublas-patch-release-notes/ (read Oct 20, 2026)"
+      },
+      "wrong_with_listed_issues": []
+    },
+    "criteria": {
+      "1 fingerprint kernel equals the PyTorch version": true,
+      "2 compiled fullgraph: same checks as eager, clean, faults caught": true,
+      "3 compiled unchecked steps within 2% of an unguarded compiled step": true,
+      "4 grouped GEMM: clean, at least 99% of single wrong values caught": true,
+      "5 blas: every algorithm right on every default shape (no MPS)": true,
+      "5 wrong algorithms and the listed cuBLAS issues that match them": [],
+      "6 capture in a CUDA graph: the one-time fault kept as it alarmed, a checker fault not blamed": true,
+      "7 capture costs the clean check at most 5%": true,
+      "8 capture under contention: racing programs, every layer at once, a full buffer, reads in flight": true,
+      "all met": true
+    }
+  },
+  "fused": {
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "cc": [
+      9,
+      0
+    ],
+    "torch": "2.14.1+cu130",
+    "triton": "3.8.0",
+    "correctness": {
+      "passed": true,
+      "exit": 0,
+      "output": "sub-rounding error 1.49e-03 (0.2% of a typical output): fused z=21.0, ordinary check of the bf16 output z=0.71, outputs changed: 1\nfused guard stats: {'matmuls_seen': 10, 'checked': 10, 'checked_fp32': 10, 'unjudged': 0, 'skipped_dtype': 0, 'skipped_oom': 0, 'alerts': 0, 'attention_checked': 0, 'attention_skipped': 0, 'checked_fused': 10, 'fused_fallbacks': 0, 'recompute_compared': 0, 'recompute_mismatches': 0, 'recompute_steps_without_blocks': 0, 'replica_checks': 0, 'replica_mismatches': 0, 'replica_skipped': 0}\nALL AGREE\n"
+    },
+    "same_matmuls": [
+      {
+        "name": "calibration shape, seed 41, Zipf tokens",
+        "checks": 990,
+        "guard_stats": {
+          "matmuls_seen": 990,
+          "checked": 990,
+          "checked_fp32": 990,
+          "unjudged": 0,
+          "skipped_dtype": 0,
+          "skipped_oom": 0,
+          "alerts": 0,
+          "attention_checked": 0,
+          "attention_skipped": 0,
+          "checked_fused": 990,
+          "fused_fallbacks": 0,
+          "recompute_compared": 0,
+          "recompute_mismatches": 0,
+          "recompute_steps_without_blocks": 0,
+          "replica_checks": 0,
+          "replica_mismatches": 0,
+          "replica_skipped": 0
+        },
+        "fused_alarms": 0,
+        "precise_alarms": 0,
+        "fused_unjudged": 0,
+        "fused_worst": 1.534,
+        "precise_worst": 1.62,
+        "largest_score_gap": 0.251,
+        "median_share_of_outputs_with_other_bits": 0.0,
+        "worst_by_layer_and_pass": {
+          "qkv backward dW": {
+            "fused": 1.5342869758605957,
+            "precise": 1.619611144065857
+          },
+          "down backward dW": {
+            "fused": 1.1309865713119507,
+            "precise": 1.274314522743225
+          },
+          "head backward dW": {
+            "fused": 1.0243641138076782,
+            "precise": 1.1034855842590332
+          },
+          "head forward": {
+            "fused": 0.5946195125579834,
+            "precise": 0.7222857475280762
+          },
+          "proj backward dW": {
+            "fused": 0.474679172039032,
+            "precise": 0.5104088187217712
+          },
+          "up backward dW": {
+            "fused": 0.3434329926967621,
+            "precise": 0.35791584849357605
+          },
+          "head backward dX": {
+            "fused": 0.2080649882555008,
+            "precise": 0.2142413854598999
+          },
+          "down forward": {
+            "fused": 0.20399250090122223,
+            "precise": 0.22142286598682404
+          },
+          "down backward dX": {
+            "fused": 0.20013216137886047,
+            "precise": 0.2266460806131363
+          },
+          "up forward": {
+            "fused": 0.1672627180814743,
+            "precise": 0.1877923458814621
+          },
+          "qkv backward dX": {
+            "fused": 0.14926959574222565,
+            "precise": 0.16500751674175262
+          },
+          "up backward dX": {
+            "fused": 0.1435927450656891,
+            "precise": 0.15439583361148834
+          }
+        }
+      },
+      {
+        "name": "wide, 8,192 tokens, seed 43, Zipf tokens",
+        "checks": 306,
+        "guard_stats": {
+          "matmuls_seen": 306,
+          "checked": 306,
+          "checked_fp32": 306,
+          "unjudged": 0,
+          "skipped_dtype": 0,
+          "skipped_oom": 0,
+          "alerts": 0,
+          "attention_checked": 0,
+          "attention_skipped": 0,
+          "checked_fused": 306,
+          "fused_fallbacks": 0,
+          "recompute_compared": 0,
+          "recompute_mismatches": 0,
+          "recompute_steps_without_blocks": 0,
+          "replica_checks": 0,
+          "replica_mismatches": 0,
+          "replica_skipped": 0
+        },
+        "fused_alarms": 0,
+        "precise_alarms": 0,
+        "fused_unjudged": 0,
+        "fused_worst": 3.339,
+        "precise_worst": 3.381,
+        "largest_score_gap": 1.057,
+        "median_share_of_outputs_with_other_bits": 0.0,
+        "worst_by_layer_and_pass": {
+          "down backward dW": {
+            "fused": 3.338862419128418,
+            "precise": 3.3814423084259033
+          },
+          "proj backward dW": {
+            "fused": 2.2722036838531494,
+            "precise": 2.356639862060547
+          },
+          "qkv backward dW": {
+            "fused": 2.1604361534118652,
+            "precise": 2.2362377643585205
+          },
+          "head backward dW": {
+            "fused": 1.851419448852539,
+            "precise": 0.9202395677566528
+          },
+          "up backward dW": {
+            "fused": 1.6592808961868286,
+            "precise": 1.7133768796920776
+          },
+          "down backward dX": {
+            "fused": 1.0298137664794922,
+            "precise": 1.1954452991485596
+          },
+          "head forward": {
+            "fused": 0.9572339057922363,
+            "precise": 2.0142858028411865
+          },
+          "up forward": {
+            "fused": 0.5217433571815491,
+            "precise": 0.6041368842124939
+          },
+          "qkv backward dX": {
+            "fused": 0.33190903067588806,
+            "precise": 0.35005322098731995
+          },
+          "down forward": {
+            "fused": 0.299459844827652,
+            "precise": 0.3146457076072693
+          },
+          "head backward dX": {
+            "fused": 0.2463832050561905,
+            "precise": 0.24744495749473572
+          },
+          "up backward dX": {
+            "fused": 0.2394721657037735,
+            "precise": 0.25432565808296204
+          }
+        }
+      }
+    ],
+    "sensitivity": {
+      "trials": 16,
+      "fractions": [
+        0.0003,
+        0.001,
+        0.002,
+        0.003,
+        0.005,
+        0.01,
+        0.03,
+        0.1
+      ],
+      "shapes": [
+        {
+          "shape": [
+            4096,
+            1024,
+            3072
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 1.0,
+              "checked": 0.8125,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.005,
+          "smallest_caught_half_the_time_checked": 0.005,
+          "smallest_caught_half_the_time_precise": 0.005,
+          "smallest_caught_half_the_time_default": null
+        },
+        {
+          "shape": [
+            4096,
+            1024,
+            4096
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 1.0,
+              "checked": 0.6875,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.005,
+          "smallest_caught_half_the_time_checked": 0.005,
+          "smallest_caught_half_the_time_precise": 0.005,
+          "smallest_caught_half_the_time_default": null
+        },
+        {
+          "shape": [
+            4096,
+            4096,
+            1024
+          ],
+          "typical_output": 0.67578125,
+          "fractions": {
+            "0.0003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.001": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.002": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.003": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.005": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.01": {
+              "fused": 0.0,
+              "checked": 0.0,
+              "precise": 0.0,
+              "default": 0.0
+            },
+            "0.03": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            },
+            "0.1": {
+              "fused": 1.0,
+              "checked": 1.0,
+              "precise": 1.0,
+              "default": 0.0
+            }
+          },
+          "smallest_caught_half_the_time_fused": 0.03,
+          "smallest_caught_half_the_time_checked": 0.03,
+          "smallest_caught_half_the_time_precise": 0.03,
+          "smallest_caught_half_the_time_default": null
+        }
+      ]
+    },
+    "timing": [
+      {
+        "shape": [
+          4096,
+          1024,
+          3072
+        ],
+        "cublas_bf16_ms": 0.052,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1294,
+          "64x128x32 w8": 0.1452,
+          "128x128x32 w8": 0.1448,
+          "64x128x64 w4": 0.1145,
+          "128x128x64 w8": 0.1181
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.1145,
+        "check_from_stats_ms": 1.395,
+        "fused_total_ms": 1.4854,
+        "fused_checked_total_ms": 0.3313,
+        "precise_fp32_gemm_ms": 0.0681,
+        "precise_total_ms": 1.4918
+      },
+      {
+        "shape": [
+          4096,
+          1024,
+          4096
+        ],
+        "cublas_bf16_ms": 0.0628,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1553,
+          "64x128x32 w8": 0.1704,
+          "128x128x32 w8": 0.1623,
+          "64x128x64 w4": 0.1369,
+          "128x128x64 w8": 0.1483
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.1369,
+        "check_from_stats_ms": 1.2746,
+        "fused_total_ms": 1.4183,
+        "fused_checked_total_ms": 0.3626,
+        "precise_fp32_gemm_ms": 0.0831,
+        "precise_total_ms": 1.4365
+      },
+      {
+        "shape": [
+          4096,
+          4096,
+          1024
+        ],
+        "cublas_bf16_ms": 0.0575,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1687,
+          "64x128x32 w8": 0.1545,
+          "128x128x32 w8": 0.1632,
+          "64x128x64 w4": 0.1344,
+          "128x128x64 w8": 0.1219
+        },
+        "fused_best_tile": "128x128x64 w8",
+        "fused_gemm_best_ms": 0.1219,
+        "check_from_stats_ms": 1.3506,
+        "fused_total_ms": 1.4053,
+        "fused_checked_total_ms": 0.33,
+        "precise_fp32_gemm_ms": 0.0675,
+        "precise_total_ms": 1.4213
+      },
+      {
+        "shape": [
+          3072,
+          4096,
+          1024
+        ],
+        "cublas_bf16_ms": 0.0484,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.1176,
+          "64x128x32 w8": 0.1561,
+          "128x128x32 w8": 0.1602,
+          "64x128x64 w4": 0.0956,
+          "128x128x64 w8": 0.1203
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.0956,
+        "check_from_stats_ms": 1.2992,
+        "fused_total_ms": 1.5379,
+        "fused_checked_total_ms": 0.3597,
+        "precise_fp32_gemm_ms": 0.06,
+        "precise_total_ms": 1.5281
+      },
+      {
+        "shape": [
+          4096,
+          1024,
+          32000
+        ],
+        "cublas_bf16_ms": 0.3829,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.833,
+          "64x128x32 w8": 0.9385,
+          "128x128x32 w8": 0.9231,
+          "64x128x64 w4": 0.6893,
+          "128x128x64 w8": 0.7146
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.6893,
+        "check_from_stats_ms": 1.5236,
+        "fused_total_ms": 2.1828,
+        "fused_checked_total_ms": 1.207,
+        "precise_fp32_gemm_ms": 0.4778,
+        "precise_total_ms": 3.5226
+      },
+      {
+        "shape": [
+          8192,
+          2048,
+          8192
+        ],
+        "cublas_bf16_ms": 0.3765,
+        "fused_gemm_ms": {
+          "64x128x32 w4": 0.9301,
+          "64x128x32 w8": 1.1019,
+          "128x128x32 w8": 1.1459,
+          "64x128x64 w4": 0.6781,
+          "128x128x64 w8": 0.8477
+        },
+        "fused_best_tile": "64x128x64 w4",
+        "fused_gemm_best_ms": 0.6781,
+        "check_from_stats_ms": 1.3432,
+        "fused_total_ms": 1.7257,
+        "fused_checked_total_ms": 1.2233,
+        "precise_fp32_gemm_ms": 0.4195,
+        "precise_total_ms": 2.2697
+      }
+    ],
+    "overhead": {
+      "workload": "calibration shape, seed 41, Zipf tokens",
+      "seconds_per_step": {
+        "unchecked": 0.0282,
+        "default check": 0.0412,
+        "precise=True": 0.1815,
+        "precise=fused": 0.0616
+      },
+      "overhead_pct": {
+        "default check": 46.1,
+        "precise=True": 543.6,
+        "precise=fused": 118.4
+      },
+      "fused_checks_in_timed_run": 792,
+      "fused_fallbacks": 0
+    },
+    "gradients": {
+      "stats_True": {
+        "checked": 99,
+        "checked_fp32": 99,
+        "checked_fused": null,
+        "alerts": 0,
+        "fused_fallbacks": null
+      },
+      "loss_True": 10.560026168823242,
+      "stats_fused": {
+        "checked": 99,
+        "checked_fp32": 99,
+        "checked_fused": 99,
+        "alerts": 0,
+        "fused_fallbacks": 0
+      },
+      "loss_fused": 10.560026168823242,
+      "max_relative_difference": 0.0,
+      "worst_parameters": {
+        "tok.weight": 0.0,
+        "pos.weight": 0.0,
+        "blocks.0.ln1.weight": 0.0,
+        "blocks.0.ln1.bias": 0.0,
+        "blocks.0.ln2.weight": 0.0,
+        "blocks.0.ln2.bias": 0.0,
+        "blocks.0.qkv.weight": 0.0,
+        "blocks.0.proj.weight": 0.0
+      },
+      "parameters_compared": 85,
+      "matmuls_in_the_triton_kernel": 99
+    },
+    "criteria": {
+      "1 correctness": true,
+      "2 clean, worst score at most 4": true,
+      "3 same sensitivity as precise mode (within 2x)": true,
+      "4 overhead at most half of precise=True's": true,
+      "5 gradients within 2^-6 of precise=True's (relative to each parameter's largest)": true,
+      "all met": true
+    }
+  },
+  "recompute": {
+    "sizes": {
+      "layers": 8,
+      "width": 768,
+      "heads": 12,
+      "seq": 512,
+      "batch": 8,
+      "vocab": 32000
+    },
+    "models": [
+      {
+        "model": "gpt2",
+        "layers": 8,
+        "clean": {
+          "recomputes_compared": 80,
+          "mismatches": 0,
+          "blocks_that_differed": [],
+          "deterministic": true,
+          "note": null
+        },
+        "coverage": {
+          "blocks_compared": 8,
+          "blocks_skipped_rng": 0,
+          "parameter_share_inside_compared_blocks": 0.6943,
+          "module_types_with_parameters_outside": [
+            "Embedding",
+            "LayerNorm",
+            "Linear"
+          ]
+        },
+        "faults": {
+          "trials": 8,
+          "caught": 8,
+          "right_block": 8,
+          "detail": [
+            {
+              "layer": 0,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 1,
+              "right_block": true
+            },
+            {
+              "layer": 1,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 2,
+              "right_block": true
+            },
+            {
+              "layer": 2,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 3,
+              "right_block": true
+            },
+            {
+              "layer": 3,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 4,
+              "right_block": true
+            },
+            {
+              "layer": 4,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 5,
+              "right_block": true
+            },
+            {
+              "layer": 5,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 6,
+              "right_block": true
+            },
+            {
+              "layer": 6,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 7,
+              "right_block": true
+            },
+            {
+              "layer": 7,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 8,
+              "right_block": true
+            }
+          ]
+        },
+        "gradients_bit_identical": false,
+        "seconds_per_step": {
+          "plain checkpointing": 0.02962,
+          "early stop off only": 0.02816,
+          "full check": 0.03115
+        },
+        "timed_rounds": 30,
+        "host_profile": {
+          "plain checkpointing": {
+            "self_cpu_ms_total": 43.14,
+            "top": [
+              {
+                "op": "NativeDropoutBackward0",
+                "calls": 17,
+                "self_cpu_ms": 5.077
+              },
+              {
+                "op": "cudaLaunchKernel",
+                "calls": 821,
+                "self_cpu_ms": 4.97
+              },
+              {
+                "op": "Activity Buffer Request",
+                "calls": 2,
+                "self_cpu_ms": 3.23
+              },
+              {
+                "op": "aten::addmm",
+                "calls": 128,
+                "self_cpu_ms": 2.949
+              },
+              {
+                "op": "aten::empty_strided",
+                "calls": 434,
+                "self_cpu_ms": 1.752
+              },
+              {
+                "op": "aten::fill_",
+                "calls": 5,
+                "self_cpu_ms": 1.57
+              },
+              {
+                "op": "aten::mm",
+                "calls": 67,
+                "self_cpu_ms": 1.505
+              },
+              {
+                "op": "aten::copy_",
+                "calls": 329,
+                "self_cpu_ms": 1.362
+              },
+              {
+                "op": "aten::native_layer_norm",
+                "calls": 33,
+                "self_cpu_ms": 1.258
+              },
+              {
+                "op": "aten::mul",
+                "calls": 120,
+                "self_cpu_ms": 1.17
+              },
+              {
+                "op": "aten::empty",
+                "calls": 281,
+                "self_cpu_ms": 1.134
+              },
+              {
+                "op": "aten::native_dropout",
+                "calls": 33,
+                "self_cpu_ms": 1.082
+              },
+              {
+                "op": "aten::_to_copy",
+                "calls": 327,
+                "self_cpu_ms": 0.961
+              },
+              {
+                "op": "cuLaunchKernelEx",
+                "calls": 131,
+                "self_cpu_ms": 0.862
+              },
+              {
+                "op": "aten::transpose",
+                "calls": 293,
+                "self_cpu_ms": 0.771
+              }
+            ]
+          },
+          "full check": {
+            "self_cpu_ms_total": 41.291,
+            "top": [
+              {
+                "op": "NativeDropoutBackward0",
+                "calls": 17,
+                "self_cpu_ms": 6.108
+              },
+              {
+                "op": "cudaLaunchKernel",
+                "calls": 849,
+                "self_cpu_ms": 4.935
+              },
+              {
+                "op": "aten::addmm",
+                "calls": 128,
+                "self_cpu_ms": 2.939
+              },
+              {
+                "op": "aten::native_layer_norm",
+                "calls": 33,
+                "self_cpu_ms": 2.21
+              },
+              {
+                "op": "aten::empty_strided",
+                "calls": 435,
+                "self_cpu_ms": 1.75
+              },
+              {
+                "op": "aten::mul",
+                "calls": 120,
+                "self_cpu_ms": 1.572
+              },
+              {
+                "op": "aten::mm",
+                "calls": 67,
+                "self_cpu_ms": 1.514
+              },
+              {
+                "op": "Activity Buffer Request",
+                "calls": 1,
+                "self_cpu_ms": 1.468
+              },
+              {
+                "op": "aten::copy_",
+                "calls": 330,
+                "self_cpu_ms": 1.404
+              },
+              {
+                "op": "aten::empty",
+                "calls": 297,
+                "self_cpu_ms": 1.335
+              },
+              {
+                "op": "aten::_to_copy",
+                "calls": 328,
+                "self_cpu_ms": 1.018
+              },
+              {
+                "op": "cuLaunchKernelEx",
+                "calls": 147,
+                "self_cpu_ms": 0.955
+              },
+              {
+                "op": "aten::view",
+                "calls": 437,
+                "self_cpu_ms": 0.785
+              },
+              {
+                "op": "aten::_scaled_dot_product_flash_attention",
+                "calls": 16,
+                "self_cpu_ms": 0.685
+              },
+              {
+                "op": "aten::native_dropout",
+                "calls": 33,
+                "self_cpu_ms": 0.624
+              }
+            ]
+          }
+        },
+        "overhead_pct": {
+          "early stop off only": -4.9,
+          "full check": 5.2
+        }
+      },
+      {
+        "model": "llama",
+        "layers": 8,
+        "clean": {
+          "recomputes_compared": 80,
+          "mismatches": 0,
+          "blocks_that_differed": [],
+          "deterministic": true,
+          "note": null
+        },
+        "coverage": {
+          "blocks_compared": 8,
+          "blocks_skipped_rng": 0,
+          "parameter_share_inside_compared_blocks": 0.582,
+          "module_types_with_parameters_outside": [
+            "Embedding",
+            "Linear",
+            "LlamaRMSNorm"
+          ]
+        },
+        "faults": {
+          "trials": 8,
+          "caught": 8,
+          "right_block": 8,
+          "detail": [
+            {
+              "layer": 0,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 1,
+              "right_block": true
+            },
+            {
+              "layer": 1,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 2,
+              "right_block": true
+            },
+            {
+              "layer": 2,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 3,
+              "right_block": true
+            },
+            {
+              "layer": 3,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 4,
+              "right_block": true
+            },
+            {
+              "layer": 4,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 5,
+              "right_block": true
+            },
+            {
+              "layer": 5,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 6,
+              "right_block": true
+            },
+            {
+              "layer": 6,
+              "run": "forward",
+              "alerts": 1,
+              "named_block": 7,
+              "right_block": true
+            },
+            {
+              "layer": 7,
+              "run": "recompute",
+              "alerts": 1,
+              "named_block": 8,
+              "right_block": true
+            }
+          ]
+        },
+        "gradients_bit_identical": false,
+        "seconds_per_step": {
+          "plain checkpointing": 0.04601,
+          "early stop off only": 0.04458,
+          "full check": 0.04787
+        },
+        "timed_rounds": 30,
+        "host_profile": {
+          "plain checkpointing": {
+            "self_cpu_ms_total": 50.336,
+            "top": [
+              {
+                "op": "cudaLaunchKernel",
+                "calls": 1348,
+                "self_cpu_ms": 7.256
+              },
+              {
+                "op": "aten::mm",
+                "calls": 227,
+                "self_cpu_ms": 6.028
+              },
+              {
+                "op": "MmBackward0",
+                "calls": 57,
+                "self_cpu_ms": 6.027
+              },
+              {
+                "op": "aten::mul",
+                "calls": 333,
+                "self_cpu_ms": 3.661
+              },
+              {
+                "op": "aten::copy_",
+                "calls": 459,
+                "self_cpu_ms": 1.858
+              },
+              {
+                "op": "aten::empty_strided",
+                "calls": 433,
+                "self_cpu_ms": 1.684
+              },
+              {
+                "op": "cuLaunchKernelEx",
+                "calls": 219,
+                "self_cpu_ms": 1.401
+              },
+              {
+                "op": "aten::_to_copy",
+                "calls": 392,
+                "self_cpu_ms": 1.175
+              },
+              {
+                "op": "aten::pow",
+                "calls": 67,
+                "self_cpu_ms": 1.157
+              },
+              {
+                "op": "Activity Buffer Request",
+                "calls": 1,
+                "self_cpu_ms": 0.886
+              },
+              {
+                "op": "aten::add",
+                "calls": 90,
+                "self_cpu_ms": 0.826
+              },
+              {
+                "op": "aten::transpose",
+                "calls": 565,
+                "self_cpu_ms": 0.759
+              },
+              {
+                "op": "aten::linear",
+                "calls": 226,
+                "self_cpu_ms": 0.738
+              },
+              {
+                "op": "MulBackward0",
+                "calls": 74,
+                "self_cpu_ms": 0.707
+              },
+              {
+                "op": "aten::empty",
+                "calls": 176,
+                "self_cpu_ms": 0.688
+              }
+            ]
+          },
+          "full check": {
+            "self_cpu_ms_total": 50.635,
+            "top": [
+              {
+                "op": "cudaLaunchKernel",
+                "calls": 1376,
+                "self_cpu_ms": 7.802
+              },
+              {
+                "op": "MmBackward0",
+                "calls": 57,
+                "self_cpu_ms": 6.372
+              },
+              {
+                "op": "aten::mm",
+                "calls": 227,
+                "self_cpu_ms": 5.748
+              },
+              {
+                "op": "aten::mul",
+                "calls": 333,
+                "self_cpu_ms": 3.657
+              },
+              {
+                "op": "aten::copy_",
+                "calls": 460,
+                "self_cpu_ms": 1.886
+              },
+              {
+                "op": "aten::empty_strided",
+                "calls": 434,
+                "self_cpu_ms": 1.637
+              },
+              {
+                "op": "cuLaunchKernelEx",
+                "calls": 243,
+                "self_cpu_ms": 1.489
+              },
+              {
+                "op": "aten::pow",
+                "calls": 67,
+                "self_cpu_ms": 1.18
+              },
+              {
+                "op": "aten::_to_copy",
+                "calls": 393,
+                "self_cpu_ms": 1.09
+              },
+              {
+                "op": "aten::add",
+                "calls": 98,
+                "self_cpu_ms": 0.894
+              },
+              {
+                "op": "aten::linear",
+                "calls": 226,
+                "self_cpu_ms": 0.717
+              },
+              {
+                "op": "aten::empty",
+                "calls": 192,
+                "self_cpu_ms": 0.717
+              },
+              {
+                "op": "aten::transpose",
+                "calls": 565,
+                "self_cpu_ms": 0.694
+              },
+              {
+                "op": "aten::_scaled_dot_product_flash_attention",
+                "calls": 16,
+                "self_cpu_ms": 0.625
+              },
+              {
+                "op": "autograd::engine::evaluate_function: MulBackward0",
+                "calls": 74,
+                "self_cpu_ms": 0.597
+              }
+            ]
+          }
+        },
+        "overhead_pct": {
+          "early stop off only": -3.1,
+          "full check": 4.0
+        }
+      }
+    ],
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "torch": "2.14.1+cu130",
+    "transformers": "5.20.1",
+    "nondeterminism": {
+      "deterministic algorithms off": {
+        "recomputes_compared": 5,
+        "mismatches": 3,
+        "blocks_that_differed": [
+          "_Scatter"
+        ],
+        "deterministic": false,
+        "note": null
+      },
+      "deterministic algorithms on": {
+        "recomputes_compared": 5,
+        "mismatches": 0,
+        "blocks_that_differed": [],
+        "deterministic": true,
+        "note": null
+      }
+    },
+    "criteria": {
+      "1 clean: no mismatch on any clean step": true,
+      "2 every injected fault caught and its block named": true,
+      "3 gradients bit-identical with and without the check": false,
+      "all met": false
+    }
+  },
+  "grad_control": {
+    "sizes": {
+      "layers": 8,
+      "width": 768,
+      "heads": 12,
+      "seq": 512,
+      "batch": 8,
+      "vocab": 32000
+    },
+    "settings": {
+      "default": {
+        "setting": "default",
+        "models": {
+          "gpt2": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 90,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007407407407407408,
+              "worst_parameters": {
+                "transformer.h.1.mlp.c_proj.weight": 0.007407407407407408,
+                "transformer.h.4.attn.c_proj.weight": 0.007042253521126761,
+                "transformer.h.0.mlp.c_proj.weight": 0.006944444444444444,
+                "transformer.h.1.mlp.c_fc.bias": 0.006711409395973154,
+                "transformer.h.4.mlp.c_fc.bias": 0.006666666666666667
+              },
+              "losses": [
+                10.530414581298828,
+                10.530414581298828
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 88,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007407407407407408,
+              "worst_parameters": {
+                "transformer.h.1.mlp.c_proj.weight": 0.007407407407407408,
+                "transformer.h.0.ln_1.weight": 0.007310136389340609,
+                "transformer.h.4.attn.c_proj.weight": 0.007042253521126761,
+                "transformer.h.1.mlp.c_fc.bias": 0.006711409395973154,
+                "transformer.h.4.mlp.c_fc.bias": 0.006666666666666667
+              },
+              "losses": [
+                10.530414581298828,
+                10.530414581298828
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 89,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007407407407407408,
+              "worst_parameters": {
+                "transformer.h.1.mlp.c_proj.weight": 0.007407407407407408,
+                "transformer.wpe.weight": 0.007151743369440123,
+                "transformer.h.4.attn.c_proj.weight": 0.007042253521126761,
+                "transformer.h.0.mlp.c_proj.weight": 0.006944444444444444,
+                "transformer.h.1.mlp.c_fc.bias": 0.006711409395973154
+              },
+              "losses": [
+                10.530414581298828,
+                10.530414581298828
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": false,
+              "parameters": 100,
+              "parameters_that_differ": 90,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007042253521126761,
+              "worst_parameters": {
+                "transformer.h.4.attn.c_proj.weight": 0.007042253521126761,
+                "transformer.h.0.mlp.c_proj.bias": 0.007042253521126761,
+                "transformer.h.0.mlp.c_proj.weight": 0.006896551724137931,
+                "transformer.h.0.ln_1.weight": 0.006581049518210149,
+                "transformer.h.2.attn.c_attn.bias": 0.006578947368421052
+              },
+              "losses": [
+                10.530414581298828,
+                10.530414581298828
+              ],
+              "losses_equal": true
+            }
+          },
+          "llama": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.009389671361502348,
+              "worst_parameters": {
+                "model.layers.0.self_attn.q_proj.weight": 0.009389671361502348,
+                "model.layers.0.self_attn.k_proj.weight": 0.007424146075581396,
+                "model.layers.1.mlp.down_proj.weight": 0.007407407407407408,
+                "model.layers.0.mlp.up_proj.weight": 0.007194244604316547,
+                "model.layers.0.mlp.gate_proj.weight": 0.0070921985815602835
+              },
+              "losses": [
+                10.521836280822754,
+                10.521836280822754
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007407407407407408,
+              "worst_parameters": {
+                "model.layers.1.mlp.down_proj.weight": 0.007407407407407408,
+                "model.layers.0.mlp.gate_proj.weight": 0.0070921985815602835,
+                "model.layers.0.self_attn.q_proj.weight": 0.007042253521126761,
+                "model.layers.0.self_attn.k_proj.weight": 0.0069767441860465115,
+                "model.layers.5.self_attn.q_proj.weight": 0.006944444444444444
+              },
+              "losses": [
+                10.521836280822754,
+                10.521836280822754
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007407407407407408,
+              "worst_parameters": {
+                "model.layers.1.mlp.down_proj.weight": 0.007407407407407408,
+                "model.layers.0.mlp.up_proj.weight": 0.007194244604316547,
+                "model.layers.0.self_attn.q_proj.weight": 0.007042253521126761,
+                "model.layers.0.self_attn.k_proj.weight": 0.00703125,
+                "model.layers.3.mlp.down_proj.weight": 0.006802721088435374
+              },
+              "losses": [
+                10.521836280822754,
+                10.521836280822754
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": false,
+              "parameters": 75,
+              "parameters_that_differ": 66,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.007352941176470588,
+              "worst_parameters": {
+                "model.layers.1.mlp.down_proj.weight": 0.007352941176470588,
+                "model.layers.0.mlp.up_proj.weight": 0.007194244604316547,
+                "model.layers.0.self_attn.k_proj.weight": 0.007149345930232558,
+                "model.layers.0.self_attn.q_proj.weight": 0.007042253521126761,
+                "model.layers.3.mlp.down_proj.weight": 0.006802721088435374
+              },
+              "losses": [
+                10.521836280822754,
+                10.521836280822754
+              ],
+              "losses_equal": true
+            }
+          }
+        },
+        "nondeterminism_warnings": [],
+        "cublas_workspace_config": null
+      },
+      "deterministic": {
+        "setting": "deterministic",
+        "models": {
+          "gpt2": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.534870147705078,
+                10.534870147705078
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.534870147705078,
+                10.534870147705078
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.534870147705078,
+                10.534870147705078
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": true,
+              "parameters": 100,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.534870147705078,
+                10.534870147705078
+              ],
+              "losses_equal": true
+            },
+            "decision": "UNCHANGED"
+          },
+          "llama": {
+            "attention": "sdpa",
+            "check_stats": {
+              "recomputes_compared": 8,
+              "mismatches": 0
+            },
+            "A vs B": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.523354530334473,
+                10.523354530334473
+              ],
+              "losses_equal": true
+            },
+            "A vs C": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.523354530334473,
+                10.523354530334473
+              ],
+              "losses_equal": true
+            },
+            "A vs D": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.523354530334473,
+                10.523354530334473
+              ],
+              "losses_equal": true
+            },
+            "B vs C": {
+              "bit_identical": true,
+              "parameters": 75,
+              "parameters_that_differ": 0,
+              "same_parameter_names": true,
+              "max_relative_difference": 0.0,
+              "worst_parameters": {},
+              "losses": [
+                10.523354530334473,
+                10.523354530334473
+              ],
+              "losses_equal": true
+            },
+            "decision": "UNCHANGED"
+          }
+        },
+        "nondeterminism_warnings": [],
+        "cublas_workspace_config": ":4096:8"
+      }
+    },
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "torch": "2.14.1+cu130",
+    "criteria": {
+      "decisions": {
+        "gpt2": "UNCHANGED",
+        "llama": "UNCHANGED"
+      },
+      "3 (follow-up) gradients unchanged by the check, against a deterministic control": true,
+      "complete": true
+    }
+  },
+  "function_seconds": 453.4,
+  "source": {
+    "sha256": "8d34bf97fcf7228d982b9d9e901cebe90f1f779f28c2ecc1e4f9f39e8fb42b59",
+    "files": 165,
+    "git_head": "e0eab1e2533b2f9ab8b86d5c9ce3f188aca74e75",
+    "git_dirty": false
+  },
+  "recompute_criteria_v040": {
+    "1 clean": true,
+    "2 faults caught and named": true,
+    "3 gradients unchanged (deterministic control)": true,
+    "4 at most 10% per step, every step checked": true,
+    "cost_pct": [
+      5.2,
+      4.0
+    ],
+    "all met": true
+  }
+}
