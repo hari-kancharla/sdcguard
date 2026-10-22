@@ -441,8 +441,12 @@ def test_gpu_no_kernel_compile_while_serving():
     assert g.uses_fast(slot)
 
     def compiled():
-        caches = getattr(_serve_fast._check, "device_caches", None)
-        return sum(len(v[0]) for v in caches.values()) if caches else None
+        n = None
+        for kern in (_serve_fast._check, _serve_fast._emm, _serve_fast._pairs):
+            caches = getattr(kern, "device_caches", None)
+            if caches:
+                n = (n or 0) + sum(len(v[0]) for v in caches.values())
+        return n
     before = compiled()
     for m in (1, 7, 64, 333, 1100, 2500, 5000, 9000):
         x = torch.randn(m, 2048, device="cuda").to(torch.bfloat16)

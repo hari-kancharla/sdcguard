@@ -1272,6 +1272,27 @@ above. Then the vLLM runs above are repeated on the released code, with the same
 checking every layer is reported as measured. The aim is about 10% of throughput on the 7B model with every layer
 checked; it is an aim, not a criterion, and the number is published whatever it is.
 
+**Changed before the timing run (October 22).** The variant timing above never ran. Looking first at what the
+check's time is made of (a profile on one H100 earlier on October 22, of the kernel before its running-key
+rewrite, on the same layer shapes) showed it isn't the loop's reductions: on Qwen2.5-7B's gate_up_proj at 256 rows
+the kernel read 19 MB in 56 µs (about 0.35 TB/s of the H100's 3.35), the cuBLAS call for E cost 7 to 10 µs per
+layer even at one row, and across a sweep of 48 launch settings the best still left the check at 57% of that
+layer's own matmul. A loop rewrite can't close that gap, so a second design is timed against the current kernel
+instead (`_serve_fast.check_v2`, two Triton kernels per layer): `_emm` computes E with Triton's dot (split over k
+when there are few rows, so the parts matrix is read at full bandwidth) and the row norms from the same loads, and
+`_pairs` scores one 128-wide block of y per tile row, 32 blocks per program, with one atomic per program and only
+when it raises the layer's state. Its sums run in another order than cuBLAS's, so its scores can differ from the
+current kernel's in the last bits and the bit-for-bit criterion above can't apply; it is replaced by the
+criterion the current kernel itself had to meet, agreement with the plain PyTorch check. On one H100
+(`modal run scripts/modal_serve_cost.py`), v2 becomes the default only if:
+1. its first-use comparison passes in bf16 and fp16, and `tests/_serve_fast_compare.py` prints ALL AGREE with it;
+2. on every linear-layer shape of Qwen2.5-1.5B and 7B at 1 to 16,384 rows, its scores agree with the plain check's
+   on a clean output (within 0.05 + 2%), and on the same output with one value changed by 1% of the largest output
+   and by 50 (the same verdict, and the same row and block when it alarms), with the same counts;
+3. it costs less than the current kernel, summed over the four 7B layers, at every row count of the run.
+Otherwise the current kernel stays as it is. Either way, the ported kernel then goes through the H100 checks and
+the vLLM runs described above.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use
