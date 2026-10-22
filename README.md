@@ -48,9 +48,9 @@ Logs and raw numbers are in [results/demo_4gpu](results/demo_4gpu).
 ## A real bug that GPU health checks can't see
 
 cuBLAS has a bug (NVIDIA known issue 6862950) that gives wrong FP16, BF16 and FP8 matmuls on Hopper GPUs
-running under MPS with less than 100% of the SMs. It was
-[reported on NVIDIA's forum](https://forums.developer.nvidia.com/t/cublaslt-returns-silently-wrong-fp16-bf16-fp8-gemm-results-on-hopper-under-cuda-mps-active-thread-percentage-algoid-66-cluster-kernels/384873)
-by another engineer on October 2, 2026, and NVIDIA confirmed it on October 6.
+running under MPS with less than 100% of the SMs. A matching report was
+[posted on NVIDIA's forum](https://forums.developer.nvidia.com/t/cublaslt-returns-silently-wrong-fp16-bf16-fp8-gemm-results-on-hopper-under-cuda-mps-active-thread-percentage-algoid-66-cluster-kernels/384873)
+by another engineer on October 2, 2026, and NVIDIA said on October 6 that it had reproduced it.
 
 I ran sdcguard, DCGM and gpu-burn on one H200 at four MPS shares, with the rules written down before the run.
 The second column is the ground truth: PyTorch's own matmuls at that share, checked against float64.
@@ -101,6 +101,8 @@ layer named. Checking every layer costs about 30% on the 7B model for now. I'm w
 
 When a check fires, sdcguard keeps the exact numbers that failed (copied on the GPU before vLLM reuses the
 memory) and rechecks them in float64 on the CPU, so the alert tells you whether the output was really wrong.
+Those evidence files hold real rows of your inputs and of the layer's weights: treat them like your data, and
+don't attach them to a public issue unless you're fine sharing them.
 
 For any other PyTorch model there's `ServeGuard().attach(model, share=0.125)`.
 

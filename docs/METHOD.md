@@ -1238,6 +1238,22 @@ or the log shows another kernel than the expected one), and DOESN'T WORK only wh
 wrong. Expectations 1 to 5 for the second run stay as written; 6 now expects INCONCLUSIVE (the file isn't there),
 and never WORKS.
 
+**What the second run found (October 22): every expectation met.** Code fingerprint f36a0afc8410 (commit e17c55c),
+`results/gate_h200/h200_20261022_110847.json`, one H200 under MPS, 45 seconds of GPU time.
+1. The capture at 40% was wrong in 20 of 20 runs, every call on algorithm 66 with a 4x2x1 cluster.
+2. The same stack at 40% again: UNCHANGED, wrong in 20 of 20 before and after.
+3. At 100%: INCONCLUSIVE (52 against 132 SMs visible, MPS share 40 against 100), although all 20 runs were right,
+   on the same kernel.
+4. The newest cuBLAS wheel, 13.8.1.7: UNCHANGED, wrong in 20 of 20, on the same kernel. NVIDIA's newest release
+   still has the bug.
+5. `gate pin` wrote pin0.csv (the name PyTorch reads for pin.csv on GPU 0), and `gate workaround` with it said
+   WORKS: wrong in 50 of 50 runs without it and 0 of 50 with it (a failure rate below 7.1% at 95%), and the log
+   showed algorithm 66 with a 1x1x1 cluster on all 50 calls.
+6. The same switches with a file that doesn't exist: INCONCLUSIVE, naming the file PyTorch looked for; the default
+   kernel ran and was wrong in 50 of 50.
+Every wrong output was one the kernel never wrote: the output is filled with NaN before each call, and in every
+wrong run 7,808 of the 16,000 outputs (16 tokens x 1,000) were still NaN after it, the same number as were wrong.
+
 ### The gate's output check
 
 `sdcguard gate model-ref` records greedy completions of 32 fixed prompts (64 tokens each) with the top 20
