@@ -12,6 +12,8 @@ and compares two runs to say what an upgrade changed:
     sdcguard gate compare before.json after.json                       # a verdict per case
     sdcguard gate workaround gates/<case> --env KEY=VALUE ...          # does a workaround fix it, here?
     sdcguard gate pin gates/<case> --out pin.csv                       # a TunableOp file that pins the workaround
+    sdcguard gate model-ref --model M --out ref.json                   # the model's outputs, on a trusted stack
+    sdcguard gate model-check ref.json --out new.json                  # ... and on a new one (gate_model.py)
 
 Each run of a case is a fresh process (cuBLAS, cuBLASLt and PyTorch read their environment variables once), with
 cuBLASLt's API log on, so the kernel that ran (algorithm id, tile, stages, cluster shape) is read from the library
@@ -158,8 +160,10 @@ def run_here(case_dir: str, repeats: int, device: Optional[str] = None) -> dict:
     n = w.shape[0]
     x64, w64 = x.double(), w.double()
     ref = x64 @ w64.t() + (0 if b is None else b.double())
-    # the output format's rounding, fp32 accumulation over k products (a worst case), and the bias added in fp32
-    bound = (_UNIT[op["dtype"]] * ref.abs() + k * _U32 * (x64.abs() @ w64.abs().t())
+    # the output format's rounding, fp32 accumulation over k products (a worst case), and the bias: added in fp32
+    # before the one rounding (cuBLASLt's epilogue), or to the rounded product (the legacy path), which rounds twice
+    acc = x64 @ w64.t()
+    bound = (_UNIT[op["dtype"]] * (ref.abs() + (0 if b is None else acc.abs())) + k * _U32 * (x64.abs() @ w64.abs().t())
              + (0 if b is None else 2 * _U32 * b.double().abs()) + 1e-30)
     xd, wd = x.to(dev), w.to(dev)
     bd = None if b is None else b.to(dev)
@@ -696,6 +700,9 @@ def main(argv=None) -> int:
         return _worker_main(argv[1:])
     if argv and argv[0] == "--pin-worker":
         return _pin_worker(argv[1:])
+    if argv and argv[0] in ("model-ref", "model-check"):
+        from .gate_model import main as model_main
+        return model_main(argv)
     p = argparse.ArgumentParser(prog="sdcguard gate", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)

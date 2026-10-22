@@ -1,0 +1,278 @@
+"""Output check for upgrades of an inference stack: does the new stack give the model the same next-token
+distributions as the old one?
+
+The matmul cases of `sdcguard gate` test one library call. Most upgrade breakages are elsewhere (attention kernels,
+fused MoE, quantization kernels, a config or logic change), and they show up in what the model predicts. This
+check records, on the stack you trust, greedy completions of a fixed prompt set with the top 20 log-probabilities
+at every position; on the new stack it feeds each prompt plus its recorded completion back in (teacher forcing:
+the new stack scores the same tokens, so one near-tie flip can't make the rest of a completion diverge) and
+compares the distributions position by position:
+
+    sdcguard gate model-ref --model Qwen/Qwen2.5-1.5B-Instruct --out ref.json       # on the trusted stack
+    sdcguard gate model-check ref.json --out same.json                              # same stack: the noise floor
+    ... upgrade vLLM, PyTorch, CUDA, the driver, the quantization ...
+    sdcguard gate model-check ref.json --out new.json --noise same.json             # the verdict
+
+Per position: whether the new stack's most likely token is the recorded one (top-1 agreement), the KL divergence
+from the recorded distribution to the new one over the union of both top-20 sets (each renormalized over that
+union; a token one side doesn't list gets that side's smallest listed probability, an upper bound), and the change
+in the recorded token's log-probability. Free-running greedy text isn't compared: across GPUs and batch sizes it
+diverges for a large share of prompts on correct stacks.
+
+Verdict (the thresholds are a starting point taken from published numbers, not calibrated for every model; a
+same-stack run with --noise raises them to 3x what that run measured):
+  PASS   mean KL <= max(1e-3, 3 x noise) and top-1 agreement >= 99%, and no prompt's mean KL above 0.05
+  WARN   mean KL up to 7e-3 (about where quantized models land) or top-1 agreement from 97% to 99%
+  FAIL   anything further: mean KL above 7e-3, top-1 agreement under 97%, or a prompt's mean KL above 0.1
+Fireworks, for example, reports KL around 1e-6 between two FP16 runs and calls 1e-3 the line between equivalent
+and not; vLLM issue #61100 (an upgrade that made a model print commas) would be KL of order 1 or more.
+"""
+from __future__ import annotations
+
+import json
+import math
+import os
+import sys
+import time
+from typing import Optional
+
+REF_SCHEMA = "sdcguard.gate-model-ref/1"
+CHECK_SCHEMA = "sdcguard.gate-model-check/1"
+TOP = 20
+PASS_KL, WARN_KL, FAIL_PROMPT_KL, PASS_PROMPT_KL = 1e-3, 7e-3, 0.1, 0.05
+PASS_TOP1, WARN_TOP1 = 0.99, 0.97
+
+# A fixed, varied prompt set (chat, explanation, code, arithmetic, lists, translation, long instructions): the same
+# prompts every run, so two runs score the same positions.
+PROMPTS = [
+    "Explain in two sentences why the sky is blue.",
+    "Write a Python function that returns the n-th Fibonacci number iteratively.",
+    "What is 17 multiplied by 23? Show the steps.",
+    "List five common uses of a hash map.",
+    "Translate into French: The meeting is moved to Thursday afternoon.",
+    "Summarize the plot of a story about a lighthouse keeper who finds a message in a bottle.",
+    "Write a haiku about a GPU that never sleeps.",
+    "What are the differences between TCP and UDP?",
+    "Give three tips for writing clear technical documentation.",
+    "Solve for x: 3x + 7 = 25.",
+    "Write a SQL query that returns the ten most recent orders with their customer names.",
+    "Describe how a binary search works and its time complexity.",
+    "What causes the seasons on Earth?",
+    "Write a short email asking a colleague to review a pull request by Friday.",
+    "Convert 72 degrees Fahrenheit to Celsius and explain the formula.",
+    "Name the planets of the solar system in order from the Sun.",
+    "Write a bash one-liner that counts the lines in every .py file in a directory.",
+    "Explain what a matrix multiplication computes, with a 2 by 2 example.",
+    "What is the capital of Australia, and why isn't it Sydney?",
+    "Write a JSON object describing a book with a title, an author and a year.",
+    "Explain overfitting in machine learning to a beginner.",
+    "Write a regular expression that matches a US ZIP code.",
+    "What is the derivative of x squared times sine of x?",
+    "Give a recipe outline for a simple tomato soup.",
+    "Explain the difference between a process and a thread.",
+    "Write a limerick about a cat who learned to code.",
+    "What are the main causes of inflation?",
+    "Write a C function that reverses a string in place.",
+    "Describe the water cycle in four steps.",
+    "Explain what a checksum is and why it is useful.",
+    "Continue the sequence and explain the rule: 2, 6, 12, 20, 30, ...",
+    ("You are a careful assistant. Read the following instructions and follow them exactly. First, restate the "
+     "task in one sentence. Second, list the assumptions you are making. Third, give a short answer. The task: "
+     "estimate how many piano tuners work in a city of one million people."),
+]
+
+
+# ---------------------------------------------------------------- the metrics (no vLLM needed)
+def _lp(v) -> float:
+    return float(getattr(v, "logprob", v))
+
+
+def position_metrics(ref: dict, cand: dict, token: int) -> dict:
+    """One position: ref and cand map token id -> log-probability (each side's top list, which includes `token`,
+    the recorded token, on the candidate side). Returns top-1 agreement, KL(ref || cand) over the union of both
+    lists, and the change in the recorded token's log-probability."""
+    ref = {int(t): _lp(v) for t, v in ref.items()}
+    cand = {int(t): _lp(v) for t, v in cand.items()}
+    union = set(ref) | set(cand)
+    floor_r, floor_c = min(ref.values()), min(cand.values())
+    p = {t: math.exp(ref.get(t, floor_r)) for t in union}
+    q = {t: math.exp(cand.get(t, floor_c)) for t in union}
+    sp, sq = sum(p.values()), sum(q.values())
+    kl = sum((p[t] / sp) * (math.log(p[t] / sp) - math.log(q[t] / sq)) for t in union if p[t] > 0)
+    top_c = max(cand, key=lambda t: cand[t])
+    d = (cand[token] - ref[token]) if token in cand and token in ref else None
+    return {"top1": top_c == token, "kl": max(0.0, kl), "dlogprob": d}
+
+
+def summarize(per_prompt: list) -> dict:
+    """per_prompt: one list of position_metrics per prompt."""
+    allpos = [m for ps in per_prompt for m in ps]
+    if not allpos:
+        return {"positions": 0}
+    kls = sorted(m["kl"] for m in allpos)
+    dl = [abs(m["dlogprob"]) for m in allpos if m["dlogprob"] is not None]
+    prompt_kl = [sum(m["kl"] for m in ps) / len(ps) for ps in per_prompt if ps]
+    return {"positions": len(allpos), "prompts": len(per_prompt),
+            "mean_kl": sum(kls) / len(kls), "p99_kl": kls[min(len(kls) - 1, int(0.99 * len(kls)))],
+            "max_kl": kls[-1], "top1_agreement": sum(m["top1"] for m in allpos) / len(allpos),
+            "max_prompt_mean_kl": max(prompt_kl) if prompt_kl else 0.0,
+            "mean_abs_dlogprob": sum(dl) / len(dl) if dl else None}
+
+
+def verdict(s: dict, noise: Optional[dict] = None) -> dict:
+    """PASS / WARN / FAIL from a summary (and the summary of a same-stack run, when there is one)."""
+    if not s.get("positions"):
+        return {"verdict": "INCONCLUSIVE", "why": "no positions were scored"}
+    pass_kl = PASS_KL
+    if noise and noise.get("positions"):
+        pass_kl = max(PASS_KL, 3 * noise["mean_kl"])
+    kl, top1, worst = s["mean_kl"], s["top1_agreement"], s["max_prompt_mean_kl"]
+    line = (f"mean KL {kl:.2e} (pass up to {pass_kl:.1e}), top-1 agreement {top1:.2%}, worst prompt's mean KL "
+            f"{worst:.2e}, over {s['positions']} positions of {s['prompts']} prompts")
+    if kl > WARN_KL or top1 < WARN_TOP1 or worst > FAIL_PROMPT_KL:
+        return {"verdict": "FAIL", "why": line}
+    if kl > pass_kl or top1 < PASS_TOP1 or worst > PASS_PROMPT_KL:
+        return {"verdict": "WARN", "why": line}
+    return {"verdict": "PASS", "why": line}
+
+
+def compare(ref: dict, cand_logprobs: list) -> dict:
+    """ref: a model-ref file's records; cand_logprobs: per prompt, the candidate's prompt_logprobs over the prompt
+    plus the recorded completion (position i scores token i)."""
+    per_prompt = []
+    for rec, plp in zip(ref["records"], cand_logprobs):
+        p_len, comp = len(rec["prompt_ids"]), rec["completion_ids"]
+        ms = []
+        for t, tok in enumerate(comp):
+            cpos = plp[p_len + t] if plp is not None and p_len + t < len(plp) else None
+            rpos = rec["logprobs"][t] if t < len(rec["logprobs"]) else None
+            if not cpos or not rpos:
+                continue
+            ms.append(position_metrics({int(k): v for k, v in rpos.items()}, cpos, tok))
+        per_prompt.append(ms)
+    return {"per_prompt": per_prompt, "summary": summarize(per_prompt)}
+
+
+# ---------------------------------------------------------------- the vLLM runs
+def _stack() -> dict:
+    out = {}
+    try:
+        import torch
+        out.update(torch=torch.__version__, cuda=torch.version.cuda,
+                   gpu=torch.cuda.get_device_name(0) if torch.cuda.is_available() else None)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import vllm
+        out["vllm"] = vllm.__version__
+    except Exception:  # noqa: BLE001
+        pass
+    from .gate import steering_env
+    out["env"] = steering_env()
+    return out
+
+
+def _llm(model: str, dtype: str, max_len: int, extra: dict):
+    from vllm import LLM
+    return LLM(model=model, dtype=dtype, seed=0, max_model_len=max_len, max_logprobs=TOP,
+               gpu_memory_utilization=float(os.environ.get("SDCGUARD_GATE_GPU_MEMORY", "0.6")), **extra)
+
+
+def make_ref(model: str, out: str, tokens: int = 64, dtype: str = "bfloat16", max_len: int = 2048,
+             extra: Optional[dict] = None) -> dict:
+    from vllm import SamplingParams
+    llm = _llm(model, dtype, max_len, extra or {})
+    tok = llm.get_tokenizer()
+    chats = [tok.apply_chat_template([{"role": "user", "content": p}], tokenize=False, add_generation_prompt=True)
+             if getattr(tok, "chat_template", None) else p for p in PROMPTS]
+    sp = SamplingParams(temperature=0.0, max_tokens=tokens, logprobs=TOP, ignore_eos=True)
+    outs = llm.generate(chats, sp, use_tqdm=False)
+    records = []
+    for o in outs:
+        c = o.outputs[0]
+        records.append({"prompt_ids": list(o.prompt_token_ids), "completion_ids": list(c.token_ids),
+                        "logprobs": [{str(t): _lp(v) for t, v in pos.items()} for pos in c.logprobs]})
+    ref = {"schema": REF_SCHEMA, "model": model, "dtype": dtype, "max_len": max_len, "tokens": tokens,
+           "extra": extra or {}, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "stack": _stack(),
+           "records": records}
+    with open(out, "w") as f:
+        json.dump(ref, f)
+    return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}
+
+
+def check(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[dict] = None,
+          noise_path: Optional[str] = None) -> dict:
+    from vllm import SamplingParams
+    from vllm.inputs import TokensPrompt
+    ref = json.load(open(ref_path))
+    if ref.get("schema") != REF_SCHEMA:
+        raise ValueError(f"{ref_path} isn't a {REF_SCHEMA} file")
+    llm = _llm(model or ref["model"], ref["dtype"], ref["max_len"], extra if extra is not None else ref["extra"])
+    sp = SamplingParams(temperature=0.0, max_tokens=1, prompt_logprobs=TOP)
+    inputs = [TokensPrompt(prompt_token_ids=r["prompt_ids"] + r["completion_ids"]) for r in ref["records"]]
+    outs = llm.generate(inputs, sp, use_tqdm=False)
+    cand = [o.prompt_logprobs for o in outs]
+    res = compare(ref, cand)
+    noise = json.load(open(noise_path))["summary"] if noise_path else None
+    v = verdict(res["summary"], noise)
+    run = {"schema": CHECK_SCHEMA, "ref": os.path.abspath(ref_path), "model": model or ref["model"],
+           "extra": extra if extra is not None else ref["extra"], "stack": _stack(), "ref_stack": ref.get("stack"),
+           "summary": res["summary"], "verdict": v, "noise": noise,
+           "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if os.environ.get("SDCGUARD") == "1":
+        # the matmul checks ran too (the vLLM plugin): what they saw in the same traffic, when the engine ran in
+        # this process (VLLM_ENABLE_V1_MULTIPROCESSING=0)
+        try:
+            from . import vllm_plugin
+            vllm_plugin.poll(wait=True)
+            g = vllm_plugin.guard()
+            run["sdcguard_matmul_checks"] = ({"in_process": False} if g is None else
+                                             {"in_process": True, "layers": len(g.layers),
+                                              "checks_executed": g.stats.get("checks_executed"),
+                                              "alerts": len(g.log.events)})
+        except Exception as e:  # noqa: BLE001
+            run["sdcguard_matmul_checks"] = {"error": f"{type(e).__name__}: {e}"}
+    with open(out, "w") as f:
+        json.dump(run, f, indent=1)
+    return run
+
+
+def _extra(items) -> dict:
+    out = {}
+    for it in items or ():
+        k, _, v = it.partition("=")
+        try:
+            out[k] = json.loads(v)
+        except ValueError:
+            out[k] = v
+    return out
+
+
+def main(argv) -> int:
+    import argparse
+    p = argparse.ArgumentParser(prog="sdcguard gate model-ref|model-check")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("model-ref", help="record reference completions and their top-20 log-probabilities")
+    r.add_argument("--model", required=True)
+    r.add_argument("--out", required=True)
+    r.add_argument("--tokens", type=int, default=64)
+    r.add_argument("--dtype", default="bfloat16")
+    r.add_argument("--max-len", type=int, default=2048)
+    r.add_argument("--vllm-arg", action="append", help="KEY=VALUE passed to vllm.LLM (JSON values allowed)")
+    c = sub.add_parser("model-check", help="score the recorded completions on this stack and compare")
+    c.add_argument("ref")
+    c.add_argument("--out", required=True)
+    c.add_argument("--model", default=None, help="another model than the reference's (a quantized one, say)")
+    c.add_argument("--noise", default=None, help="a model-check file from the reference's own stack")
+    c.add_argument("--vllm-arg", action="append", help="KEY=VALUE passed to vllm.LLM (JSON values allowed)")
+    a = p.parse_args(argv)
+    if a.cmd == "model-ref":
+        print(json.dumps(make_ref(a.model, a.out, a.tokens, a.dtype, a.max_len, _extra(a.vllm_arg)), indent=1))
+        return 0
+    run = check(a.ref, a.out, a.model, _extra(a.vllm_arg) if a.vllm_arg else None, a.noise)
+    print(json.dumps({"summary": run["summary"], "verdict": run["verdict"]}, indent=1))
+    return {"PASS": 0, "WARN": 1, "FAIL": 1}.get(run["verdict"]["verdict"], 2)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

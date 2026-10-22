@@ -3,6 +3,7 @@
     modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (a 75-minute limit on the whole run)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
     modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 50 min, about $4 (75-minute limit)
+    modal run scripts/modal_vllm.py --phase outputs  # the gate's output check, about 12 min, about $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s, alerts on clean traffic, and a flipped weight bit caught and located.
@@ -10,6 +11,10 @@ quant: the same for INT4 models: Qwen2.5-1.5B-Instruct-AWQ (zero points) and -GP
       Machete (vLLM's choice on an H100) and on Marlin (VLLM_DISABLED_KERNELS=MacheteLinearKernel, the kernel every
       other NVIDIA GPU gets), then Qwen2.5-7B-Instruct-AWQ on Machete with 1/8 of the layers too (the cost). Every
       checked layer must be quantized and run by the expected kernel, and only the LM head may go unchecked.
+outputs: `sdcguard gate model-ref` on Qwen2.5-1.5B-Instruct (bf16), then `sdcguard gate model-check` against it: the
+      same stack with other batching (the noise floor), another attention backend (Triton), the AWQ model, and the
+      bf16 model with rms_norm_eps set to 1.0 (a config change no matmul check can see, run with sdcguard's matmul
+      checks on to show they stay quiet). docs/METHOD.md has what each is expected to show.
 
 Costs use Modal's prices (H100 $3.95 an hour; CPU $0.0472 a core-hour and memory $0.008 a GiB-hour, so
 these 8-core, 64 GiB machines cost about $4.84 an hour). If vLLM's default compiled mode fails, the experiment
@@ -242,6 +247,48 @@ def quant(force: bool = False, source: dict | None = None) -> str:
     return f"quant finished in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+OUTPUT_CHECKS = (
+    ("same_batch4", [], {}, ["--vllm-arg", "max_num_seqs=4"]),
+    ("triton_attention", [], {}, ["--vllm-arg", "attention_backend=TRITON_ATTN"]),
+    ("awq", ["--model", "Qwen/Qwen2.5-1.5B-Instruct-AWQ"], {}, []),
+    ("rms_norm_eps_1", [], {"SDCGUARD": "1", "VLLM_ENABLE_V1_MULTIPROCESSING": "0", "SDCGUARD_POLL_EVERY": "1000000000"},
+     ["--vllm-arg", 'hf_overrides={"rms_norm_eps": 1.0}']),
+)
+
+
+@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=40 * 60)
+def outputs(force: bool = False, source: dict | None = None) -> str:
+    t0 = time.monotonic()
+    deadline = t0 + 40 * 60 - 120
+    msg = _locked("outputs", force)
+    if msg:
+        raise RuntimeError(msg)
+    out = f"{RUNS}/outputs"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    codes = {}
+    g = [sys.executable, "-m", "sdcguard", "gate"]
+    try:
+        codes["ref"] = _tee([*g, "model-ref", "--model", "Qwen/Qwen2.5-1.5B-Instruct", "--out", f"{out}/ref.json"],
+                            f"{out}/ref.txt", cwd="/root", timeout=min(600, max(0, deadline - time.monotonic())))
+        vol.commit()
+        if codes["ref"] == 0:
+            for index, (tag, model, env, extra) in enumerate(OUTPUT_CHECKS):
+                noise = [] if tag == "same_batch4" else ["--noise", f"{out}/same_batch4.json"]
+                budget = max(0, deadline - time.monotonic()) / (len(OUTPUT_CHECKS) - index)
+                codes[tag] = _tee([*g, "model-check", f"{out}/ref.json", "--out", f"{out}/{tag}.json", *model, *noise,
+                                   *extra], f"{out}/{tag}.txt", env=env, cwd="/root", timeout=min(600, budget))
+                vol.commit()
+    finally:
+        with open(f"{out}/TIME.txt", "w") as f:
+            f.write(f"{(time.monotonic() - t0) / 60:.1f} minutes on {GPU}\n")
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_codes": codes, "source": source, **_cost((time.monotonic() - t0) / 60)}, f)
+        vol.commit()
+    return f"outputs finished in {(time.monotonic() - t0) / 60:.1f} minutes: {codes}"
+
+
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
 def demo(force: bool = False, source: dict | None = None) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
@@ -282,6 +329,8 @@ ESTIMATES = {
             "for a run that uses the whole limit, not a spending cap)",
     "quant": "about 50 minutes on 1 H100: roughly $4 (75-minute function limit; about $6 at requested resources "
              "for a run that uses the whole limit, not a spending cap)",
+    "outputs": "about 12 minutes on 1 H100: roughly $1 (40-minute function limit, about $3.20 at requested "
+               "resources for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
             "resources for a run that uses the whole limit, not a spending cap)",
     "fetch": "download only: a few cents",
@@ -304,6 +353,11 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
         elif phase == "quant":
             message = quant.remote(force, src)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED"):
+                failures.append(str(message))
+        elif phase == "outputs":
+            message = outputs.remote(force, src)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))

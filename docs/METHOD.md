@@ -1129,8 +1129,8 @@ $0.65 to $0.74 each by function time, and the vLLM run about $1.06.
 
 ## 0.5.0 on GPUs (written October 22, 2026, before any GPU run)
 
-0.5.0 adds three things that need GPUs to validate: checks of INT4 and INT8 weight-only quantized layers in vLLM, the
-upgrade gate (`sdcguard gate`), and a faster serving kernel. What each run must show is written here first. Every
+0.5.0 adds four things that need GPUs to validate: checks of INT4 and INT8 weight-only quantized layers in vLLM, the
+upgrade gate (`sdcguard gate`) and its output check, and a faster serving kernel. What each run must show is written here first. Every
 result is published, including any criterion not met.
 
 ### INT4 and INT8 layers in vLLM
@@ -1192,6 +1192,26 @@ time any of it runs on a GPU. Expected, from the October 19 and 20 runs and NVID
 Any other outcome is reported as it came out. Steps 5 and 6 rest on reading PyTorch 2.14's TunableOp source, not on
 a run; a pin PyTorch rejects shows up as INCONCLUSIVE in step 5, which would be a finding about the pin, not about
 the bug.
+
+### The gate's output check
+
+`sdcguard gate model-ref` records greedy completions of 32 fixed prompts (64 tokens each) with the top 20
+log-probabilities at every position; `sdcguard gate model-check` has another stack score those same tokens
+(teacher forcing) and compares the distributions position by position: top-1 agreement, KL divergence over the union
+of both top-20 lists, and the change in the recorded token's log-probability (`src/sdcguard/gate_model.py` has the
+details and the thresholds, which are a starting point taken from published numbers, not calibrated per model). The
+run (`modal run scripts/modal_vllm.py --phase outputs`, one H100, vLLM 0.31.0) records Qwen2.5-1.5B-Instruct in bf16,
+then checks against it. Expected:
+
+1. The same stack, with at most 4 sequences batched together (other batches, other kernels' shapes): PASS. Its
+   numbers are the noise floor the next three are judged against.
+2. The Triton attention backend instead of vLLM's default: PASS (a legitimate kernel change). A WARN here would
+   mean the thresholds are too tight for this model, and is reported as such.
+3. Qwen2.5-1.5B-Instruct-AWQ against the bf16 record: WARN or FAIL. Published KL for 4-bit quantization is about
+   2.6e-3 to 1.2e-2 (Fireworks, Llama 3.1 8B), around the WARN line.
+4. The bf16 model with `rms_norm_eps` set to 1.0 instead of 1e-6 (a configuration change that leaves every matmul
+   correct): FAIL, with sdcguard's matmul checks on in the same run, checking every layer, and raising no alert.
+   This is the case the output check exists for: the math is right, the model is wrong.
 
 ### The serving kernel
 

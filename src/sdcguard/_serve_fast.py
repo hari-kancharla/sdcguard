@@ -110,14 +110,14 @@ if HAVE_TRITON:
             asq += tl.sum(xv * xv, axis=1)
             asum += tl.sum(tl.abs(xv), axis=1)
         xn = tl.sqrt(asq)
-        best = tl.sum(tl.zeros((BM,), dtype=tl.float32), axis=0) - 1.0
-        best_i = tl.sum(tl.zeros((BM,), dtype=tl.int64), axis=0)
-        best_d = tl.sum(tl.zeros((BM,), dtype=tl.float32), axis=0)
-        unk_n = tl.sum(tl.zeros((BM,), dtype=tl.int32), axis=0)          # checksums that couldn't be judged
+        # per element of the chunk, over the whole loop: (bits of its worst z << 32) | its position, and
+        # (bits of that z << 32) | bits of its noise; one reduction after the loop picks the program's worst
+        run_k = tl.zeros((BM, CB), dtype=tl.int64)
+        run_d = tl.zeros((BM, CB), dtype=tl.int64)
+        unk_acc = tl.zeros((BM, CB), dtype=tl.int32)                      # checksums that couldn't be judged
         j_lo = pj * jbp
         j_hi = tl.minimum(j_lo + jbp, nb)
         w = tl.arange(0, BW)
-        ri = tl.arange(0, BM)
         ci = tl.arange(0, CB)
         for j0 in range(j_lo, j_hi, CB):
             jb = j0 + ci
@@ -202,7 +202,7 @@ if HAVE_TRITON:
             ok_big = lim < lim_big
             unk0 = (nan0 & (~imposs) & (~a_bad0) & (~big0)) | e_bad0 | (a_bad0 & (~ok_a)) | (big0 & (~ok_big))
             unk1 = (nan1 & (~imposs) & (~a_bad1) & (~big1)) | e_bad1 | (a_bad1 & (~ok_a)) | (big1 & (~ok_big))
-            unk_n += tl.sum(tl.sum(tl.where(both & unk0, 1, 0) + tl.where(both & unk1, 1, 0), axis=1), axis=0)
+            unk_acc += tl.where(both & unk0, 1, 0) + tl.where(both & unk1, 1, 0)
             z0 = tl.where(both, z0, -1.0)
             z1 = tl.where(both, z1, -1.0)
             # worst of this chunk (the plain checksum on ties), its position and noise
@@ -210,21 +210,19 @@ if HAVE_TRITON:
             zc = tl.where(sec, z1, z0)
             # (NaN where the output's checksum was Inf/NaN, as in serve.check_static_impl)
             dc = tl.where(sec, tl.where(a_bad1, float("nan"), den1), tl.where(a_bad0, float("nan"), den0))
-            rmax, rcol = tl.max(zc, axis=1, return_indices=True)
-            mx, r = tl.max(rmax, axis=0, return_indices=True)
-            c = tl.sum(tl.where(ri == r, rcol, 0), axis=0)
-            pick = (ri[:, None] == r) & (ci[None, :] == c)
-            dsel = tl.sum(tl.sum(tl.where(pick, dc, 0.0), axis=1), axis=0)
-            csel = tl.sum(tl.sum(tl.where(pick & sec, 1, 0), axis=1), axis=0)
-            flat = ((pm.to(tl.int64) * BM + r) * nb + (j0 + c)) * 2 + csel
-            take = mx > best
-            best = tl.where(take, mx, best)
-            best_i = tl.where(take, flat, best_i)
-            best_d = tl.where(take, dsel, best_d)
-        zbits = tl.maximum(best, 0.0).to(tl.int32, bitcast=True).to(tl.int64)
-        dbits = best_d.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF
-        tl.atomic_max(STATE + slot * sc, (zbits << 32) | (best_i & 0xFFFFFFFF))
-        tl.atomic_max(STATE + slot * sc + 1, (zbits << 32) | dbits)
+            zb_e = tl.maximum(zc, 0.0).to(tl.int32, bitcast=True).to(tl.int64)
+            db_e = dc.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF
+            flat_e = (rm[:, None] * nb + jb[None, :]) * 2 + tl.where(sec, 1, 0).to(tl.int64)
+            run_k = tl.maximum(run_k, tl.where(both, (zb_e << 32) | (flat_e & 0xFFFFFFFF), 0))
+            run_d = tl.maximum(run_d, tl.where(both, (zb_e << 32) | db_e, 0))
+        key = tl.max(tl.max(run_k, axis=1), axis=0)
+        keyd = tl.max(tl.max(run_d, axis=1), axis=0)
+        unk_n = tl.sum(tl.sum(unk_acc, axis=1), axis=0)
+        zbits = key >> 32
+        best_i = key & 0xFFFFFFFF
+        best = zbits.to(tl.int32).to(tl.float32, bitcast=True)
+        tl.atomic_max(STATE + slot * sc, key)
+        tl.atomic_max(STATE + slot * sc + 1, keyd)
         if COUNTS:           # (serve.STATE_COLS: one check executed, from one program, and the unjudged count)
             first = (pm == 0) & (pj == 0)
             tl.atomic_add(STATE + slot * sc + 2, tl.where(first, 1, 0).to(tl.int64), mask=first)

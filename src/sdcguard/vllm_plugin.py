@@ -605,6 +605,8 @@ def _patch_quant(op, select, inline: bool) -> list:
             except Exception as e:  # noqa: BLE001  (never break model loading)
                 log.warning("sdcguard: not checking %s: %s", getattr(layer, "prefix", "a layer"), e)
                 layer._sdcguard_args = None
+                if not again:
+                    layer._sdcguard_why = FAILED
 
         def apply_weights(self, layer, x, bias=None, _orig=orig_apply, _rule=rule):
             a = getattr(layer, "_sdcguard_args", None)
