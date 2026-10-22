@@ -325,7 +325,9 @@ def check_v1(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full:
 
 if HAVE_TRITON:
 
-    @triton.jit(do_not_specialize=["m", "k", "c", "ks", "sxm", "sxk"])
+    # only what changes with the batch is left unspecialized (as for _check): the strides stay specialized, so a
+    # contiguous x is known to be contiguous and its loads are vectorized
+    @triton.jit(do_not_specialize=["m", "ks"])
     def _emm(X, P, EP, XS, m, k, c, ks, sxm, sxk, spk, spc,
              BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, IEEE: tl.constexpr):
         pm = tl.program_id(0)
@@ -359,8 +361,8 @@ if HAVE_TRITON:
             tl.store(XS + (base + rm) * 2, asq, mask=rmask)
             tl.store(XS + (base + rm) * 2 + 1, asum, mask=rmask)
 
-    @triton.jit(do_not_specialize=["slot", "sc", "m", "k", "n", "nb", "rem", "s_last", "npairs", "splits",
-                                   "cst", "cw", "ctag", "cfo", "ncap", "sxm", "sxk", "sym", "syn"])
+    @triton.jit(do_not_specialize=["slot", "sc", "m", "nb", "rem", "s_last", "npairs", "splits",
+                                   "cst", "cw", "ctag", "cfo", "ncap"])
     def _pairs(X, Y, EP, XS, S, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, n, nb, bs, rem, s_full,
                s_last, sxm, sxk, sym, syn, c, two_nb, npairs, splits, u, h, abs_floor, l1c, zt, lim_a, lim_big,
                CAPM, CAPD, cst, cw, ctag, cfo, ncap,

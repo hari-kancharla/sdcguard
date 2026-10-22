@@ -1306,7 +1306,10 @@ criterion the current kernel itself had to meet, agreement with the plain PyTorc
    on a clean output (within 0.05 + 2%), and on the same output with one value changed by 1% of the largest output
    and by 50 (the same verdict, and the same row and block when it alarms), with the same counts;
 3. it costs less than the current kernel, summed over the four 7B layers, at every row count of the run.
-Otherwise the current kernel stays as it is. Either way, the ported kernel then goes through the H100 checks and
+Otherwise the current kernel stays as it is. The same run also times v2 with 16 and 64 blocks of y per `_pairs`
+program instead of 32 and scores them the same way; if one of them also meets 2 and is cheaper than 32 summed over
+the four 7B layers at most row counts of the run, it is the setting used. The script prints each criterion as met or
+not met, from the saved numbers (`summarize()`, tested in `tests/test_serve_cost_runner.py`). Either way, the ported kernel then goes through the H100 checks and
 the vLLM runs described above.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
