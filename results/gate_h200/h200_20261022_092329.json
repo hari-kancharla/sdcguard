@@ -1,0 +1,1167 @@
+{
+  "nvidia_smi": "NVIDIA H200, 610.57.04, 143771 MiB",
+  "stack_main": "2.14.1+cu130 13.0 [('nvidia-cublas', '13.1.1.3')]",
+  "stack_newest": "2.14.1+cu130 13.0 [('nvidia-cublas', '13.8.1.7')]",
+  "steps": {
+    "capture": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate capture --shape 1000,2048,16 --bias --dtype bfloat16 --pack /tmp/gate/pack --repeats 20 --name h200-mps40-linear-bf16-16x2048x1000",
+      "exit": 0,
+      "seconds": 7.1,
+      "output": "{\n \"case\": \"/tmp/gate/pack/h200-mps40-linear-bf16-16x2048x1000\",\n \"kind\": \"incident\",\n \"runs_wrong\": 20,\n \"runs\": 20,\n \"kernels\": {\n  \"algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1\": 20\n }\n}\n"
+    },
+    "case": {
+      "schema": "sdcguard.gate/1",
+      "id": "h200-mps40-linear-bf16-16x2048x1000",
+      "kind": "incident",
+      "created": "2026-10-22T13:22:48Z",
+      "source": {
+        "kind": "capture",
+        "seed": 0
+      },
+      "op": {
+        "call": "linear",
+        "dtype": "bfloat16",
+        "m": 16,
+        "n": 1000,
+        "k": 2048,
+        "bias": true
+      },
+      "inputs": {
+        "file": "inputs.pt",
+        "sha256": "0e56b2e223551f8886ca2cf6317db7b00fcb8f92b802ca5ecb2b7becc77f9821"
+      },
+      "conditions": {
+        "gpu_name": "NVIDIA H200",
+        "compute_capability": [
+          9,
+          0
+        ],
+        "sms_visible": 52,
+        "env": {
+          "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "40"
+        },
+        "matmul": {
+          "fp32_precision": "none",
+          "allow_tf32": false,
+          "allow_bf16_reduced_precision_reduction": true,
+          "allow_bf16_reduced_precision_reduction_split_k": true,
+          "allow_fp16_reduced_precision_reduction": true,
+          "allow_fp16_reduced_precision_reduction_split_k": true,
+          "allow_fp16_accumulation": false,
+          "prefer_cublaslt_grouped_gemm": false,
+          "blas_library": "cublas",
+          "tunableop": false,
+          "env": {
+            "CUBLASLT_LOG_FILE": "<set>",
+            "CUBLASLT_LOG_LEVEL": "5"
+          }
+        },
+        "alignment": {
+          "x": 256,
+          "w": 256,
+          "bias": 256
+        },
+        "device_type": "cuda"
+      },
+      "stack": {
+        "torch": "2.14.1+cu130",
+        "cuda": "13.0",
+        "cublas": "13.1.1.3",
+        "cublaslt_loaded": "13.1.1",
+        "driver": "610.57.04",
+        "sdcguard": "0.4.0"
+      },
+      "kernels": {
+        "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+      },
+      "observed": {
+        "runs": 20,
+        "runs_wrong": 20,
+        "wrong_per_run": [
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808
+        ],
+        "unwritten_per_run": [
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808,
+          7808
+        ],
+        "outputs": 16000
+      },
+      "expected": {
+        "reference": "float64 on the CPU",
+        "bound": "output rounding + k x 2^-24 x sum|x||w|",
+        "prefill": "nan"
+      }
+    },
+    "run_base40": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate run /tmp/gate/pack --out /tmp/gate/base40.json --repeats 20",
+      "exit": 0,
+      "seconds": 4.3,
+      "output": "h200-mps40-linear-bf16-16x2048x1000: wrong in 20 of 20 runs; kernels {'algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1': 20}\n"
+    },
+    "run_again40": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate run /tmp/gate/pack --out /tmp/gate/again40.json --repeats 20",
+      "exit": 0,
+      "seconds": 4.2,
+      "output": "h200-mps40-linear-bf16-16x2048x1000: wrong in 20 of 20 runs; kernels {'algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1': 20}\n"
+    },
+    "run_full100": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate run /tmp/gate/pack --out /tmp/gate/full100.json --repeats 20",
+      "exit": 0,
+      "seconds": 4.1,
+      "output": "h200-mps40-linear-bf16-16x2048x1000: wrong in 0 of 20 runs; kernels {'algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1': 20}\n"
+    },
+    "run_newest40": {
+      "cmd": "/opt/cand/bin/python -m sdcguard gate run /tmp/gate/pack --out /tmp/gate/newest40.json --repeats 20",
+      "exit": 0,
+      "seconds": 4.5,
+      "output": "h200-mps40-linear-bf16-16x2048x1000: wrong in 20 of 20 runs; kernels {'algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1': 20}\n"
+    },
+    "compare_again40": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate compare /tmp/gate/base40.json /tmp/gate/again40.json --json /tmp/gate/verdict_again40.json",
+      "exit": 1,
+      "seconds": 0.1,
+      "output": "UNCHANGED     h200-mps40-linear-bf16-16x2048x1000\n              wrong in 20 of 20 runs before and 20 of 20 after\n"
+    },
+    "verdict_again40": {
+      "h200-mps40-linear-bf16-16x2048x1000": {
+        "baseline": {
+          "runs": 20,
+          "wrong": 20,
+          "rate_95": [
+            0.831567,
+            1.0
+          ],
+          "kernels": {
+            "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+          }
+        },
+        "candidate": {
+          "runs": 20,
+          "wrong": 20,
+          "rate_95": [
+            0.831567,
+            1.0
+          ],
+          "kernels": {
+            "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+          }
+        },
+        "stack_changes": {},
+        "verdict": "UNCHANGED",
+        "flavor": "still wrong",
+        "why": "wrong in 20 of 20 runs before and 20 of 20 after"
+      }
+    },
+    "compare_full100": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate compare /tmp/gate/base40.json /tmp/gate/full100.json --json /tmp/gate/verdict_full100.json",
+      "exit": 2,
+      "seconds": 0.1,
+      "output": "INCONCLUSIVE  h200-mps40-linear-bf16-16x2048x1000\n              the runs didn't run under the same conditions: sms_visible 52 vs 132; CUDA_MPS_ACTIVE_THREAD_PERCENTAGE '40' vs '100'\n"
+    },
+    "verdict_full100": {
+      "h200-mps40-linear-bf16-16x2048x1000": {
+        "verdict": "INCONCLUSIVE",
+        "why": "the runs didn't run under the same conditions: sms_visible 52 vs 132; CUDA_MPS_ACTIVE_THREAD_PERCENTAGE '40' vs '100'",
+        "differences": [
+          "sms_visible 52 vs 132",
+          "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE '40' vs '100'"
+        ]
+      }
+    },
+    "compare_newest40": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate compare /tmp/gate/base40.json /tmp/gate/newest40.json --json /tmp/gate/verdict_newest40.json",
+      "exit": 1,
+      "seconds": 0.1,
+      "output": "UNCHANGED     h200-mps40-linear-bf16-16x2048x1000\n              wrong in 20 of 20 runs before and 20 of 20 after\n"
+    },
+    "verdict_newest40": {
+      "h200-mps40-linear-bf16-16x2048x1000": {
+        "baseline": {
+          "runs": 20,
+          "wrong": 20,
+          "rate_95": [
+            0.831567,
+            1.0
+          ],
+          "kernels": {
+            "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+          }
+        },
+        "candidate": {
+          "runs": 20,
+          "wrong": 20,
+          "rate_95": [
+            0.831567,
+            1.0
+          ],
+          "kernels": {
+            "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+          }
+        },
+        "stack_changes": {
+          "cublas": [
+            "13.1.1.3",
+            "13.8.1.7"
+          ],
+          "cublaslt_loaded": [
+            "13.1.1",
+            "13.8.1"
+          ]
+        },
+        "verdict": "UNCHANGED",
+        "flavor": "still wrong",
+        "why": "wrong in 20 of 20 runs before and 20 of 20 after"
+      }
+    },
+    "pin": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate pin /tmp/gate/pack/h200-mps40-linear-bf16-16x2048x1000 --out /tmp/gate/pin.csv",
+      "exit": 0,
+      "seconds": 6.6,
+      "output": "{\n \"name\": \"Gemm_Cublaslt_id_66_tile_10_stages_35_splitk_1_red_0_swizzle_0_custom_3_inner_0_cluster_2\",\n \"config\": {\n  \"id\": 66,\n  \"tile\": 10,\n  \"splitk\": 1,\n  \"red\": 0,\n  \"swizzle\": 0,\n  \"custom\": 3,\n  \"stages\": 35,\n  \"inner\": 0,\n  \"cluster\": 2\n },\n \"bias\": true,\n \"tried\": [\n  {\n   \"candidate\": 0,\n   \"cluster_before\": 7,\n   \"accepted\": true,\n   \"status\": 0,\n   \"right\": true,\n   \"config\": {\n    \"id\": 66,\n    \"tile\": 10,\n    \"splitk\": 1,\n    \"red\": 0,\n    \"swizzle\": 0,\n    \"custom\": 3,\n    \"stages\": 35,\n    \"inner\": 0,\n    \"cluster\": 2\n   }\n  }\n ],\n \"note\": \"the bias is added by the same kernel's epilogue in PyTorch's call; this check ran it without (the same main loop)\",\n \"file\": \"/tmp/gate/pin.csv\",\n \"sha256\": \"72e78e7481b908a401f66d9686ee3c8a77dfd8ec4fda2ab24910a97f3a85dee3\",\n \"use\": \"PYTORCH_TUNABLEOP_ENABLED=1 PYTORCH_TUNABLEOP_TUNING=0 PYTORCH_TUNABLEOP_FILENAME=/tmp/gate/pin.csv\"\n}\n"
+    },
+    "pin_file": "Validator,PT_VERSION,2.14.1\nValidator,CUBLASLT_VERSION,130101\nValidator,CUDA_DEVICE,9.0:NVIDIA H200\nGemmAndBiasTunableOp_BFloat16_TN,tn_1000_16_2048_ld_2048_2048_1000,Gemm_Cublaslt_id_66_tile_10_stages_35_splitk_1_red_0_swizzle_0_custom_3_inner_0_cluster_2,0.01024\n",
+    "workaround_pin": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate workaround /tmp/gate/pack/h200-mps40-linear-bf16-16x2048x1000 --env PYTORCH_TUNABLEOP_ENABLED=1 --env PYTORCH_TUNABLEOP_TUNING=0 --env PYTORCH_TUNABLEOP_FILENAME=/tmp/gate/pin.csv --repeats 50 --expect-kernel algoId=66 cluster=1x1x1 --json /tmp/gate/verdict_workaround_pin.json",
+      "exit": 1,
+      "seconds": 8.3,
+      "output": "DOESN'T WORK  h200-mps40-linear-bf16-16x2048x1000\n              wrong in 50 of 50 runs with the workaround\n"
+    },
+    "verdict_workaround_pin": {
+      "case": "h200-mps40-linear-bf16-16x2048x1000",
+      "treatment_env": {
+        "PYTORCH_TUNABLEOP_ENABLED": "1",
+        "PYTORCH_TUNABLEOP_TUNING": "0",
+        "PYTORCH_TUNABLEOP_FILENAME": "/tmp/gate/pin.csv"
+      },
+      "control": {
+        "runs": 50,
+        "wrong": 50,
+        "rate_95": [
+          0.928878,
+          1.0
+        ],
+        "kernels": {
+          "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 50
+        },
+        "calls_logged": 50,
+        "unwritten": 390400
+      },
+      "treatment": {
+        "runs": 50,
+        "wrong": 50,
+        "rate_95": [
+          0.928878,
+          1.0
+        ],
+        "kernels": {
+          "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 50
+        },
+        "calls_logged": 50,
+        "unwritten": 390400
+      },
+      "verdict": "DOESN'T WORK",
+      "why": "wrong in 50 of 50 runs with the workaround"
+    },
+    "workaround_no_file": {
+      "cmd": "/usr/local/bin/python -m sdcguard gate workaround /tmp/gate/pack/h200-mps40-linear-bf16-16x2048x1000 --env PYTORCH_TUNABLEOP_ENABLED=1 --env PYTORCH_TUNABLEOP_TUNING=0 --env PYTORCH_TUNABLEOP_FILENAME=/tmp/gate/does_not_exist.csv --repeats 50 --expect-kernel algoId=66 cluster=1x1x1 --json /tmp/gate/verdict_workaround_no_file.json",
+      "exit": 1,
+      "seconds": 8.1,
+      "output": "DOESN'T WORK  h200-mps40-linear-bf16-16x2048x1000\n              wrong in 50 of 50 runs with the workaround\n"
+    },
+    "verdict_workaround_no_file": {
+      "case": "h200-mps40-linear-bf16-16x2048x1000",
+      "treatment_env": {
+        "PYTORCH_TUNABLEOP_ENABLED": "1",
+        "PYTORCH_TUNABLEOP_TUNING": "0",
+        "PYTORCH_TUNABLEOP_FILENAME": "/tmp/gate/does_not_exist.csv"
+      },
+      "control": {
+        "runs": 50,
+        "wrong": 50,
+        "rate_95": [
+          0.928878,
+          1.0
+        ],
+        "kernels": {
+          "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 50
+        },
+        "calls_logged": 50,
+        "unwritten": 390400
+      },
+      "treatment": {
+        "runs": 50,
+        "wrong": 50,
+        "rate_95": [
+          0.928878,
+          1.0
+        ],
+        "kernels": {
+          "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 50
+        },
+        "calls_logged": 50,
+        "unwritten": 390400
+      },
+      "verdict": "DOESN'T WORK",
+      "why": "wrong in 50 of 50 runs with the workaround"
+    },
+    "result_base40": {
+      "schema": "sdcguard.gate-run/1",
+      "pack": "/tmp/gate/pack",
+      "repeats": 20,
+      "when": "2026-10-22T13:22:53Z",
+      "cases": {
+        "h200-mps40-linear-bf16-16x2048x1000": {
+          "case": "h200-mps40-linear-bf16-16x2048x1000",
+          "runs": [
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            }
+          ],
+          "n": 20,
+          "conditions": {
+            "gpu_name": "NVIDIA H200",
+            "compute_capability": [
+              9,
+              0
+            ],
+            "sms_visible": 52,
+            "env": {
+              "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "40"
+            },
+            "matmul": {
+              "fp32_precision": "none",
+              "allow_tf32": false,
+              "allow_bf16_reduced_precision_reduction": true,
+              "allow_bf16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_reduced_precision_reduction": true,
+              "allow_fp16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_accumulation": false,
+              "prefer_cublaslt_grouped_gemm": false,
+              "blas_library": "cublas",
+              "tunableop": false,
+              "env": {
+                "CUBLASLT_LOG_FILE": "<set>",
+                "CUBLASLT_LOG_LEVEL": "5"
+              }
+            },
+            "alignment": {
+              "x": 256,
+              "w": 256,
+              "bias": 256
+            },
+            "device_type": "cuda"
+          },
+          "stack": {
+            "torch": "2.14.1+cu130",
+            "cuda": "13.0",
+            "cublas": "13.1.1.3",
+            "cublaslt_loaded": "13.1.1",
+            "driver": "610.57.04",
+            "sdcguard": "0.4.0"
+          },
+          "outputs": 16000,
+          "kernel_log": {
+            "calls": 20,
+            "kernels": {
+              "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+            },
+            "log": true
+          },
+          "applied_env": {}
+        }
+      }
+    },
+    "result_again40": {
+      "schema": "sdcguard.gate-run/1",
+      "pack": "/tmp/gate/pack",
+      "repeats": 20,
+      "when": "2026-10-22T13:22:57Z",
+      "cases": {
+        "h200-mps40-linear-bf16-16x2048x1000": {
+          "case": "h200-mps40-linear-bf16-16x2048x1000",
+          "runs": [
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            }
+          ],
+          "n": 20,
+          "conditions": {
+            "gpu_name": "NVIDIA H200",
+            "compute_capability": [
+              9,
+              0
+            ],
+            "sms_visible": 52,
+            "env": {
+              "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "40"
+            },
+            "matmul": {
+              "fp32_precision": "none",
+              "allow_tf32": false,
+              "allow_bf16_reduced_precision_reduction": true,
+              "allow_bf16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_reduced_precision_reduction": true,
+              "allow_fp16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_accumulation": false,
+              "prefer_cublaslt_grouped_gemm": false,
+              "blas_library": "cublas",
+              "tunableop": false,
+              "env": {
+                "CUBLASLT_LOG_FILE": "<set>",
+                "CUBLASLT_LOG_LEVEL": "5"
+              }
+            },
+            "alignment": {
+              "x": 256,
+              "w": 256,
+              "bias": 256
+            },
+            "device_type": "cuda"
+          },
+          "stack": {
+            "torch": "2.14.1+cu130",
+            "cuda": "13.0",
+            "cublas": "13.1.1.3",
+            "cublaslt_loaded": "13.1.1",
+            "driver": "610.57.04",
+            "sdcguard": "0.4.0"
+          },
+          "outputs": 16000,
+          "kernel_log": {
+            "calls": 20,
+            "kernels": {
+              "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+            },
+            "log": true
+          },
+          "applied_env": {}
+        }
+      }
+    },
+    "result_full100": {
+      "schema": "sdcguard.gate-run/1",
+      "pack": "/tmp/gate/pack",
+      "repeats": 20,
+      "when": "2026-10-22T13:23:01Z",
+      "cases": {
+        "h200-mps40-linear-bf16-16x2048x1000": {
+          "case": "h200-mps40-linear-bf16-16x2048x1000",
+          "runs": [
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            },
+            {
+              "wrong": 0,
+              "unwritten": 0,
+              "nonfinite": 0,
+              "worst_error_over_bound": 0.6427962827849988,
+              "prefilled": true
+            }
+          ],
+          "n": 20,
+          "conditions": {
+            "gpu_name": "NVIDIA H200",
+            "compute_capability": [
+              9,
+              0
+            ],
+            "sms_visible": 132,
+            "env": {
+              "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "100"
+            },
+            "matmul": {
+              "fp32_precision": "none",
+              "allow_tf32": false,
+              "allow_bf16_reduced_precision_reduction": true,
+              "allow_bf16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_reduced_precision_reduction": true,
+              "allow_fp16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_accumulation": false,
+              "prefer_cublaslt_grouped_gemm": false,
+              "blas_library": "cublas",
+              "tunableop": false,
+              "env": {
+                "CUBLASLT_LOG_FILE": "<set>",
+                "CUBLASLT_LOG_LEVEL": "5"
+              }
+            },
+            "alignment": {
+              "x": 256,
+              "w": 256,
+              "bias": 256
+            },
+            "device_type": "cuda"
+          },
+          "stack": {
+            "torch": "2.14.1+cu130",
+            "cuda": "13.0",
+            "cublas": "13.1.1.3",
+            "cublaslt_loaded": "13.1.1",
+            "driver": "610.57.04",
+            "sdcguard": "0.4.0"
+          },
+          "outputs": 16000,
+          "kernel_log": {
+            "calls": 20,
+            "kernels": {
+              "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+            },
+            "log": true
+          },
+          "applied_env": {}
+        }
+      }
+    },
+    "result_newest40": {
+      "schema": "sdcguard.gate-run/1",
+      "pack": "/tmp/gate/pack",
+      "repeats": 20,
+      "when": "2026-10-22T13:23:05Z",
+      "cases": {
+        "h200-mps40-linear-bf16-16x2048x1000": {
+          "case": "h200-mps40-linear-bf16-16x2048x1000",
+          "runs": [
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            },
+            {
+              "wrong": 7808,
+              "unwritten": 7808,
+              "nonfinite": 7808,
+              "worst_error_over_bound": Infinity,
+              "prefilled": true
+            }
+          ],
+          "n": 20,
+          "conditions": {
+            "gpu_name": "NVIDIA H200",
+            "compute_capability": [
+              9,
+              0
+            ],
+            "sms_visible": 52,
+            "env": {
+              "CUDA_MPS_ACTIVE_THREAD_PERCENTAGE": "40"
+            },
+            "matmul": {
+              "fp32_precision": "none",
+              "allow_tf32": false,
+              "allow_bf16_reduced_precision_reduction": true,
+              "allow_bf16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_reduced_precision_reduction": true,
+              "allow_fp16_reduced_precision_reduction_split_k": true,
+              "allow_fp16_accumulation": false,
+              "prefer_cublaslt_grouped_gemm": false,
+              "blas_library": "cublas",
+              "tunableop": false,
+              "env": {
+                "CUBLASLT_LOG_FILE": "<set>",
+                "CUBLASLT_LOG_LEVEL": "5"
+              }
+            },
+            "alignment": {
+              "x": 256,
+              "w": 256,
+              "bias": 256
+            },
+            "device_type": "cuda"
+          },
+          "stack": {
+            "torch": "2.14.1+cu130",
+            "cuda": "13.0",
+            "cublas": "13.8.1.7",
+            "cublaslt_loaded": "13.8.1",
+            "driver": "610.57.04",
+            "sdcguard": "0.4.0"
+          },
+          "outputs": 16000,
+          "kernel_log": {
+            "calls": 20,
+            "kernels": {
+              "algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 20
+            },
+            "log": true
+          },
+          "applied_env": {}
+        }
+      }
+    }
+  },
+  "seconds": 53.9,
+  "cost_estimate_usd": 0.07,
+  "source": {
+    "sha256": "38c4e9be31261a4d24d6e9f48d0391684f1c029cbf3d83c2bc280660d8d23765",
+    "files": 173
+  }
+}

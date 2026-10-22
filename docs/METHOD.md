@@ -1333,6 +1333,86 @@ the profiler and the time a plain sum of y takes, so the cost can be placed, and
 every layer as measured, with checking a share of layers as the cheaper option it is. Either way, the ported kernel then goes through the H100 checks and
 the vLLM runs described above.
 
+**What the v3 run found (October 22): all three met; v3 is used from 256 rows on.** Code fingerprint 17d370a66db7
+(commit 2592fa3), `results/serve_cost/h100_20261022_140222.json`, one H100, 2.7 minutes of GPU time, about $0.19.
+Both kernels passed the first-use comparison in bf16 and fp16 and printed ALL AGREE over the comparison set (172
+cases each), and v3's scores agreed with the plain check on every shape and row count. Summed over the four 7B
+layers, v3 cost more than v1 below 256 rows (82 µs against 65 at 1 row, 83 against 77 at 64) and less from 256 on,
+so it is used from 256 rows (`V3_FROM_ROWS`). With 64 blocks of y per `_sums` program it was cheaper than with 32 at
+four of the seven row counts (16, 1,024, 4,096 and 16,384), which is "most" in the rule above, so 64 is the setting
+(`SUMS_P`). The differences between 16, 32 and 64 are mostly a few percent, within what repeating a run moves (v1
+itself measured 58 µs at 1 row in the v2 run and 65 in this one), except at 4,096 and 16,384 rows on 7B, where 64
+was clearly cheaper; on the 1.5B model 64 was dearer than 32 from 1,024 rows on (236 µs against 224 at 4,096, 888
+against 748 at 16,384). Time each check adds, summed over the four layers, with the settings now used:
+
+| rows | 7B, v1 | 7B, v3 (64 blocks) | 1.5B, v1 | 1.5B, v3 (64 blocks) |
+|---|---|---|---|---|
+| 1 | 65 µs | 84 | 51 | 62 |
+| 64 | 77 | 84 | 54 | 60 |
+| 256 | 140 | 106 | 82 | 70 |
+| 1,024 | 351 | 189 | 180 | 102 |
+| 4,096 | 1,514 | 567 | 664 | 236 |
+| 16,384 | 3,946 | 2,263 | 1,609 | 888 |
+
+Against the four layers' own time this is still a lot: on 7B, v1 adds 38% at 1 row and 42% at 64, v3 adds 50% at
+256, 29% at 1,024 and 23% at 4,096. The profiler shows where it goes. From about 1,024 rows on, `_sums` reads y at
+close to the rate a plain sum of y does (7B gate_up_proj at 4,096 rows: 126 µs against 120), so that part has
+little left to gain. Below 256 rows the time is mostly fixed costs per layer: on 7B, cuBLAS spends 7 to 8 µs of GPU time
+on E at 1 row (4 to 7 on 1.5B), though the parts it reads (1.2 to 12.7 MB per layer) need 0.4 to 4 µs at the H100's
+memory bandwidth, and each of the two or three kernels per layer takes at least 2 to 3 µs, plus the gap between
+kernels. On down_proj at
+1 to 64 rows, `_sums` takes about 11 µs because one program reads each row of x (18,944 values) alone. These timings
+replay the same layer 20 times in a CUDA graph, so the parts and x can stay in the 50 MB L2 cache between calls; in
+a model the other layers evict them, so E can only be slower there. The vLLM runs measure the cost in a model.
+
+**One kernel per layer for few rows: v5 (written October 22, before any GPU run).** Below 256 rows, where serving
+spends its decoding steps at modest load, the profile above leaves most of the check's time in fixed costs: cuBLAS's E
+and two or three launches per layer. `_serve_fast.check_v5` does the whole check in one Triton kernel (`_fused`) and
+calls no cuBLAS. Its programs split the layer by 8 blocks of y (16 columns of each part of E), by tiles of 16 or 64
+rows, and the sum over k into parts (up to 32 ways for 16-row tiles, 8 for 64-row ones, about two programs per SM).
+Each program computes its part of E with Triton's dot (fp32 accumulation, as cuBLAS), its part of the row norms of x
+from the same loads, and the four sums of some rows of its blocks of y, and stores them; then it adds one to its
+tile's counter, and the program that finds the count complete adds the parts up in a fixed order (so the result is
+deterministic), resets the counter and scores the tile with the same code as `_score` (shared now as `_judge` and
+`_report`). The counters are zero between launches. Each layer has its own, in one set per CUDA stream: launches on
+a stream run one after another, and two streams never share a set. A graph keeps the set of the stream it was
+captured on, so one layer's graphs captured on one stream must not be replayed on two streams at once (vLLM captures
+and replays on one stream each); a count left over by such misuse would make that tile's later checks wrong. Counters
+are never made while a CUDA graph is being captured (`warm()` reserves enough for every batch size v5 serves), and
+if none are available that call runs v1 or v3 and is counted (`V5_FALLBACKS`). An independent review of the code
+before the run found no fault in the kernel and three ways counters could have been shared or used before they were
+zeroed: one set per stream for all layers, chosen by the capture stream for captured work; sets assigned without a
+lock; a new buffer zeroed on one stream only. The last two were fixed before the run, and the first narrowed to the
+case written above (each layer has its own counters now) and documented. On one CPU, in Triton's interpreter, v5 gave the plain check's answers on every case tried
+(both tile heights, k split and not, partial tiles, a strided y), the same state on repeated runs, and left every
+counter at zero. Compiled for an H100 (sm_90a, offline), its loads of x and the parts are pipelined and vectorized and
+it uses 64 to 95 registers with no spills on the 7B shapes. Whether it is cheaper is for the GPU to say.
+
+The run is `modal run scripts/modal_serve_cost.py` on one H100, on the code of this commit. It times v1, v3 (with the
+settings now used) and v5 with each tile height on every linear-layer shape of Qwen2.5-1.5B and 7B at 1, 2, 4, 8, 16,
+24, 32, 48, 64, 96, 128, 160, 192, 224, 256, 1,024 and 4,096 rows, and reports each kernel's GPU time. One change in
+how it times, made because v5 reads E's parts itself: the 20 calls in each CUDA graph go round several copies of the
+layer, enough that its weights and parts (twice the 50 MB L2 cache) can't stay cached from one call to the next, as
+in a model, where every other layer passes through between two calls of one. This applies to v1 and v3 in the same
+run too, so the comparison is like for like, but the numbers are not comparable with the runs above. v5 is used only
+if:
+1. its first-use comparison passes in bf16 and fp16 and `tests/_serve_fast_compare.py` prints ALL AGREE with it;
+2. with both tile heights, on every shape and row count of the run, its scores agree with the plain check's as v3's
+   had to (clean within 0.05 + 2%; with one value changed by 1% of the largest output and by 50, the same verdict
+   and the same row and block when it alarms; the same counts), no timed call fell back to v1 or v3, and every
+   counter is back at zero at the end of the run;
+3. with the tile heights chosen below, summed over the four 7B layers, at 1 row it costs at most 95% of what v1 costs.
+Tile height: 64-row tiles from the smallest row count of the run from which they cost less than 16-row ones at that
+and every larger row count, 16-row tiles below (`V5_T64_FROM_ROWS`). Then v5 is used from 1 row up to and including
+the largest row count of the run up to which, at every row count, it costs at most 95% of the design used there now
+(v1 below 256 rows, v3 from 256), summed over the four 7B layers; `V5_BELOW_ROWS` is one more than that row count.
+Row counts between two measured ones keep the current design when v5 stops qualifying at the larger one. The 5% is
+margin for the run to run variation seen above. If v5 is used, it runs by default only on the GPU generation it was
+timed on (Hopper, compute capability 9: H100 and H200, `V5_MAJORS`); other GPUs keep v1 and v3. If 1, 2 or 3 is not met, v5 is not used and stays in the code only if
+it can be fixed and timed again under these rules. The script prints each criterion and the choices, from the saved
+numbers (`summarize()`, tested in `tests/test_serve_cost_runner.py`). The 1.5B model is reported, not judged. Either
+way the vLLM runs described at the start of this section then measure the cost in a real model.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use

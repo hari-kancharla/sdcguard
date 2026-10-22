@@ -30,9 +30,9 @@ Built for serving engines:
     Explicit snapshots, synchronous polls and detach() wait for queued work.
   - The check is a PyTorch custom op (sdcguard::check_static), so torch.compile treats it as one
     opaque call and CUDA graphs capture it like any other kernel.
-  - On NVIDIA GPUs it costs one cuBLAS call and one Triton kernel per layer (_serve_fast.py), once
-    that kernel has given this module's answers on a set of test layers; otherwise the PyTorch
-    version here (about 40 small operations per layer) runs.
+  - On NVIDIA GPUs it costs one cuBLAS call and one Triton kernel per layer, two from 256 rows on
+    (_serve_fast.py), once those kernels have given this module's answers on a set of test layers;
+    otherwise the PyTorch version here (about 40 small operations per layer) runs.
 
 Usage (Hugging Face transformers or any nn.Module):
     guard = ServeGuard().attach(model)          # model already in bf16/fp16, on its device

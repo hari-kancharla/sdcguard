@@ -3,7 +3,7 @@
 Raw output of the GPU runs behind the numbers in the README, copied unchanged, so paths inside the
 files refer to the original run folders (`calibration/ts-gpt2/CALIBRATION.md` is
 `false_alarms_and_slowdown_gpt2/CALIBRATION.md` here). NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1
-(CUDA 13.0), October 14-15, 2026, except `round3_oct18/` and the October 19-21 folders at the end of the table,
+(CUDA 13.0), October 14-15, 2026, except `round3_oct18/` and the October 19-22 folders at the end of the table,
 which record their own GPUs. Most runs since October 19 also record the code fingerprint they ran
 (math_modes, precise_diag and the first two mps_bug files don't).
 
@@ -26,6 +26,8 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `fused/`, `grad_control/` | October 20: the first fused precise check on an H100 and an L4, and the recompute check's gradient control run | each folder's `SUMMARY_*.md` |
 | `v040/` | October 21: the 0.4.0 runs on one H100, two H100s and an H200 under MPS. Five runs, every criterion met in the last two; the last is the released code (fingerprint 8d34bf97fcf7) | `SUMMARY_20261021_194128.md`, and `docs/METHOD.md`, 0.4.0 section |
 | `vllm_oct21/` | October 21: vLLM 0.31 with Qwen2.5 1.5B and 7B on the 0.4.0 code, including capture of the alerting row inside vLLM | each model's `SUMMARY.json` |
+| `gate_h200/` | October 22: `sdcguard gate` on cuBLAS issue 6862950 on an H200 under MPS, two runs (the first found the pin wasn't applied; every expectation met in the second) | `docs/METHOD.md`, upgrade gate section |
+| `serve_cost/` | October 22: the serving check's cost kernel by kernel on an H100, v2 against v1 (v1 stayed) and v3 against v1 (v3 used from 256 rows) | `docs/METHOD.md`, serving kernel section |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the
