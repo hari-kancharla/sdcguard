@@ -442,7 +442,7 @@ def test_gpu_no_kernel_compile_while_serving():
 
     def compiled():
         n = None
-        for kern in (_serve_fast._check, _serve_fast._emm, _serve_fast._pairs):
+        for kern in (_serve_fast._check, _serve_fast._sums, _serve_fast._score):
             caches = getattr(kern, "device_caches", None)
             if caches:
                 n = (n or 0) + sum(len(v[0]) for v in caches.values())

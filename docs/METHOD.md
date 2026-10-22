@@ -1309,7 +1309,28 @@ criterion the current kernel itself had to meet, agreement with the plain PyTorc
 Otherwise the current kernel stays as it is. The same run also times v2 with 16 and 64 blocks of y per `_pairs`
 program instead of 32 and scores them the same way; if one of them also meets 2 and is cheaper than 32 summed over
 the four 7B layers at most row counts of the run, it is the setting used. The script prints each criterion as met or
-not met, from the saved numbers (`summarize()`, tested in `tests/test_serve_cost_runner.py`). Either way, the ported kernel then goes through the H100 checks and
+not met, from the saved numbers (`summarize()`, tested in `tests/test_serve_cost_runner.py`).
+
+**What that run found (October 22): v2 met 1 and 2, not 3; the current kernel stays.** Code fingerprint
+2414d31f36bb (commit 6bf498c), `results/serve_cost/h100_20261022_124331.json`, one H100, 3.1 minutes of GPU time.
+Both kernels passed the first-use comparison in bf16 and fp16 and printed ALL AGREE over the comparison set, and
+v2's scores agreed with the plain check on every shape and row count. But v2 cost about twice as much: summed over
+the four 7B layers it added 105 µs at 1 row (v1: 58), 265 at 256 (v1: 133), 2,777 at 4,096 (v1: 1,604) and 10,359 at
+16,384 (v1: 3,469). With 16 blocks per program it was a little cheaper than with 32, and with 64 dearer, which
+points at the cause: each program reads its blocks of y and scores them in the same code, and the scoring's many
+per-block values leave few programs resident on an SM, so few loads are in flight. One more design is timed the
+same way, before any change to the default (`_serve_fast.check_v3`): cuBLAS for E as in v1, then `_sums`, which
+only reads y (and, in the same launch, the rows of x) and writes each block's four sums, and `_score`, which scores
+one (row, block) pair per lane from those sums. v2 is removed from the code. v3 launches one more kernel than v1,
+which costs a few microseconds per layer, so at a handful of rows, where reading y takes almost nothing, it may not
+be cheaper; it may then be used only from the row count on where it is. So v3 is held to criteria 1 and 2 as
+written, and 3 becomes: there is a row count of 256 or fewer from which v3 is cheaper than v1, summed over the four
+7B layers, at that and every larger row count of the run. If so, v3 is used from that row count on and v1 below it
+(the batch size is known when the check is called, and each CUDA graph is captured for one batch size).
+`modal run scripts/modal_serve_cost.py` measures this against v1, also reporting each kernel's own GPU time from
+the profiler and the time a plain sum of y takes, so the cost can be placed, and tries 16 and 64 blocks per
+`_sums` program as for v2. If v3 doesn't meet all three, v1 stays, and the release reports the cost of checking
+every layer as measured, with checking a share of layers as the cheaper option it is. Either way, the ported kernel then goes through the H100 checks and
 the vLLM runs described above.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)

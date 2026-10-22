@@ -1,13 +1,12 @@
-"""The serving check's two Triton designs (_serve_fast: v1, cuBLAS then _check; v2, _emm then _pairs) against the
-plain PyTorch check, in Triton's CPU interpreter, and v2's tile and split choices. tests/test_fast.py runs the full
-comparison set (tests/_serve_fast_compare.py) with the default kernel."""
+"""The serving check's two Triton designs (_serve_fast: v1, cuBLAS then _check; v3, cuBLAS then _sums and _score)
+against the plain PyTorch check, in Triton's CPU interpreter. tests/test_fast.py runs the full comparison set
+(tests/_serve_fast_compare.py) with the default kernel, and test_v3_runs_the_full_comparison_set with v3."""
 import json
 import os
 import subprocess
 import sys
 
 import pytest
-import torch
 
 pytest.importorskip("triton")
 
@@ -20,7 +19,7 @@ from sdcguard.checksum import _split3
 from sdcguard.serve import STATE_COLS, LayerChecksums, check_static_impl
 g = torch.Generator().manual_seed(5)
 rows = []
-# (m, k, n, bias): one row; a partial last block; a long sum over k (v2 splits it at few rows); many rows
+# (m, k, n, bias): one row; a partial last block; a long sum over k; many rows
 for m, k, n, bias in [(1, 1024, 300, True), (5, 64, 129, False), (3, 2048, 1000, True), (70, 96, 260, False)]:
     for dt in (torch.bfloat16, torch.float16):
         W = (torch.randn(n, k, generator=g) / k ** 0.5).to(dt)
@@ -46,7 +45,7 @@ print(json.dumps(rows))
 '''
 
 
-@pytest.mark.parametrize("kernel", ["v1", "v2"])
+@pytest.mark.parametrize("kernel", ["v1", "v3"])
 def test_each_serving_kernel_gives_the_plain_checks_answers(kernel):
     env = dict(os.environ, TRITON_INTERPRET="1", SDCGUARD_FAST_CPU_TEST="1", SDCGUARD_SIGN_SEED="1",
                SDCGUARD_SERVE_KERNEL=kernel,
@@ -64,21 +63,21 @@ def test_each_serving_kernel_gives_the_plain_checks_answers(kernel):
             assert rz > 6.0 and fz > 6.0 and rf // 2 == ff // 2, where
 
 
-def test_v2_tiles_and_splits_follow_the_batch_size():
-    """Tiles of 16, 64 and 128 rows; the sum over k split only while the output tiles alone leave the GPU (here
-    the interpreter's stand-in of 64 programs) under half full, in parts of at least 4 steps."""
+def test_v3_runs_the_full_comparison_set():
+    """tests/_serve_fast_compare.py with v3: every case (clean, large and small changes, NaN, Inf, finite outputs too
+    large for the inputs, infinite inputs, fp16 overflow, partial blocks, bias), the capture, and a guard end to
+    end."""
+    env = dict(os.environ, TRITON_INTERPRET="1", SDCGUARD_FAST_CPU_TEST="1", SDCGUARD_SIGN_SEED="1",
+               SDCGUARD_SERVE_KERNEL="v3",
+               PYTHONPATH=os.pathsep.join([os.path.join(HERE, "..", "src"), os.environ.get("PYTHONPATH", "")]))
+    p = subprocess.run([sys.executable, os.path.join(HERE, "_serve_fast_compare.py")], env=env, capture_output=True,
+                       text=True, timeout=1500)
+    assert p.returncode == 0 and "ALL AGREE" in p.stdout, p.stdout[-3000:] + p.stderr[-3000:]
+
+
+def test_the_kernel_is_picked_by_environment(monkeypatch):
     from sdcguard import _serve_fast
-    cpu = torch.device("cpu")
-    assert [_serve_fast.config_v2(m, 3584, 1776, cpu)[0] for m in (1, 16, 17, 1024, 1025, 9000)] == \
-        [16, 16, 64, 64, 128, 128]
-    for m in (1, 16, 64, 256, 1024, 4096):
-        bm, bn, warps, splits, ks = _serve_fast.config_v2(m, 3584, 1776, cpu)
-        steps = -(-3584 // _serve_fast.EMM_BK)
-        assert ks % _serve_fast.EMM_BK == 0 and splits * ks >= 3584 and (splits - 1) * ks < 3584
-        tiles = -(-m // bm) * -(-1776 // bn)
-        if tiles >= 32:
-            assert splits == 1
-        else:
-            assert splits > 1 and ks // _serve_fast.EMM_BK >= 4 and splits * tiles <= 32 + tiles
-    assert _serve_fast.config_v2(1, 64, 216, cpu)[3] == 1          # a short sum isn't split
-    assert _serve_fast.tile_heights() in ((16, 64, 128), (1, 2, 4, 8, 16))
+    monkeypatch.delenv("SDCGUARD_SERVE_KERNEL", raising=False)
+    assert _serve_fast.kernel() == "v1" and _serve_fast.tile_heights() == (1, 2, 4, 8, 16)
+    monkeypatch.setenv("SDCGUARD_SERVE_KERNEL", "v3")
+    assert _serve_fast.kernel() == "v3" and _serve_fast.tile_heights() == (None,)
