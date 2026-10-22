@@ -8,11 +8,23 @@ each kernel dequantizes into that dtype before its fp32 tensor-core accumulation
   Marlin, grouped scales     W = rnd((q - c) * s)            c = 8 (uint4b8), 128 (uint8b128) or the group's zero
                                                               point (uint4); q - c is exact, then one multiply
   Machete, no zero points    W = rnd((q - c) * s)            the same
-  Machete, zero points       W = rnd(rnd(q * s) + zs)        zs = -rnd(s * z), computed once at load by vLLM
+  Machete, zero points       W = rnd(q * s + zs)             zs = -rnd(s * z), computed once at load by vLLM;
+                                                              q * s + zs rounded once (a fused multiply-add)
 
 where rnd rounds to the activation dtype (round to nearest even) and s is the scale of the weight's group (k //
 group_size). Marlin with one scale per output (group_size -1) applies it after accumulating instead, which adds a
 second rounding of every output: those layers aren't checked yet.
+
+Machete's source (machete_mainloop.cuh, transform_A_kblock) multiplies by the scale and then adds the zero term in
+two separate steps, which reads as two roundings, rnd(rnd(q * s) + zs). But on Hopper both steps are bf16x2/f16x2
+mul and add instructions without a rounding modifier (cuda_bf16.hpp), which PTX lets the compiler fuse into one
+fused multiply-add, and Machete's own comment there names hfma.bf16_v2 as the goal. On an H100 (October 22, 2026)
+the two-rounding reading differed from Machete's output in 43% to 51% of the values of every AWQ layer it was
+probed on, in the range rounding once instead of twice gives for codes near their zero point (a share, not a
+proof). The rule is a compiler decision, not something the source fixes, so a QuantWeights for Machete with
+zero points can give either reading (fused), and
+the plugin keeps whichever one probe() confirms bit for bit, at every batch size Machete picks a different kernel
+for; when neither matches, the layer isn't checked.
 
 After the kernel repacks its weights (Marlin's tile layout, Machete's CUTLASS prepacking) they can't be read back
 as a matrix, so:
@@ -102,13 +114,15 @@ class QuantWeights:
     (n x k, the activation dtype) for any range of outputs, computed in chunks."""
 
     def __init__(self, packed: torch.Tensor, bits: int, scales: torch.Tensor, zeros: Optional[torch.Tensor],
-                 code_bias: int, group_size: int, rule: str, dtype: torch.dtype):
+                 code_bias: int, group_size: int, rule: str, dtype: torch.dtype, fused: bool = True):
         if rule not in (MARLIN, MACHETE):
             raise ValueError(f"unknown dequantization rule {rule!r}")
         if dtype not in (torch.bfloat16, torch.float16):
             raise ValueError(f"activations must be bf16 or fp16, got {dtype}")
         self.packed, self.bits, self.scales, self.zeros = packed, bits, scales.to(dtype), zeros
         self.code_bias, self.rule, self.dtype = int(code_bias), rule, dtype
+        # Machete with zero points: q * s + zs rounded once (True) or rounded after the multiply too (False)
+        self.fused = bool(fused)
         self.k = packed.shape[0] * (32 // bits)
         self.n = packed.shape[1]
         self.group = self.k if group_size in (-1, 0) or group_size >= self.k else int(group_size)
@@ -128,6 +142,24 @@ class QuantWeights:
         q.zeros = None if self.zeros is None else self.zeros.to(device)
         return q
 
+    @property
+    def rounding_varies(self) -> bool:
+        """True when the kernel's rounding isn't fixed by its source (Machete with zero points): see the module
+        docstring."""
+        return self.rule == MACHETE and self.zeros is not None
+
+    def other_rounding(self) -> "QuantWeights":
+        """The same weights read with the other Machete zero-point rounding (the tensors are shared)."""
+        q = QuantWeights.__new__(QuantWeights)
+        q.__dict__.update(self.__dict__)
+        q.fused = not self.fused
+        return q
+
+    def describe(self) -> str:
+        if not self.rounding_varies:
+            return ""
+        return "zero points added in one rounding" if self.fused else "zero points added after a rounded multiply"
+
     def weight(self, start: int = 0, width: Optional[int] = None, chunk: int = 1024) -> torch.Tensor:
         """W[start:start + width] (outputs x inputs) on the device the copy is on, in the activation dtype."""
         width = self.n - start if width is None else width
@@ -138,9 +170,11 @@ class QuantWeights:
             q = unpack(self.packed[:, a:b].contiguous(), self.bits, 0)              # (k, cols) codes
             s = self.scales[:, a:b].float()[g]                                      # (k, cols)
             if self.rule == MACHETE and self.zeros is not None:
-                # bf16(bf16(q * s) + zs), zs = -bf16(s * z): vLLM computes zs at load in the activation dtype
+                # zs = -rnd(s * z): vLLM computes it at load, in the activation dtype. q * s (at most 8 + 11
+                # significant bits) plus zs is exact in fp32, so the one rounding below is the fused multiply-add's
                 zs = -(self.scales[:, a:b] * self.zeros[:, a:b].to(self.dtype))
-                w = (q.float() * s).to(self.dtype).float() + zs.float()[g]
+                qs = q.float() * s
+                w = (qs if self.fused else qs.to(self.dtype).float()) + zs.float()[g]
             else:
                 c = self.code_bias if self.zeros is None else self.zeros[:, a:b][g]
                 w = (q - c).float() * s                                             # exact in fp32
@@ -187,17 +221,29 @@ def probe_rows(k: int, group: int, limit: int = 1024, seed: int = 0) -> list:
     return sorted(rows)
 
 
+# Batch sizes probe() runs the kernel at, in turn: one in each of the ranges Machete picks a different tile shape
+# (and so a different compiled kernel) for, 1-16, 17-32, 33-64, 65-128, 129-256 and over 256 (vLLM 0.31's
+# generate.py heuristic); Marlin also changes its blocking with the batch size.
+PROBE_BATCHES = (16, 32, 64, 128, 256, 512)
+
+
 @torch.no_grad()
 def probe(apply: Callable[[torch.Tensor], torch.Tensor], w: torch.Tensor, rows: Sequence[int],
-          chunk: int = 256) -> dict:
+          batches: Sequence[int] = PROBE_BATCHES) -> dict:
     """Run the kernel (apply: x (m x k) -> y (m x n), no bias) on unit vectors e_i for i in rows and compare each
     result with row i of W^T (w: n x k, on the kernel's device). Every value must be equal (-0 and +0 count as
-    equal). Returns {"rows": how many, "values": compared, "mismatches": unequal, "first": (input, output) of the
-    first unequal value or None}."""
+    equal). The rows go through in batches of the sizes in `batches`, in turn, so a kernel that computes differently
+    at different batch sizes is seen at each (all of them when there are at least 497 rows). Returns {"rows": how
+    many, "values": compared, "mismatches": unequal, "first": (input, output) of the first unequal value or None,
+    "batches": the batch sizes run}."""
     n, k = w.shape
-    bad, first, seen = 0, None, 0
-    for a in range(0, len(rows), chunk):
-        idx = torch.tensor(list(rows[a:a + chunk]), device=w.device, dtype=torch.long)
+    bad, first, seen, sizes, bad_at = 0, None, 0, [], []
+    a = 0
+    while a < len(rows):
+        m = int(batches[len(sizes) % len(batches)])
+        idx = torch.tensor(list(rows[a:a + m]), device=w.device, dtype=torch.long)
+        a += m
+        sizes.append(len(idx))
         x = torch.zeros(len(idx), k, dtype=w.dtype, device=w.device)
         x[torch.arange(len(idx), device=w.device), idx] = 1
         y = apply(x).reshape(len(idx), -1)
@@ -209,9 +255,12 @@ def probe(apply: Callable[[torch.Tensor], torch.Tensor], w: torch.Tensor, rows: 
         if nd and first is None:
             r, c = (int(v) for v in diff.nonzero()[0])
             first = (int(idx[r]), c)
+        if nd:
+            bad_at.append(len(idx))
         bad += nd
         seen += y.numel()
-    return {"rows": len(rows), "values": seen, "mismatches": bad, "first": first}
+    return {"rows": len(rows), "values": seen, "mismatches": bad, "first": first, "batches": sizes,
+            "batches_with_mismatches": sorted(set(bad_at))}
 
 
 def fingerprint(tensors: Sequence[Optional[torch.Tensor]]) -> torch.Tensor:

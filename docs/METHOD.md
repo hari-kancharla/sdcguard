@@ -1169,6 +1169,38 @@ Criteria, for each of the five:
 If the GPTQ model doesn't load in vLLM 0.31 (it refuses act-order with groups), that model's runs are reported as
 not run, and the criteria are judged on the others.
 
+**After the first run (October 22, written before the second).** The first run (code fingerprint 38c4e9be3126,
+`runs/gpu_r3/quant/`, 24.6 minutes) met every criterion on Marlin, for both models: 112 of 112 layers checked, 64
+of 64 completions identical, no alert in clean traffic (highest score 2.2 and 2.2), the flipped scale caught in
+`model.layers.10.mlp.down_proj` with the recheck saying the weights changed, and throughput 22.0% (AWQ) and 20.1%
+(GPTQ) lower with sdcguard, on this 1.5B model. On Machete, vLLM's choice on an H100, it didn't meet them:
+- GPTQ (no zero points): 1, 3 and 4 met (112 layers, highest clean score 2.4, the flip caught; 17.0% slower), 2
+  not: 63 of 64 completions identical; prompt 11 changed one word near its end.
+- AWQ, 1.5B and 7B (zero points): the unit-vector probe rejected all 112 layers (43% to 51% of each layer's
+  values differed from the matrix built), so nothing was checked and the start-up line said so; the experiment then
+  stopped on its own error (it tried to flip a bf16 weight the quantized layer doesn't have).
+
+What was found and changed, after seeing that run:
+1. Machete's zero points: its source multiplies by the scale and adds the zero term in two steps, read as two
+   roundings; but on Hopper both steps are bf16 instructions without a rounding modifier, which the compiler may
+   fuse into one fused multiply-add (`_quant`'s docstring has the details); 43% to 51% differing is in the range
+   rounding once instead of twice gives for codes near their zero point (45% to 57% in a simulation), though the
+   share alone doesn't prove it. `_quant` now reads Machete's zero points as rounded once and
+   can read them the other way; the plugin keeps whichever reading the probe confirms bit for bit, and still
+   checks nothing on a layer where neither holds.
+2. The probe now feeds its unit vectors in batches of 16, 32, 64, 128, 256 and 512, one in each range where
+   Machete picks a different tile shape (a different compiled kernel), so a reading is confirmed at every kernel
+   serving can use, not only at 256.
+3. Machete's bias: the plugin added it in place after the check op, as Machete's own code does. Under
+   torch.compile with vLLM's Inductor setting (auto_functionalized v1) that compiled differently from vLLM's own
+   graph: in a CPU reproduction of qkv_proj, its bias and the rotary embedding, about 30% of q's and k's values
+   differed. Added out of place, it compiles to vLLM's values bit for bit (`tests/test_quant.py` now checks
+   this, with the check opaque as on a GPU and traced). This is the likely cause of the changed completion; the
+   second run tests it.
+4. The experiment no longer stops when no quantized layer is checked; it records that nothing was flipped.
+
+The criteria for the second run stay as written above.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
@@ -1192,6 +1224,19 @@ time any of it runs on a GPU. Expected, from the October 19 and 20 runs and NVID
 Any other outcome is reported as it came out. Steps 5 and 6 rest on reading PyTorch 2.14's TunableOp source, not on
 a run; a pin PyTorch rejects shows up as INCONCLUSIVE in step 5, which would be a finding about the pin, not about
 the bug.
+
+**After the first run (October 22, written before the second).** The first run (code fingerprint 38c4e9be3126,
+`results/gate_h200/h200_20261022_092329.json`) met 1, 2, 3, 4 and 6 as written: the capture was wrong in 20 of 20
+runs with algorithm 66 and a 4x2x1 cluster in the log, and the newest cuBLAS wheel, 13.8.1.7, was still wrong in 20
+of 20. It did not meet 5. `gate pin` found a configuration (algorithm 66, 1x1x1 cluster, right when run on its own)
+and wrote it to pin.csv, but PyTorch puts the GPU's number in the file name (`TuningContext::SetFilename`), so it
+looked for pin0.csv, found nothing, and the default kernel ran in all 50 runs, wrong as before. `gate workaround`
+then said DOESN'T WORK where the paragraph above says INCONCLUSIVE, because it judged the outputs before the
+kernel. Two changes, made after seeing that run: `gate pin` writes the file under the name PyTorch reads, and `gate
+workaround` says INCONCLUSIVE whenever the workaround wasn't what ran (the TunableOp file PyTorch reads isn't there,
+or the log shows another kernel than the expected one), and DOESN'T WORK only when it ran and the outputs are still
+wrong. Expectations 1 to 5 for the second run stay as written; 6 now expects INCONCLUSIVE (the file isn't there),
+and never WORKS.
 
 ### The gate's output check
 

@@ -122,12 +122,16 @@ def test_steering_env_keeps_kernel_switches_and_drops_logging():
 
 
 # ---------------------------------------------------------------- workaround
-def _fake_runs(monkeypatch, control, treatment):
+def _fake_runs(monkeypatch, control, treatment, file_sha="abc"):
+    """file_sha: what the treatment's worker read from the TunableOp file PyTorch looks for (None: not there)."""
     def fake(case_dir, repeats=20, env=None, device=None, timeout=600.0):
         r = treatment if env else control
-        return {**r, "conditions": {**r["conditions"], "env": {**r["conditions"]["env"], **(env or {})},
-                                    "matmul": {**r["conditions"]["matmul"],
-                                               "tunableop": bool((env or {}).get("PYTORCH_TUNABLEOP_ENABLED"))}}}
+        c = {**r["conditions"], "env": {**r["conditions"]["env"], **(env or {})},
+             "matmul": {**r["conditions"]["matmul"], "tunableop": bool((env or {}).get("PYTORCH_TUNABLEOP_ENABLED"))}}
+        if (env or {}).get("PYTORCH_TUNABLEOP_FILENAME"):
+            c["tunableop_file"] = gate.tunableop_file(env["PYTORCH_TUNABLEOP_FILENAME"], 0)
+            c["tunableop_file_sha256"] = file_sha
+        return {**r, "conditions": c}
     monkeypatch.setattr(gate, "run_case", fake)
 
 
@@ -158,6 +162,56 @@ def test_a_workaround_with_a_clean_control_is_inconclusive(monkeypatch):
 def test_a_workaround_that_still_fails_doesnt_work(monkeypatch):
     _fake_runs(monkeypatch, _run(50, n=50), _run(4, n=50, kernels=ONE))
     assert gate.workaround("gates/c", PIN, 50)["verdict"] == "DOESN'T WORK"
+    v = gate.workaround("gates/c", PIN, 50, expect_kernel="algoId=66 cluster=1x1x1")
+    assert v["verdict"] == "DOESN'T WORK" and "on every call" in v["why"], v
+
+
+def test_a_workaround_still_wrong_because_it_never_ran_is_inconclusive_not_doesnt_work(monkeypatch):
+    """The H200 run of October 22: the pin was rejected, the default kernel ran and was wrong as before. That says
+    nothing about the workaround, so it isn't DOESN'T WORK."""
+    default = {"algoId=66 tile=64x8 stages=64xAUTO cluster=4x2x1": 50}
+    _fake_runs(monkeypatch, _run(50, n=50, kernels=default), _run(50, n=50, kernels=default))
+    v = gate.workaround("gates/c", PIN, 50, expect_kernel="algoId=66 cluster=1x1x1")
+    assert v["verdict"] == "INCONCLUSIVE" and "wrong in 50 of 50 runs" in v["why"] and "may not be what ran" in v["why"]
+
+
+def test_a_workaround_whose_tunableop_file_isnt_where_pytorch_looks_is_inconclusive(monkeypatch):
+    for treatment in (_run(50, n=50), _run(0, n=50, kernels=ONE)):
+        _fake_runs(monkeypatch, _run(50, n=50), treatment, file_sha=None)
+        v = gate.workaround("gates/c", PIN, 50)
+        assert v["verdict"] == "INCONCLUSIVE" and "pin0.csv" in v["why"] and "wasn't applied" in v["why"], v
+
+
+def test_tunableop_puts_the_gpu_number_in_the_file_name_like_pytorch():
+    """TuningContext::SetFilename in PyTorch 2.14: the first %d, else before the last '.', else at the end."""
+    assert gate.tunableop_file("pin.csv", 0) == "pin0.csv"
+    assert gate.tunableop_file("/tmp/gate/pin.csv", 3) == "/tmp/gate/pin3.csv"
+    assert gate.tunableop_file("/tmp/gate/pin%d.csv", 1) == "/tmp/gate/pin1.csv"
+    assert gate.tunableop_file("/tmp/gate/pin", "2") == "/tmp/gate/pin2"
+    assert gate.tunableop_file("/tmp/v1.2/pin", 0) == "/tmp/v10.2/pin"        # the last '.' of the whole path
+
+
+def test_a_pin_is_written_where_pytorch_reads_it(tmp_path, monkeypatch):
+    import subprocess
+    name = "Gemm_Cublaslt_id_66_tile_10_stages_35_splitk_1_red_0_swizzle_0_custom_3_inner_0_cluster_2"
+    tuned = ("Validator,PT_VERSION,2.14.1\nValidator,CUDA_DEVICE,9.0:NVIDIA H200\n"
+             "GemmAndBiasTunableOp_BFloat16_TN,tn_1000_16_2048_ld_2048_2048_1000,Default,0.0102\n")
+
+    def fake(cmd, env=None, **kw):
+        if cmd[3] == "--pin-worker":
+            with open(cmd[5], "w") as f:
+                json.dump({"name": name, "config": {"id": 66, "cluster": 2}, "bias": True}, f)
+        else:                                       # the tuning run: TunableOp writes tuned<GPU>.csv
+            with open(gate.tunableop_file(env["PYTORCH_TUNABLEOP_FILENAME"], 1), "w") as f:
+                f.write(tuned)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(gate.subprocess, "run", fake)
+    res = gate.pin("gates/c", str(tmp_path / "pin.csv"))
+    assert res["file"] == str(tmp_path / "pin1.csv") and res["gpu"] == 1, res
+    assert res["use"].endswith(f"PYTORCH_TUNABLEOP_FILENAME={tmp_path / 'pin.csv'}")
+    assert not (tmp_path / "pin.csv").exists()
+    assert f"tn_1000_16_2048_ld_2048_2048_1000,{name},0.0102" in (tmp_path / "pin1.csv").read_text()
+    assert gate.pin("gates/c", str(tmp_path / "p%d.csv"))["file"] == str(tmp_path / "p1.csv")
 
 
 # ---------------------------------------------------------------- real runs, on the CPU

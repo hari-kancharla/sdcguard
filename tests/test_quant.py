@@ -47,14 +47,16 @@ def param(t, **meta):
     return p
 
 
-def reference(codes, scales, zeros, c, group, rule):
-    """W (n x k, bf16) in float64 arithmetic: every product here is exact, so .to(bf16) is the one rounding."""
+def reference(codes, scales, zeros, c, group, rule, fused=True):
+    """W (n x k, bf16) in float64 arithmetic: every product here is exact, so .to(bf16) is the one rounding.
+    Machete with zero points: q * s + zs rounded once (fused, what it computed on an H100) or q * s rounded first."""
     k = codes.shape[0]
     g = torch.arange(k) // group
     s = scales.double()[g]
     if rule == "machete" and zeros is not None:
         zs = (-(scales.double() * zeros.double())).to(BF).double()
-        w = (codes.double() * s).to(BF).double() + zs[g]
+        qs = codes.double() * s
+        w = (qs if fused else qs.to(BF).double()) + zs[g]
     else:
         w = (codes.double() - (c if zeros is None else zeros.double()[g])) * s
     return w.to(BF).t().contiguous()
@@ -71,6 +73,7 @@ class Cfg:
 class _Kernel:
     RULE = None
     FAULT = None                                   # (row, col, amount): a wrong output, for the alert tests
+    FUSED = True                                   # Machete's zero-point rounding (bool, or a function of the batch)
 
     def __init__(self, c, wq="qweight", ws="scales", wz=None):
         self.config, self.w_q_name, self.w_s_name, self.w_zp_name = c, wq, ws, wz
@@ -91,10 +94,17 @@ class _Kernel:
                 z[i::per] = (zp.to(torch.int64) >> (bits * i)) & ((1 << bits) - 1)
             z = z.t()
         group = codes.shape[0] if c.group_size == -1 else c.group_size
-        return reference(codes, s, z, c.weight_type.bias, group, self.RULE)
+        f = type(self).FUSED
+        if callable(f):
+            return {fused: reference(codes, s, z, c.weight_type.bias, group, self.RULE, fused)
+                    for fused in (True, False)}
+        return reference(codes, s, z, c.weight_type.bias, group, self.RULE, f)
 
     def process_weights_after_loading(self, layer):
         W = self._read(layer)
+        if isinstance(W, dict):                    # the rounding depends on the batch size: keep both
+            self._by_fused = {k: v.clone() for k, v in W.items()}
+            W = W[True]
         self._perm = torch.randperm(W.numel(), generator=torch.Generator().manual_seed(1))
         self._inv = torch.argsort(self._perm)
         self._shape = W.shape
@@ -115,6 +125,9 @@ class _Kernel:
 
     def apply_weights(self, layer, x, bias=None):
         W = self._w(layer)
+        f = type(self).FUSED
+        if callable(f):
+            W = self._by_fused[bool(f(x.reshape(-1, x.shape[-1]).shape[0]))]
         y = (x.reshape(-1, x.shape[-1]).float() @ W.float().t()).to(x.dtype)
         if type(self).FAULT is not None:
             r, col, amount = type(self).FAULT
@@ -125,7 +138,10 @@ class _Kernel:
             if self.RULE == "marlin":
                 b = torch.empty_like(bias)
                 b[self._bperm] = bias
-            y = y + b
+            if self.RULE == "machete":
+                y.add_(b)                          # vLLM's Machete: output.add_(bias) after the GEMM
+            else:
+                y = y + b
         return y.reshape(*x.shape[:-1], -1)
 
 
@@ -204,7 +220,7 @@ def test_effective_weights_follow_each_kernels_rule(rule, wt, group):
 
 
 def test_marlin_and_machete_dequantize_zero_points_differently():
-    """Marlin: rnd((q - z) * s). Machete: rnd(rnd(q * s) - rnd(s * z)). Reading AWQ weights by the wrong kernel's
+    """Marlin: rnd((q - z) * s). Machete: rnd(q * s - rnd(s * z)). Reading AWQ weights by the wrong kernel's
     rule gives other bf16 values, which is why the rule follows the kernel and probe() confirms it."""
     lay = QLin(type("K", (_Kernel,), {"RULE": "marlin"}), wt=U4, group=64)
     a = reference(lay.codes, lay.s, lay.z, 0, 64, "marlin")
@@ -233,6 +249,41 @@ def test_probe_finds_a_wrong_reading_and_accepts_the_right_one():
     assert _quant.probe(lambda x: kern.apply_weights(lay, x, None), right, rows)["mismatches"] == 0
     bad = _quant.probe(lambda x: kern.apply_weights(lay, x, None), wrong, rows)
     assert bad["mismatches"] > 0 and bad["first"] is not None
+
+
+def test_machete_zero_points_round_once_and_the_two_readings_differ():
+    """On an H100 (October 22, 2026) Machete's AWQ weights matched neither the two-rounding reading of its source
+    (about 43% of values differed); its multiply and add are fused into one rounding by the compiler. The two
+    readings differ in a large share of values, so probe() tells them apart, and either can be read."""
+    from sdcguard import _quant
+    lay = QLin(type("K", (_Kernel,), {"RULE": "machete"}), wt=U4, group=64)
+    qw = _quant.from_layer(lay, "qweight", "scales", "qzeros", U4, 64, "machete", BF)
+    once, twice = qw.weight(), qw.other_rounding().weight()
+    assert torch.equal(once, reference(lay.codes, lay.s, lay.z, 0, 64, "machete", True))
+    assert torch.equal(twice, reference(lay.codes, lay.s, lay.z, 0, 64, "machete", False))
+    assert (once != twice).float().mean() > 0.1
+    assert qw.rounding_varies and qw.fused and not qw.other_rounding().fused
+    assert "one rounding" in qw.describe() and "rounded multiply" in qw.other_rounding().describe()
+    for rule, wt, zp in (("marlin", U4, "qzeros"), ("machete", U4B8, None)):
+        other = QLin(type("K", (_Kernel,), {"RULE": rule}), wt=wt, group=64)
+        assert not _quant.from_layer(other, "qweight", "scales", zp, wt, 64, rule, BF).rounding_varies
+
+
+def test_probe_runs_the_kernel_at_a_batch_size_in_every_range():
+    """Machete picks its tile shape (a different compiled kernel) by batch size: 1-16, 17-32, 33-64, 65-128,
+    129-256 and more. probe() feeds its unit vectors in batches of each, so a kernel is confirmed as served."""
+    from sdcguard import _quant
+    w = torch.randn(8, 1100).to(BF)
+    seen = []
+
+    def apply(x):
+        seen.append(x.shape[0])
+        return (x.float() @ w.float().t()).to(BF)
+    r = _quant.probe(apply, w, _quant.probe_rows(1100, 128))
+    assert r["mismatches"] == 0 and r["rows"] == 1024 and sum(seen) == 1024
+    assert seen[:6] == [16, 32, 64, 128, 256, 512] and r["batches"] == seen and r["batches_with_mismatches"] == []
+    bad = _quant.probe(lambda x: apply(x) if x.shape[0] != 128 else apply(x) * 2, w, list(range(1100)))
+    assert bad["mismatches"] > 0 and bad["batches_with_mismatches"] == [128]
 
 
 def test_probe_rows_cover_every_group_when_sampling():
@@ -322,6 +373,41 @@ def test_a_kernel_that_disagrees_with_the_reading_is_not_checked(monkeypatch, tm
     assert "differed from the weights read before its repack" in caplog.text
     y = model[0](x_in())                                     # serves, unchecked
     assert y.shape == (5, 192)
+
+
+def test_a_machete_kernel_that_rounds_its_zero_points_twice_is_still_checked(monkeypatch, tmp_path):
+    """The rounding is the compiler's choice: a Machete build that rounds after the multiply too is read that way
+    once the probe confirms it, and the copy kept for rechecks reads it the same way."""
+    M, Runner, classes = install_kernels(monkeypatch)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    classes["machete"].FUSED = False
+    model = _model(classes, rule="machete", wt=U4, group=64, bias=True)
+    lay = model[0]
+    g = plugin.guard()
+    assert [la["name"] for la in g.layers] == ["model.layers.0.qkv_proj"]
+    src = g.layers[0]["source"]
+    assert "after a rounded multiply" in src.label
+    assert torch.equal(src.rows(0, 192), reference(lay.codes, lay.s, lay.z, 0, 64, "machete", False))
+    x = x_in()
+    plain = type(lay.quant_method.kernel).__mro__[1].apply_weights(lay.quant_method.kernel, lay, x, lay.bias)
+    assert torch.equal(lay(x), plain)
+    assert plugin.poll(wait=True) == []
+
+
+def test_a_machete_kernel_whose_rounding_changes_with_the_batch_size_is_not_checked(monkeypatch, tmp_path, caplog):
+    """Neither reading holds at every batch size, so the layer isn't checked rather than checked against the wrong
+    weights at some batch sizes (which would be false alarms)."""
+    M, Runner, classes = install_kernels(monkeypatch)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    classes["machete"].FUSED = lambda m: m <= 64
+    model = _model(classes, rule="machete", wt=U4, group=64)
+    assert plugin.guard() is None or not plugin.guard().layers
+    r = plugin.layer_report(model)
+    assert r["checked"] == 0 and any("didn't match" in why for why in r["unchecked_by_method"])
+    assert "differed from the weights read before its repack" in caplog.text
+    assert model[0](x_in()).shape == (5, 192)                # serves, unchecked
 
 
 @pytest.mark.parametrize("case,expect", [
@@ -416,10 +502,11 @@ def test_sdcguard_quant_0_leaves_quantized_layers_alone(monkeypatch, tmp_path):
     assert r["checked"] == 0 and r["unchecked_by_method"] == {"AutoGPTQLinearMethod": 1}
 
 
-def test_marlins_bias_is_added_by_one_opaque_call_and_machetes_by_add_(monkeypatch, tmp_path):
+def test_marlins_bias_is_added_by_one_opaque_call_and_machetes_by_a_plain_add(monkeypatch, tmp_path):
     """Marlin adds the bias inside its kernel, rounded; the plugin's own addition must not be fused by torch.compile
-    into the next operations (which would keep it in fp32), so it is one custom op. Machete adds it with add_ after
-    its GEMM, which the plugin does the same way."""
+    into the next operations (which would keep it in fp32), so it is one custom op. Machete adds it after its GEMM,
+    which torch.compile does fuse; the plugin adds it with a plain (out of place) add, which compiles the same way
+    (test_machetes_bias_compiles_to_vllms_own_values)."""
     from sdcguard import _quant
     op = _quant.add_bias_op()
     y, b = torch.randn(3, 5).to(BF), torch.randn(5).to(BF)
@@ -450,3 +537,83 @@ def test_the_vllm_experiment_refuses_pairs_run_on_different_kernels():
          "disabled_kernels": None}
     g = {**b, "disabled_kernels": "MacheteLinearKernel"}
     assert "baseline and guarded ran with different VLLM_DISABLED_KERNELS" in module._comparison_failures(b, g)
+
+
+# ---------------------------------------------------------------- Machete's bias under torch.compile
+@torch.library.custom_op("sdcguard_test::machete_mm", mutates_args=())
+def _machete_mm(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
+    return (x.float() @ w.float().t()).to(x.dtype)
+
+
+@_machete_mm.register_fake
+def _(x, w):
+    return x.new_empty(x.shape[0], w.shape[0])
+
+
+class _OpaqueMachete(_Kernel):
+    """Machete as vLLM 0.31 calls it: one opaque GEMM (ops.machete_mm), then output.add_(bias)."""
+    RULE = "machete"
+
+    def apply_weights(self, layer, x, bias=None):
+        out = torch.ops.sdcguard_test.machete_mm(x.reshape(-1, x.shape[-1]), self._w(layer))
+        if bias is not None:
+            out.add_(bias)
+        return out.reshape(*x.shape[:-1], -1)
+
+
+def _rope(t, cos, sin):
+    a, b = t.chunk(2, -1)
+    return torch.cat([a * cos - b * sin, b * cos + a * sin], -1)
+
+
+@pytest.mark.parametrize("opaque", ["1", "0"])
+def test_machetes_bias_compiles_to_vllms_own_values(monkeypatch, tmp_path, opaque):
+    """qkv_proj with a bias, then the split and the rotary embedding, compiled with vLLM's Inductor setting
+    (auto_functionalized v1): Inductor fuses the bias into the rotary math and rounds once. The checked layer, with
+    the check as one opaque op (as on a GPU) or traced, must compile to the same values bit for bit. With an in-place
+    add after the check it didn't (q and k differed), and on an H100 1 of 64 completions changed (October 22)."""
+    import torch._inductor.config as ic
+    M, Runner, classes = install_kernels(monkeypatch)
+    K = type("MacheteLinearKernel", (_OpaqueMachete,), {})
+    monkeypatch.setattr(sys.modules["vllm.model_executor.kernels.linear.mixed_precision.machete"],
+                        "MacheteLinearKernel", K)
+    plugin = plugin_env(monkeypatch, tmp_path, SDCGUARD_OPAQUE=opaque)
+    plugin.register()
+    monkeypatch.setattr(ic, "enable_auto_functionalized_v2", False)
+    lay = load(nn.ModuleList([QLin(K, k=256, n=192, wt=U4B8, group=64, bias=True)]))[0]
+    assert len(plugin.guard().layers) == 1
+    kern = lay.quant_method.kernel
+    g = torch.Generator().manual_seed(5)
+    cos, sin = torch.randn(64, 32, generator=g).to(BF), torch.randn(64, 32, generator=g).to(BF)
+
+    def block(f, x):
+        q, k, v = f(x).split([64, 64, 64], -1)
+        return _rope(q, cos, sin), _rope(k, cos, sin), v
+    x = x_in(m=64)
+    torch._dynamo.reset()
+    try:
+        want = torch.compile(lambda t: block(lambda u: _OpaqueMachete.apply_weights(kern, lay, u, lay.bias), t))(x)
+        got = torch.compile(lambda t: block(lay, t))(x)
+    finally:
+        torch._dynamo.reset()
+    for name, a, b in zip("qkv", want, got):
+        assert torch.equal(a, b), f"{name}: {int((a != b).sum())} of {a.numel()} values differ"
+    assert plugin.guard().counts()["model.layers.0.qkv_proj"]["checks"] >= 1
+
+
+def test_the_vllm_experiment_flips_nothing_when_no_quantized_layer_is_checked(monkeypatch, tmp_path):
+    """On October 22 Machete's AWQ layers were all left unchecked, and the experiment then stopped trying to flip a
+    bf16 weight the quantized layer doesn't have; now it records that nothing was flipped."""
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "experiments" / "vllm_check.py"
+    spec = importlib.util.spec_from_file_location("vllm_check_flip_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    assert plugin.guard() is None
+
+    class Model:
+        def named_modules(self):
+            return [("model.layers.10.mlp.down_proj", nn.Module())]       # quantized: qweight, no weight
+    assert module._flip(Model()) is None

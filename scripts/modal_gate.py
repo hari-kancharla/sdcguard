@@ -13,10 +13,17 @@ One H200 with the MPS daemon running; every step is `sdcguard gate`, each run of
   5. pin       `gate pin`: a TunableOp file forcing algorithm 66 with a 1x1x1 cluster (NVIDIA's workaround), then
                `gate workaround` with it: expected WORKS, with the log showing that kernel on every call
   6. not pinned the same TunableOp switches with a file that doesn't exist: expected DOESN'T WORK (the default kernel
-               runs), so a gate that only looked at the switches would be fooled
+               runs), so a gate that only looked at the switches would be fooled (INCONCLUSIVE since the change below)
 
 These are expectations written before the run (October 22, 2026), not results. Every verdict is saved as it came
 out, including any that differ from them.
+
+Changed after the first run (October 22, before the second; docs/METHOD.md has both runs): that run met 1 to 4 and
+6, and not 5, because `gate pin` wrote pin.csv while PyTorch, which puts the GPU's number in the file name, looked
+for pin0.csv; the default kernel ran and `gate workaround` said DOESN'T WORK instead of the INCONCLUSIVE written for
+a pin that isn't applied. `gate pin` now writes the file PyTorch reads, and `gate workaround` says INCONCLUSIVE
+whenever the workaround wasn't what ran (the file PyTorch reads isn't there, or the log shows another kernel), so
+step 6 is now expected INCONCLUSIVE (still never WORKS), and 1 to 5 stay as written.
 
 One H200 for at most 30 minutes: at most about $2.50 at Modal's prices on Oct 20, 2026 ($4.54 an hour for the GPU
 plus about $0.45 for CPU and memory); usually 10 to 15 minutes. Building the image (two PyTorch installs) runs on
@@ -140,7 +147,9 @@ def h200() -> dict:
                                              f"{w}/verdict_{name}.json"], s40)
             steps[f"verdict_{name}"] = _read(f"{w}/verdict_{name}.json")
         steps["pin"] = _run([py, *g, "pin", case, "--out", f"{w}/pin.csv"], s40)
-        steps["pin_file"] = _read(f"{w}/pin.csv")
+        # what `gate pin` wrote: pin<the GPU's number>.csv, which PyTorch reads for PYTORCH_TUNABLEOP_FILENAME=pin.csv
+        steps["pin_file"] = {f: _read(f"{w}/{f}") for f in sorted(os.listdir(w))
+                             if f.startswith("pin") and f.endswith(".csv")}
         tun = ["--env", "PYTORCH_TUNABLEOP_ENABLED=1", "--env", "PYTORCH_TUNABLEOP_TUNING=0"]
         steps["workaround_pin"] = _run([py, *g, "workaround", case, *tun, "--env",
                                         f"PYTORCH_TUNABLEOP_FILENAME={w}/pin.csv", "--repeats", "50",

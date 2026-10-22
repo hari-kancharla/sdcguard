@@ -167,6 +167,8 @@ def _flip(model):
                None)
     for name, mod in model.named_modules():
         if name.endswith(target):
+            if src is None and not isinstance(getattr(mod, "weight", None), torch.Tensor):
+                return None      # an unchecked quantized layer (no plain weight to flip): nothing is flipped
             with torch.no_grad():
                 if src is not None:      # a quantized layer: one of its group scales (bf16), as the kernel keeps them
                     s = getattr(mod, src.names[1])

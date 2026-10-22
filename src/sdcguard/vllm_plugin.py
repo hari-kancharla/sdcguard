@@ -520,11 +520,16 @@ def _quant_cant_check(kernel, layer) -> Optional[str]:
 def _patch_quant(op, select, inline: bool) -> list:
     """Check the layers vLLM runs with Marlin's and Machete's weight-only INT kernels (GPTQ, AWQ, compressed-tensors
     W4A16 and W8A16): before the kernel repacks a layer's weights, read the matrix it will multiply by (_quant), let
-    it repack, run it on unit vectors to confirm that reading bit for bit, then register the layer. Every call then
-    runs the kernel without the bias, checks that output, and adds the bias the way the kernel would have: Machete
-    adds it after its GEMM with add_ (the same call here, so torch.compile treats it the same), Marlin inside its
-    kernel, rounded to the activation dtype (here one opaque call, _quant.add_bias_op, so torch.compile can't fuse
-    it into the next operations and keep it unrounded).
+    it repack, run it on unit vectors to confirm that reading bit for bit (for Machete with zero points, whose
+    rounding the compiler decides, with both readings _quant knows), then register the layer. Every call then runs
+    the kernel without the bias, checks that output, and adds the bias the way the kernel would have: Marlin inside
+    its kernel, rounded to the activation dtype (here one opaque call, _quant.add_bias_op, so torch.compile can't
+    fuse it into the next operations and keep it unrounded); Machete after its GEMM with add_, which torch.compile
+    fuses into what follows (qkv's rotary embedding then sees q and k plus bias unrounded). Here Machete's bias is
+    added out of place: with vLLM's Inductor settings (auto_functionalized v1), an add_ on the kernel's output
+    after the check op, which reads that output, compiled differently from vLLM's own in a CPU reproduction (q and
+    k came out different), the likely cause of 1 of 64 greedy completions changing on an H100 on October 22, 2026;
+    y + bias compiles to vLLM's values there, bit for bit (tests/test_quant.py).
     select(layer) -> True to check it (SDCGUARD_SHARE), else sets the layer's reason. Returns the kernel classes
     patched."""
     import importlib
@@ -579,6 +584,14 @@ def _patch_quant(op, select, inline: bool) -> list:
                 name = getattr(layer, "prefix", "") or type(layer).__name__
                 rows = _quant.probe_rows(qw.k, qw.group)
                 pr = _quant.probe(lambda x: _apply(self, layer, x, None), w, rows)
+                if pr["mismatches"] and qw.rounding_varies:
+                    # Machete's zero-point rounding is the compiler's choice (_quant): try the other reading
+                    alt = qw.other_rounding()
+                    w2 = alt.weight()
+                    pr2 = _quant.probe(lambda x: _apply(self, layer, x, None), w2, rows)
+                    if not pr2["mismatches"]:
+                        qw, w, pr = alt, w2, pr2
+                    del w2
                 if pr["mismatches"]:
                     log.warning("sdcguard: not checking %s: %s on unit vectors differed from the weights read before "
                                 "its repack in %d of %d values (first at input %s, output %s); either this reading "
@@ -590,8 +603,10 @@ def _patch_quant(op, select, inline: bool) -> list:
                     layer._sdcguard_args = None
                     return
                 names = [self.w_q_name, self.w_s_name] + ([self.w_zp_name] if self.w_zp_name else []) + ["bias"]
-                src = _quant.QuantSource(layer, names, qw.to("cpu") if keep else None,
-                                         f"{type(self).__name__}, {self.config.weight_type}")
+                label = f"{type(self).__name__}, {self.config.weight_type}"
+                if qw.describe():
+                    label += f", {qw.describe()}"
+                src = _quant.QuantSource(layer, names, qw.to("cpu") if keep else None, label)
                 layer._sdcguard_qbias = bias
                 g = _guard(w.device)
                 if again:
@@ -620,7 +635,10 @@ def _patch_quant(op, select, inline: bool) -> list:
             fn(x.reshape(-1, x.shape[-1]), y.reshape(-1, y.shape[-1]), *a[0])
             if bias is not None:
                 if _rule == _quant.MACHETE:
-                    y.add_(bias)                                  # what Machete's apply_weights does after its GEMM
+                    # Machete's apply_weights adds it in place after its GEMM; out of place gives the same values
+                    # eagerly, and under torch.compile it compiles as vLLM's own does, while an in-place add after
+                    # the check op changes how Inductor fuses what follows (see _patch_quant)
+                    y = y + bias
                 else:
                     y = add_bias(y, layer._sdcguard_qbias)        # Marlin's bias (its own copy is permuted)
             return y

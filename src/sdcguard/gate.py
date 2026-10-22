@@ -12,6 +12,7 @@ and compares two runs to say what an upgrade changed:
     sdcguard gate compare before.json after.json                       # a verdict per case
     sdcguard gate workaround gates/<case> --env KEY=VALUE ...          # does a workaround fix it, here?
     sdcguard gate pin gates/<case> --out pin.csv                       # a TunableOp file that pins the workaround
+                                                                       # (PyTorch reads it as pin0.csv on GPU 0)
     sdcguard gate model-ref --model M --out ref.json                   # the model's outputs, on a trusted stack
     sdcguard gate model-check ref.json --out new.json                  # ... and on a new one (gate_model.py)
 
@@ -68,6 +69,17 @@ def steering_env(env=None) -> dict:
     env = os.environ if env is None else env
     return {k: v for k, v in sorted(env.items())
             if (k.startswith(STEER_PREFIXES) or k in STEER_NAMES) and k not in LOGGING}
+
+
+def tunableop_file(name: str, ordinal) -> str:
+    """The file PyTorch's TunableOp actually reads and writes for PYTORCH_TUNABLEOP_FILENAME=name on GPU `ordinal`.
+    PyTorch (TuningContext::SetFilename, 2.14) puts the GPU's number in place of the first "%d", or else before the
+    last "." of the whole path, or else at the end: pin.csv is read as pin0.csv on GPU 0."""
+    d = str(int(ordinal))
+    if "%d" in name:
+        return name.replace("%d", d, 1)
+    i = name.rfind(".")
+    return name[:i] + d + name[i:] if i >= 0 else name + d
 
 
 def _sha256_file(path: str) -> Optional[str]:
@@ -193,7 +205,11 @@ def run_here(case_dir: str, repeats: int, device: Optional[str] = None) -> dict:
             "device_type": dev.type}
     pin = os.environ.get("PYTORCH_TUNABLEOP_FILENAME")
     if pin:
-        cond["tunableop_file_sha256"] = _sha256_file(pin)
+        # the file PyTorch reads, with the GPU's number in its name (None when it doesn't exist)
+        gpu = (dev.index if dev.index is not None else torch.cuda.current_device()) if cuda else None
+        path = tunableop_file(pin, gpu) if cuda else pin
+        cond["tunableop_file"] = path
+        cond["tunableop_file_sha256"] = _sha256_file(path)
     stack = {key: sw.get(key) for key in ("torch", "cuda", "cublas", "cublaslt_loaded", "driver", "sdcguard")}
     return {"case": case["id"], "runs": runs, "n": len(runs), "conditions": cond, "stack": stack,
             "outputs": m * n}
@@ -465,7 +481,10 @@ def workaround(case_dir: str, treatment_env: dict, repeats: int = 50, expect_ker
     """Does a workaround fix this case here? Two fresh processes under the same conditions: control (as the case
     ran) and treatment (with treatment_env). WORKS only if the control still fails, the treatment is right in every
     run with no output left unwritten, and (expect_kernel, e.g. "algoId=66 cluster=1x1x1") the log shows that kernel
-    on every call."""
+    on every call. DOESN'T WORK when the treatment is still wrong, except that when the TunableOp file it names
+    doesn't exist where PyTorch looks, or the log shows another kernel than expect_kernel, the workaround wasn't what
+    ran, and the verdict is INCONCLUSIVE whatever the outputs (give expect_kernel to tell a pin PyTorch rejected from
+    a workaround that runs and fails)."""
     from .casefile import rate_interval
     ctl = run_case(case_dir, repeats, None, device)
     trt = run_case(case_dir, repeats, treatment_env, device)
@@ -484,17 +503,26 @@ def workaround(case_dir: str, treatment_env: dict, repeats: int = 50, expect_ker
     if out["control"]["wrong"] == 0:
         return {**out, "verdict": "INCONCLUSIVE", "why": f"the failure didn't come back without the workaround (0 of "
                 f"{ctl['n']} runs wrong), so a clean treatment shows nothing"}
-    if out["treatment"]["wrong"] > 0:
-        return {**out, "verdict": "DOESN'T WORK", "why": f"wrong in {out['treatment']['wrong']} of {trt['n']} runs "
-                "with the workaround"}
+    wrong = out["treatment"]["wrong"]
+    seen = f"wrong in {wrong} of {trt['n']} runs" if wrong else "right in every run"
+    tenv = trt["conditions"].get("env") or {}
+    if ("PYTORCH_TUNABLEOP_FILENAME" in treatment_env and tenv.get("PYTORCH_TUNABLEOP_ENABLED") == "1"
+            and tenv.get("PYTORCH_TUNABLEOP_TUNING") == "0" and trt["conditions"].get("tunableop_file_sha256") is None):
+        where = trt["conditions"].get("tunableop_file") or treatment_env["PYTORCH_TUNABLEOP_FILENAME"]
+        return {**out, "verdict": "INCONCLUSIVE", "why": f"{seen}, but the TunableOp file PyTorch reads here ({where}: "
+                "it puts the GPU's number in the name) doesn't exist or couldn't be read, so the workaround wasn't "
+                "applied"}
     if expect_kernel:
         want = _algo_cluster(expect_kernel)
         ks = out["treatment"]["kernels"] or {}
         on = sum(c for t, c in ks.items() if _algo_cluster(t) == want)
         calls = out["treatment"]["calls_logged"] or 0
         if calls < trt["n"] or on != calls:
-            return {**out, "verdict": "INCONCLUSIVE", "why": f"right in every run, but the log shows {ks or 'no kernel'} "
-                    f"instead of {expect_kernel} on every one of {trt['n']} calls: the workaround may not be what ran"}
+            return {**out, "verdict": "INCONCLUSIVE", "why": f"{seen}, but the log shows {ks or 'no kernel'} instead "
+                    f"of {expect_kernel} on every one of {trt['n']} calls: the workaround may not be what ran"}
+    if wrong > 0:
+        return {**out, "verdict": "DOESN'T WORK", "why": f"{seen} with the workaround"
+                + (f", and the log shows {expect_kernel} on every call" if expect_kernel else "")}
     up = out["treatment"]["rate_95"][1]
     return {**out, "verdict": "WORKS", "why": f"wrong in {out['control']['wrong']} of {ctl['n']} runs without it and 0 "
             f"of {trt['n']} with it (failure rate with it below {up:.1%} at 95%)"
@@ -506,11 +534,13 @@ def pin(case_dir: str, out_csv: str, device: Optional[str] = None) -> dict:
     """A PyTorch TunableOp results file (PyTorch 2.14 and later on CUDA) that makes this case's GEMM run cuBLASLt
     algorithm 66 with a 1x1x1 cluster (NVIDIA's workaround for known issue 6862950) without changing any code:
         PYTORCH_TUNABLEOP_ENABLED=1 PYTORCH_TUNABLEOP_TUNING=0 PYTORCH_TUNABLEOP_FILENAME=<out_csv>
-    The configuration is the first algorithm-66 candidate cuBLASLt offers for this shape with 4 or more CTAs per
-    cluster that accepts a 1x1x1 cluster and computes right (run and judged here first). The rest of the file
-    (PyTorch's validators and the GEMM's signature) is written by TunableOp itself, so PyTorch accepts it; it
-    rejects the whole file after any change of PyTorch, cuBLASLt or GPU, so rerun this after an upgrade, and check
-    with `gate workaround` that the pin is what runs."""
+    PyTorch puts the GPU's number in that name (tunableop_file): with --out pin.csv on GPU 0 the file written is
+    pin0.csv, the one PyTorch reads there; a process on another GPU reads its own number's file, so copy it to that
+    name for each GPU. The configuration is the first algorithm-66 candidate cuBLASLt offers for this shape with 4
+    or more CTAs per cluster that accepts a 1x1x1 cluster and computes right (run and judged here first). The rest
+    of the file (PyTorch's validators and the GEMM's signature) is written by TunableOp itself, so PyTorch accepts
+    it; it rejects the whole file after any change of PyTorch, cuBLASLt or GPU, so rerun this after an upgrade, and
+    check with `gate workaround` (with --expect-kernel) that the pin is what runs."""
     with tempfile.TemporaryDirectory(prefix="sdcguard_pin_") as tmp:
         out = os.path.join(tmp, "pin.json")
         cmd = [sys.executable, "-m", "sdcguard.gate", "--pin-worker", os.path.abspath(case_dir), out, device or ""]
@@ -528,18 +558,25 @@ def pin(case_dir: str, out_csv: str, device: Optional[str] = None) -> dict:
         q = subprocess.run([sys.executable, "-m", "sdcguard.gate", "--worker", os.path.abspath(case_dir),
                             os.path.join(tmp, "tune_run.json"), "1", device or ""], env=e, capture_output=True,
                            text=True, timeout=600)
-        files = [f for f in os.listdir(tmp) if f.startswith("tuned") and f.endswith(".csv")]
-        if not files:
-            return {**res, "error": f"TunableOp wrote no results file: {(q.stdout + q.stderr)[-800:]}"}
-        text = open(os.path.join(tmp, sorted(files)[0])).read()
+        # TunableOp named its file as it names every file: tuned<the GPU's number>.csv
+        found = [f[len("tuned"):-len(".csv")] for f in os.listdir(tmp) if f.startswith("tuned") and f.endswith(".csv")]
+        ordinals = sorted(f for f in found if f.isdigit())
+        if len(ordinals) != 1:
+            return {**res, "error": f"expected one TunableOp results file tuned<GPU>.csv, found {sorted(found)}: "
+                    f"{(q.stdout + q.stderr)[-800:]}"}
+        text = open(tunableop_file(tuned, ordinals[0])).read()
     pinned, rows = rewrite_pin(text, res["bias"], res["name"])
     if rows != 1:
         return {**res, "error": f"expected one {'GemmAndBias' if res['bias'] else 'Gemm'}TunableOp row in TunableOp's "
                 f"file, found {rows}", "tunableop_file": text}
-    with open(out_csv, "w") as f:
+    setting = os.path.abspath(out_csv)
+    path = tunableop_file(setting, ordinals[0])
+    with open(path, "w") as f:
         f.write(pinned)
-    return {**res, "file": os.path.abspath(out_csv), "sha256": _sha256_file(out_csv),
-            "use": f"PYTORCH_TUNABLEOP_ENABLED=1 PYTORCH_TUNABLEOP_TUNING=0 PYTORCH_TUNABLEOP_FILENAME={out_csv}"}
+    return {**res, "file": path, "gpu": int(ordinals[0]), "sha256": _sha256_file(path),
+            "use": f"PYTORCH_TUNABLEOP_ENABLED=1 PYTORCH_TUNABLEOP_TUNING=0 PYTORCH_TUNABLEOP_FILENAME={setting}",
+            "file_note": f"PyTorch puts the GPU's number in the file name: on GPU {int(ordinals[0])} it reads {path}; "
+                         "on another GPU, copy the file to that GPU's number"}
 
 
 def rewrite_pin(text: str, bias: bool, name: str) -> tuple:
@@ -736,7 +773,8 @@ def main(argv=None) -> int:
     w.add_argument("--json", default=None)
     pn = sub.add_parser("pin", help="a TunableOp file pinning a case's GEMM to algorithm 66 with a 1x1x1 cluster")
     pn.add_argument("case")
-    pn.add_argument("--out", required=True)
+    pn.add_argument("--out", required=True, help="the PYTORCH_TUNABLEOP_FILENAME to use; PyTorch puts the GPU's "
+                    "number in it, so pin.csv is written as pin0.csv for GPU 0")
     a = p.parse_args(argv)
     if a.cmd == "capture":
         shape = tuple(int(v) for v in a.shape.replace("x", ",").split(","))
