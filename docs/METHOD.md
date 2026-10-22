@@ -1220,8 +1220,10 @@ reduction after the loop, and with the four block sums in one reduction) are tim
 linear-layer shape of Qwen2.5-1.5B and 7B, at 1 to 16,384 rows, with a few launch settings, on one H100. A variant
 can replace the current kernel only if, on every shape and row count, the state it writes equals the current
 kernel's bit for bit (scores, positions where the worst block is unique, counts) and its first-use comparison with
-the plain check passes on that GPU in bf16 and fp16. Among those, the fastest by median time is ported. Then the
-vLLM runs above are repeated on the released code, with the same criteria as the October 21 runs, and the cost of
+the plain check passes on that GPU in bf16 and fp16. Among those, the fastest by median time is ported. The ported
+kernel then has to pass, on an H100 (`modal run scripts/modal_v050.py`), the comparison with the plain check over
+`tests/_serve_fast_compare.py`'s cases (ALL AGREE) and the 0.4.0 serving capture criteria 6, 7 and 8 as written
+above. Then the vLLM runs above are repeated on the released code, with the same criteria as the October 21 runs, and the cost of
 checking every layer is reported as measured. The aim is about 10% of throughput on the 7B model with every layer
 checked; it is an aim, not a criterion, and the number is published whatever it is.
 
