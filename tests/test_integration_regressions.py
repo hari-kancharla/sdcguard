@@ -1,4 +1,4 @@
-"""Behavioral regressions from independent review of the complete b778d27 source snapshot."""
+"""Behavioral regressions across serving, training and copies of checked models."""
 import copy
 
 import pytest
@@ -41,8 +41,8 @@ def test_protect_preserves_pytorch_mixed_dtype_errors(autocast, weight_dtype):
 
 @pytest.mark.parametrize("attach_autocast,run_autocast", [(False, True), (True, False), (True, True)])
 def test_serving_autocast_cannot_lower_checksum_precision(attach_autocast, run_autocast):
-    # Legitimate bias cancellation exposes a low-precision checksum. b778d27 alarmed at z46.3,
-    # z42.0 and z9.45 for these three cases, even though every output matched plain PyTorch.
+    # Legitimate bias cancellation exposes a low-precision checksum. An earlier version alarmed at
+    # z46.3, z42.0 and z9.45 for these three cases, even though every output matched plain PyTorch.
     torch.manual_seed(32)
     layer = nn.Linear(256, 128).bfloat16()
     x = torch.ones(4, 256, dtype=torch.bfloat16)

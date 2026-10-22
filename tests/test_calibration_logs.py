@@ -10,7 +10,7 @@ from unittest.mock import patch
 from _runner_helpers import load_runner
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class CalibrationLogs(unittest.TestCase):
     def test_attention_keeps_full_timeout_log_and_completed_incomplete_report(self):
         for code in (2, 124):
             with self.subTest(code=code), TemporaryDirectory() as td:

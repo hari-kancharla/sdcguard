@@ -15,7 +15,7 @@ on clean inference, and does it catch faults? Writes a JSON report (SERVE_OUT, d
                  exact only      no sdcguard, fp32 split-K reductions (what the guard switches on)
                  every layer     ServeGuard().attach(model)
                  1/8 of layers   ServeGuard().attach(model, share=0.125)
-               Round 3 measured the PyTorch version on the same 1.1B model and regimes: +159% (decode)
+               The October 18 run measured the PyTorch version on the same 1.1B model and regimes: +159% (decode)
                and +122% (prefill) under CUDA graphs.
 3. quiet       alerts during all guarded passes, plus 200 eager passes of random shapes: must be 0;
                every checked layer must show a nonzero score (the checks ran)

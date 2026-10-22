@@ -13,8 +13,7 @@ found before the error: wrong results found first make it a FAIL, never a "could
 
 A check can't judge a result whose inputs aren't finite, or whose values legitimately overflow. sdcguard's own
 workloads (seeded random data, a freshly initialized model) shouldn't produce either on a healthy GPU, so even
-one such check makes the run INCOMPLETE. (Until Oct 19, 2026 up to 1% were let through with a warning; an
-outside review pointed out that the README promised more than that.)
+one such check makes the run INCOMPLETE.
 """
 from __future__ import annotations
 

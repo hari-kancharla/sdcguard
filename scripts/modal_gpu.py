@@ -440,7 +440,7 @@ def _fetch():
     print(f"Results are in {dest / f'gpu_{ROUND}'} ({len(data) / 1e6:.1f} MB)", flush=True)
 
 
-# H100 $3.95/hour plus CPU and memory; the harm-study times are from round 1 (Oct 14 2026)
+# H100 $3.95/hour plus CPU and memory; the harm-study times are from the first GPU runs (Oct 14, 2026)
 ESTIMATES = {
     "bench": "about 7 minutes on 1 H100: roughly $0.55 (hard limit 15 minutes, about $1.10)",
     "check": "about 15 minutes on 1 H100: roughly $1.20 (hard limit 40 minutes, about $3)",

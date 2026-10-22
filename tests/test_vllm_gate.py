@@ -13,7 +13,7 @@ from sdcguard.serve import ServeGuard
 
 @pytest.fixture
 def experiment():
-    root = Path(os.environ.get("SDCGUARD_REVIEW_REPO", Path(__file__).resolve().parents[1]))
+    root = Path(os.environ.get("SDCGUARD_REPO", Path(__file__).resolve().parents[1]))
     spec = importlib.util.spec_from_file_location("loaded_serving_experiment", root / "experiments/vllm_check.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -105,8 +105,8 @@ def test_vllm_worker_report_contains_observed_per_layer_counts(experiment, monke
                                       {"row": 0, "col_block": 0, "with_bias": False, "z": None},
                                       {"row": 0, "col_block": 0, "with_bias": False, "z": float("nan")}])
 def test_vllm_gate_needs_a_kept_row_with_a_place_and_a_score(experiment, captured):
-    """Any non-empty capture record passed the gate (outside review, October 21, 2026): a row with no block, a
-    negative row, a block that isn't a number, or no score isn't a row kept."""
+    """Not every non-empty capture record passes the gate: a row with no block, a negative row, a block that
+    isn't a number, or no score isn't a row kept."""
     result = _result()
     result["after_flip"][0]["alerts"][0]["captured"] = captured
     assert any("kept no row" in e for e in experiment._guarded_failures(result)), captured

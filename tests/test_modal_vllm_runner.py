@@ -30,7 +30,7 @@ def runner(monkeypatch, tmp_path):
                            Volume=SimpleNamespace(from_name=lambda *a, **k: Builder()))
     monkeypatch.setitem(sys.modules, "modal", fake)
     path = Path(__file__).resolve().parents[1] / "scripts/modal_vllm.py"
-    spec = importlib.util.spec_from_file_location("review_modal_vllm", path)
+    spec = importlib.util.spec_from_file_location("modal_vllm_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setattr(module, "LOCAL", tmp_path)
@@ -38,7 +38,7 @@ def runner(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "_locked", lambda *a: None)
     commits = []
     monkeypatch.setattr(module, "vol", SimpleNamespace(commit=lambda: commits.append(True)))
-    module.review_commits = commits
+    module.volume_commits = commits
     return module
 
 
@@ -68,7 +68,7 @@ def test_failed_vllm_step_fails_remote_task_and_keeps_diagnostics(runner, monkey
     status = json.loads((out / "STATUS.json").read_text())
     assert status["passed"] is False and status["exit_codes"][failed] == 9
     assert (out / f"{failed}.txt").exists() and (out / "TIME.txt").exists()
-    assert runner.review_commits
+    assert runner.volume_commits
     if failed == "entry_points":
         assert calls == ["entry_points"], "Do not rent more model work after a broken plugin setup."
     else:
@@ -102,7 +102,7 @@ def test_demo_failures_are_committed_and_propagated(runner, monkeypatch, failure
     out = Path(runner.RUNS) / "demo"
     assert (out / "demo.txt").exists()
     assert json.loads((out / "STATUS.json").read_text())["passed"] is False
-    assert runner.review_commits
+    assert runner.volume_commits
 
 
 def test_demo_success_is_explicit(runner, monkeypatch):
@@ -182,7 +182,7 @@ def test_experiment_gate_accepts_real_current_serving_report_fields(monkeypatch)
     from sdcguard.serve import ServeGuard
 
     path = Path(__file__).resolve().parents[1] / "experiments/vllm_check.py"
-    spec = importlib.util.spec_from_file_location("review_vllm_report_compatibility", path)
+    spec = importlib.util.spec_from_file_location("vllm_report_under_test", path)
     experiment = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(experiment)
     torch.manual_seed(927)

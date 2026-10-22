@@ -366,8 +366,7 @@ def _judge_nonfinite(z, expected, actual, noise, bound, dtype, cnorm=None, width
     cnorm (the block's L2 norm), width and step (one subnormal step of the output dtype): finite outputs too
     large for the inputs are corruption too. Every output of the block is at most `bound` (plus rounding), so
     the block's norm is at most that times sqrt(width). Two huge outputs of opposite sign that cancel in both
-    checksums (+1e18 and -1e18 where the pattern has the same sign) are caught this way (independent review,
-    Oct 19, 2026)."""
+    checksums (+1e18 and -1e18 where the pattern has the same sign) are caught this way."""
     e_bad = ~torch.isfinite(expected)
     a_bad = ~torch.isfinite(actual) & ~e_bad
     big = ~torch.isfinite(noise) & ~e_bad & ~a_bad
@@ -549,9 +548,9 @@ def _zscores(A, B, C, bias, alpha, beta, block, abs_floor, z, u, epoch=0) -> Che
 # sufficiently independent rounding errors. This is a statistical estimate requiring held-out validation,
 # not a deterministic error bound or a universal false-alarm guarantee.
 #
-# Until Oct 19, 2026 the first term had no sqrt(k): it assumed the running sums stay near the final output.
-# On real training (backward dW of the attention input and output layers, 4,096 tokens) they don't, and the
-# check raised 72 to 84 false alarms in 2,970 clean checks on an A100, H100 and B200
+# Why sqrt(k): without it the first term assumes the running sums stay near the final output. On real
+# training (backward dW of the attention input and output layers, 4,096 tokens) they don't, and that version
+# raised 72 to 84 false alarms in 2,970 clean checks on an A100, H100 and B200
 # (results/precise_models). The term above was chosen from those measurements and the rounding argument,
 # then frozen before the held-out run (experiments/precise_models.py --validate). Precise mode stays opt-in
 # and experimental until that run passes. The plain sum also has to beat the same bound with |C_block|

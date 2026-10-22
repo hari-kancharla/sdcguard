@@ -78,8 +78,8 @@ def test_unchecked_steps_are_untouched():
 
 
 def test_injected_faults_reach_the_accumulator_and_are_caught():
-    # seed 0: a bit flip changing its block by 2e-4. (Seed 8 changed it by 1e-4, which the noise model used
-    # before Oct 19, 2026 caught; that model false-alarmed on real GPUs, and the refit one, about twice as
+    # seed 0: a bit flip changing its block by 2e-4. (Seed 8 changed it by 1e-4, which an earlier noise model
+    # caught; that model false-alarmed on real GPUs, and the refit one, about twice as
     # cautious on this layer, scores it 5.3, under the alarm line. METHOD.md has the measured sensitivity.)
     model = _model()
     inj = FaultInjector(rate=1.0, seed=0).arm_on([model[2]])
@@ -93,8 +93,8 @@ def test_injected_faults_reach_the_accumulator_and_are_caught():
 
 def test_a_tiny_error_is_caught_that_bf16_rounding_would_hide():
     """An error of 0.3% of a typical output in one value: the precise check flags it; the ordinary check of
-    the same result rounded to bf16 can't see it. (0.1% until Oct 19, 2026: the refit noise model scores 0.1%
-    at 4.4 on this layer, 0.3% at 13.)"""
+    the same result rounded to bf16 can't see it. (The noise model scores 0.1% at 4.4 on this layer, under
+    the alarm line, and 0.3% at 13.)"""
     model = _model()
     seen = {}
 

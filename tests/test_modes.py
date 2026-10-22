@@ -164,7 +164,7 @@ def test_the_card_shows_fp8_sensitivity_on_its_own():
 @pytest.mark.parametrize("mode,bits,itype", [("fp64", range(52, 63), torch.int64), ("fp32", range(23, 31), torch.int32)])
 def test_every_exponent_bit_flip_in_one_output_is_caught(mode, bits, itype):
     """One flipped exponent bit can give a value near 1e155 in FP64, whose square overflows float64: the block's
-    tolerance used to overflow with it and score the block 0 (found by an outside review, Oct 19, 2026)."""
+    tolerance must not overflow with it and score the block 0."""
     gen = torch.Generator().manual_seed(927)
     a, b, a64, b64 = modes._inputs(mode, (64, 256, 128), "normal", 1.0, gen)
     signs = modes.draw_signs(gen)
@@ -193,8 +193,8 @@ def _fake_cuda(monkeypatch, cc, fail):
 
 
 def test_a_probe_that_crashes_is_an_error_not_unsupported(monkeypatch):
-    """An illegal memory access during a capability probe used to read as "not supported" and let the run PASS
-    with no math modes checked (outside review, Oct 19, 2026)."""
+    """An illegal memory access during a capability probe isn't "not supported", which would let the run PASS
+    with no math modes checked."""
     _fake_cuda(monkeypatch, (9, 0), RuntimeError("CUDA error: an illegal memory access was encountered"))
     for m in modes.MODES:
         with pytest.raises(modes.ProbeError):

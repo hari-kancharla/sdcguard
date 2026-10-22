@@ -22,9 +22,9 @@ What happens:
 
 Nothing is downloaded. Exit code 0 means the fault was caught, the rollback landed before the
 first fault, and there were no false alarms. Other --seed values give other fault patterns: on
-CPU (Oct 19, 2026) all 40 of seeds 0-39 pass, 13 of them after a restart from a NaN loss. (Before
-the restart was added, those 12 to 13 seeds failed: the fault made the loss NaN between two
-checks, and the next checks could only see NaN inputs.)
+CPU all 40 of seeds 0-39 pass, 13 of them after a restart from a NaN loss. (Without the
+restart, those seeds fail: the fault makes the loss NaN between two checks, and the next
+checks can only see NaN inputs.)
 """
 from __future__ import annotations
 

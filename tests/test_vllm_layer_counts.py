@@ -195,8 +195,7 @@ def test_the_first_read_reports_a_layer_that_never_ran_its_check_and_require_ref
 def test_require_1_refuses_a_model_none_of_whose_layers_ever_runs_its_check(monkeypatch, tmp_path):
     """The count again from what was read back waited for a read with some check in it. In a model where no
     registered layer reaches its check (here the only one is a gate whose forward bypasses apply), no read ever
-    has one, so REQUIRE=1 served unchecked for good (outside review, October 21, 2026). It now refuses at the
-    first read."""
+    has one, so REQUIRE=1 would serve unchecked for good. It refuses at the first read."""
     M, Runner = _fake_vllm(monkeypatch)
     plugin = plugin_env(monkeypatch, tmp_path, SDCGUARD_REQUIRE="1", SDCGUARD_POLL_EVERY="1")
     plugin.register()

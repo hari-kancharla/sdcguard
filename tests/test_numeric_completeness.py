@@ -1,4 +1,4 @@
-"""Reproductions against the b778d27 snapshot: incomplete numerical checks and canary lifecycle.
+"""Incomplete numerical checks and the canary lifecycle.
 
 Run the Triton cases on a GPU, or separately with TRITON_INTERPRET=1 SDCGUARD_FAST_CPU_TEST=1.
 The interpreter checks the kernel's logic, not generated CUDA code or hardware behavior.

@@ -387,8 +387,8 @@ def test_a_met_stress_report_meets_criterion_8_and_one_without_it_doesnt():
                                  "one grouped call", "one capture replay", "a sweep that ran no algorithm",
                                  "one compiled checked step", "one grouped check", "a sweep with a wrong algorithm"])
 def test_a_v040_report_with_a_stage_not_run_in_full_meets_nothing(gap):
-    """An outside review (October 21, 2026) showed each of these reports met every criterion: the judging asked
-    for no more than what the report happened to contain. Each is now a criterion not met."""
+    """Each of these reports once met every criterion: the judging asked for no more than what the report happened
+    to contain. Each is now a criterion not met."""
     r = _complete_v040_report()
     change = {"no capture timing": lambda: r["capture"].pop("check_us"),
               "no CUDA graph": lambda: r["capture"].update(graph=False),

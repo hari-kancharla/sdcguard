@@ -29,24 +29,42 @@ No GPU? `python -m sdcguard.demo` runs a simulated bad GPU on your CPU, or try i
 
 <img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="560">
 
-## A real bug the usual tools missed
+## What a bad GPU looks like
+
+Here's a simulated bad GPU: 4 H100s training a 51M-parameter GPT model on TinyStories. From step 205,
+GPU 2 corrupts 5% of its attention Q/K matmuls, using the fault patterns from NVIDIA's
+[gate-level fault-injection study](https://arxiv.org/abs/2605.04213). sdcguard checked every 10th step,
+flagged GPU 2 at step 210, rolled back to the step 200 checkpoint and finished all 1,000 steps on the other
+three GPUs (the blue line after step 200 is that rerun). Without it, the loss looked normal until it turned
+NaN at step 215, and it crashed the same way after both restarts.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/demo_zoom_dark.png">
+  <img alt="Training loss on 4 H100s with and without sdcguard. GPU 2 starts returning wrong results at step 205. sdcguard flags it at step 210, rolls back to step 200 and finishes all 1,000 steps on GPUs 0, 1 and 3. Without sdcguard the loss looks normal until it turns NaN at step 215, and restarting crashes again." src="docs/img/demo_zoom.png">
+</picture>
+
+Logs and raw numbers are in [results/demo_4gpu](results/demo_4gpu).
+
+## A real bug that GPU health checks can't see
 
 cuBLAS has a bug (NVIDIA known issue 6862950) that gives wrong FP16, BF16 and FP8 matmuls on Hopper GPUs
 running under MPS with less than 100% of the SMs. It was
 [reported on NVIDIA's forum](https://forums.developer.nvidia.com/t/cublaslt-returns-silently-wrong-fp16-bf16-fp8-gemm-results-on-hopper-under-cuda-mps-active-thread-percentage-algoid-66-cluster-kernels/384873)
-on October 2, 2026, and NVIDIA confirmed it on October 6.
+by another engineer on October 2, 2026, and NVIDIA confirmed it on October 6.
 
-I ran sdcguard, DCGM and gpu-burn on one H200 at four MPS shares, with the rules written down before the run:
+I ran sdcguard, DCGM and gpu-burn on one H200 at four MPS shares, with the rules written down before the run.
+The second column is the ground truth: PyTorch's own matmuls at that share, checked against float64.
 
-| MPS share | sdcguard check | DCGM diagnostic | gpu-burn |
-|---|---|---|---|
-| 100% | pass | pass | pass |
-| 40% | **FAIL** | pass | pass |
-| 75% | **FAIL** | pass | pass |
-| 14% | **FAIL** | pass | pass |
+| MPS share | PyTorch's matmuls | sdcguard check | DCGM diagnostic | gpu-burn |
+|---|---|---|---|---|
+| 100% | right | pass | pass | pass |
+| 40% | **wrong** | **FAIL** | pass | pass |
+| 75% | **wrong** (weight gradients) | **FAIL** | pass | pass |
+| 14% | **wrong** | **FAIL** | pass | pass |
 
-DCGM and gpu-burn weren't broken. Their own matmuls never hit the bad code path, so they had nothing to find.
-A test of the GPU isn't a test of your job. Full rules and logs are in
+DCGM and gpu-burn were right to pass: their own matmuls, in their own shapes and settings rather than the job's,
+came out right every time, so the rules written before the run count them as not exercised, not as misses. That's the point: a test
+that runs its own matmuls can't vouch for the ones your job runs. Full rules and logs are in
 [METHOD.md](docs/METHOD.md#head-to-head-on-a-real-cublas-bug-written-october-20-2026-before-any-run).
 
 ## In training
@@ -105,7 +123,9 @@ For `C = A @ B`, the sum of each block of 128 output columns has to equal `A` ti
 `B`. Both sides are cheap to compute, so a wrong value in `C` shows up as a mismatch. This is algorithm-based
 fault tolerance (Huang and Abraham, 1984). The hard part is bf16: normal rounding makes the two sides differ a
 little, so sdcguard models each block's rounding noise and only alarms past six times that. In 24.6 million
-checks of clean training on an H100 it raised no false alarm. On NVIDIA GPUs the checks run as Triton kernels.
+checks of clean GPT-2 small training on H100s (every matmul on every step, five 62-minute runs on October 14-15,
+with the check as it was then) it raised no false alarm; the highest score was 3.54. On NVIDIA GPUs the checks run
+as Triton kernels.
 
 ## What it can't do yet
 

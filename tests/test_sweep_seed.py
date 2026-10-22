@@ -12,7 +12,7 @@ from unittest.mock import patch
 from _runner_helpers import load_runner
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class SweepSeed(unittest.TestCase):
     def test_release_smoke_cards_are_not_published_as_sweep_seed_cards(self):
         module = load_runner("modal_check")
         archive_bytes = io.BytesIO()

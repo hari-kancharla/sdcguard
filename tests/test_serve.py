@@ -375,7 +375,7 @@ def test_gpu_compiled_cuda_graphs_catch_a_flip(fast, monkeypatch):
     assert cov["never_checked"] == [] and cov["unjudged_checksums"] == 0, cov
     assert all(v["checks"] >= 4 for v in g.counts().values()), g.counts()
     # The graph path itself, not an eager fallback: the next calls replay a CUDA graph, and each replay runs every
-    # layer's check exactly once (outside review, Oct 20: a compiled call that silently ran eagerly passed before)
+    # layer's check exactly once (a compiled call that silently ran eagerly must not pass)
     hook = getattr(torch.cuda.graphs, "register_graph_replay_start_hook", None)
     if hook is None:                    # say so instead of passing without the replay proof (outside check, Oct 20)
         g.detach()

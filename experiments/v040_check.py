@@ -435,7 +435,7 @@ def capture_check(dev, replays=200, say=print) -> dict:
 
 def capture_stress(dev, say=print) -> dict:
     """Capture under contention (criterion 8, added October 21, 2026, after the first run and before this check's
-    first run, as the outside review of that day asked: labeled apart from criteria 6 and 7, which stay as
+    first run: labeled apart from criteria 6 and 7, which stay as
     written). 6 bf16 linear layers side by side, 4096 to 4096, each applied to the same input of batch 8, attached
     to a ServeGuard and captured once in a CUDA graph (on the CPU: 256 to 768 through the PyTorch check, a size this
     PyTorch's CPU matmul rounds correctly; PyTorch 2.8's on arm64 doesn't at 768 inputs), replayed with fresh inputs
@@ -587,8 +587,8 @@ def stress_met(st: dict, gpu: bool = True) -> Optional[bool]:
 def criteria(r: dict) -> dict:
     """The criteria in docs/METHOD.md ("0.4.0 on GPUs"). Each one is met only by a report of work that ran in
     full, as registered: a missing or partial stage (no kernel in use, no timing, fewer steps, calls, trials or
-    sweeps than the protocol runs, no CUDA graph) doesn't meet it. (Tightened October 21, 2026, after an outside
-    review showed the first version met several criteria on reports with such gaps; the real H100 report of that
+    sweeps than the protocol runs, no CUDA graph) doesn't meet it. (Tightened October 21, 2026, after the first
+    version was found to meet several criteria on reports with such gaps; the real H100 report of that
     morning gets the same verdicts on criteria 1 to 7 from both versions.)"""
     def positive(d, k):
         return isinstance(d.get(k), (int, float)) and math.isfinite(d[k]) and d[k] > 0

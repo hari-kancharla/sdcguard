@@ -11,7 +11,7 @@ from sdcguard import _group, selftest
 
 
 def _triton_environment(monkeypatch, capability=(12, 0)):
-    # (12: a generation the kernels haven't been validated on. Blackwell, 10, runs them since Oct 19.)
+    # (12: a generation the kernels haven't been validated on. Blackwell, 10, runs them.)
     monkeypatch.setattr(_group, "enabled", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_device_capability", lambda *_: capability)
     monkeypatch.setattr(_group, "FALLBACKS", [0])
@@ -69,7 +69,7 @@ def test_selftest_required_kernel_verification_still_fails(capability, opt_in, m
 @pytest.fixture
 def vllm_experiment():
     path = Path(__file__).resolve().parents[1] / "experiments" / "vllm_check.py"
-    spec = importlib.util.spec_from_file_location("review_vllm_experiment", path)
+    spec = importlib.util.spec_from_file_location("vllm_experiment_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

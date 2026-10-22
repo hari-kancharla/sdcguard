@@ -2,9 +2,14 @@
 
     modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (a 75-minute limit on the whole run)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
+    modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 50 min, about $4 (75-minute limit)
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s, alerts on clean traffic, and a flipped weight bit caught and located.
+quant: the same for INT4 models: Qwen2.5-1.5B-Instruct-AWQ (zero points) and -GPTQ-Int4 (no zero points), each on
+      Machete (vLLM's choice on an H100) and on Marlin (VLLM_DISABLED_KERNELS=MacheteLinearKernel, the kernel every
+      other NVIDIA GPU gets), then Qwen2.5-7B-Instruct-AWQ on Machete with 1/8 of the layers too (the cost). Every
+      checked layer must be quantized and run by the expected kernel, and only the LM head may go unchecked.
 
 Costs use Modal's prices (H100 $3.95 an hour; CPU $0.0472 a core-hour and memory $0.008 a GiB-hour, so
 these 8-core, 64 GiB machines cost about $4.84 an hour). If vLLM's default compiled mode fails, the experiment
@@ -74,7 +79,7 @@ vllm_image = (
     .apt_install("build-essential")
     .uv_pip_install("vllm==0.31.0")
     # VLLM_USE_FLASHINFER_SAMPLER=0: vLLM 0.31's warm-up JIT-compiles FlashInfer's sampler with nvcc, which a
-    # pip install doesn't have (round 3: every compiled run died there); 0 = vLLM's own PyTorch/Triton sampler
+    # pip install doesn't have (every compiled run on October 18 died there); 0 = vLLM's own PyTorch/Triton sampler
     .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0"})
     .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip, copy=True)
     .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip, copy=True)
@@ -194,6 +199,49 @@ def vllm(force: bool = False, source: dict | None = None) -> str:
     return f"vllm finished in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+QUANT_RUNS = (
+    ("awq1.5b_machete", "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "MacheteLinearKernel", {}, ()),
+    ("awq1.5b_marlin", "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "MarlinLinearKernel",
+     {"VLLM_DISABLED_KERNELS": "MacheteLinearKernel"}, ()),
+    ("gptq1.5b_machete", "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4", "MacheteLinearKernel", {}, ()),
+    ("gptq1.5b_marlin", "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4", "MarlinLinearKernel",
+     {"VLLM_DISABLED_KERNELS": "MacheteLinearKernel"}, ()),
+    ("awq7b_machete", "Qwen/Qwen2.5-7B-Instruct-AWQ", "MacheteLinearKernel", {}, ("--shares", "0.125")),
+)
+
+
+@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
+def quant(force: bool = False, source: dict | None = None) -> str:
+    t0 = time.monotonic()
+    deadline = t0 + 75 * 60 - 120
+    msg = _locked("quant", force)
+    if msg:
+        raise RuntimeError(msg)
+    out = f"{RUNS}/quant"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    codes = {}
+    try:
+        for index, (tag, model, kernel, env, extra) in enumerate(QUANT_RUNS):
+            budget = max(0, deadline - time.monotonic()) / (len(QUANT_RUNS) - index)
+            codes[tag] = _tee([sys.executable, f"{R}/experiments/vllm_check.py", "--out", f"{out}/{tag}",
+                               "--model", model, "--expect-quant", kernel, *extra], f"{out}/{tag}.txt", env=env,
+                              cwd="/root", timeout=budget)
+            vol.commit()
+    finally:
+        with open(f"{out}/TIME.txt", "w") as f:
+            f.write(f"{(time.monotonic() - t0) / 60:.1f} minutes on {GPU}\n")
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_codes": codes, "passed": len(codes) == len(QUANT_RUNS) and
+                       all(c == 0 for c in codes.values()), "source": source,
+                       **_cost((time.monotonic() - t0) / 60)}, f)
+        vol.commit()
+    if len(codes) != len(QUANT_RUNS) or any(code != 0 for code in codes.values()):
+        raise RuntimeError(f"quantized-model validation failed: {codes}; diagnostics were saved to {out}")
+    return f"quant finished in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
 def demo(force: bool = False, source: dict | None = None) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
@@ -232,6 +280,8 @@ def bundle() -> bytes:
 ESTIMATES = {
     "vllm": "about 25 minutes on 1 H100: roughly $2 (75-minute function limit; about $6 at requested resources "
             "for a run that uses the whole limit, not a spending cap)",
+    "quant": "about 50 minutes on 1 H100: roughly $4 (75-minute function limit; about $6 at requested resources "
+             "for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
             "resources for a run that uses the whole limit, not a spending cap)",
     "fetch": "download only: a few cents",
@@ -249,6 +299,11 @@ def main(phase: str = "vllm", force: bool = False):
     try:
         if phase == "vllm":
             message = vllm.remote(force, src)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED"):
+                failures.append(str(message))
+        elif phase == "quant":
+            message = quant.remote(force, src)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))

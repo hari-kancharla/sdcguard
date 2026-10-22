@@ -9,9 +9,9 @@ of the layer it's called on, including layers the guard never saw:
 - nn.DataParallel replicas (a shallow copy of the layer's attributes) keep the subclass and the guard, and
   compute with their own weights.
 
-Until Oct 19, 2026 the forward was a function stored on the layer instance, closed over that layer: copies
-ran the original layer's weights on every call (found by an independent review). PyTorch's parametrizations
-(torch.nn.utils.parametrize) swap a module's class the same way. The subclass has the original's name, so a
+A forward function stored on the layer instance would be closed over that layer, so copies would run the
+original layer's weights on every call. PyTorch's parametrizations (torch.nn.utils.parametrize) swap a
+module's class the same way. The subclass has the original's name, so a
 model prints the same; `type(layer) is nn.Linear` is False while it is checked (isinstance still holds).
 """
 from __future__ import annotations

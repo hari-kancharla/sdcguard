@@ -158,7 +158,7 @@ def load_incident(path: str) -> dict:
         # facts aren't this file's, so everything is judged again from the .pt
         stale, info = info_path, {}
     gpu = info.get("gpu") or {}
-    sw = info.get("software") or {}                      # recorded with the evidence since Oct 20, 2026
+    sw = info.get("software") or {}                      # older evidence doesn't record it
     inc = {"evidence": path, "evidence_sha256": digest, "info": info_path if info else None,
            "info_ignored": stale, "info_data": {"in_job_replays": info.get("in_job_replays")},
            "what": info.get("what"), "op": info.get("op") or info.get("mode"), "where": info.get("where"),

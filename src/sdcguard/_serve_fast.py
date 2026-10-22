@@ -2,7 +2,7 @@
 
 The plain serving check (serve.check_static_impl) is about 40 small PyTorch operations per layer.
 Under CUDA graphs each still costs a kernel, so on a 1.1B model it made decoding 2.6x slower
-(round 3, H100). Here each checked layer costs two kernels:
+(H100, October 18). Here each checked layer costs two kernels:
 
   cuBLAS     E = x @ (block sums of W, as three bf16/fp16 parts)     (same call as the plain check)
   _check     for its rows and blocks: |x_row|^2 and |x_row|_1, the plain and signed sums, sum of
@@ -423,7 +423,7 @@ def warm(parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor, s
          width: torch.Tensor, k: int, n: int, dtype: torch.dtype) -> None:
     """Compile the kernel for this layer shape at load time, for every rows-per-program setting config()
     can choose. Only the number of rows changes between batches and nothing depends on its value, so no
-    batch size needs a compile while serving (vLLM's JIT monitor flagged those in the round 3 rerun)."""
+    batch size needs a compile while serving (vLLM's JIT monitor flags any)."""
     dev = parts.device
     key = (_group._dev_key(dev), dtype, k, n, pair_full.shape[0])
     if key in _WARM or not ready(dev, dtype):

@@ -1,8 +1,8 @@
-"""The coverage and numerics reviews of Oct 19, 2026, each finding turned into a test built from its
-reproduction: a checked model computes exactly what it would unchecked (copies, replicas, weight updates in
-place, keyword calls, pickling), every check that ran is counted and every alert is kept (exceptions, failing
-callbacks), layers whose forward never runs are listed instead of reported as checked, and the checks handle
-empty matmuls, wide blocks, cancelling huge outputs and infinities."""
+"""Coverage and numerics, each case a test built from its reproduction: a checked model computes exactly what it
+would unchecked (copies, replicas, weight updates in place, keyword calls, pickling), every check that ran is
+counted and every alert is kept (exceptions, failing callbacks), layers whose forward never runs are listed
+instead of reported as checked, and the checks handle empty matmuls, wide blocks, cancelling huge outputs and
+infinities."""
 import copy
 import io
 import math

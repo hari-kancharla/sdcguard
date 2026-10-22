@@ -5,7 +5,7 @@ from unittest.mock import patch
 from _runner_helpers import Clock, load_runner
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class WaitCap(unittest.TestCase):
     def test_connection_retries_do_not_extend_the_overall_wait_cap(self):
         module = load_runner("modal_check")
         clock = Clock()

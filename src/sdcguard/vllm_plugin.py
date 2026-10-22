@@ -1,4 +1,5 @@
-"""vLLM plugin: check the math of every unquantized (bf16/fp16) linear layer while vLLM serves.
+"""vLLM plugin: check the math of every bf16/fp16 linear layer, and of INT4/INT8 weight-only quantized ones (GPTQ,
+AWQ, compressed-tensors W4A16/W8A16 on vLLM's Marlin and Machete kernels), while vLLM serves.
 
     pip install sdcguard
     SDCGUARD=1 vllm serve <model>
@@ -6,8 +7,10 @@
 Off unless SDCGUARD=1 (vLLM loads every installed plugin, so installing sdcguard alone changes
 nothing). What it does, in every vLLM process:
 
-  - after vLLM loads a linear layer's weights, computes that layer's checksums once (serve.py);
-  - after every matmul of an unquantized linear layer, queues the check (one custom op, so
+  - after vLLM loads a linear layer's weights, computes that layer's checksums once (serve.py); for a quantized
+    layer, from the matrix its kernel multiplies by, read before the kernel repacks it and confirmed bit for bit by
+    running the kernel on unit vectors (_quant.py);
+  - after every matmul of a checked linear layer, queues the check (one custom op, so
     torch.compile keeps a single graph and CUDA graphs capture it);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
@@ -47,9 +50,16 @@ worker afterwards; otherwise every updated layer is reported (with weights_chang
 vLLM's CPU offloading, an offloaded layer's weights can't be read back as its own: its alerts leave
 weights_changed_since_load unknown, and refresh() turns its check off and lists it in guard().unsupported.
 
-Not checked: quantized layers (FP8, INT4, ...), fused MoE experts, router gates that vLLM computes with its own
-GEMM (GateLinear with a bf16 weight and fp32 output), attention (including MLA's decode path, whose matmuls
-use copies of kv_b_proj's weight, so kv_b_proj is checked in prefill only), the LM head.
+Quantized layers (SDCGUARD_QUANT=0 leaves them alone): a quantized layer is checked without its bias, which the
+plugin then adds itself in the activation dtype (the kernels add it the same way, so the output is unchanged), and a
+CPU copy of its quantized weights is kept, about the size of the layer, so an alert can be rechecked
+(SDCGUARD_QUANT_RECHECK=0 keeps none: alerts then say they can't be rechecked). refresh() can't recompute a quantized
+layer's checksums after its kernel repacked the weights: it turns that layer's check off and says so.
+
+Not checked: FP8 and other quantized layers outside Marlin's and Machete's INT4/INT8 weight-only kernels (and on
+Marlin, layers with one scale per output, which it applies after accumulating), fused MoE experts, router gates that
+vLLM computes with its own GEMM (GateLinear with a bf16 weight and fp32 output), attention (including MLA's decode
+path, whose matmuls use copies of kv_b_proj's weight, so kv_b_proj is checked in prefill only), the LM head.
 Tested against vLLM 0.31 (V1 engine); vLLM's internal APIs change, so the plugin checks what it
 patches and turns itself off (with a log line) if something is missing.
 """
@@ -78,6 +88,10 @@ ROUTER = "router gate computed by GateLinear's own GEMM"
 LM_HEAD = "LM head"
 UNSEEN = "unquantized, but its weights were processed without the plugin"
 NOT_A_MATRIX = "-D weight (a convolution kept in a linear layer)"
+# Quantized layers the plugin can't check (yet): these reasons start with QUANT, and count as quantized layers left
+# over (SDCGUARD_REQUIRE). Layers of a quantized method whose kernel isn't hooked at all are reported by the method.
+QUANT = "quantized, not checked: "
+QUANT_KERNELS = ("MarlinLinearKernel", "MacheteLinearKernel")
 
 # The expert weights of vLLM's fused MoE layers (RoutedExperts, FusedMoE in older releases): bf16/fp16/fp8 as
 # w13_weight/w2_weight, packed INT4 and the like as w13_qweight or w13_weight_packed. No `weight` attribute.
@@ -256,7 +270,8 @@ def layer_report(model, counts: Optional[dict] = None) -> dict:
                 why, kind = None, "checked"
         elif getattr(mod, "_sdcguard_why", None):
             why = mod._sdcguard_why
-            kind = {FAILED: "sel", ROUTER: "cant", NOT_SELECTED: "unselected"}.get(why, "out")
+            kind = "quant" if why.startswith(QUANT) else {FAILED: "sel", ROUTER: "cant",
+                                                           NOT_SELECTED: "unselected"}.get(why, "out")
         elif method.lower().startswith("unquantized"):
             why, kind = UNSEEN, "cant"
         else:
@@ -301,7 +316,8 @@ def _summary(r: dict) -> str:
     if r["unchecked_by_method"]:
         msg += "; not checked: " + ", ".join(f"{n} {why}" for why, n in sorted(r["unchecked_by_method"].items()))
     if r["quantized_or_moe"]:
-        msg += " (quantized layers and fused MoE experts aren't checked yet)"
+        msg += (" (fused MoE experts, FP8 layers and quantized layers outside Marlin's and Machete's INT4/INT8 kernels "
+                "aren't checked yet)")
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -428,14 +444,16 @@ _CACHE_DIR = re.compile(r"^sdcguard-[0-9a-f]{12}$")
 def _graph_key(share: float, offset: int, inline: bool) -> str:
     """A hash of what sdcguard builds into vLLM's traced graph: which layers have a check (SDCGUARD_SHARE,
     SDCGUARD_OFFSET, SDCGUARD_ALLOW_CPU), the constants in each check's call (its slot, and z), whether the check
-    is traced in or called as the custom op (SDCGUARD_OPAQUE, SDCGUARD_FAST, SDCGUARD_SERVE_FAST), the sdcguard
-    version, and the check op's arguments (serve.OP_SCHEMA: a graph traced with other arguments can't run)."""
+    is traced in or called as the custom op (SDCGUARD_OPAQUE, SDCGUARD_FAST, SDCGUARD_SERVE_FAST), whether quantized
+    layers are checked (SDCGUARD_QUANT), the sdcguard version, and the check op's arguments (serve.OP_SCHEMA: a graph
+    traced with other arguments can't run)."""
     from . import __version__
     from .serve import OP_SCHEMA
     env = os.environ
     return hashlib.sha256(repr((__version__, OP_SCHEMA, share, offset, float(env.get("SDCGUARD_Z", "6")), inline,
                                 env.get("SDCGUARD_FAST", "1") != "0", env.get("SDCGUARD_SERVE_FAST", "1") != "0",
-                                env.get("SDCGUARD_ALLOW_CPU") == "1")).encode()).hexdigest()[:12]
+                                env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0")).encode()
+                          ).hexdigest()[:12]
 
 
 def _cache_root(key: str) -> str:
@@ -471,6 +489,147 @@ def _cant_check(layer, w) -> Optional[str]:
     return None
 
 
+def _quant_cant_check(kernel, layer) -> Optional[str]:
+    """Why a layer run by Marlin or Machete can't be checked, or None. Checked: INT4 and INT8 codes with bf16 or fp16
+    activations and output, as GPTQ (uint4b8, uint8b128), AWQ and compressed-tensors (uint4 with zero points) store
+    them; on Marlin only with group scales (_quant explains why)."""
+    c = kernel.config
+    name = type(kernel).__name__
+    if c.act_type not in (torch.bfloat16, torch.float16):
+        return f"{QUANT}{name} with {str(c.act_type).replace('torch.', '')} activations"
+    if c.out_type is not None and c.out_type != c.act_type:
+        return f"{QUANT}{name} with {str(c.out_type).replace('torch.', '')} output"
+    wt = c.weight_type
+    bits, bias = int(getattr(wt, "size_bits", 0)), int(getattr(wt, "bias", 0))
+    known = (bits, bias, bool(c.zero_points)) in ((4, 8, False), (8, 128, False), (4, 0, True), (8, 0, True))
+    if not known:
+        return f"{QUANT}{name} with weight type {wt}"
+    if name == "MarlinLinearKernel":
+        if c.group_size in (-1, 0):
+            return (f"{QUANT}one scale per output on Marlin (applied after accumulating: a second rounding of every "
+                    "output)")
+        if c.zero_points and bits != 4:
+            return f"{QUANT}8-bit codes with zero points on Marlin"
+        if os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "0") == "1":
+            return f"{QUANT}VLLM_MARLIN_USE_ATOMIC_ADD=1 (Marlin then adds partial sums in {c.act_type})"
+    if os.environ.get("VLLM_MARLIN_INPUT_DTYPE"):
+        return f"{QUANT}VLLM_MARLIN_INPUT_DTYPE (activations quantized inside the kernel)"
+    return None
+
+
+def _patch_quant(op, select, inline: bool) -> list:
+    """Check the layers vLLM runs with Marlin's and Machete's weight-only INT kernels (GPTQ, AWQ, compressed-tensors
+    W4A16 and W8A16): before the kernel repacks a layer's weights, read the matrix it will multiply by (_quant), let
+    it repack, run it on unit vectors to confirm that reading bit for bit, then register the layer. Every call then
+    runs the kernel without the bias, checks that output, and adds the bias the way the kernel would have: Machete
+    adds it after its GEMM with add_ (the same call here, so torch.compile treats it the same), Marlin inside its
+    kernel, rounded to the activation dtype (here one opaque call, _quant.add_bias_op, so torch.compile can't fuse
+    it into the next operations and keep it unrounded).
+    select(layer) -> True to check it (SDCGUARD_SHARE), else sets the layer's reason. Returns the kernel classes
+    patched."""
+    import importlib
+    from . import _quant
+    from .serve import check_static_any, check_static_impl
+    keep = os.environ.get("SDCGUARD_QUANT_RECHECK", "1") != "0"
+    add_bias = _quant.add_bias_op()
+    patched = []
+    for mod_name, cls_name, rule in (
+            ("vllm.model_executor.kernels.linear.mixed_precision.marlin", "MarlinLinearKernel", _quant.MARLIN),
+            ("vllm.model_executor.kernels.linear.mixed_precision.machete", "MacheteLinearKernel", _quant.MACHETE)):
+        try:
+            K = getattr(importlib.import_module(mod_name), cls_name)
+            orig_pwal, orig_apply = K.process_weights_after_loading, K.apply_weights
+        except Exception as e:  # noqa: BLE001  (a vLLM without this kernel: its layers are reported as quantized)
+            log.info("sdcguard: %s not found (%s); its layers aren't checked", cls_name, e)
+            continue
+        if getattr(K, "_sdcguard", False):
+            patched.append(cls_name)
+            continue
+
+        def process_weights_after_loading(self, layer, _orig=orig_pwal, _apply=orig_apply, _rule=rule):
+            w = bias = qw = None
+            again = bool(getattr(layer, "_sdcguard_slot", 0))
+            try:
+                why = _quant_cant_check(self, layer)
+                if why is None and not again and not select(layer):
+                    why = layer._sdcguard_why
+                if why is None:
+                    c = self.config
+                    # vLLM's layout of the standard (GPTQ-like) weights, before this kernel changes it
+                    qw = _quant.from_layer(layer, self.w_q_name, self.w_s_name, self.w_zp_name if c.zero_points
+                                           else None, c.weight_type, c.group_size, _rule, c.act_type)
+                    w = qw.weight()                                   # (n, k) on the layer's device
+                    b = getattr(layer, "bias", None)
+                    bias = b.detach().clone() if isinstance(b, torch.Tensor) else None   # Marlin permutes its own
+                    if not (w.is_cuda or os.environ.get("SDCGUARD_ALLOW_CPU") == "1"):
+                        why, w = "weights not on a GPU", None
+                if why is not None and not again:
+                    layer._sdcguard_why = why
+            except Exception as e:  # noqa: BLE001  (never break model loading)
+                log.warning("sdcguard: not checking %s: %s", getattr(layer, "prefix", "a layer"), e)
+                w = None
+                if not again:
+                    layer._sdcguard_why = FAILED
+            _orig(self, layer)
+            if w is None:
+                if again:                                         # reloaded into something it can't check now
+                    layer._sdcguard_args = None
+                return
+            try:
+                name = getattr(layer, "prefix", "") or type(layer).__name__
+                rows = _quant.probe_rows(qw.k, qw.group)
+                pr = _quant.probe(lambda x: _apply(self, layer, x, None), w, rows)
+                if pr["mismatches"]:
+                    log.warning("sdcguard: not checking %s: %s on unit vectors differed from the weights read before "
+                                "its repack in %d of %d values (first at input %s, output %s); either this reading "
+                                "of its weights is wrong for this vLLM, or the GPU computed it wrong",
+                                name, type(self).__name__, pr["mismatches"], pr["values"], *pr["first"])
+                    if not again:
+                        layer._sdcguard_why = (f"{QUANT}{type(self).__name__} on unit vectors didn't match the weights "
+                                               "read before its repack")
+                    layer._sdcguard_args = None
+                    return
+                names = [self.w_q_name, self.w_s_name] + ([self.w_zp_name] if self.w_zp_name else []) + ["bias"]
+                src = _quant.QuantSource(layer, names, qw.to("cpu") if keep else None,
+                                         f"{type(self).__name__}, {self.config.weight_type}")
+                layer._sdcguard_qbias = bias
+                g = _guard(w.device)
+                if again:
+                    g.refresh_layer(layer._sdcguard_slot - 1, weight=w, source=src)
+                    return
+                layer._sdcguard_why = FAILED
+                slot = g.add_layer(layer, name, weight=w, source=src)
+                layer._sdcguard_args = (g.op_args(slot, with_bias=False), g.op_args(slot, with_bias=False))
+                layer._sdcguard_trace = inline and not g.uses_fast(slot)
+                del layer._sdcguard_why
+            except Exception as e:  # noqa: BLE001  (never break model loading)
+                log.warning("sdcguard: not checking %s: %s", getattr(layer, "prefix", "a layer"), e)
+                layer._sdcguard_args = None
+
+        def apply_weights(self, layer, x, bias=None, _orig=orig_apply, _rule=rule):
+            a = getattr(layer, "_sdcguard_args", None)
+            if a is None:
+                return _orig(self, layer, x, bias)
+            y = _orig(self, layer, x, None)
+            if torch.compiler.is_compiling():
+                fn = check_static_impl if getattr(layer, "_sdcguard_trace", False) else op
+            else:
+                fn = check_static_any
+            fn(x.reshape(-1, x.shape[-1]), y.reshape(-1, y.shape[-1]), *a[0])
+            if bias is not None:
+                if _rule == _quant.MACHETE:
+                    y.add_(bias)                                  # what Machete's apply_weights does after its GEMM
+                else:
+                    y = add_bias(y, layer._sdcguard_qbias)        # Marlin's bias (its own copy is permuted)
+            return y
+
+        K.process_weights_after_loading = process_weights_after_loading
+        K.apply_weights = apply_weights
+        K._sdcguard = True
+        patched.append(cls_name)
+    return patched
+
+
 def register() -> None:
     """vLLM general-plugin entry point. Runs in every vLLM process; safe to call more than once."""
     if os.environ.get("SDCGUARD", "0") != "1" or _STATE["patched"]:
@@ -498,6 +657,19 @@ def register() -> None:
     op = _op()
     seen = [0]
 
+    def select(layer) -> bool:
+        """SDCGUARD_SHARE: is this eligible layer (unquantized or quantized, in load order) one of those checked?
+        Its number among the eligible ones is kept from its first load: a weight reload (vLLM calls
+        process_weights_after_loading again for every layer) must select the same layers."""
+        i = getattr(layer, "_sdcguard_index", None)
+        if i is None:
+            i = layer._sdcguard_index = seen[0]
+            seen[0] += 1
+        if select_layer(i, share, share_offset):
+            return True
+        layer._sdcguard_why = NOT_SELECTED
+        return False
+
     def process_weights_after_loading(self, layer):
         orig_pwal(self, layer)
         try:
@@ -511,14 +683,7 @@ def register() -> None:
             if why is not None:
                 layer._sdcguard_why = why
                 return
-            # the layer's number among the eligible ones, from its first load: a weight reload (vLLM calls this
-            # again for every layer) must select the same layers
-            i = getattr(layer, "_sdcguard_index", None)
-            if i is None:
-                i = layer._sdcguard_index = seen[0]
-                seen[0] += 1
-            if not select_layer(i, share, share_offset):
-                layer._sdcguard_why = NOT_SELECTED
+            if not select(layer):
                 return
             layer._sdcguard_why = FAILED                         # until it's registered
             g = _guard(w.device)
@@ -548,6 +713,8 @@ def register() -> None:
     M.apply = apply
     M._sdcguard = True
     _STATE["patched"] = True
+    if os.environ.get("SDCGUARD_QUANT", "1") != "0":
+        _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
     poll_every = max(1, int(os.environ.get("SDCGUARD_POLL_EVERY", "16")))
     poll_seconds = float(os.environ.get("SDCGUARD_POLL_SECONDS", "2"))
@@ -617,6 +784,7 @@ def register() -> None:
     hooked = [m for m in ("vllm.v1.worker.gpu.model_runner", "vllm.v1.worker.gpu_model_runner") if hook(m)]
     if not hooked:
         log.warning("sdcguard: couldn't hook the model runner; call sdcguard.vllm_plugin.poll() yourself")
-    log.info("sdcguard: checking unquantized linear layers (alert threshold z=%s, share %s); quantized layers "
-             "and fused MoE experts aren't checked yet, and the first model step logs how many layers that leaves "
-             "out", os.environ.get("SDCGUARD_Z", "6"), share)
+    log.info("sdcguard: checking bf16/fp16 linear layers%s (alert threshold z=%s, share %s); fused MoE experts and "
+             "other quantized layers aren't checked yet, and the first model step logs how many layers that leaves "
+             "out", " and INT weight-only layers on " + " and ".join(_STATE.get("quant_kernels") or []) if
+             _STATE.get("quant_kernels") else "", os.environ.get("SDCGUARD_Z", "6"), share)

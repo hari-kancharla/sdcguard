@@ -6,7 +6,7 @@ from unittest.mock import patch
 from _runner_helpers import ROOT
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class FixtureIsolation(unittest.TestCase):
     def test_leaked_flag_hold_does_not_poison_the_following_test(self):
         import pytest
         import torch

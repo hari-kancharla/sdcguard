@@ -91,9 +91,9 @@ def select_layer(i: int, share: float, offset: int = 0) -> bool:
     share spreads over every kind of layer and every depth (every 4th layer would pick the same
     projection in every transformer block). Layer i sits at the point i x 0.618... (mod 1) and is taken
     when that point falls in a window of width `share` starting at offset x share: with share 1/R, offsets
-    0 to R-1 split the layers between R replicas, every layer checked by exactly one. (Until Oct 19, 2026
-    the offset shifted the layer number instead, and offsets 0 to 7 at share 0.125 left 10% of the layers
-    unchecked everywhere; an independent review found it.)"""
+    0 to R-1 split the layers between R replicas, every layer checked by exactly one. (Shifting
+    the layer number by the offset instead would leave 10% of the layers unchecked everywhere with offsets 0
+    to 7 at share 0.125.)"""
     if share >= 1.0:
         return True
     if share <= 0.0:
@@ -489,12 +489,14 @@ def _location(w) -> Optional[tuple]:
 _NO_TENSOR = -1
 
 
-def _writes(mod) -> tuple:
+def _writes(mod, source=None) -> tuple:
     """How many in-place writes the layer's weight and bias have had (PyTorch's version counters): _NO_TENSOR for
     one the layer doesn't have, None for one there's no count for (an inference tensor keeps none). A write through
-    .data or by another device isn't counted."""
+    .data or by another device isn't counted. source: a quantized layer's _quant.QuantSource, whose kernel tensors
+    (codes, scales, zero points, bias) are counted instead."""
     out = []
-    for t in (getattr(mod, "weight", None), getattr(mod, "bias", None)):
+    tensors = source.live(mod) if source is not None else (getattr(mod, "weight", None), getattr(mod, "bias", None))
+    for t in tensors:
         if not isinstance(t, torch.Tensor):
             out.append(_NO_TENSOR)
             continue
@@ -692,10 +694,12 @@ class ServeGuard:
         mod.__dict__.pop("_sdcguard_trace", None)
 
     def add_layer(self, mod: torch.nn.Module, name: str, weight: Optional[torch.Tensor] = None,
-                  bias: Optional[torch.Tensor] = None) -> int:
-        """Register one layer (also used by engine plugins). Returns its slot."""
+                  bias: Optional[torch.Tensor] = None, source=None) -> int:
+        """Register one layer (also used by engine plugins). Returns its slot. source: for a quantized layer, its
+        _quant.QuantSource (weight is then the matrix its kernel multiplies by, which the layer doesn't hold: the
+        guard reads the kernel's own tensors and the source's copy instead of the layer's weight)."""
         w = mod.weight if weight is None else weight
-        b = getattr(mod, "bias", None) if bias is None else bias
+        b = (getattr(mod, "bias", None) if source is None else None) if bias is None else bias
         # attached inside torch.inference_mode() (a server's request loop), the checksums and the state would
         # be inference tensors, and poll()'s in-place reset of the state outside that mode would fail after
         # zeroing it: everything the guard keeps is made as ordinary tensors
@@ -705,8 +709,9 @@ class ServeGuard:
             slot = len(self.layers)
             # where the layer's weight is now: weights that later live elsewhere may not be its own any more
             # (_unreadable_weights)
-            self.layers.append({"name": name, "module": mod, "cs": cs, "device": w.device,
-                                "weight_at": _location(getattr(mod, "weight", None)), "writes": _writes(mod)})
+            self.layers.append({"name": name, "module": mod, "cs": cs, "device": w.device, "source": source,
+                                "weight_at": None if source is not None else _location(getattr(mod, "weight", None)),
+                                "writes": _writes(mod, source)})
             mod._sdcguard_slot = slot + 1              # 0 means "not registered"
             self._grow(w.device)
         self.stats["layers"] += 1
@@ -1014,6 +1019,10 @@ class ServeGuard:
         start, width = self._block_of(slot, cap["col_block"])
         A = cap["x"].to(dt).view(1, cs.k)
         C = cap["y"][:width].to(dt).view(1, width)
+        src = lay.get("source")
+        if src is not None:                       # a quantized layer: the weights its kernel multiplies by, rebuilt
+            B = src.rows(start, width).t().contiguous()        # from the copy kept at load (checked without bias)
+            return A, B, C, None, start, width
         B = lay["module"].weight.detach()[start:start + width].to("cpu").t().contiguous()
         b = getattr(lay["module"], "bias", None)
         bias = b.detach()[start:start + width].to("cpu") if cap["with_bias"] and isinstance(b, torch.Tensor) else None
@@ -1043,9 +1052,16 @@ class ServeGuard:
         if unreadable:
             return {**out, "verdict": "unknown",
                     "why": f"the layer's weights can't be read back as its own: {unreadable}"}
-        w = getattr(lay["module"], "weight", None)
-        if not (isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k)):
-            return {**out, "verdict": "unknown", "why": "the layer's weight isn't the matrix its checksums describe"}
+        src = lay.get("source")
+        if src is not None:
+            if src.weights is None:
+                return {**out, "verdict": "unknown", "why": "the quantized layer's weights weren't kept for rechecks "
+                        "(SDCGUARD_QUANT_RECHECK=0)"}
+            out["by"] += f" ({src.label}: the weights its kernel multiplies by, from the copy kept at load)"
+        else:
+            w = getattr(lay["module"], "weight", None)
+            if not (isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k)):
+                return {**out, "verdict": "unknown", "why": "the layer's weight isn't the matrix its checksums describe"}
         from .screen import cpu_recheck
         A, B, C, bias, start, width = self._slice(slot, cap)
         r = cpu_recheck(A, B, C, bias, 1.0, 1.0, 0, 0, block=cs.bs, z=float(self.z), abs_floor=float(self.abs_floor))
@@ -1093,7 +1109,9 @@ class ServeGuard:
                 "captured_at_check": "the check copied this row of the layer's input and this block of its output "
                                      "when it scored them, before the memory was reused: the numbers that alarmed",
                 "layer_row": cap["row"], "layer_col_block": cap["col_block"], "layer_columns": [start, start + width],
-                "weights": "the layer's weights as they were when the alert was read",
+                "weights": ("the layer's weights as they were when the alert was read" if lay.get("source") is None
+                            else f"{lay['source'].label}: the weights its kernel multiplies by, rebuilt from the "
+                            "quantized weights kept at load (compared with the kernel's own by fingerprint)"),
                 "weights_changed_since_load": changed, "weights_rewritten_since_load": rewritten, "recheck": recheck,
                 "check_config": {"block": cs.bs, "z": float(self.z), "abs_floor": float(self.abs_floor)},
                 "record_device": dev}
@@ -1147,15 +1165,20 @@ class ServeGuard:
             if unreadable is None:
                 unreadable = self._unreadable_weights()
             w = getattr(lay["module"], "weight", None)
-            if isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k) and slot not in unreadable:
+            if lay.get("source") is not None:
+                try:
+                    changed = lay["source"].changed(lay["module"])
+                except Exception:  # noqa: BLE001  (diagnosis is best effort)
+                    changed = None
+            elif isinstance(w, torch.Tensor) and tuple(w.shape) == (cs.n, cs.k) and slot not in unreadable:
                 try:
                     changed = not torch.equal(LayerChecksums._fingerprint(w.detach()), cs.fingerprint)
                 except Exception:  # noqa: BLE001  (diagnosis is best effort)
                     changed = None
             # Written in place since load, even if the values are back now? Then the weights the matmul used may
-            # not be the ones the recheck reads (an outside review's case, October 21, 2026: a weight changed,
-            # the forward run, the weight put back before the read; the right output was called wrong).
-            rewritten = _rewritten(lay.get("writes"), _writes(lay["module"]))
+            # not be the ones the recheck reads (say a weight changed, the forward ran, and the
+            # weight was put back before the read: the right output would be called wrong).
+            rewritten = _rewritten(lay.get("writes"), _writes(lay["module"], lay.get("source")))
             # An infinite score means an output the inputs can't produce: Inf/NaN in it (the check then keeps NaN as
             # that checksum's noise), or finite values too large for the inputs.
             nonfinite = math.isinf(zv) and math.isnan(noise)
@@ -1248,6 +1271,10 @@ class ServeGuard:
         bad = []
         unreadable = self._unreadable_weights()
         for slot, lay in enumerate(self.layers):
+            if lay.get("source") is not None:
+                if lay["source"].changed(lay["module"]):
+                    bad.append(lay["name"])
+                continue
             w = lay["module"].weight if hasattr(lay["module"], "weight") else None
             if w is None or slot in unreadable:
                 continue
@@ -1265,14 +1292,15 @@ class ServeGuard:
             return sum(self._refresh_layer(slot, None, None, unreadable) for slot in range(len(self.layers)))
 
     def refresh_layer(self, slot: int, weight: Optional[torch.Tensor] = None,
-                      bias: Optional[torch.Tensor] = None) -> bool:
+                      bias: Optional[torch.Tensor] = None, source=None) -> bool:
         """Recompute one layer's checksums, writing them into the same tensors (CUDA graphs captured
         earlier keep reading the right memory). False when they can't be (the layer then runs unchecked, listed in
         unsupported): weights in a dtype the check doesn't take, or weights it can't read back as the layer's own
         (_unreadable_weights). A weight passed in (vLLM's reload passes the one it just loaded) is taken as the
         layer's own unless another checked layer's weight uses its memory."""
         with torch.inference_mode(False):             # ordinary tensors, as in add_layer
-            return self._refresh_layer(slot, weight, bias, None if weight is not None else self._unreadable_weights())
+            return self._refresh_layer(slot, weight, bias, None if weight is not None else self._unreadable_weights(),
+                                       source)
 
     def _unreadable_weights(self) -> dict:
         """Slots whose weights the guard can't read back as theirs, with why. Alerts then don't say whether the
@@ -1285,6 +1313,8 @@ class ServeGuard:
         seen: dict = {}
         out: dict = {}
         for slot, lay in enumerate(self.layers):
+            if lay.get("source") is not None:     # read through its kernel's tensors and the copy kept at load
+                continue
             w = getattr(lay["module"], "weight", None)
             at = _location(w)
             if at is None:
@@ -1310,12 +1340,25 @@ class ServeGuard:
             for i, o in ((i, getattr(lay["module"], "weight", None)) for i, lay in enumerate(self.layers)))
 
     def _refresh_layer(self, slot: int, weight: Optional[torch.Tensor], bias: Optional[torch.Tensor],
-                       unreadable: Optional[dict]) -> bool:
-        """unreadable: _unreadable_weights() when the weights are read from the layer (None: they were passed)."""
+                       unreadable: Optional[dict], source=None) -> bool:
+        """unreadable: _unreadable_weights() when the weights are read from the layer (None: they were passed).
+        source: a quantized layer's new _quant.QuantSource, passed with its weight (vLLM's reload)."""
         lay = self.layers[slot]
         mod = lay["module"]
+        quant = lay.get("source") is not None
+        if quant and (weight is None or source is None):
+            # its kernel repacked the weights at load: nothing here can read them back as a matrix
+            why = ("a quantized layer's weights can't be read back after its kernel repacked them, so refresh() "
+                   "can't recompute its checksums: not checked after the update (vLLM's weight reload registers "
+                   "them again)")
+            if hasattr(mod, "_sdcguard_args"):
+                mod._sdcguard_args = None
+            self.unsupported[lay["name"]] = why
+            return False
         w = mod.weight if weight is None else weight
-        b = getattr(mod, "bias", None) if bias is None else bias
+        b = (getattr(mod, "bias", None) if not quant else None) if bias is None else bias
+        if quant:
+            lay["source"] = source
         why = None
         if w.dtype not in UNIT_ROUNDOFF:
             # (cast to fp32, say: the checks need bf16 or fp16; the layer runs unchecked until it's back, and its
@@ -1347,8 +1390,8 @@ class ServeGuard:
             # Otherwise a moved layer loses its counters, or old flat indices get decoded with the new shape.
             self.poll(wait=True)
             lay["cs"], lay["device"] = new, w.device
-            lay["weight_at"] = _location(getattr(mod, "weight", None))
-            lay["writes"] = _writes(mod)
+            lay["weight_at"] = None if quant else _location(getattr(mod, "weight", None))
+            lay["writes"] = _writes(mod, lay.get("source"))
             self._prepare(new, w)
             self._grow(w.device)
             if lay.get("took_over"):
@@ -1362,8 +1405,8 @@ class ServeGuard:
                 if a.data_ptr() != c.data_ptr():
                     a.copy_(c)
             old.fingerprint.copy_(new.fingerprint)
-        lay["writes"] = _writes(mod)
-        if lay.get("weight_at") is None:             # (back from a dtype the check doesn't take)
+        lay["writes"] = _writes(mod, lay.get("source"))
+        if lay.get("weight_at") is None and not quant:     # (back from a dtype the check doesn't take)
             lay["weight_at"] = _location(getattr(mod, "weight", None))
         # A supported dtype may have returned after an unsupported one without changing shape. The earlier
         # refresh disabled this forward; copying the tensors alone would leave it unchecked forever.

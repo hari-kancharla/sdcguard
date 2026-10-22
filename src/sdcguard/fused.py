@@ -249,14 +249,14 @@ def check_linear_fused(x: torch.Tensor, w: torch.Tensor, bias: Optional[torch.Te
 # ---------------------------------------------------------------------------------------------------------------
 # The fp32 self-check: the same fused GEMM, scored inside the kernel, no float64 anywhere.
 #
-# The first version above leaves float64 block statistics for a separate float64 scoring step, which the
-# October 20 GPU run found takes most of the time (about 1 ms per matmul on an H100, 3 to 23 ms on an L4) and made
+# The first version above leaves float64 block statistics for a separate float64 scoring step, which on a
+# GPU takes most of the time (about 1 ms per matmul on an H100, 3 to 23 ms on an L4) and made
 # the check cost as much as precise mode. Following what AEGIS (OSDI '26) and FP-Sketch (arXiv 2609.19758) do,
 # this version never computes a high-precision reference:
 #   - the expected side x . (block sums of W) is computed in fp32 on the tensor cores by a second, narrow dot
 #     in the same K loop, each step's result (BK terms) added into a running sum compensated for its rounding
-#     (Neumaier's version of Kahan's summation; since October 21, 2026, when its plain fp32 accumulation over
-#     all of K had made the check about half as sensitive as precise mode): each block sum (computed once per
+#     (Neumaier's version of Kahan's summation; a plain fp32 accumulation over all of K made the check
+#     about half as sensitive as precise mode): each block sum (computed once per
 #     call from W, in fp32) is split into three bf16 or
 #     fp16 parts whose sum is exact, so the narrow dot sees the full fp32 value. In fp16 the block sums are first
 #     divided by a power of two that puts the block's largest possible sum (128 x max|W|) between 2^14 and 2^15,

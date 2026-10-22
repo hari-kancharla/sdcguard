@@ -1,4 +1,4 @@
-"""End-to-end regressions discovered against the b778d27 source archive.
+"""End-to-end regressions for evidence files and incident archives.
 
 These exercise public file ingestion and saved incident artifacts rather than
 only the helper functions that manufacture them.

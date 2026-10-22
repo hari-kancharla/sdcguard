@@ -127,8 +127,8 @@ def own_memory(*ts) -> bool:
     """Whether every tensor given (None skipped) is an ordinary tensor with memory of its own: the only kind a Triton
     kernel can be handed, since it gets each tensor's address. A tensor subclass with its own dispatch (DTensor, an
     AsyncCollectiveTensor not waited for, FakeTensor, quantized wrappers) can have none: its data_ptr() is 0, and a
-    kernel handed it reads address 0, an illegal memory access that ends the process (the two-H100 tensor-parallel
-    run on October 21, 2026, before ready() was used). Those go through the PyTorch version of the check instead,
+    kernel handed it reads address 0, an illegal memory access that ends the process (as a two-H100 tensor-parallel
+    run showed). Those go through the PyTorch version of the check instead,
     which computes through the subclass's own dispatch."""
     if torch.compiler.is_compiling():   # being traced: the compiler unwraps subclasses itself, and no tensor has an
         return True                     # address yet (asking for one would break the graph)

@@ -331,6 +331,8 @@ def main(argv=None) -> int:
     sub.add_parser("blas", help="run every cuBLASLt kernel for your matmul shapes and say which compute wrong",
                    add_help=False)
     sub.add_parser("casefile", help="what saved evidence of a failure supports (experimental)", add_help=False)
+    sub.add_parser("gate", help="keep wrong matmuls as test cases and check every upgrade against them",
+                   add_help=False)
     sub.add_parser("nvsentinel", help="send check results and job alerts to NVIDIA NVSentinel (Kubernetes)",
                    add_help=False)
     c = sub.add_parser("certify", help="check every GPU, then write a signed certificate per GPU")
@@ -384,7 +386,7 @@ def main(argv=None) -> int:
         return 2
 
 
-_DISPATCHED = ("demo", "selftest", "screen", "check", "board", "casefile", "blas", "issues", "nvsentinel")
+_DISPATCHED = ("demo", "selftest", "screen", "check", "board", "casefile", "blas", "issues", "nvsentinel", "gate")
 
 
 def _dispatch(cmd: str, rest: list) -> int:
@@ -401,6 +403,8 @@ def _dispatch(cmd: str, rest: list) -> int:
         from .blas import main as m
     elif cmd == "casefile":
         from .casefile import main as m
+    elif cmd == "gate":
+        from .gate import main as m
     elif cmd == "nvsentinel":
         from .nvsentinel import main as m
     elif cmd == "check":

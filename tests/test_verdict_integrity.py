@@ -1,6 +1,6 @@
-"""The cases an independent review reproduced (Oct 19, 2026), each turned into a test: a check that can't
-run or can't judge never becomes a PASS, failures keep replayable evidence, serving leaves altered layers
-alone, empty batches work on every path, and the math-mode check sees errors one checksum pattern can't."""
+"""A check that can't run or can't judge never becomes a PASS, failures keep replayable evidence, serving leaves
+altered layers alone, empty batches work on every path, and the math-mode check sees errors one checksum pattern
+can't."""
 import html
 import json
 import os
@@ -167,7 +167,7 @@ def test_vllm_reads_results_after_a_while_not_only_every_16_steps(monkeypatch, t
 
 def test_vllm_time_based_reads_wait_for_the_gpu_and_count_based_ones_dont(monkeypatch, tmp_path):
     """A non-blocking read reports the previous one, so on a GPU an alert read on the time condition would
-    otherwise wait for another step (outside review, Oct 19, 2026). There's no idle timer: documented."""
+    otherwise wait for another step. There's no idle timer: documented."""
     sys.path.insert(0, HERE)
     from test_serve import _fake_vllm, _plugin_env, _plugin_model
     M, Runner = _fake_vllm(monkeypatch)
@@ -221,8 +221,8 @@ def test_board_rejects_cards_whose_math_mode_counts_disagree():
 
 
 def test_math_mode_evidence_reaches_the_certificate_and_the_fleet_archive(tmp_path):
-    """Found by an outside review (Oct 19, 2026): evidence from the math modes and the stress check was saved
-    but left out of the certificate's hashes, the fleet report's counts and the RMA archive."""
+    """Evidence from the math modes and the stress check is in the certificate's hashes, the fleet report's
+    counts and the RMA archive, not only saved."""
     pytest.importorskip("cryptography")
     import zipfile
     from sdcguard import fleet
@@ -262,8 +262,8 @@ def test_math_mode_evidence_reaches_the_certificate_and_the_fleet_archive(tmp_pa
 
 
 def test_any_unjudged_check_makes_the_run_incomplete():
-    """The README says a run that couldn't judge part of its work isn't a PASS; until Oct 19, 2026 up to 1% of
-    unjudged checks were let through with a warning (outside review)."""
+    """The README says a run that couldn't judge part of its work isn't a PASS: not even 1% of unjudged checks
+    is let through with a warning."""
     from sdcguard import verdict
     assert verdict.from_counts(0, 1000, 0) == "PASS"
     assert verdict.from_counts(0, 1000, 1) == "INCOMPLETE" == verdict.from_counts(0, 0, 0)

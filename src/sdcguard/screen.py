@@ -185,7 +185,7 @@ def exact_block(a, b_blk, c, bias, alpha, beta) -> dict:
     u = UNIT_ROUNDOFF.get(c.dtype, 2.0 ** -24)
     fi = torch.finfo(c.dtype) if c.dtype.is_floating_point else torch.finfo(torch.float32)
     # underflow: half the smallest subnormal step of the output, plus fp32 flush-to-zero on each addition
-    # (an fp16 output of 1e-4 x 1e-4 is a correct 0; Oct 19 outside review)
+    # (an fp16 output of 1e-4 x 1e-4 is a correct 0)
     tiny = 0.5 * fi.tiny * fi.eps + (k + 1) * torch.finfo(torch.float32).tiny
     tol = 2 * (u * ref.abs() + env + tiny) + 1e-300
     cd = c.double()
@@ -618,7 +618,8 @@ def _evidence_sha256(path: str) -> Optional[str]:
 
 
 def _recorded_gemm_settings(path: str, ev: dict) -> Optional[dict]:
-    """The GEMM settings the evidence was recorded with: in the .pt since Oct 21, 2026, else its .json."""
+    """The GEMM settings the evidence was recorded with: from the .pt, or from its .json for evidence saved by
+    0.3.0 or earlier."""
     rec = ev.get("gemm_settings")
     if isinstance(rec, dict) and rec:
         return rec

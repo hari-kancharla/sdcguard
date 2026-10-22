@@ -1,4 +1,4 @@
-"""Edge cases from an outside code review: rounding that lines up with the sign pattern, layers with their
+"""Edge cases: rounding that lines up with the sign pattern, layers with their
 own forward, empty batches, certificate dates, result cards whose verdict contradicts their counts."""
 import json
 import os
@@ -152,7 +152,7 @@ def test_serving_checks_underneath_an_accelerate_device_hook_and_restores_it():
 
 
 def test_serving_compiled_right_after_attach_still_checks_a_hooked_layer():
-    """No first-call probe to miss under torch.compile (outside review, Oct 19, 2026)."""
+    """No first-call probe to miss under torch.compile."""
     torch.manual_seed(0)
     lin = _accelerate_style_hook(nn.Linear(128, 128, bias=False).to(torch.bfloat16), [])
     sg = ServeGuard().attach(lin)
@@ -169,8 +169,8 @@ def test_serving_compiled_right_after_attach_still_checks_a_hooked_layer():
 
 @pytest.mark.parametrize("case", ["plain wrapper", "batch dependent", "fp16 scale"])
 def test_serving_lists_any_other_instance_forward_and_never_alarms_on_it(case):
-    """A check of one sample can't prove an instance forward is a plain linear layer for every input (an outside
-    review found a wrapper that was linear for one row and doubled larger batches, and an fp16 scale of 1.0059
+    """A check of one sample can't prove an instance forward is a plain linear layer for every input (say a
+    wrapper that is linear for one row and doubles larger batches, and an fp16 scale of 1.0059
     inside bf16's tolerance): such layers are left alone and listed."""
     dt = torch.float16 if case == "fp16 scale" else torch.bfloat16
     lin = nn.Linear(128, 128, bias=False).to(dt)

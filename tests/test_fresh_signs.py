@@ -128,8 +128,8 @@ def test_serving_keeps_its_pattern_while_training_moves_on():
 
 
 def test_the_pattern_caches_survive_many_threads():
-    """Four threads moving through epochs at once used to hit "dictionary changed size during iteration" while
-    pruning (outside review, Oct 19, 2026)."""
+    """Four threads moving through epochs at once don't hit "dictionary changed size during iteration" while
+    pruning."""
     import concurrent.futures
     import sys
     from sdcguard import _group

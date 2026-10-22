@@ -1,4 +1,5 @@
-"""Round 3 GPU runs on a Modal H100: fast training mode, the screen, the serving check.
+"""The October 18 GPU runs on a Modal H100 (results/round3_oct18): fast training mode, the screen, the
+serving check.
 
     modal run scripts/modal_v2.py --phase check   # about 35 min, about $2.40
     modal run scripts/modal_v2.py --phase serve   # about 25 min, about $1.65
@@ -147,7 +148,7 @@ def check(force: bool = False) -> str:
 
 @app.function(volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
 def serve(force: bool = False) -> str:
-    """The serving check after round 3: the Triton kernel (one per layer) and layer shares."""
+    """The serving check with the Triton kernel (one per layer) and layer shares."""
     msg = _locked("serve", force)
     if msg:
         return msg

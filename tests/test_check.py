@@ -260,7 +260,7 @@ def test_many_gpus_path_reports_a_child_that_crashed(monkeypatch, tmp_path, caps
 def test_triton_kernels_wait_for_validation_on_new_gpu_generations(monkeypatch):
     """A fault in an unvalidated kernel ends the process, so generations newer than the validated ones run the
     plain checks unless SDCGUARD_TRITON_NEW_ARCH=1. Blackwell (capability 10) runs the kernels without
-    software pipelining since Oct 19 (a B200 faulted with it; test_arch_config.py), =0 opts out."""
+    software pipelining (a B200 faulted with it; test_arch_config.py), =0 opts out."""
     import torch
     from sdcguard import _group, _serve_fast
     cuda = torch.device("cuda", 0)

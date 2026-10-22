@@ -12,7 +12,7 @@ from unittest.mock import patch
 from _runner_helpers import ROOT, Clock, load_runner
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class ServingRunnerTimeouts(unittest.TestCase):
     def test_each_model_has_a_finite_budget_and_a_timeout_preserves_status(self):
         module = load_runner("modal_vllm")
         clock, budgets = Clock(), []

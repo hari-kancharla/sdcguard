@@ -1,5 +1,5 @@
 """Serving counts: how many checks each layer executed and how many checksums couldn't be judged. A worst score
-of 0 can't tell a clean layer from one never checked (outside review, Oct 19); these counts can."""
+of 0 can't tell a clean layer from one never checked; these counts can."""
 import json
 import math
 

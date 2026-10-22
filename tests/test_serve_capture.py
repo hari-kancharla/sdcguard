@@ -1,6 +1,6 @@
 """Original-event capture (serve.CAPTURE_SLOTS): when a serving check alarms, the check itself keeps the row of the
-layer's input and the block of its output it judged, and the alert carries a float64 recheck of them. The review
-that asked for this listed what it must show; each test here is one of those, on the CPU (the PyTorch check; the
+layer's input and the block of its output it judged, and the alert carries a float64 recheck of them. Each test
+here is one thing it must show, on the CPU (the PyTorch check; the
 Triton check's capture is compared with it bit for bit in _serve_fast._probe and tests/_serve_fast_compare.py)."""
 import json
 import os
@@ -274,9 +274,9 @@ def _changed_and_put_back(model, x, how):
 
 
 def test_a_weight_changed_and_put_back_before_the_read_is_not_called_a_wrong_output(tmp_path):
-    """An outside review's case (October 21, 2026): the recheck used the weight as it is at the read, the one put
-    back, and called the right output wrong (output_wrong). An in-place write since load now makes the verdict
-    unknown, the alert says why, and so does the casefile of the evidence it saved."""
+    """A weight changed and put back before the read: a recheck with the weight as it is at the read would call
+    the right output wrong (output_wrong). An in-place write since load makes the verdict unknown, the alert
+    says why, and so does the casefile of the evidence it saved."""
     from sdcguard import casefile
     m = _model()
     g = ServeGuard(evidence_dir=str(tmp_path)).attach(m)

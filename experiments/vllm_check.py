@@ -10,6 +10,11 @@ sdcguard (baseline) and once with SDCGUARD=1. Same prompts, greedy decoding. Rep
                    that alarmed (captured inside vLLM's compiled graph) with a recheck that finds the weights
                    changed, and verify_weights() must find the changed weights
 
+With --expect-quant KERNEL (an INT4 model): every registered layer must be a quantized layer run by that kernel
+(MacheteLinearKernel or MarlinLinearKernel), the start-up count may leave out only the LM head (so no layer was
+dropped by the load-time probe), and the flipped bit is a high exponent bit of one group scale of the layer (the
+quantized layer has no bf16 weight to flip).
+
     python experiments/vllm_check.py --out runs/vllm            # both runs, then the comparison
     python experiments/vllm_check.py --role guarded --out ...   # one run
 """
@@ -31,17 +36,39 @@ FLIP_LAYER = "model.layers.10.mlp.down_proj"
 
 def _kept_row(alert, layer: str) -> bool:
     """Whether an alert on `layer` kept the row that alarmed, with a recheck that found the weights changed since
-    load. A kept row has a place in the layer (row, 128-column block, whether the bias was in it) and a score: an
-    outside review showed any non-empty record passed (October 21, 2026, before any run)."""
+    load. A kept row has a place in the layer (row, 128-column block, whether the bias was in it) and a score:
+    not every non-empty record passes."""
     c = alert.get("captured") if isinstance(alert, dict) and alert.get("where") == layer else None
     return (isinstance(c, dict) and all(type(c.get(k)) is int and c[k] >= 0 for k in ("row", "col_block"))
             and type(c.get("with_bias")) is bool and type(c.get("z")) in (int, float) and c["z"] > 0
             and (alert.get("recheck") or {}).get("verdict") == "weights_changed")
 
 
+def _quant_failures(result: dict) -> list[str]:
+    """--expect-quant: every checked layer is quantized and run by the expected kernel, and nothing but the LM head
+    went unchecked."""
+    kernel = result.get("expect_quant")
+    if not kernel:
+        return []
+    errors = []
+    for i, c in enumerate(result.get("clean") or []):
+        if not isinstance(c, dict):
+            continue
+        kinds = c.get("kernels") or {}
+        if c.get("quant_layers") != c.get("layers") or not c.get("layers"):
+            errors.append(f"worker {i}: {c.get('quant_layers')} of {c.get('layers')} checked layers are quantized")
+        if not kinds or any(not str(k).startswith(kernel) for k in kinds):
+            errors.append(f"worker {i}: checked layers ran {sorted(kinds)}, expected {kernel} only")
+        report = c.get("layer_report") or {}
+        left = {k: v for k, v in (report.get("unchecked_by_method") or {}).items() if k != "LM head"}
+        if not report or left:
+            errors.append(f"worker {i}: layers left unchecked besides the LM head: {left or 'no layer report'}")
+    return errors
+
+
 def _guarded_failures(result: dict) -> list[str]:
     """Validate observed behavior independently of whether the serving process exited normally."""
-    errors = []
+    errors = _quant_failures(result)
     clean, after, flipped = (result.get(k) for k in ("clean", "after_flip", "flipped"))
     if not all(isinstance(v, list) and v for v in (clean, after, flipped)):
         return ["missing clean, injected-fault or worker reports"]
@@ -105,6 +132,8 @@ def _comparison_failures(baseline: dict, guarded: dict) -> list[str]:
     for field in ("model", "vllm", "enforce_eager"):
         if field not in baseline or baseline.get(field) != guarded.get(field):
             errors.append(f"baseline and guarded {field} do not match")
+    if baseline.get("disabled_kernels") != guarded.get("disabled_kernels"):    # (None in both: vLLM's own choice)
+        errors.append("baseline and guarded ran with different VLLM_DISABLED_KERNELS")
     for name, result in (("baseline", baseline), ("guarded", guarded)):
         value = result.get("output_tokens_per_s")
         if not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
@@ -134,11 +163,16 @@ def _flip(model):
     if names and not any(n.endswith(FLIP_LAYER) for n in names):
         downs = [n for n in names if n.endswith("down_proj")] or names
         target = downs[len(downs) // 2]
+    src = next((lay.get("source") for lay in (g.layers if g is not None else []) if lay["name"].endswith(target)),
+               None)
     for name, mod in model.named_modules():
         if name.endswith(target):
-            w = mod.weight
             with torch.no_grad():
-                w.data.view(torch.int16)[123, 456] ^= (1 << 14)      # high exponent bit of one weight
+                if src is not None:      # a quantized layer: one of its group scales (bf16), as the kernel keeps them
+                    s = getattr(mod, src.names[1])
+                    s.data.view(-1).view(torch.int16)[123] ^= (1 << 14)
+                else:
+                    mod.weight.data.view(torch.int16)[123, 456] ^= (1 << 14)      # high exponent bit of one weight
             torch.cuda.synchronize()
             return name
     return None
@@ -153,7 +187,13 @@ def _guard_report(_model):
     worst = dict(g.worst_seen)     # positive control: worst score each layer ever showed (> 0: a residual seen)
     finite = [z for z in worst.values() if z == z and z != float("inf")]
     cov = g.coverage_report()      # counted on the GPU: checks executed per layer, checksums that couldn't be judged
+    kernels: dict = {}
+    for lay in g.layers:
+        if lay.get("source") is not None:
+            kernels[lay["source"].label] = kernels.get(lay["source"].label, 0) + 1
     return {"layers": g.stats["layers"], "layers_checked_since_last_read": sum(1 for z in worst.values() if z > 0),
+            "quant_layers": sum(kernels.values()), "kernels": kernels,
+            "layer_report": vllm_plugin._STATE.get("layers"),
             "layers_with_executed_checks": cov["layers_checked"], "checks_executed": cov["checks_executed"],
             "layer_counts": g.counts(),
             "unjudged_checksums": cov["unjudged_checksums"], "never_checked_sample": cov["never_checked"][:6],
@@ -165,7 +205,7 @@ def _guard_report(_model):
 
 
 def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, eager: bool = False,
-             tag: str | None = None):
+             tag: str | None = None, expect_quant: str | None = None):
     os.environ["SDCGUARD"] = "1" if role == "guarded" else "0"
     os.environ["SDCGUARD_POLL_EVERY"] = "1000000000"      # this script reads the results itself
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"           # engine in this process: apply_model reaches it
@@ -174,7 +214,7 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     # the guarded run must not reuse it. Both runs compile from scratch.
     os.environ["VLLM_DISABLE_COMPILE_CACHE"] = "1"
     # vLLM 0.31's warm-up runs FlashInfer's top-k/top-p sampler, which JIT-compiles with nvcc; a pip install
-    # without the CUDA toolkit or flashinfer-cubin crashes there (round 3: both runs died at start-up).
+    # without the CUDA toolkit or flashinfer-cubin crashes there (both runs on October 18 died at start-up).
     # 0 selects vLLM's own PyTorch/Triton sampler (vllm/envs.py). Decoding here is greedy either way.
     os.environ.setdefault("VLLM_USE_FLASHINFER_SAMPLER", "0")
     # The plugin keeps bf16 matmul partial sums in fp32 (as the training guard does). Do the same in the
@@ -189,7 +229,8 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
         vllm_plugin.register()        # also loaded by vLLM through the entry point; calling it twice is fine
     import vllm
     from vllm import LLM, SamplingParams
-    res = {"role": role, "model": model, "vllm": vllm.__version__, "enforce_eager": eager,
+    res = {"role": role, "model": model, "vllm": vllm.__version__, "enforce_eager": eager, "expect_quant": expect_quant,
+           "disabled_kernels": os.environ.get("VLLM_DISABLED_KERNELS"),
            "opaque_op": os.environ.get("SDCGUARD_OPAQUE") == "1", "share": os.environ.get("SDCGUARD_SHARE", "1")}
     t0 = time.time()
     llm = LLM(model=model, dtype="bfloat16", gpu_memory_utilization=0.5, max_model_len=2048, seed=0,
@@ -250,6 +291,8 @@ def compare(out: str, passed_as: str | None = None):
         "worst_clean_z": clean.get("worst_clean_z"),
         "clean_alerts": len(clean.get("alerts", [])),
         "flipped_layer": g.get("flipped"), "flagged_after_flip": flagged,
+        "quantized": {"expected_kernel": g.get("expect_quant"), "kernels": clean.get("kernels"),
+                      "unchecked_by_method": (clean.get("layer_report") or {}).get("unchecked_by_method")},
         "verify_weights_after_flip": after.get("changed_weights"),
         "alert_example": (after.get("alerts") or [None])[0],
     }
@@ -345,17 +388,20 @@ def main():
     p.add_argument("--tag", default=None, help="file name for this run's results (default: the role)")
     p.add_argument("--shares", default="", help="after the main pair, extra guarded runs checking only this "
                    "share of layers, e.g. 0.125,0.25")
+    p.add_argument("--expect-quant", default=None, help="an INT4 model: the kernel every checked layer must use "
+                   "(MacheteLinearKernel or MarlinLinearKernel)")
     p.add_argument("--role-timeout", type=float, default=15 * 60,
                    help="maximum seconds for one role, also bounded by the parent experiment's deadline")
     a = p.parse_args()
     if not math.isfinite(a.role_timeout) or a.role_timeout <= 0:
         p.error("--role-timeout must be finite and positive")
     if a.role:
-        return run_role(a.role, a.out, a.prompts, a.max_tokens, a.model, a.enforce_eager, a.tag)
+        return run_role(a.role, a.out, a.prompts, a.max_tokens, a.model, a.enforce_eager, a.tag, a.expect_quant)
     shares = [float(x) for x in a.shares.split(",") if x.strip()]
     def go(role, env=None, extra=()):
         cmd = [sys.executable, __file__, "--role", role, "--out", a.out, "--prompts", str(a.prompts),
-               "--max-tokens", str(a.max_tokens), "--model", a.model, *extra]
+               "--max-tokens", str(a.max_tokens), "--model", a.model, *extra,
+               *(("--expect-quant", a.expect_quant) if a.expect_quant else ())]
         budget = a.role_timeout
         deadline = os.environ.get("SDCGUARD_RUN_DEADLINE_MONOTONIC")
         if deadline is not None:

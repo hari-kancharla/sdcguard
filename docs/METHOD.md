@@ -63,7 +63,7 @@ model of a faulty GPU, not a faulty GPU, which is why the NVBit runs below injec
 | run | checks | false alarms |
 |---|---|---|
 | soak: GPT-2 small training, every matmul on every step, 5.14 GPU-hours | 24,580,560 | 0 (worst score 3.54, alarm at 6) |
-| round 3 training runs | 48,705 | 0 |
+| October 18 training runs ([round3_oct18](../results/round3_oct18/training)) | 48,705 | 0 |
 | serving check on clean inputs | 76,500 layer checks | 0 |
 | October 18 vLLM clean-traffic runs | layer shares and compared outputs described below; predates the executed-count gate | 0 |
 | October 20 vLLM runs, Qwen2.5-1.5B and 7B, every layer and 1 in 8 | 170,688 layer checks, 97,536 of them in measured traffic | 0 (worst score 2.93) |
@@ -1126,6 +1126,84 @@ compiled graph) with the recheck verdict `weights_changed`. Checking every layer
 of output tokens per second against plain vLLM with PyTorch's default reductions; checking 1 in 8 layers was
 within the run's noise of plain vLLM (it measured faster on both models). The cost of the five GPU runs was about
 $0.65 to $0.74 each by function time, and the vLLM run about $1.06.
+
+## 0.5.0 on GPUs (written October 22, 2026, before any GPU run)
+
+0.5.0 adds three things that need GPUs to validate: checks of INT4 and INT8 weight-only quantized layers in vLLM, the
+upgrade gate (`sdcguard gate`), and a faster serving kernel. What each run must show is written here first. Every
+result is published, including any criterion not met.
+
+### INT4 and INT8 layers in vLLM
+
+How it works (`src/sdcguard/_quant.py`): vLLM 0.31 runs GPTQ, AWQ and compressed-tensors W4A16/W8A16 layers with two
+kernels, Machete (H100 and H200, group sizes 64 and 128 and one scale per output) and Marlin (every other NVIDIA GPU,
+and Hopper with group size 32). Both dequantize each weight into bf16 or fp16 before an fp32 tensor-core
+accumulation, by rules read from vLLM 0.31's CUDA source (the module's docstring has them), so the matrix the GEMM
+multiplies by is exactly representable and the existing check applies unchanged. At load, before the kernel repacks
+the weights, sdcguard reads them in vLLM's standard layout and builds that matrix; after the repack it runs the
+kernel itself on unit vectors (every input when there are at most 1,024, else one input of every group, the
+first and the last, and random ones until there are 1,024) and requires every value to equal the matrix it built, bit for bit. A layer that differs
+anywhere isn't checked and is listed with the reason. Every call then runs the kernel without the bias, checks that
+output and adds the bias in the activation dtype, which is the rounding both kernels use for their own bias add.
+Not checked: Marlin with one scale per output (it applies the scale after accumulating, a second rounding of every
+output), `VLLM_MARLIN_USE_ATOMIC_ADD=1`, activations quantized inside the kernel, and every other quantized kernel
+(FP8 included: on Hopper vLLM's FP8 GEMMs accumulate in reduced precision, which this noise model doesn't cover).
+
+The run (`modal run scripts/modal_vllm.py --phase quant`, one H100, vLLM 0.31.0): Qwen2.5-1.5B-Instruct-AWQ (zero
+points) and Qwen2.5-1.5B-Instruct-GPTQ-Int4 (no zero points), each on Machete (vLLM's choice on an H100) and on Marlin
+(`VLLM_DISABLED_KERNELS=MacheteLinearKernel`), then Qwen2.5-7B-Instruct-AWQ on Machete, also with 1/8 of the layers
+checked. Each model runs as in the vLLM runs above (`experiments/vllm_check.py`): without sdcguard, with it, and
+without sdcguard with PyTorch's default reductions; 256 prompts, 128 tokens, greedy, torch.compile and CUDA graphs.
+
+Criteria, for each of the five:
+1. Every layer sdcguard registered is quantized and run by the expected kernel, and the start-up count leaves out
+   only the LM head: no layer was dropped by the unit-vector probe or for any other reason.
+2. The first 64 completions are identical with and without sdcguard.
+3. Clean traffic after warm-up: every registered layer executed checks, no alert, no checksum that couldn't be
+   judged.
+4. A high exponent bit flipped in one group scale of `model.layers.10.mlp.down_proj` (the quantized layer has no
+   bf16 weight to flip): the alert names that layer and keeps the row that alarmed, its recheck says the weights
+   changed, and `verify_weights()` lists the layer.
+5. Throughput with and without sdcguard is reported. There is no threshold.
+
+If the GPTQ model doesn't load in vLLM 0.31 (it refuses act-order with groups), that model's runs are reported as
+not run, and the criteria are judged on the others.
+
+### The upgrade gate on cuBLAS issue 6862950
+
+`sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
+fresh processes with cuBLASLt's API log on, so the kernel that ran is read from the library. Its verdicts are
+written so a clean rerun is never called a fix (the module's docstring has the rules; `tests/test_gate.py` pins
+them down on fakes). The run (`modal run scripts/modal_gate.py`, one H200 under MPS, PyTorch 2.14.1) is the first
+time any of it runs on a GPU. Expected, from the October 19 and 20 runs and NVIDIA's notes:
+
+1. Capturing a bf16 linear layer of 16 tokens x 2048 -> 1000 with bias at MPS 40% gives an incident (wrong in every
+   run, algorithm 66 with a cluster of 4 or more CTAs in the log).
+2. The same stack at 40% again: UNCHANGED, still wrong.
+3. The same stack at 100%: INCONCLUSIVE, because the SMs visible and the MPS share differ, although every output is
+   right.
+4. The newest cuBLAS wheel (13.8.1.7) at 40%: UNCHANGED, either still wrong or avoided (another kernel ran). NVIDIA
+   hasn't listed 6862950 as fixed, so FIXED here would be a finding to check, not a confirmation.
+5. `gate pin` writes a TunableOp file forcing algorithm 66 with a 1x1x1 cluster, and `gate workaround` with it says
+   WORKS: wrong in every run without it, right in 50 of 50 with it, and the log shows algorithm 66 with a 1x1x1
+   cluster on every call.
+6. The same TunableOp switches with a file that doesn't exist: DOESN'T WORK (the default kernel runs).
+
+Any other outcome is reported as it came out. Steps 5 and 6 rest on reading PyTorch 2.14's TunableOp source, not on
+a run; a pin PyTorch rejects shows up as INCONCLUSIVE in step 5, which would be a finding about the pin, not about
+the bug.
+
+### The serving kernel
+
+Variants of the Triton check (each a rewrite of the kernel's loop: one running key per element and a single
+reduction after the loop, and with the four block sums in one reduction) are timed against the current one on every
+linear-layer shape of Qwen2.5-1.5B and 7B, at 1 to 16,384 rows, with a few launch settings, on one H100. A variant
+can replace the current kernel only if, on every shape and row count, the state it writes equals the current
+kernel's bit for bit (scores, positions where the worst block is unique, counts) and its first-use comparison with
+the plain check passes on that GPU in bf16 and fp16. Among those, the fastest by median time is ported. Then the
+vLLM runs above are repeated on the released code, with the same criteria as the October 21 runs, and the cost of
+checking every layer is reported as measured. The aim is about 10% of throughput on the 7B model with every layer
+checked; it is an aim, not a criterion, and the number is published whatever it is.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 

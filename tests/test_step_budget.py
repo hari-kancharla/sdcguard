@@ -9,7 +9,7 @@ from unittest.mock import patch
 from _runner_helpers import Clock, load_runner
 
 
-class RunnerDeadlineReview(unittest.TestCase):
+class StepBudget(unittest.TestCase):
     def test_tests_budget_does_not_restart_after_time_consumed_by_setup(self):
         module = load_runner("modal_check")
         clock, launches = Clock(), []

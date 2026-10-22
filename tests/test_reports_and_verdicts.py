@@ -1,7 +1,6 @@
-"""The second independent review of Oct 19, 2026 (verdicts, reports, certificates, the board), each finding
-turned into a test built from its reproduction: what a check finds is never lost when the GPU crashes
-afterwards, a part that didn't run is never a PASS, every report agrees with check.json, and every command
-exits 1 only for wrong results."""
+"""Verdicts, reports, certificates and the board, each case a test built from its reproduction: what a check finds
+is never lost when the GPU crashes afterwards, a part that didn't run is never a PASS, every report agrees with
+check.json, and every command exits 1 only for wrong results."""
 import contextlib
 import io
 import json

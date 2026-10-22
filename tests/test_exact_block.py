@@ -10,7 +10,7 @@ def _mm(a, b, dt):
 
 
 def test_an_fp16_product_that_underflows_to_zero_is_correct():
-    # the Oct 19 outside review's case: fp16(1e-4) x fp16(1e-4) = 1.00033e-8, which fp16 rounds to 0
+    # fp16(1e-4) x fp16(1e-4) = 1.00033e-8, which fp16 rounds to 0
     a = torch.tensor([[1e-4]], dtype=torch.float16)
     b = torch.tensor([[1e-4]], dtype=torch.float16)
     c = _mm(a, b, torch.float16)

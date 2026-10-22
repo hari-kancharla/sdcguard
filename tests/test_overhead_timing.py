@@ -12,7 +12,7 @@ import torch
 
 @pytest.fixture
 def experiment(monkeypatch):
-    root = Path(os.environ.get("SDCGUARD_REVIEW_REPO", Path(__file__).resolve().parents[1]))
+    root = Path(os.environ.get("SDCGUARD_REPO", Path(__file__).resolve().parents[1]))
     spec = importlib.util.spec_from_file_location("loaded_overhead_experiment", root / "experiments/precise_models.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

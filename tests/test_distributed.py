@@ -149,7 +149,7 @@ def _fsdp_fast_worker(rank, init_file, out_dir):
             return s[3](s[2](h))
 
     # An explicit CPU mesh: without one, FSDP2 builds its mesh on CUDA whenever a GPU is visible, which
-    # with gloo and CPU tensors crashed (SIGSEGV) on the H100 box in round 3
+    # with gloo and CPU tensors crashed (SIGSEGV) on an H100 on October 18
     from torch.distributed.device_mesh import init_device_mesh
     mesh = init_device_mesh("cpu", (2,))
     for mode in ("plain", "fast"):

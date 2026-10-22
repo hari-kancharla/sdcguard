@@ -36,13 +36,13 @@ def _skip(p: Path) -> bool:
 
 # NVBit instruction-level fault injection on an L4 (Ada, sm_89: its cuBLAS GEMMs use HMMA, which the
 # injector targets). The injector is TU Berlin's (github.com/aaltenbernd/llm-sdc-training), built against
-# NVBit 1.8 (their repo bundles 1.7.4, which supports drivers up to 555). Round 3 ran it on Modal's L4
-# (driver 580) without trouble. Two changes to the injector:
+# NVBit 1.8 (their repo bundles 1.7.4, which supports drivers up to 555). It ran on Modal's L4
+# (driver 580) on October 18 without trouble. Two changes to the injector:
 #   - with TARGET_FUNC=-1 it injects into every instrumented GEMM kernel, not only one chosen kernel ID
 #     (a bad tensor-core lane would corrupt every kernel that runs on it)
 #   - it is switched on while the file /tmp/sdcguard_fault_on exists, checked at every kernel launch,
-#     instead of by SIGUSR1/SIGUSR2. In round 3 one of three runs never switched on (its positive control
-#     changed nothing); a signal handler installed in the wrong order would do exactly that.
+#     instead of by SIGUSR1/SIGUSR2. With signals, one of three runs on October 18 never switched on (its positive
+#     control changed nothing); a signal handler installed in the wrong order would do exactly that.
 NVB = "/root/nvbit_release_x86_64/tools/fault_injection"
 nvbit_image = (
     modal.Image.from_registry("nvidia/cuda:12.8.1-devel-ubuntu22.04", add_python="3.12")
