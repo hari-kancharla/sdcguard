@@ -169,7 +169,10 @@ def load_incident(path: str) -> dict:
                      "gpu_name": gpu.get("gpu_name") or ("cpu" if str(gpu.get("device") or "").startswith("cpu")
                                                          else None),
                      **{k: sw[k] for k in EXECUTION_KEYS + OPTIONAL_KEYS + ("compute_capability",) if k in sw}}}
-    cpu = info.get("cpu_recheck")
+    recorded = info.get("cpu_recheck")
+    if recorded is not None:
+        inc["cpu_recorded"] = recorded          # what the job's .json says; the verdict below is the .pt's own
+    cpu = None
     try:
         import torch
         ev = torch.load(path, map_location="cpu", weights_only=True)
@@ -186,15 +189,21 @@ def load_incident(path: str) -> dict:
             cpu = {"done": True, "judged": True, "output_wrong": wrong, "output_mismatch_confirmed": certain,
                    "wrong_blocks": r["wrong_blocks"], "worst_z": r["worst_z"],
                    "reading": "math-mode evidence judged again against the CPU's float64 answer"}
-        elif cpu is None and isinstance(ev, dict) and ev.get("row") is not None:
+        elif isinstance(ev, dict) and ev.get("row") is not None:
+            # judged again from the .pt, never taken from the .json: the .json is bound to the .pt by a digest it
+            # holds itself, so an edited .json could otherwise say anything about the output
             from .screen import cpu_recheck
             cfg = ev.get("check_config") or {}
             cpu = cpu_recheck(ev["A"], ev["B"], ev["C"], ev.get("bias"), ev["alpha"], ev["beta"], ev["row"],
                               ev["col_block"], ev.get("batch"), ev.get("epoch") or 0, block=cfg.get("block") or 128,
                               seed=ev.get("sign_seed"), z=cfg.get("z") or 6.0, abs_floor=cfg.get("abs_floor"),
                               nfma=cfg.get("nfma"))
+        else:
+            # a format without the row it alarmed on: only what the job recorded, marked as such
+            cpu = ({**recorded, "reading": "recorded by the job; the evidence file holds too little to judge it "
+                    "again"} if isinstance(recorded, dict) else None)
     except Exception as e:  # noqa: BLE001
-        cpu = cpu or {"done": False, "why": f"{type(e).__name__}: {str(e)[:200]}"}
+        cpu = {"done": False, "why": f"the evidence file couldn't be judged again: {type(e).__name__}: {str(e)[:200]}"}
     inc["cpu"] = cpu or {"done": False, "why": "no CPU judgment recorded"}
     if info.get("captured"):            # serving evidence: from a second pass, not the output that alarmed
         inc["recaptured"] = info["captured"]

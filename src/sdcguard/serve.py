@@ -366,11 +366,17 @@ def _check_static_impl(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, 
     zraw = mz.float().clamp_min(0).view(torch.int32).to(torch.int64)
     zb = zraw << 32
     keys = torch.stack([zb | arg.to(torch.int64), zb | (nz.float().view(torch.int32).to(torch.int64) & 0xFFFFFFFF)])
-    state[slot, :2] = torch.maximum(state[slot, :2], keys)
+    # atomic on the GPU (scatter_reduce_ and index_add_ use atomics there; a read, a max and a write back don't):
+    # vLLM can run one layer on two streams at once (dual-batch overlap), and a racing read-modify-write could drop
+    # the other call's alert or count, as the Triton check's atomics never do. The capture below isn't atomic: two
+    # calls of one layer over the line at the same instant can share a capture record (the alert itself is kept).
+    row = state[slot]
+    row.scatter_reduce_(0, torch.arange(2, device=state.device), keys, reduce="amax")
     if state.shape[1] >= STATE_COLS:            # (a shape, not a value: no host sync, safe in CUDA graphs)
         # one check executed, unless the batch was empty (counted without a branch on the batch size)
         executed = torch.ones_like(y2[:, 0], dtype=torch.int64).sum().clamp(max=1)
-        state[slot, COL_CHECKS:COL_UNJUDGED + 1] += torch.stack([executed, unjudged.to(torch.int64)])
+        row.index_add_(0, torch.arange(COL_CHECKS, COL_UNJUDGED + 1, device=state.device),
+                       torch.stack([executed, unjudged.to(torch.int64)]))
     if cap_meta is not None and cap_data is not None and m > 0:
         _capture(x2, y2, mz, arg, zraw, nb, bs, n, cap_meta, cap_data, cap_w, cap_tag, slot, z)
 
@@ -539,6 +545,9 @@ class ServeGuard:
                  inline: bool = True, exact_reductions: bool = True, webhook: Optional[str] = None,
                  webhook_format: str = "slack", metrics_port: Optional[int] = None, metrics=None,
                  evidence_dir: Optional[str] = None, max_evidence: int = 20):
+        z = float(z)
+        if not 0 < z < math.inf:                   # a NaN or 0 line: no score could ever cross it (or every one)
+            raise ValueError(f"z must be a positive number (the alert line in noise units), not {z!r}")
         self.z, self.block, self.abs_floor = z, block, abs_floor
         self.evidence_dir, self.max_evidence = evidence_dir, max_evidence
         self.evidence: list = []                   # evidence files saved from captured rows
@@ -575,6 +584,7 @@ class ServeGuard:
         self.stats = {"layers": 0, "skipped_layers": 0, "polls": 0, "alerts": 0, "checks_executed": 0,
                       "unjudged_checksums": 0, "captured": 0, "captures_dropped": 0}
         self.unsupported: dict = {}                # layer name -> why it isn't checked
+        self.not_selected: list = []               # layers attach() left out by its share (checkable, sampled out)
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -667,6 +677,7 @@ class ServeGuard:
             i += 1
             if not take:
                 self.stats["skipped_layers"] += 1
+                self.not_selected.append(label)
                 continue
             slot = self.add_layer(mod, label)
             _swap.take_over(mod, self._make_forward(mod))
@@ -688,6 +699,7 @@ class ServeGuard:
                     else:
                         mod.__dict__[attr] = type(mod).forward.__get__(mod)
         mod.__dict__.pop("_sdcguard_slot", None)
+        mod.__dict__.pop("_sdcguard_name", None)
         # Engine plugins retain op arguments directly rather than taking over the module's forward.
         # Drop those references too, or an engine can keep checking an orphaned state after detach().
         mod.__dict__.pop("_sdcguard_args", None)
@@ -707,12 +719,18 @@ class ServeGuard:
             cs = LayerChecksums(w, b, self.block)
             self._prepare(cs, w)
             slot = len(self.layers)
+            # counts, alerts and coverage are kept by name: two layers with one name (vLLM's default prefix is
+            # "", so a layer without one gets its class name) would share a count, and one that never runs would
+            # look checked. The second and later get their slot appended.
+            if not name or any(lay["name"] == name for lay in self.layers):
+                name = f"{name or type(mod).__name__}#{slot + 1}"
             # where the layer's weight is now: weights that later live elsewhere may not be its own any more
             # (_unreadable_weights)
             self.layers.append({"name": name, "module": mod, "cs": cs, "device": w.device, "source": source,
                                 "weight_at": None if source is not None else _location(getattr(mod, "weight", None)),
                                 "writes": _writes(mod, source)})
             mod._sdcguard_slot = slot + 1              # 0 means "not registered"
+            mod._sdcguard_name = name
             self._grow(w.device)
         self.stats["layers"] += 1
         return slot
@@ -872,6 +890,7 @@ class ServeGuard:
             self.checks_seen.clear()
             self.unjudged_seen.clear()
             self.unsupported.clear()
+            self.not_selected.clear()
             self.stats["layers"] = 0
 
     # ---------------------------------------------------------------- results
@@ -899,9 +918,11 @@ class ServeGuard:
 
     def coverage_report(self) -> dict:
         """What actually ran: layers attached, layers checked at least once, layers never checked, checks
-        executed, checksums that couldn't be judged, and layers left unchecked at attach (with why)."""
+        executed, checksums that couldn't be judged, layers left unchecked at attach (with why), and layers attach's
+        share left out (not_selected: checkable, but sampled out, so never checked by this guard)."""
         c = self.counts()
         return {"layers": len(self.layers), "layers_checked": sum(v["checks"] > 0 for v in c.values()),
+                "not_selected": list(self.not_selected),
                 "never_checked": sorted(n for n, v in c.items() if v["checks"] == 0),
                 "checks_executed": sum(v["checks"] for v in c.values()),
                 "unjudged_checksums": sum(v["unjudged"] for v in c.values()),

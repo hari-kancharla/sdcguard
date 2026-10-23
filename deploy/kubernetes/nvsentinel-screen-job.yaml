@@ -1,7 +1,8 @@
 # Screen one node's GPUs and hand the result to NVIDIA NVSentinel instead of tainting the node here: a PASS or
 # FAIL goes to the node's platform connector as a health event (agent "sdcguard", check GpuComputeCorrectness)
 # and NVSentinel's own rules decide what happens. By default the event is STORE_AND_ANALYSE (stored, exported,
-# no action); add --remediate below to let a FAIL ask for action (fatal, RUN_FIELDDIAG) and a PASS clear it.
+# no action); add --remediate below to let a FAIL ask for action (fatal, RUN_FIELDDIAG), and --pubkey as well to
+# let a PASS clear it (only a PASS whose signed certificate verifies against that key clears a GPU).
 # NVSentinel cordons only if you add a quarantine rule for agent "sdcguard"; its defaults match its own monitors.
 #   NODE=gpu-node-17 envsubst '${NODE}' < nvsentinel-screen-job.yaml | kubectl apply -f -
 # Needs NVSentinel's platform connector on the node (its socket is the hostPath /var/run/nvsentinel) and its

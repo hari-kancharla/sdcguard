@@ -46,8 +46,10 @@ def test_verdicts():
     assert blas.summarize({"algorithms": [good, workaround]})["verdict"] == "PASS"
     assert blas.summarize({"algorithms": []})["verdict"] == "COULD NOT TEST"
     assert blas.summarize({"error": "x", "algorithms": [good]})["verdict"] == "COULD NOT TEST"
-    # a wrong workaround variant alone doesn't fail the shape: the workaround isn't what PyTorch runs
-    assert blas.summarize({"algorithms": [good, dict(workaround, correct=False)]})["verdict"] == "PASS"
+    # a wrong workaround variant fails the shape too, named apart: it isn't an algorithm the heuristic offers,
+    # but it computed wrong on this GPU, and says the workaround doesn't hold here (a PASS used to hide it)
+    r = blas.summarize({"algorithms": [good, dict(workaround, correct=False)]})
+    assert r["verdict"] == "FAIL" and r["wrong_algorithms"] == [] and r["workaround_wrong"][0]["algo_id"] == 66
 
 
 @pytest.mark.skipif(torch.cuda.is_available(), reason="checks the no-GPU path")

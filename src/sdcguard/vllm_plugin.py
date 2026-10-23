@@ -35,7 +35,9 @@ and with this variable they are also saved as evidence files for `sdcguard repla
 SDCGUARD_METRICS_PORT (Prometheus metrics; each GPU worker adds its LOCAL_RANK, or its device index) and
 SDCGUARD_REQUIRE (refuse to serve when fewer layers are checked than asked: 1 for every
 layer SDCGUARD_SHARE selected, with no quantized layers or fused MoE experts left over, or a share such as 0.9
-for that share of them; _require says exactly what counts). The first model step logs the count either way,
+for that share of them; _require says exactly what counts; anything that keeps the plugin from checking or counting,
+such as SDCGUARD not 1, a vLLM it doesn't know or no model runner to hook, refuses too, since unknown coverage is
+never enough). The first model step logs the count either way,
 by reason (quantization method, LM head, not selected, ...) and with the share of the linear-layer weights
 checked, so a quantized model that nothing checks says so; the first read of results names any registered
 layer whose check never ran.
@@ -69,6 +71,7 @@ from __future__ import annotations
 import atexit
 import hashlib
 import logging
+import math
 import os
 import re
 import threading
@@ -80,7 +83,7 @@ import torch
 log = logging.getLogger("sdcguard")
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
-          "rechecked": None, "exit_hooks": None, "flushed": None}
+          "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -124,8 +127,8 @@ def _metrics_port():
     return int(base) + int(idx)
 
 
-def _share(text: str) -> float:
-    """SDCGUARD_SHARE: a share of layers, as 0.125, 1/8 or 12.5%."""
+def _parse_share(text: str) -> float:
+    """A share as 0.125, 1/8 or 12.5%: ValueError unless it's a number from 0 up (NaN and negatives aren't)."""
     t = text.strip()
     try:
         if t.endswith("%"):
@@ -135,11 +138,41 @@ def _share(text: str) -> float:
             v = float(a) / float(b)
         else:
             v = float(t)
-    except (ValueError, ZeroDivisionError):
+    except ZeroDivisionError as e:
+        raise ValueError(str(e)) from e
+    if not v >= 0:                               # NaN fails this too
+        raise ValueError(f"{text!r} isn't a share")
+    return min(1.0, v)
+
+
+def _share(text: str) -> float:
+    """SDCGUARD_SHARE: a share of layers, as 0.125, 1/8 or 12.5%. One that can't be read (NaN, negative, text)
+    checks every layer, the safe reading, with a warning; 0 checks none (SDCGUARD_REQUIRE then refuses)."""
+    try:
+        return _parse_share(text)
+    except ValueError:
         log.warning("sdcguard: SDCGUARD_SHARE=%r isn't a share (use 0.125, 1/8 or 12.5%%); checking every layer",
                     text)
         return 1.0
-    return min(1.0, max(0.0, v))
+
+
+def _z() -> float:
+    """SDCGUARD_Z, the alert line in noise units (default 6). One that isn't a positive number (NaN would mean no
+    alert could ever fire) refuses under SDCGUARD_REQUIRE, and otherwise uses 6 with a warning."""
+    text = os.environ.get("SDCGUARD_Z", "6")
+    z = _z_from(text)
+    if z is not None:
+        return z
+    _refuse_if_required(f"SDCGUARD_Z={text!r} isn't a positive number; using 6")
+    return 6.0
+
+
+def _z_from(text: str) -> Optional[float]:
+    try:
+        z = float(text)
+    except (TypeError, ValueError):
+        return None
+    return z if 0 < z < math.inf else None
 
 
 def _guard(device: Optional[torch.device] = None):
@@ -155,7 +188,7 @@ def _guard(device: Optional[torch.device] = None):
             except Exception as e:  # noqa: BLE001  (prometheus-client missing, or the port taken)
                 log.warning("sdcguard: Prometheus metrics on port %s failed (%s); alerts still go to the log and "
                             "webhook", port, e)
-        kw = dict(z=float(os.environ.get("SDCGUARD_Z", "6")), log_path=os.environ.get("SDCGUARD_LOG") or None,
+        kw = dict(z=_STATE.get("z") or _z(), log_path=os.environ.get("SDCGUARD_LOG") or None,
                   on_alert=_on_alert, metrics=metrics, evidence_dir=os.environ.get("SDCGUARD_EVIDENCE_DIR") or None)
         try:
             g = ServeGuard(webhook=os.environ.get("SDCGUARD_WEBHOOK") or None,
@@ -264,7 +297,7 @@ def layer_report(model, counts: Optional[dict] = None) -> dict:
         elif "Embedding" in method:
             continue                          # the input embedding is a lookup, not a matmul
         elif getattr(mod, "_sdcguard_slot", 0):
-            name = getattr(mod, "prefix", "") or type(mod).__name__
+            name = getattr(mod, "_sdcguard_name", None) or getattr(mod, "prefix", "") or type(mod).__name__
             if getattr(mod, "_sdcguard_args", None) is None:     # turned off since (refresh to another dtype, say)
                 why = (g.unsupported.get(name) if g is not None else None) or "registered, its check turned off"
                 kind = "sel"
@@ -336,17 +369,46 @@ def _require(r: dict, msg: str) -> None:
     selected layer and refuses any model with such layers left over, and any floor refuses a model with nothing
     the plugin can check (an fp32 model, say). Not counted: the LM head, input embeddings, convolutions kept in
     linear layers, layers of other dtypes or off the GPU, and the layers SDCGUARD_SHARE didn't select."""
-    need = os.environ.get("SDCGUARD_REQUIRE")
-    if not need:
+    floor = _require_floor()
+    if floor is None:
         return
-    try:
-        floor = 1.0 if need.strip() == "1" else _share(need)
-    except Exception:  # noqa: BLE001
-        floor = 1.0
     want = r["selected"] + _share(os.environ.get("SDCGUARD_SHARE", "1")) * r["cant_check"]
-    nothing = r["total"] > 0 and r["eligible"] == 0
-    if floor > 0 and (r["checked"] + 1e-9 < floor * want or nothing):
-        raise RequirementNotMet(f"{msg}; SDCGUARD_REQUIRE={need} asks for more. Unset it to serve anyway.")
+    # a model with linear layers and none of them checked meets no requirement, whatever the share selected
+    # (SDCGUARD_SHARE=0 selects nothing, so "every selected layer" would be met by none)
+    nothing = r["total"] > 0 and (r["eligible"] == 0 or r["checked"] == 0)
+    if r["checked"] + 1e-9 < floor * want or nothing:
+        raise RequirementNotMet(f"{msg}; SDCGUARD_REQUIRE={os.environ['SDCGUARD_REQUIRE']} asks for more. Unset it to "
+                                "serve anyway.")
+
+
+def _require_floor() -> Optional[float]:
+    """SDCGUARD_REQUIRE's floor, or None when nothing is required (unset or 0). A value that can't be read asks for
+    every layer (1), the strict reading."""
+    need = os.environ.get("SDCGUARD_REQUIRE")
+    if not need or not need.strip():
+        return None
+    try:
+        floor = _parse_share(need)
+    except ValueError:                           # NaN, negative, text: unreadable, so every layer
+        return 1.0
+    return floor if floor > 0 else None
+
+
+def _refuse_if_required(why: str) -> None:
+    """Something keeps the plugin from checking or counting the layers. With SDCGUARD_REQUIRE that refuses to serve:
+    coverage that can't be shown is never enough. Without it, a warning."""
+    if _require_floor() is not None:
+        raise RequirementNotMet(f"sdcguard: {why}, so SDCGUARD_REQUIRE={os.environ['SDCGUARD_REQUIRE']} can't be "
+                                "shown to be met. Unset it to serve anyway.")
+    log.warning("sdcguard: %s", why)
+
+
+def _require_runner() -> None:
+    """At model load, in the process that loads the weights: with SDCGUARD_REQUIRE and no model runner hooked, the
+    layers would never be counted and results never read, so it refuses. Not at register(), which also runs in
+    processes that never run the model (vLLM's API server). Without SDCGUARD_REQUIRE, register() has warned once."""
+    if not _STATE.get("hooked") and _require_floor() is not None:
+        _refuse_if_required("vLLM's model runner isn't hooked, so the checked layers can't be counted or results read")
 
 
 def _report_layers(runner, counts: Optional[dict] = None, again: bool = False) -> Optional[dict]:
@@ -355,7 +417,7 @@ def _report_layers(runner, counts: Optional[dict] = None, again: bool = False) -
     model = _model_of(runner)
     if model is None:
         if not again:
-            log.warning("sdcguard: couldn't find the model to count its checked layers")
+            _refuse_if_required("couldn't find the model to count its checked layers")
         return None
     r = layer_report(model, counts)
     _STATE["layers"] = r
@@ -425,7 +487,18 @@ def refresh(*_args) -> int:
     g = _STATE["guard"]
     if g is None:
         return 0
-    return g.refresh()
+    try:
+        return g.refresh()
+    finally:
+        _rearm()
+
+
+def _rearm() -> None:
+    """After weights changed (refresh(), a vLLM weight reload): count the checked layers again at the next model
+    step and at the read after it, so SDCGUARD_REQUIRE applies to what is checked now (a refresh can turn a
+    layer's check off: quantized layers, weights cast to fp32), not only to what was checked at start-up."""
+    _STATE["reported"] = False
+    _STATE["rechecked"] = None
 
 
 def _exact_reductions() -> None:
@@ -455,7 +528,8 @@ def _graph_key(share: float, offset: int, inline: bool) -> str:
     from . import __version__
     from .serve import OP_SCHEMA
     env = os.environ
-    return hashlib.sha256(repr((__version__, OP_SCHEMA, MACHETE_GRAPH, share, offset, float(env.get("SDCGUARD_Z", "6")),
+    z = _z_from(env.get("SDCGUARD_Z", "6")) or 6.0
+    return hashlib.sha256(repr((__version__, OP_SCHEMA, MACHETE_GRAPH, share, offset, z,
                                 inline,
                                 env.get("SDCGUARD_FAST", "1") != "0", env.get("SDCGUARD_SERVE_FAST", "1") != "0",
                                 env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0")).encode()
@@ -663,8 +737,11 @@ def _patch_quant(op, select, inline: bool) -> list:
 
         def process_weights_after_loading(self, layer, _orig=orig_pwal, _apply=orig_apply, _rule=rule,
                                           _kernel_why=kernel_why):
+            _require_runner()
             w = bias = qw = None
             again = bool(getattr(layer, "_sdcguard_slot", 0))
+            if again:                     # a weight reload: count again, SDCGUARD_REQUIRE on what's checked now
+                _rearm()
             try:
                 why = _quant_cant_check(self, layer) or _kernel_why
                 if why is None and not again and not select(layer):
@@ -722,6 +799,7 @@ def _patch_quant(op, select, inline: bool) -> list:
                 g = _guard(w.device)
                 if again:
                     g.refresh_layer(layer._sdcguard_slot - 1, weight=w, source=src)
+                    _rearm()
                     return
                 layer._sdcguard_why = FAILED
                 slot = g.add_layer(layer, name, weight=w, source=src)
@@ -784,19 +862,28 @@ def _patch_quant(op, select, inline: bool) -> list:
 
 
 def register() -> None:
-    """vLLM general-plugin entry point. Runs in every vLLM process; safe to call more than once."""
-    if os.environ.get("SDCGUARD", "0") != "1" or _STATE["patched"]:
+    """vLLM general-plugin entry point. Runs in every vLLM process; safe to call more than once. With
+    SDCGUARD_REQUIRE, anything that keeps it from checking refuses to serve (an error here stops vLLM's startup):
+    SDCGUARD not 1, a vLLM layout it doesn't know, no model runner to hook (raised at model load, see
+    _require_runner). Not covered: a plugin that fails to import at all, which vLLM's loader logs and skips."""
+    if os.environ.get("SDCGUARD", "0") != "1":
+        if _require_floor() is not None:
+            raise RequirementNotMet("sdcguard: SDCGUARD_REQUIRE is set but SDCGUARD isn't 1, so nothing would be "
+                                    "checked. Set SDCGUARD=1, or unset SDCGUARD_REQUIRE to serve unchecked.")
+        return
+    if _STATE["patched"]:
         return
     try:
         from vllm.model_executor.layers import linear as L
         M = L.UnquantizedLinearMethod
         orig_pwal, orig_apply = M.process_weights_after_loading, M.apply
     except Exception as e:  # noqa: BLE001
-        log.warning("sdcguard: vLLM layout not recognized (%s); not checking anything", e)
+        _refuse_if_required(f"vLLM layout not recognized ({type(e).__name__}: {e}); not checking anything")
         return
     if getattr(M, "_sdcguard", False):
         _STATE["patched"] = True
         return
+    _STATE["z"] = _z()                    # a bad SDCGUARD_Z refuses here under SDCGUARD_REQUIRE, with its reason
     inline = os.environ.get("SDCGUARD_OPAQUE", "0") != "1"
     share = _share(os.environ.get("SDCGUARD_SHARE", "1"))
     share_offset = int(os.environ.get("SDCGUARD_OFFSET", "0"))
@@ -824,6 +911,7 @@ def register() -> None:
         return False
 
     def process_weights_after_loading(self, layer):
+        _require_runner()
         orig_pwal(self, layer)
         try:
             w = getattr(layer, "weight", None)
@@ -831,6 +919,7 @@ def register() -> None:
             b = b if isinstance(b, torch.Tensor) else None
             if getattr(layer, "_sdcguard_slot", 0):              # weights reloaded: same slot, same tensors
                 _STATE["guard"].refresh_layer(layer._sdcguard_slot - 1, weight=w, bias=b)
+                _rearm()
                 return
             why = _cant_check(layer, w)
             if why is not None:
@@ -890,8 +979,8 @@ def register() -> None:
                     _report_layers(self)
                 except RequirementNotMet:
                     raise                              # SDCGUARD_REQUIRE: refuse to serve unchecked
-                except Exception as e:  # noqa: BLE001  (never break serving)
-                    log.warning("sdcguard: couldn't count the checked layers: %s", e)
+                except Exception as e:  # noqa: BLE001  (never break serving, unless SDCGUARD_REQUIRE asks)
+                    _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
             out = orig_exec(self, *args, **kwargs)
             _STATE["steps"] += 1
             now = time.monotonic()
@@ -911,7 +1000,7 @@ def register() -> None:
                 # this doesn't wait for the GPU. Except with SDCGUARD_REQUIRE=1 at the first read: no results at
                 # all may mean no check ever runs (it waited for one before, so a model none of whose layers reached
                 # its check served unchecked), so it waits for the GPU once and counts what came back.
-                strict = os.environ.get("SDCGUARD_REQUIRE") == "1"
+                strict = _require_floor() is not None
                 if _STATE.get("rechecked") is not g and g.layers and (g.stats.get("checks_executed", 0) or strict):
                     if strict:
                         try:
@@ -926,7 +1015,7 @@ def register() -> None:
                     except RequirementNotMet:
                         raise
                     except Exception as e:  # noqa: BLE001
-                        log.warning("sdcguard: couldn't count the checked layers: %s", e)
+                        _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
             return out
 
         GM.execute_model = execute_model
@@ -935,6 +1024,7 @@ def register() -> None:
 
     # vLLM 0.31 has two model runners (the V2 one is the default); hook whichever exist
     hooked = [m for m in ("vllm.v1.worker.gpu.model_runner", "vllm.v1.worker.gpu_model_runner") if hook(m)]
+    _STATE["hooked"] = bool(hooked)
     if not hooked:
         log.warning("sdcguard: couldn't hook the model runner; call sdcguard.vllm_plugin.poll() yourself")
     log.info("sdcguard: checking bf16/fp16 linear layers%s (alert threshold z=%s, share %s); fused MoE experts and "

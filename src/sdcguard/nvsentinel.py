@@ -182,7 +182,10 @@ def from_check(result: dict, *, node: Optional[str] = None, remediate: bool = Fa
     ents = _entities(gpu)
     if not any(e["entityType"] == "GPU_UUID" for e in ents):
         return None, "the result doesn't name its GPU's UUID"
-    act = remediate and (trusted is not False)
+    # a FAIL may ask for action on an unverified result (the safe direction: the GPU gets looked at); a PASS clears
+    # a GPU only on a certificate that verified against the operator's key, or a tampered or stale file could put a
+    # bad GPU back into service
+    act = remediate and (trusted is True if r == "PASS" else trusted is not False)
     healthy = r == "PASS"
     fatal = r == "FAIL" and act
     why = "; ".join(n[1] for n in (result.get("notes") or [])[:2] if isinstance(n, (list, tuple)) and len(n) > 1)
@@ -410,17 +413,31 @@ def _age_hours(result: dict) -> Optional[float]:
     return max(0.0, (time.time() - t) / 3600)
 
 
-def _trusted(folder: str, pubkey: Optional[str]) -> Optional[bool]:
+def _trusted(folder: str, pubkey: Optional[str], result: Optional[dict] = None) -> Optional[bool]:
+    """Whether the check result in this folder is vouched for by a certificate made with the operator's key (None:
+    no key given). All of it, not only the signature: certify.verify() ok (signed by that key, not expired, check.json
+    and the evidence unchanged since it was issued), and the certificate is this result's: the same run, verdict
+    and GPU."""
     if not pubkey:
         return None
     cert = os.path.join(folder, "certificate.json")
     if not os.path.exists(cert):
         return False
     try:
-        from .fleet import _certificate_status
-        return bool(_certificate_status(cert, pubkey).get("trusted"))
-    except Exception:  # noqa: BLE001
+        from .certify import verify
+        v = verify(cert, pubkey)
+        with open(cert) as f:
+            c = json.load(f)
+    except Exception:  # noqa: BLE001  (unreadable, malformed, or no cryptography package)
         return False
+    if not v.get("ok"):
+        return False
+    if result is None:
+        return True
+    gpu_c = (c.get("gpu") or {}).get("gpu_uuid") if isinstance(c.get("gpu"), dict) else None
+    gpu_r = (result.get("gpu") or {}).get("gpu_uuid") if isinstance(result.get("gpu"), dict) else None
+    return (c.get("result") == result.get("result") and c.get("run_id") == result.get("run_id")
+            and gpu_c is not None and gpu_c == gpu_r)
 
 
 def main(argv=None) -> int:
@@ -435,9 +452,10 @@ def main(argv=None) -> int:
     p.add_argument("--token-file", default=None, help=f"default {TOKEN} when it exists")
     p.add_argument("--node-name", default=None, help="the Kubernetes node (default NODE_NAME)")
     p.add_argument("--remediate", action="store_true",
-                   help="a check FAIL asks for action (EXECUTE_REMEDIATION, fatal, RUN_FIELDDIAG) and a PASS clears it")
-    p.add_argument("--pubkey", default=None, help="with --remediate: only a FAIL whose certificate verifies "
-                                                  "against this key asks for action")
+                   help="a check FAIL asks for action (EXECUTE_REMEDIATION, fatal, RUN_FIELDDIAG); a PASS clears it "
+                        "only with --pubkey and a certificate that verifies")
+    p.add_argument("--pubkey", default=None, help="with --remediate: only results whose certificate verifies against "
+                                                  "this key (unchanged since signing, same run, verdict and GPU) act")
     p.add_argument("--max-age-hours", type=float, default=36.0,
                    help="check results older than this aren't sent (a GPU that left the node, a stale folder)")
     p.add_argument("--dry-run", action="store_true", help="print the events, send nothing")
@@ -457,7 +475,7 @@ def main(argv=None) -> int:
             notes.append(f"{folder}: not sent (" + ("its time isn't recorded" if age is None else
                                                     f"{age:.0f} hours old") + ")")
             continue
-        ev, why = from_check(r, node=node, remediate=a.remediate, trusted=_trusted(folder, a.pubkey))
+        ev, why = from_check(r, node=node, remediate=a.remediate, trusted=_trusted(folder, a.pubkey, r))
         if ev is None:
             notes.append(f"{folder}: not sent ({why})")
         else:

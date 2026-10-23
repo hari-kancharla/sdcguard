@@ -53,7 +53,7 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
     for k, v in (("patched", False), ("guard", None), ("reported", False), ("layers", None), ("steps", 0),
-                 ("rechecked", None)):
+                 ("rechecked", None), ("z", None), ("hooked", False)):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin
 

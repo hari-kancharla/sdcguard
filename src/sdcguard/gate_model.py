@@ -24,6 +24,9 @@ same-stack run with --noise raises them to 3x what that run measured):
   PASS   mean KL <= max(1e-3, 3 x noise) and top-1 agreement >= 99%, and no prompt's mean KL above 0.05
   WARN   mean KL up to 7e-3 (about where quantized models land) or top-1 agreement from 97% to 99%
   FAIL   anything further: mean KL above 7e-3, top-1 agreement under 97%, or a prompt's mean KL above 0.1
+  INCONCLUSIVE  a recorded position wasn't scored (a prompt without a result counts as all of its positions), or
+         the --noise run is incomplete, of another reference or model, or so noisy that its pass line reaches the
+         warn line: a verdict on part of the data would pass a stack that drops the rest
 Fireworks, for example, reports KL around 1e-6 between two FP16 runs and calls 1e-3 the line between equivalent
 and not; vLLM issue #61100 (an upgrade that made a model print commas) would be KL of order 1 or more.
 """
@@ -87,21 +90,43 @@ def _lp(v) -> float:
     return float(getattr(v, "logprob", v))
 
 
-def position_metrics(ref: dict, cand: dict, token: int) -> dict:
+def _usable(lps: dict) -> bool:
+    """A top list that is a distribution's: no NaN or +inf, and at least one finite log-probability (-inf, a token
+    with probability 0, is allowed)."""
+    return (bool(lps) and not any(math.isnan(v) or v == math.inf for v in lps.values())
+            and any(math.isfinite(v) for v in lps.values()))
+
+
+def position_metrics(ref: dict, cand: dict, token: int) -> Optional[dict]:
     """One position: ref and cand map token id -> log-probability (each side's top list, which includes `token`,
     the recorded token, on the candidate side). Returns top-1 agreement, KL(ref || cand) over the union of both
-    lists, and the change in the recorded token's log-probability."""
+    lists, and the change in the recorded token's log-probability.
+
+    Non-finite numbers never make a position look agreed: a candidate list with a NaN or +inf (or nothing finite)
+    is no distribution, so the position scores KL inf, no top-1 agreement, and `nonfinite`; a reference list like
+    that returns None (the position can't be scored: compare() counts it as missing). A -inf is probability 0;
+    where the reference gives a token probability and the candidate gives it 0, KL is inf, as the definition says."""
     ref = {int(t): _lp(v) for t, v in ref.items()}
     cand = {int(t): _lp(v) for t, v in cand.items()}
+    if not _usable(ref):
+        return None
+    if not _usable(cand):
+        return {"top1": False, "kl": math.inf, "dlogprob": None, "nonfinite": True}
     union = set(ref) | set(cand)
-    floor_r, floor_c = min(ref.values()), min(cand.values())
+    floor_r = min(v for v in ref.values() if math.isfinite(v))      # a token one side doesn't list: its smallest
+    floor_c = min(v for v in cand.values() if math.isfinite(v))     # listed probability (an upper bound)
     p = {t: math.exp(ref.get(t, floor_r)) for t in union}
     q = {t: math.exp(cand.get(t, floor_c)) for t in union}
     sp, sq = sum(p.values()), sum(q.values())
-    kl = sum((p[t] / sp) * (math.log(p[t] / sp) - math.log(q[t] / sq)) for t in union if p[t] > 0)
-    top_c = max(cand, key=lambda t: cand[t])
-    d = (cand[token] - ref[token]) if token in cand and token in ref else None
-    return {"top1": top_c == token, "kl": max(0.0, kl), "dlogprob": d}
+    kl = 0.0
+    for t in union:
+        if p[t] > 0:
+            kl = math.inf if q[t] == 0 else kl + (p[t] / sp) * (math.log(p[t] / sp) - math.log(q[t] / sq))
+            if kl == math.inf:
+                break
+    top_c = max(cand, key=lambda t: cand[t])                          # every value is a number here
+    d = cand.get(token, math.nan) - ref.get(token, math.nan)
+    return {"top1": top_c == token, "kl": max(0.0, kl), "dlogprob": d if math.isfinite(d) else None}
 
 
 def summarize(per_prompt: list) -> dict:
@@ -113,34 +138,70 @@ def summarize(per_prompt: list) -> dict:
     dl = [abs(m["dlogprob"]) for m in allpos if m["dlogprob"] is not None]
     prompt_kl = [sum(m["kl"] for m in ps) / len(ps) for ps in per_prompt if ps]
     return {"positions": len(allpos), "prompts": len(per_prompt),
+            "nonfinite_positions": sum(bool(m.get("nonfinite")) for m in allpos),
             "mean_kl": sum(kls) / len(kls), "p99_kl": kls[min(len(kls) - 1, int(0.99 * len(kls)))],
             "max_kl": kls[-1], "top1_agreement": sum(m["top1"] for m in allpos) / len(allpos),
             "max_prompt_mean_kl": max(prompt_kl) if prompt_kl else 0.0,
             "mean_abs_dlogprob": sum(dl) / len(dl) if dl else None}
 
 
+def _incomplete(s: dict) -> Optional[str]:
+    """Why a summary doesn't cover every recorded position, or None when it does. A summary without its coverage
+    counts can't be shown complete (unknown is never complete)."""
+    if "expected_positions" not in s:
+        return "the summary doesn't say how many positions were expected, so it can't be shown complete"
+    if s.get("missing_positions") or s.get("missing_prompts") or s.get("extra_results"):
+        return (f"scored {s.get('positions', 0)} of {s['expected_positions']} recorded positions"
+                f" ({s.get('missing_prompts', 0)} prompts had no result, {s.get('extra_results', 0)} results matched"
+                " no prompt)")
+    return None
+
+
 def verdict(s: dict, noise: Optional[dict] = None) -> dict:
-    """PASS / WARN / FAIL from a summary (and the summary of a same-stack run, when there is one)."""
+    """PASS / WARN / FAIL from a summary (and the summary of a same-stack run, when there is one). INCONCLUSIVE when
+    either doesn't cover every recorded position: a verdict on part of the prompts would pass a stack that drops the
+    rest, and an incomplete noise run would set the line from a part too."""
     if not s.get("positions"):
         return {"verdict": "INCONCLUSIVE", "why": "no positions were scored"}
+    why = _incomplete(s)
+    if why:
+        return {"verdict": "INCONCLUSIVE", "why": why}
+    if s.get("nonfinite_positions"):
+        return {"verdict": "FAIL", "why": f"at {s['nonfinite_positions']} of {s['positions']} positions the new "
+                "stack's log-probabilities weren't a distribution (NaN, +inf, or nothing finite)"}
     pass_kl = PASS_KL
-    if noise and noise.get("positions"):
-        pass_kl = max(PASS_KL, 3 * noise["mean_kl"])
+    if noise is not None:
+        nwhy = "it scored no positions" if not noise.get("positions") else _incomplete(noise)
+        if nwhy:
+            return {"verdict": "INCONCLUSIVE", "why": f"the --noise run can't set the line: {nwhy}"}
+        nkl = noise.get("mean_kl")
+        if noise.get("nonfinite_positions") or not (isinstance(nkl, (int, float)) and 0 <= nkl < math.inf):
+            return {"verdict": "INCONCLUSIVE", "why": f"the --noise run can't set the line: its mean KL is {nkl}"}
+        pass_kl = max(PASS_KL, 3 * nkl)
+        if not pass_kl < WARN_KL:
+            return {"verdict": "INCONCLUSIVE", "why": f"the same stack's own mean KL ({noise['mean_kl']:.2e}) puts the "
+                    f"pass line at {pass_kl:.1e}, at or above the warn line ({WARN_KL:.0e}): on this stack the check "
+                    "can't tell a change from noise"}
     kl, top1, worst = s["mean_kl"], s["top1_agreement"], s["max_prompt_mean_kl"]
     line = (f"mean KL {kl:.2e} (pass up to {pass_kl:.1e}), top-1 agreement {top1:.2%}, worst prompt's mean KL "
             f"{worst:.2e}, over {s['positions']} positions of {s['prompts']} prompts")
-    if kl > WARN_KL or top1 < WARN_TOP1 or worst > FAIL_PROMPT_KL:
+    # written so a NaN (every comparison with it is False) can only fail: PASS needs each bound shown met
+    if not (kl <= WARN_KL and top1 >= WARN_TOP1 and worst <= FAIL_PROMPT_KL):
         return {"verdict": "FAIL", "why": line}
-    if kl > pass_kl or top1 < PASS_TOP1 or worst > PASS_PROMPT_KL:
+    if not (kl <= pass_kl and top1 >= PASS_TOP1 and worst <= PASS_PROMPT_KL):
         return {"verdict": "WARN", "why": line}
     return {"verdict": "PASS", "why": line}
 
 
 def compare(ref: dict, cand_logprobs: list) -> dict:
     """ref: a model-ref file's records; cand_logprobs: per prompt, the candidate's prompt_logprobs over the prompt
-    plus the recorded completion (position i scores token i)."""
-    per_prompt = []
-    for rec, plp in zip(ref["records"], cand_logprobs):
+    plus the recorded completion (position i scores token i). The summary counts the recorded positions and how many
+    weren't scored (a prompt without a result, a position either side lacks), and verdict() won't judge a part."""
+    records, cand = ref["records"], list(cand_logprobs)
+    per_prompt, missing_prompts = [], 0
+    for i, rec in enumerate(records):
+        plp = cand[i] if i < len(cand) else None
+        missing_prompts += plp is None
         p_len, comp = len(rec["prompt_ids"]), rec["completion_ids"]
         ms = []
         for t, tok in enumerate(comp):
@@ -148,9 +209,23 @@ def compare(ref: dict, cand_logprobs: list) -> dict:
             rpos = rec["logprobs"][t] if t < len(rec["logprobs"]) else None
             if not cpos or not rpos:
                 continue
-            ms.append(position_metrics({int(k): v for k, v in rpos.items()}, cpos, tok))
+            m = position_metrics({int(k): v for k, v in rpos.items()}, cpos, tok)
+            if m is not None:                    # None: the reference's list isn't usable, so not scored
+                ms.append(m)
         per_prompt.append(ms)
-    return {"per_prompt": per_prompt, "summary": summarize(per_prompt)}
+    summary = summarize(per_prompt)
+    expected = sum(len(r["completion_ids"]) for r in records)
+    summary.update(expected_positions=expected, missing_positions=expected - summary["positions"],
+                   missing_prompts=missing_prompts, extra_results=max(0, len(cand) - len(records)))
+    return {"per_prompt": per_prompt, "summary": summary}
+
+
+def ref_digest(ref: dict) -> str:
+    """What a model-check scored against: the reference's records (prompts, completions, log-probabilities). A
+    --noise run must have scored the same ones."""
+    import hashlib
+    blob = json.dumps(ref["records"], sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).hexdigest()
 
 
 # ---------------------------------------------------------------- the vLLM runs
@@ -213,10 +288,20 @@ def check(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[
     outs = llm.generate(inputs, sp, use_tqdm=False)
     cand = [o.prompt_logprobs for o in outs]
     res = compare(ref, cand)
-    noise = json.load(open(noise_path))["summary"] if noise_path else None
-    v = verdict(res["summary"], noise)
-    run = {"schema": CHECK_SCHEMA, "ref": os.path.abspath(ref_path), "model": model or ref["model"],
-           "extra": extra if extra is not None else ref["extra"], "stack": _stack(), "ref_stack": ref.get("stack"),
+    digest = ref_digest(ref)
+    noise, noise_why = None, None
+    if noise_path:
+        nrun = json.load(open(noise_path))
+        noise = nrun.get("summary") or {}
+        if nrun.get("ref_digest") != digest:
+            noise_why = "the --noise run scored another reference (or doesn't say which)"
+        elif nrun.get("model") != ref["model"]:
+            # other vLLM arguments (batching, say) are what a noise run measures; another model isn't noise
+            noise_why = "the --noise run scored another model than the reference's, so its differences aren't noise"
+    v = ({"verdict": "INCONCLUSIVE", "why": noise_why} if noise_why else verdict(res["summary"], noise))
+    run = {"schema": CHECK_SCHEMA, "ref": os.path.abspath(ref_path), "ref_digest": digest,
+           "model": model or ref["model"], "extra": extra if extra is not None else ref["extra"], "stack": _stack(),
+           "ref_stack": ref.get("stack"),
            "summary": res["summary"], "verdict": v, "noise": noise,
            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if os.environ.get("SDCGUARD") == "1":

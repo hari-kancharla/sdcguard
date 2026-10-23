@@ -188,3 +188,38 @@ def test_the_screen_is_incomplete_when_serving_checksums_went_unjudged(tmp_path,
     monkeypatch.setattr(ServeGuard, "coverage_report", lambda self: {**real(self), "unjudged_checksums": 5})
     s = screen.screen_one(torch.device("cpu"), minutes=5, size="tiny", out_root=str(tmp_path), max_steps=1)
     assert s["result"] == "INCOMPLETE" and s["unjudged_serving_checksums"] == 5
+
+
+# ---------------------------------------------------------------- found by a code review on October 23
+def test_a_share_below_1_lists_the_layers_it_left_out():
+    """coverage_report() with share < 1 used to look like full coverage: the layers the share didn't select were
+    listed nowhere."""
+    torch.manual_seed(0)
+    model = torch.nn.Sequential(*[torch.nn.Linear(64, 64) for _ in range(8)]).to(torch.bfloat16)
+    g = ServeGuard(exact_reductions=False).attach(model, share=0.25)
+    with torch.no_grad():
+        model(torch.randn(4, 64, dtype=torch.bfloat16))
+    g.poll(wait=True)
+    rep = g.coverage_report()
+    assert rep["layers"] + len(rep["not_selected"]) == 8 and len(rep["not_selected"]) == 8 - rep["layers"] > 0
+    assert not set(rep["not_selected"]) & {lay["name"] for lay in g.layers}
+
+
+def test_layers_registered_under_one_name_are_kept_apart():
+    """Counts, alerts and coverage are kept by name; two layers given one name (an engine's empty prefix) shared a
+    count, so one that never ran looked checked."""
+    a, b = torch.nn.Linear(64, 64).to(torch.bfloat16), torch.nn.Linear(64, 64).to(torch.bfloat16)
+    g = ServeGuard(exact_reductions=False)
+    g.add_layer(a, "")
+    g.add_layer(b, "")
+    names = [lay["name"] for lay in g.layers]
+    assert len(set(names)) == 2 and all(names)
+    g.add_layer(torch.nn.Linear(64, 64).to(torch.bfloat16), names[0])
+    assert len({lay["name"] for lay in g.layers}) == 3
+
+
+@pytest.mark.parametrize("z", [float("nan"), 0.0, -1.0, float("inf")])
+def test_an_alert_line_that_isnt_a_positive_number_is_refused(z):
+    """z=nan used to mean no score could ever cross the line, with nothing to say so."""
+    with pytest.raises(ValueError, match="positive number"):
+        ServeGuard(z=z)

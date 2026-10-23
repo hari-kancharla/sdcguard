@@ -11,7 +11,7 @@ node-problem-detector custom plugins use, and what Slurm's NHC needs to drain a 
 | `kubernetes/node-problem-detector/sdcguard-monitor.json` | node-problem-detector custom plugin: sets the node condition `GPUComputeIncorrect` when a GPU fails |
 | `kubernetes/node-problem-detector/sdcguard-check.sh` | the script that plugin runs: reads the last screen's result, never screens while jobs run |
 | `kubernetes/screen-job.yaml` | a one-off screen of one node (e.g. when a node joins, or in a maintenance window); taints the node if a GPU fails |
-| `kubernetes/nvsentinel-screen-job.yaml` | the same screen, handing each GPU's PASS or FAIL to NVIDIA NVSentinel as a health event (`sdcguard nvsentinel`) instead of tainting the node: stored for analysis by default, a request for action with `--remediate` |
+| `kubernetes/nvsentinel-screen-job.yaml` | the same screen, handing each GPU's PASS or FAIL to NVIDIA NVSentinel as a health event (`sdcguard nvsentinel`) instead of tainting the node: stored for analysis by default, a request for action with `--remediate` (a PASS clears a GPU only with `--pubkey` and a certificate that verifies) |
 | `slurm/sdcguard-screen.sbatch` | screens one node's GPUs (run it on idle nodes on a schedule); leaves the result for the health checks below |
 | `slurm/sdcguard.nhc` | a check for LBNL NHC (`check_sdcguard`): reads the last screen's result instantly; NHC drains the node when a GPU failed |
 | `slurm/healthcheck.sh` | the same for Slurm's plain `HealthCheckProgram`, draining the node itself |

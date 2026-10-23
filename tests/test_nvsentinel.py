@@ -64,12 +64,40 @@ def test_a_check_fail_is_stored_for_analysis_unless_the_operator_asks_for_action
     assert ev["recommendedAction"] == "RUN_FIELDDIAG"
 
 
-def test_a_pass_clears_with_the_same_check_and_entities():
+def test_a_pass_clears_with_the_same_check_and_entities_only_when_its_certificate_verified():
+    """A FAIL may ask for action unverified (the safe direction); a PASS clears a GPU only when its certificate
+    verified against the operator's key, or an edited or stale file could put a bad GPU back into service."""
     bad, _ = nv.from_check(_check("FAIL"), node="n", remediate=True)
-    good, _ = nv.from_check(_check("PASS"), node="n", remediate=True)
+    good, _ = nv.from_check(_check("PASS"), node="n", remediate=True, trusted=True)
     assert good["isHealthy"] and not good["isFatal"] and good["errorCode"] == []
     assert good["checkName"] == bad["checkName"] and good["entitiesImpacted"] == bad["entitiesImpacted"]
     assert good["processingStrategy"] == "EXECUTE_REMEDIATION"            # (only then does it clear a condition)
+    assert bad["processingStrategy"] == "EXECUTE_REMEDIATION" and bad["isFatal"]
+    unverified, _ = nv.from_check(_check("PASS"), node="n", remediate=True)
+    assert unverified["processingStrategy"] == "STORE_AND_ANALYSE"
+
+
+def test_a_check_json_edited_after_signing_is_not_trusted(tmp_path):
+    """An outside review's case: a signed FAIL whose check.json was edited to PASS was sent as verified and
+    EXECUTE_REMEDIATION healthy, because only the signature was looked at."""
+    certify = pytest.importorskip("sdcguard.certify")
+    pytest.importorskip("cryptography")
+    key, pub = certify.keygen(str(tmp_path / "fleet"))
+    d = tmp_path / "GPU-abc"
+    d.mkdir()
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    chk = {"result": "FAIL", "run_id": "r1", "time": now, "gpu": {"gpu_uuid": "GPU-abc", "gpu_name": "H100"},
+           "wrong": {"stress": 3}, "evidence": [], "out_dir": str(d), "notes": [["bad", "3 wrong results"]]}
+    (d / "check.json").write_text(json.dumps(chk))
+    (d / "result.json").write_text(json.dumps({"result": "FAIL"}))
+    certify.write({"gpu": chk["gpu"], "result": "FAIL", "run_id": "r1"}, str(d), key_path=key, full=chk)
+    assert nv._trusted(str(d), pub, chk) is True                         # untouched: trusted
+    assert nv._trusted(str(d), pub, {**chk, "run_id": "r2"}) is False     # another run's result
+    edited = {**chk, "result": "PASS", "wrong": {}, "notes": []}
+    (d / "check.json").write_text(json.dumps(edited))
+    assert nv._trusted(str(d), pub, edited) is False
+    ev, _ = nv.from_check(edited, node="n", remediate=True, trusted=nv._trusted(str(d), pub, edited))
+    assert ev["processingStrategy"] == "STORE_AND_ANALYSE"
 
 
 def test_a_suspect_result_never_asks_for_action():

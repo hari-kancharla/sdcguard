@@ -31,9 +31,12 @@ def _cond(**kw):
     return c
 
 
-def _run(wrong_runs, n=20, kernels=None, cond=None, stack=None):
+OP = {"call": "linear", "dtype": "bfloat16", "m": 16, "n": 1000, "k": 2048, "bias": True}
+
+
+def _run(wrong_runs, n=20, kernels=None, cond=None, stack=None, inputs="a" * 64):
     runs = [{"wrong": 7747 if i < wrong_runs else 0, "unwritten": 0, "nonfinite": 0} for i in range(n)]
-    return {"case": "c", "runs": runs, "n": n, "conditions": cond or _cond(),
+    return {"case": "c", "runs": runs, "n": n, "conditions": cond or _cond(), "op": OP, "inputs_sha256": inputs,
             "stack": stack or {"torch": "2.14.1+cu130", "cublas": "13.1.1.3"},
             "kernel_log": {"log": True, "calls": n, "kernels": kernels if kernels is not None else
                            {"algoId=66 tile=64x8 stages=64x6 cluster=4x1x1": n}}}
@@ -122,8 +125,9 @@ def test_steering_env_keeps_kernel_switches_and_drops_logging():
 
 
 # ---------------------------------------------------------------- workaround
-def _fake_runs(monkeypatch, control, treatment, file_sha="abc"):
-    """file_sha: what the treatment's worker read from the TunableOp file PyTorch looks for (None: not there)."""
+def _fake_runs(monkeypatch, control, treatment, file_sha="abc", file_sha_after=None):
+    """file_sha: what the treatment's worker read from the TunableOp file PyTorch looks for before its GEMMs (None:
+    not there); file_sha_after: the file after them (default unchanged)."""
     def fake(case_dir, repeats=20, env=None, device=None, timeout=600.0):
         r = treatment if env else control
         c = {**r["conditions"], "env": {**r["conditions"]["env"], **(env or {})},
@@ -131,6 +135,7 @@ def _fake_runs(monkeypatch, control, treatment, file_sha="abc"):
         if (env or {}).get("PYTORCH_TUNABLEOP_FILENAME"):
             c["tunableop_file"] = gate.tunableop_file(env["PYTORCH_TUNABLEOP_FILENAME"], 0)
             c["tunableop_file_sha256"] = file_sha
+            c["tunableop_file_sha256_after"] = file_sha if file_sha_after is None else file_sha_after
         return {**r, "conditions": c}
     monkeypatch.setattr(gate, "run_case", fake)
 
@@ -180,6 +185,21 @@ def test_a_workaround_whose_tunableop_file_isnt_where_pytorch_looks_is_inconclus
         _fake_runs(monkeypatch, _run(50, n=50), treatment, file_sha=None)
         v = gate.workaround("gates/c", PIN, 50)
         assert v["verdict"] == "INCONCLUSIVE" and "pin0.csv" in v["why"] and "wasn't applied" in v["why"], v
+
+
+def test_a_missing_pin_is_inconclusive_whatever_the_tuning_setting(monkeypatch):
+    """PyTorch's TunableOp tunes by default: with the pin file missing and PYTORCH_TUNABLEOP_TUNING unset, it runs
+    its own choice, which can be right. That used to be called WORKS."""
+    no_tuning_flag = {k: v for k, v in PIN.items() if k != "PYTORCH_TUNABLEOP_TUNING"}
+    _fake_runs(monkeypatch, _run(50, n=50), _run(0, n=50, kernels=ONE), file_sha=None)
+    v = gate.workaround("gates/c", no_tuning_flag, 50)
+    assert v["verdict"] == "INCONCLUSIVE" and "wasn't applied" in v["why"], v
+
+
+def test_a_pin_file_tuning_rewrote_during_the_run_is_inconclusive(monkeypatch):
+    _fake_runs(monkeypatch, _run(50, n=50), _run(0, n=50, kernels=ONE), file_sha="abc", file_sha_after="def")
+    v = gate.workaround("gates/c", {k: v for k, v in PIN.items() if k != "PYTORCH_TUNABLEOP_TUNING"}, 50)
+    assert v["verdict"] == "INCONCLUSIVE" and "rewrote" in v["why"], v
 
 
 def test_tunableop_puts_the_gpu_number_in_the_file_name_like_pytorch():
@@ -273,3 +293,40 @@ def test_a_pin_replaces_only_the_solution_of_the_cases_gemm_row():
     assert out.splitlines()[3] == f"GemmAndBiasTunableOp_BFloat16_TN,tn_1000_16_2048_ld_2048_2048_1000,{name},0.0123"
     assert out.splitlines()[:3] == text.splitlines()[:3]
     assert gate.rewrite_pin(text, False, name)[1] == 0          # no bias: the GemmTunableOp row, which isn't there
+
+
+def test_nothing_to_run_or_compare_is_not_a_pass(tmp_path, capsys):
+    """Two runs of an empty pack compared used to exit 0 with no verdict printed: a pass on nothing."""
+    from sdcguard import cli
+    pack = tmp_path / "empty"
+    pack.mkdir()
+    out1, out2 = str(tmp_path / "a.json"), str(tmp_path / "b.json")
+    assert cli.main(["gate", "run", str(pack), "--out", out1, "--device", "cpu"]) == 2
+    assert cli.main(["gate", "run", str(pack), "--out", out2, "--device", "cpu"]) == 2
+    assert cli.main(["gate", "compare", out1, out2]) == 2
+    assert "INCONCLUSIVE  no cases in either run" in capsys.readouterr().out
+
+
+def test_runs_of_other_inputs_or_without_a_record_of_them_are_inconclusive():
+    """A case replaced between the two runs (or a run that doesn't say what it ran) can't be judged: comparing them
+    would pass or fail one GEMM on another's result."""
+    assert gate.verdict(_run(0), _run(0, inputs="b" * 64))["verdict"] == "INCONCLUSIVE"
+    assert gate.verdict(_run(0), _run(0, inputs=None))["verdict"] == "INCONCLUSIVE"
+    assert gate.verdict(_run(0), {**_run(0), "op": {**OP, "k": 4096}})["verdict"] == "INCONCLUSIVE"
+
+
+def test_a_second_case_of_the_same_shape_never_replaces_the_first(tmp_path):
+    """Two incidents of one shape on one GPU used to share an id, and the second overwrote the first's inputs."""
+    pack = str(tmp_path / "gates")
+    op = {"call": "linear", "dtype": "bfloat16", "m": 3, "n": 40, "k": 64, "bias": False}
+    g = torch.Generator().manual_seed(0)
+    a = {"x": torch.randn(3, 64, generator=g), "w": torch.randn(40, 64, generator=g), "bias": None}
+    b = {"x": torch.randn(3, 64, generator=g), "w": torch.randn(40, 64, generator=g), "bias": None}
+    cond = {"gpu_name": "NVIDIA H100"}
+    da = gate._write_case(pack, op, a, cond, {}, {"runs_wrong": 3}, "incident", {"kind": "test"}, None)
+    db = gate._write_case(pack, op, b, cond, {}, {"runs_wrong": 1}, "incident", {"kind": "test"}, None)
+    assert da != db and sorted(os.listdir(pack)) == sorted([os.path.basename(da), os.path.basename(db)])
+    assert torch.equal(torch.load(os.path.join(da, "inputs.pt"), weights_only=True)["x"], a["x"])
+    assert json.load(open(os.path.join(da, "case.json")))["observed"] == {"runs_wrong": 3}
+    again = gate._write_case(pack, op, a, cond, {}, {"runs_wrong": 0}, "pin", {"kind": "test"}, None)
+    assert again == da and json.load(open(os.path.join(da, "case.json")))["observed"] == {"runs_wrong": 3}

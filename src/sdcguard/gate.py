@@ -31,10 +31,10 @@ Verdicts never claim more than was shown:
                 rates is significant (one-sided Fisher exact test, p < 0.01)
   INCONCLUSIVE  the two runs didn't run under the same conditions (GPU, SMs visible, MPS share, the environment
                 variables and PyTorch flags that steer GEMM kernels: unknown is never a match), too few runs, a
-                run failed, or no kernel log where the verdict needs one
+                run failed, no kernel log where the verdict needs one, or no cases at all
 
 Exit codes: 0 when every verdict is PASSED or FIXED (or the workaround WORKS); 1 when one is REGRESSED or
-UNCHANGED (or the workaround DOESN'T WORK); 2 when one is INCONCLUSIVE.
+UNCHANGED (or the workaround DOESN'T WORK); 2 when one is INCONCLUSIVE, or when there was nothing to run or compare.
 """
 from __future__ import annotations
 
@@ -179,6 +179,15 @@ def run_here(case_dir: str, repeats: int, device: Optional[str] = None) -> dict:
              + (0 if b is None else 2 * _U32 * b.double().abs()) + 1e-30)
     xd, wd = x.to(dev), w.to(dev)
     bd = None if b is None else b.to(dev)
+    cuda = dev.type == "cuda"
+    pin = os.environ.get("PYTORCH_TUNABLEOP_FILENAME")
+    pin_path = pin_before = None
+    if pin:
+        # the file PyTorch reads, with the GPU's number in its name, as it is before the first GEMM (None when it
+        # doesn't exist: TunableOp then tunes its own choice, unless tuning is off)
+        gpu = (dev.index if dev.index is not None else torch.cuda.current_device()) if cuda else None
+        pin_path = tunableop_file(pin, gpu) if cuda else pin
+        pin_before = _sha256_file(pin_path)
     runs = []
     with torch.no_grad():
         for _ in range(repeats):
@@ -195,7 +204,6 @@ def run_here(case_dir: str, repeats: int, device: Optional[str] = None) -> dict:
     from .casefile import software_stack
     from .check import gemm_settings
     sw = software_stack(dev)
-    cuda = dev.type == "cuda"
     cond = {"gpu_name": sw.get("gpu_name") if cuda else "cpu",
             "compute_capability": sw.get("compute_capability") if cuda else "cpu",
             "sms_visible": sw.get("sms_visible") if cuda else 0, "env": steering_env(), "matmul": gemm_settings(),
@@ -203,16 +211,14 @@ def run_here(case_dir: str, repeats: int, device: Optional[str] = None) -> dict:
             # as the minimum alignment preference), on the GPU only
             "alignment": {"x": _align(xd), "w": _align(wd), "bias": None if bd is None else _align(bd)} if cuda else None,
             "device_type": dev.type}
-    pin = os.environ.get("PYTORCH_TUNABLEOP_FILENAME")
     if pin:
-        # the file PyTorch reads, with the GPU's number in its name (None when it doesn't exist)
-        gpu = (dev.index if dev.index is not None else torch.cuda.current_device()) if cuda else None
-        path = tunableop_file(pin, gpu) if cuda else pin
-        cond["tunableop_file"] = path
-        cond["tunableop_file_sha256"] = _sha256_file(path)
+        cond["tunableop_file"] = pin_path
+        cond["tunableop_file_sha256"] = pin_before
+        cond["tunableop_file_sha256_after"] = _sha256_file(pin_path)    # tuning may write it
     stack = {key: sw.get(key) for key in ("torch", "cuda", "cublas", "cublaslt_loaded", "driver", "sdcguard")}
     return {"case": case["id"], "runs": runs, "n": len(runs), "conditions": cond, "stack": stack,
-            "outputs": m * n}
+            "outputs": m * n, "op": op,
+            "inputs_sha256": _inputs_digest({"x": t["x"], "w": t["w"], "bias": t.get("bias")})}
 
 
 def _worker_main(argv) -> int:
@@ -264,17 +270,53 @@ def _case_id(op: dict, cond: dict) -> str:
             f"{'-bias' if op['bias'] else ''}")
 
 
+def _inputs_digest(tensors: dict) -> str:
+    """What a case's inputs are, independent of how torch.save laid the file out: each tensor's name, dtype, shape
+    and bytes (None for an absent bias)."""
+    import hashlib
+
+    import torch
+    h = hashlib.sha256()
+    for key in sorted(tensors):
+        v = tensors[key]
+        h.update(key.encode() + b"\0")
+        if v is None:
+            h.update(b"none\0")
+            continue
+        c = v.detach().cpu().contiguous()
+        h.update(f"{c.dtype}{tuple(c.shape)}".encode() + b"\0")
+        h.update(c.view(-1).view(torch.uint8).numpy().tobytes() if c.numel() else b"")
+    return h.hexdigest()
+
+
 def _write_case(pack: str, op: dict, tensors: dict, conditions: dict, stack: dict, observed: dict, kind: str,
                 source: dict, kernels: Optional[dict], name: Optional[str] = None) -> str:
+    """Write a case, never over another one: a case already there with the same inputs is kept as it is (its record
+    of what was seen stays), and one with other inputs gets this case its own id (the id plus the start of the
+    inputs' digest), so a later capture of the same shape can't replace an incident's inputs."""
     import torch
     cid = name or _case_id(op, conditions)
+    digest = _inputs_digest(tensors)
     d = os.path.join(pack, cid)
+    if os.path.exists(os.path.join(d, "case.json")):
+        try:
+            with open(os.path.join(d, "case.json")) as f:
+                old = json.load(f).get("inputs", {}).get("content_sha256")
+        except (OSError, ValueError):
+            old = None
+        if old == digest:
+            return d
+        cid = f"{cid}-{digest[:10]}"
+        d = os.path.join(pack, cid)
+        if os.path.exists(os.path.join(d, "case.json")):
+            return d                                  # (the same inputs, written before under this id)
     os.makedirs(d, exist_ok=True)
     torch.save({k: (None if v is None else v.detach().cpu().contiguous()) for k, v in tensors.items()},
                os.path.join(d, "inputs.pt"))
     case = {"schema": CASE_SCHEMA, "id": cid, "kind": kind, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "source": source, "op": op, "inputs": {"file": "inputs.pt",
-                                                     "sha256": _sha256_file(os.path.join(d, "inputs.pt"))},
+                                                     "sha256": _sha256_file(os.path.join(d, "inputs.pt")),
+                                                     "content_sha256": digest},
             "conditions": conditions, "stack": stack, "kernels": kernels or {}, "observed": observed,
             "expected": {"reference": "float64 on the CPU", "bound": "output rounding + k x 2^-24 x sum|x||w|",
                          "prefill": "nan"}}
@@ -315,7 +357,7 @@ def add(evidence: str, pack: str = "gates", name: Optional[str] = None) -> dict:
     recorded. Serving evidence holds one row and one 128-column block of a layer, not the layer's whole matmul, so
     its case runs that slice: another shape, which cuBLAS may give another kernel (the case says so)."""
     import torch
-    ev = torch.load(evidence, map_location="cpu", weights_only=False)
+    ev = torch.load(evidence, map_location="cpu", weights_only=True)      # (as replay does: no code from a file)
     info_path = evidence[:-3] + ".json" if evidence.endswith(".pt") else None
     info = {}
     if info_path and os.path.exists(info_path):
@@ -425,6 +467,10 @@ def verdict(base: dict, cand: dict) -> dict:
         if not isinstance(r, dict) or "error" in r or not r.get("runs"):
             return {"verdict": "INCONCLUSIVE", "why": f"the {side} run has no result: "
                     f"{(r or {}).get('error', 'missing') if isinstance(r, dict) else 'missing'}"}
+    if base.get("inputs_sha256") is None or base.get("inputs_sha256") != cand.get("inputs_sha256") \
+            or base.get("op") != cand.get("op"):
+        return {"verdict": "INCONCLUSIVE", "why": "the two runs didn't run the same inputs and call (a case replaced "
+                "between them, or a run that doesn't record what it ran: unknown is never a match)"}
     diffs = condition_differences(base["conditions"], cand["conditions"])
     if diffs is None:
         return {"verdict": "INCONCLUSIVE", "why": "a condition wasn't recorded on one side, so the two runs can't be "
@@ -506,12 +552,18 @@ def workaround(case_dir: str, treatment_env: dict, repeats: int = 50, expect_ker
     wrong = out["treatment"]["wrong"]
     seen = f"wrong in {wrong} of {trt['n']} runs" if wrong else "right in every run"
     tenv = trt["conditions"].get("env") or {}
-    if ("PYTORCH_TUNABLEOP_FILENAME" in treatment_env and tenv.get("PYTORCH_TUNABLEOP_ENABLED") == "1"
-            and tenv.get("PYTORCH_TUNABLEOP_TUNING") == "0" and trt["conditions"].get("tunableop_file_sha256") is None):
-        where = trt["conditions"].get("tunableop_file") or treatment_env["PYTORCH_TUNABLEOP_FILENAME"]
-        return {**out, "verdict": "INCONCLUSIVE", "why": f"{seen}, but the TunableOp file PyTorch reads here ({where}: "
-                "it puts the GPU's number in the name) doesn't exist or couldn't be read, so the workaround wasn't "
-                "applied"}
+    tc = trt["conditions"]
+    if "PYTORCH_TUNABLEOP_FILENAME" in treatment_env and tenv.get("PYTORCH_TUNABLEOP_ENABLED") == "1":
+        where = tc.get("tunableop_file") or treatment_env["PYTORCH_TUNABLEOP_FILENAME"]
+        # whatever PYTORCH_TUNABLEOP_TUNING says: with no file, TunableOp runs its own choice (tuning is on by
+        # default) or the default kernel, never the pin
+        if tc.get("tunableop_file_sha256") is None:
+            return {**out, "verdict": "INCONCLUSIVE", "why": f"{seen}, but the TunableOp file PyTorch reads here "
+                    f"({where}: it puts the GPU's number in the name) didn't exist or couldn't be read before the run, "
+                    "so the workaround wasn't applied"}
+        if tc.get("tunableop_file_sha256_after", tc["tunableop_file_sha256"]) != tc["tunableop_file_sha256"]:
+            return {**out, "verdict": "INCONCLUSIVE", "why": f"{seen}, but TunableOp rewrote {where} during the run "
+                    "(it tuned a GEMM the file didn't settle), so the pin alone may not be what ran"}
     if expect_kernel:
         want = _algo_cluster(expect_kernel)
         ks = out["treatment"]["kernels"] or {}
@@ -724,6 +776,9 @@ def _env_pairs(items) -> dict:
 
 
 def _print_verdicts(vs: dict) -> int:
+    if not vs:                                   # nothing compared is not a pass
+        print("INCONCLUSIVE  no cases in either run: nothing was compared")
+        return _EXIT["INCONCLUSIVE"]
     worst = 0
     for cid, v in vs.items():
         print(f"{v['verdict']:<13} {cid}\n              {v['why']}")
@@ -795,6 +850,9 @@ def main(argv=None) -> int:
                 print(f"{cid}: could not run: {r['error']}")
             else:
                 print(f"{cid}: wrong in {_bad_runs(r)} of {r['n']} runs; kernels {r['kernel_log'].get('kernels')}")
+        if not res["cases"]:
+            print(f"no cases in {a.pack} (a case is a folder with a case.json: `sdcguard gate capture` or `add`)")
+            return 2
         return 2 if any("error" in r for r in res["cases"].values()) else 0
     if a.cmd == "compare":
         vs = compare(json.load(open(a.baseline)), json.load(open(a.candidate)))

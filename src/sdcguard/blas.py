@@ -147,7 +147,7 @@ def sweep(m: int, k: int, n: int, dtype: torch.dtype = torch.bfloat16, device=No
     vp = ctypes.c_void_p
     handle, desc, la, lb, ld, pref = vp(), vp(), vp(), vp(), vp(), vp()
     out = {"shape": [m, k, n], "dtype": str(dtype).replace("torch.", ""), "gpu": torch.cuda.get_device_name(dev),
-           "cublaslt_version": int(lib.cublasLtGetVersion()), "algorithms": [],
+           "cublaslt_version": int(lib.cublasLtGetVersion()), "algorithms": [], "sampled_rows": len(rows),
            "mps_active_thread_percentage": os.environ.get("CUDA_MPS_ACTIVE_THREAD_PERCENTAGE")}
     try:
         with torch.cuda.device(dev):
@@ -255,12 +255,17 @@ def summarize(out: dict) -> dict:
                                for a in ran if not a.get("correct")]
     out["algorithms_not_run"] = [{k: a.get(k) for k in ("index", "algo_id", "cluster_shape_id", "cluster_ctas",
                                                         "splitk", "status", "why")} for a in plain if not _ran(a)]
+    # the workaround's forced 1x1x1 configurations aren't algorithms the heuristic offers, but one that ran and
+    # computed wrong is a wrong result on this GPU, and says the workaround doesn't hold here
+    out["workaround_wrong"] = [{k: a.get(k) for k in ("index", "algo_id", "variant", "why", "unwritten_or_nonfinite",
+                                                      "wrong_sampled")}
+                               for a in algos if a.get("variant") and _ran(a) and not a.get("correct")]
     if out.get("error"):
         out["verdict"] = "COULD NOT TEST"
     elif not plain:
         out["verdict"] = "COULD NOT TEST"
         out["error"] = "the heuristic offered no algorithm"
-    elif out["wrong_algorithms"]:
+    elif out["wrong_algorithms"] or out["workaround_wrong"]:
         out["verdict"] = "FAIL"
     elif out["algorithms_not_run"]:
         out["verdict"] = "COULD NOT TEST"
@@ -312,9 +317,14 @@ def main(argv=None) -> int:
                 failed = True
                 bad = ", ".join(f"algo {w['algo_id']} ({w['cluster_ctas'] or '?'} CTA cluster)"
                                 for w in r["wrong_algorithms"])
-                print(f"{label}: FAIL, {len(r['wrong_algorithms'])} of {r['algorithms_tested']} algorithms wrong: {bad}")
+                print(f"{label}: FAIL, {len(r['wrong_algorithms'])} of {r['algorithms_tested']} algorithms wrong"
+                      + (f": {bad}" if bad else ""))
+                if r.get("workaround_wrong"):
+                    print(f"{' ' * len(label)}  and the 1x1x1-cluster workaround computed wrong on "
+                          + ", ".join(f"algo {w['algo_id']}" for w in r["workaround_wrong"]))
             elif r["verdict"] == "PASS":
-                print(f"{label}: PASS, all {r['algorithms_tested']} algorithms right")
+                print(f"{label}: PASS, all {r['algorithms_tested']} algorithms right (every output written, "
+                      f"{r.get('sampled_rows', 'a sample of')} rows checked against float64)")
             else:
                 untested = True
                 skipped = r.get("algorithms_not_run") or []

@@ -116,6 +116,18 @@ def _evidence(tmp_path):
                           {"device": "cpu", "host": "test", "gpu_uuid": None}, {"torch": torch.__version__})
 
 
+def test_an_edited_json_cant_change_what_the_cpu_says_about_the_output(tmp_path):
+    """The .json is bound to the .pt only by a digest it holds itself, so its recorded CPU recheck is a claim: the
+    verdict comes from judging the .pt again, and the claim is kept beside it."""
+    path = _evidence(tmp_path)
+    info = json.loads(open(path + ".json").read())
+    info["cpu_recheck"] = {"done": True, "judged": True, "output_wrong": False, "output_mismatch_confirmed": False}
+    open(path + ".json", "w").write(json.dumps(info))
+    inc = cf.load_incident(path + ".pt")
+    assert cf.cpu_state(inc["cpu"]) == "outside envelope"
+    assert inc["cpu_recorded"]["output_wrong"] is False
+
+
 def test_end_to_end_on_cpu(tmp_path, capsys):
     path = _evidence(tmp_path)
     info = json.loads(open(path + ".json").read())
