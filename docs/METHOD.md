@@ -1440,6 +1440,22 @@ at 1, 16 and 256 requests at a time, guarded against plain. About 15 minutes eac
 for the AWQ and GPTQ 1.5B models on one L4, where vLLM has no Machete (it needs an H100) and runs Marlin by itself,
 with other shapes of its kernels. About 20 minutes, about $0.50.
 
+### The fused precise check, a long clean run, and the default check against precise mode (written October 23, before any run)
+
+The fused precise check (`precise="fused"`) met every criterion on October 21, but on 990 clean checks on the H100,
+and its worst clean score on an L4 on October 20 was 4.11. The default check's false-alarm record is 24.6 million
+clean checks. `experiments/fused_soak.py` trains the calibration-shape model (8 layers, 1024 wide, Zipf tokens) in
+bf16 with every linear layer's forward, dX and dW checked by the fused check on every step, for 40 minutes, on an
+H100 and an L4 at once (`modal run scripts/modal_fused_soak.py`, about $3.80). Criteria, on each GPU: the run
+finishes; no alarm; a score read back for at least 90% of the fused checks; no check unjudged; every check run in
+the fused kernel (no fallback). Reported: checks, the worst clean score and the histogram of scores. If both GPUs
+meet them, the README and WHY.md call the fused check supported for training (with this count), no longer
+experimental; if not, it stays experimental and the result is written here.
+
+Then the paired comparison written on October 19 ("The default check and precise mode on the same matmuls"),
+unchanged, which hasn't run yet: `modal run scripts/modal_mode_compare.py`, an H100, an A100 and an L4, about
+$1.50.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
