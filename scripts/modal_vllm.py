@@ -6,7 +6,8 @@
     modal run scripts/modal_vllm.py --phase outputs  # the gate's output check, about 12 min, about $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
-      the layers: outputs, tokens/s, alerts on clean traffic, and a flipped weight bit caught and located.
+      the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
+      bit caught and located.
 quant: the same for INT4 models: Qwen2.5-1.5B-Instruct-AWQ (zero points) and -GPTQ-Int4 (no zero points), each on
       Machete (vLLM's choice on an H100) and on Marlin (VLLM_DISABLED_KERNELS=MacheteLinearKernel, the kernel every
       other NVIDIA GPU gets), then Qwen2.5-7B-Instruct-AWQ on Machete with 1/8 of the layers too (the cost). Every

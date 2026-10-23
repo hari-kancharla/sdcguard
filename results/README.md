@@ -27,7 +27,7 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `v040/` | October 21: the 0.4.0 runs on one H100, two H100s and an H200 under MPS. Five runs, every criterion met in the last two; the last is the released code (fingerprint 8d34bf97fcf7) | `SUMMARY_20261021_194128.md`, and `docs/METHOD.md`, 0.4.0 section |
 | `vllm_oct21/` | October 21: vLLM 0.31 with Qwen2.5 1.5B and 7B on the 0.4.0 code, including capture of the alerting row inside vLLM | each model's `SUMMARY.json` |
 | `gate_h200/` | October 22: `sdcguard gate` on cuBLAS issue 6862950 on an H200 under MPS, two runs (the first found the pin wasn't applied; every expectation met in the second) | `docs/METHOD.md`, upgrade gate section |
-| `serve_cost/` | October 22: the serving check's cost kernel by kernel on an H100, v2 against v1 (v1 stayed) and v3 against v1 (v3 used from 256 rows) | `docs/METHOD.md`, serving kernel section |
+| `serve_cost/` | October 22: the serving check's cost kernel by kernel on an H100, three runs: v2 against v1 (v1 stayed), v3 against v1 (v3 used from 256 rows), and v5 against both with more row counts (v5 no cheaper and removed; v3 cheaper from 96 rows) | `docs/METHOD.md`, serving kernel section |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the

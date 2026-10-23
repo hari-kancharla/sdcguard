@@ -187,3 +187,22 @@ def test_vllm_a_pass_only_in_a_fallback_mode_fails_and_keeps_the_default_modes_e
     assert json.loads((tmp_path / "guarded_compiled.json").read_text())["clean"][0]["unjudged_checksums"] == 7
     summary = json.loads((tmp_path / "SUMMARY.json").read_text())
     assert summary["attempt_that_passed"] == "compiled_pytorch_check"
+
+
+def test_vllm_light_load_is_reported_without_deciding_anything(tmp_path, vllm_experiment):
+    """The light-load timing (16 requests at a time) goes into the summary as throughput with and without the checks,
+    the slowdown and whether its completions matched; it is no criterion, and runs without it still compare."""
+    baseline, guarded = _reports()
+    assert vllm_experiment._light(baseline, guarded) is None
+    baseline.update(light_requests=16, light_output_tokens_per_s=500.0, light_first_outputs=["a", "b"])
+    guarded.update(light_requests=16, light_output_tokens_per_s=400.0, light_first_outputs=["a", "b"])
+    light = vllm_experiment._light(baseline, guarded)
+    assert light == {"requests": 16, "output_tokens_per_s": {"without": 500.0, "with": 400.0}, "slowdown_pct": 25.0,
+                     "same_outputs": True}
+    guarded["light_first_outputs"] = ["a", "c"]
+    assert vllm_experiment._light(baseline, guarded)["same_outputs"] is False
+    for name, rep in (("baseline", baseline), ("guarded", guarded)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(rep))
+    assert vllm_experiment.compare(str(tmp_path)) == []                 # (a different light completion fails nothing)
+    summary = json.loads((tmp_path / "SUMMARY.json").read_text())
+    assert summary["light_load"]["slowdown_pct"] == 25.0 and summary["validation"]["passed"]

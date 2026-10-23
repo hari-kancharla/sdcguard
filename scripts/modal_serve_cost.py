@@ -1,23 +1,26 @@
-"""What the serving check costs, kernel by kernel, and whether v5 agrees with the plain check, on one H100.
+"""What the serving check costs, kernel by kernel, and whether each design agrees with the plain check, on one H100.
 
     modal run scripts/modal_serve_cost.py
 
 On every linear-layer shape of Qwen2.5-1.5B and Qwen2.5-7B (bf16), at 1 to 4,096 rows (tokens in the batch), with
 more row counts below 256 (the batch sizes vLLM captures CUDA graphs for when decoding):
-  - the layer's own matmul, and the checked layer with v1 (cuBLAS for E, then _check), v3 (cuBLAS for E, then _sums
-    and _score) and v5 (one kernel, _fused) with 16-row and with 64-row tiles, and cuBLAS's E alone, each as a CUDA
-    graph of up to 20 calls replayed (as vLLM runs them), median of 7 replays. Unlike the October 22 runs, the calls
-    go round several copies of the layer, enough that its weights and checksums can't stay in the H100's 50 MB L2
-    cache from one call to the next, as in a model, where every other layer passes through L2 in between;
-  - each kernel's own GPU time, from the profiler (cuBLAS's GEMM, _check; _sums, _score; _fused), so the cost can be
-    placed exactly; and a plain sum of y, as the speed of just reading it;
+  - the layer's own matmul, and the checked layer with v1 (cuBLAS for E, then _check) and v3 (cuBLAS for E, then
+    _sums and _score), and cuBLAS's E alone, each as a CUDA graph of at least 20 calls replayed (as vLLM runs them),
+    median of 7 replays. The calls go round several copies of the layer, enough that its weights and checksums
+    can't stay in the H100's 50 MB L2 cache from one call to the next, as in a model, where every other layer passes
+    through L2 in between;
+  - each kernel's own GPU time, from the profiler (cuBLAS's GEMM, _check; _sums, _score), so the cost can be placed
+    exactly; and a plain sum of y, as the speed of just reading it;
   - on the same input, clean and with one output changed by 1% of the layer's largest output and by 50: each
-    setting's scores against the plain PyTorch check's (clean: within 0.05 + 2%; changed: the same alarm, same row
+    design's scores against the plain PyTorch check's (clean: within 0.05 + 2%; changed: the same alarm, same row
     and block).
 Before any of that, each design's first-use comparison (bf16 and fp16) and tests/_serve_fast_compare.py on the GPU
-(must print ALL AGREE). summarize() applies the rules docs/METHOD.md sets for v5 before the run.
+(must print ALL AGREE). summarize() applies the rule docs/METHOD.md set for where v3 takes over from v1.
 
-About 8 to 12 minutes: about $0.80 at Modal's prices on Oct 20, 2026 ($3.95 an hour for the H100 plus about $0.45
+The October 22 run of this script at commit faf352d also timed v5, a one-kernel design for few rows, under rules
+written before it (docs/METHOD.md); v5 was no cheaper than v1 and was removed, and this script times v1 and v3.
+
+About 5 to 8 minutes: about $0.50 at Modal's prices on Oct 20, 2026 ($3.95 an hour for the H100 plus about $0.45
 for CPU and memory); at most about $2.20 (a 30-minute limit). Results go to results/serve_cost/.
 """
 from __future__ import annotations
@@ -43,10 +46,8 @@ SHAPES = {
                "gate_up_proj": (3584, 37888, False), "down_proj": (18944, 3584, False)},
 }
 ROWS = [1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 160, 192, 224, 256, 1024, 4096]
-KERNELS = ("v1", "v3", "v5_t16", "v5_t64")       # v5 with 16-row and with 64-row tiles
-DESIGNS = ("v1", "v3", "v5")
+KERNELS = ("v1", "v3")
 L2_BYTES = 50 * 1024 * 1024
-MARGIN = 0.95                                      # v5 must cost at most 95% of what it would replace
 
 
 def _digest(root: Path) -> dict:
@@ -91,7 +92,7 @@ _SIDE = []
 
 def _graph_ms(fn, calls: int = 20, replays: int = 7) -> float:
     """Milliseconds per call of fn(i) (i = 0, 1, ...: the call's number, to pick a copy), as a CUDA graph. The warm-up
-    runs on one side stream made once (a new stream each time would take a new set of v5's counters each time)."""
+    runs on one side stream made once."""
     import torch
     fn(0)
     torch.cuda.synchronize()
@@ -122,7 +123,7 @@ def _graph_ms(fn, calls: int = 20, replays: int = 7) -> float:
 
 
 def _group_of(name: str) -> str:
-    group = next((g for g in ("_check", "_sums", "_score", "_fused") if g in name), None)
+    group = next((g for g in ("_check", "_sums", "_score") if g in name), None)
     if group is None:
         low = name.lower()
         group = "gemm" if any(w in low for w in ("gemm", "cutlass", "sm90", "xmma", "cublas", "nvjet")) else "other"
@@ -154,8 +155,6 @@ def _kernel_us(fn, iters: int = 10) -> dict:
 
 def _setting(kern: str) -> dict:
     """check() keywords for one timed setting."""
-    if kern.startswith("v5_t"):
-        return {"kern": "v5", "_bm": int(kern[4:])}
     return {"kern": kern}
 
 
@@ -181,7 +180,7 @@ def h100(expected: str) -> dict:
     out["triton"] = triton.__version__
     # 1. agreement: the first-use comparison, then the comparison set, with each design forced
     out["agreement"] = {}
-    for kern in DESIGNS:
+    for kern in KERNELS:
         env = dict(os.environ, SDCGUARD_SERVE_KERNEL=kern)
         p = subprocess.run([sys.executable, f"{R}/tests/_serve_fast_compare.py", "cuda"], capture_output=True,
                            text=True, timeout=900, cwd=R, env=env)
@@ -213,8 +212,6 @@ def h100(expected: str) -> dict:
                 bs_.append(b)
                 css.append(LayerChecksums(W, b, 128))
             argss = [cs.tensors(True) for cs in css]
-            for cs in css:                                       # (as warm() does at load time)
-                _serve_fast._reserve_counters(dev, cs.parts.data_ptr(), cs.nb)
             by_rows = {}
             for m in ROWS:
                 r = {"copies": ncopy}
@@ -230,7 +227,6 @@ def h100(expected: str) -> dict:
                     cm, cd = _serve_fast._capture_buffers(dev, k)
                     for kern in KERNELS:
                         kw = _setting(kern)
-                        fb = _serve_fast.V5_FALLBACKS[0]
 
                         def checked(i, kw=kw):
                             c = i % ncopy
@@ -243,7 +239,6 @@ def h100(expected: str) -> dict:
                         r[f"{kern}_kernels_us"] = _kernel_us(
                             lambda i, kw=kw: _serve_fast.check(x, ys[i % ncopy], *argss[i % ncopy], st, 0, 6.0, 1e-20,
                                                                cap_meta=cm, cap_data=cd, cap_w=128, cap_tag=2, **kw))
-                        r[f"{kern}_fallbacks"] = _serve_fast.V5_FALLBACKS[0] - fb
                     # scores on the same input; clean, a 1% change and a large one
                     y = ys[0]
                     big = float(y.float().abs().max())
@@ -270,8 +265,6 @@ def h100(expected: str) -> dict:
             del Ws, bs_, css, argss
             torch.cuda.empty_cache()
         out["models"][model] = res
-    torch.cuda.synchronize()
-    out["v5_counters_clean"] = _serve_fast.counters_clean(dev)      # every tile's counter back at zero
     minutes = (time.monotonic() - t0) / 60
     out["minutes"] = round(minutes, 1)
     out["estimated_cost_usd"] = round(minutes / 60 * RATE, 2)
@@ -308,66 +301,38 @@ def _added_us(layers: dict, m: int, kern: str):
 
 
 def summarize(res: dict) -> dict:
-    """The rules METHOD.md sets for v5 (section "The serving kernel", written before this run): criteria 1 and 2, the
-    tile height, the row counts v5 is used for, and the added time per row count summed over each model's layers, per
-    setting."""
-    out = {"criteria": {}, "added_us": {}}
-    ag = res.get("agreement", {}).get("v5", {})
-    out["criteria"]["1 first-use comparison and comparison set"] = bool(
-        ag.get("compare_exit") == 0 and ag.get("compare_last") == "ALL AGREE"
-        and ag.get("first_use") and all(v and v[0] is True for v in ag["first_use"].values()))
-    agree = True
-    fallbacks = 0
+    """The added time per row count summed over each model's layers, per design; whether every design agreed with
+    the plain check everywhere; and where v3 takes over from v1 by the rule METHOD.md set for it: the smallest row
+    count of the run from which v3 costs less than v1 over the four 7B layers at that and every larger row count."""
+    out = {"agreement_ok": {}, "added_us": {}}
+    for kern in KERNELS:
+        ag = res.get("agreement", {}).get(kern, {})
+        ok = bool(ag.get("compare_exit") == 0 and ag.get("compare_last") == "ALL AGREE" and ag.get("first_use")
+                  and all(v and v[0] is True for v in ag["first_use"].values()))
+        for layers in res.get("models", {}).values():
+            for dd in layers.values():
+                for m in ROWS:
+                    r = dd["by_rows"].get(str(m), {})
+                    ok &= "error" not in r and _agrees(r, kern)
+        out["agreement_ok"][kern] = ok
     for model, layers in res.get("models", {}).items():
         out["added_us"][model] = {str(m): {kern: _added_us(layers, m, kern) for kern in KERNELS} for m in ROWS}
-        for dd in layers.values():
-            for m in ROWS:
-                r = dd["by_rows"].get(str(m), {})
-                agree &= "error" not in r and all(_agrees(r, kern) for kern in ("v5_t16", "v5_t64"))
-                fallbacks += sum(r.get(f"{kern}_fallbacks", 1) for kern in ("v5_t16", "v5_t64"))
-    out["v5_fallbacks"] = fallbacks
-    out["criteria"]["2 scores agree with the plain check on every shape and row count, both tile heights"] = (
-        agree and fallbacks == 0 and res.get("v5_counters_clean") is True)
     a7 = out["added_us"].get("qwen7b", {})
-
-    def cost(m, kern):
-        return a7.get(str(m), {}).get(kern)
-    # tile height: 64-row tiles from the smallest row count from which they are cheaper at every larger one
-    t64_from = None
+    from_rows = None
     for m in reversed(ROWS):
-        c16, c64 = cost(m, "v5_t16"), cost(m, "v5_t64")
-        if c16 is None or c64 is None or not c64 < c16:
+        r7 = a7.get(str(m), {})
+        if r7.get("v1") is None or r7.get("v3") is None or not r7["v3"] < r7["v1"]:
             break
-        t64_from = m
-    out["v5_t64_from_rows"] = t64_from
-
-    def v5(m):
-        return cost(m, "v5_t64" if t64_from is not None and m >= t64_from else "v5_t16")
-
-    def now(m):
-        return cost(m, "v3" if m >= 256 else "v1")
-    # v5 is used from 1 row up to the largest row count of the run up to which it costs at most MARGIN of the design
-    # it replaces at every row count
-    upto = None
-    for m in ROWS:
-        a, b = v5(m), now(m)
-        if a is None or b is None or not a <= MARGIN * b:
-            break
-        upto = m
-    out["v5_up_to_rows"] = upto
-    out["criteria"]["3 at 1 row, at most 95% of v1's cost over the four 7B layers"] = upto is not None
-    out["v5_used"] = all(out["criteria"].values())
-    out["v5_below_rows"] = (upto + 1) if out["v5_used"] else 0
-    out["v5_vs_now"] = {str(m): {"v5": v5(m), "now": now(m),
-                                 "ratio": round(v5(m) / now(m), 3) if v5(m) and now(m) else None} for m in ROWS}
+        from_rows = m
+    out["v3_from_rows"] = from_rows
     return out
 
 
 @app.local_entrypoint()
 def main() -> None:
     src = _digest(LOCAL)
-    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files). One H100, about 8 to 12 minutes, "
-          "about $0.80.", flush=True)
+    print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files). One H100, about 5 to 8 minutes, "
+          "about $0.50.", flush=True)
     res = h100.remote(src["sha256"])
     d = LOCAL / "results" / "serve_cost"
     d.mkdir(parents=True, exist_ok=True)
@@ -387,12 +352,7 @@ def main() -> None:
             own = sum(dd["by_rows"].get(str(m), {}).get("linear_ms", float("nan")) for dd in layers.values()) * 1000
             print(f"  {m:>6}  " + "".join(f"{summary['added_us'][model][str(m)][k]!s:>10}" for k in KERNELS)
                   + f"   {own:9.1f}")
-    print("\nv5 (tiles as chosen) against the design used now (v1 below 256 rows, v3 from 256), 7B:")
-    for m in ROWS:
-        v = summary["v5_vs_now"][str(m)]
-        print(f"  {m:>6} rows: v5 {v['v5']}  now {v['now']}  ratio {v['ratio']}")
-    for name, ok in summary["criteria"].items():
-        print(f"  {'met' if ok else 'NOT met'}: {name}")
-    print(f"v5 used: {summary['v5_used']} (below {summary['v5_below_rows']} rows; 64-row tiles from "
-          f"{summary['v5_t64_from_rows']} rows). Fallbacks to v1/v3 while timing: {summary['v5_fallbacks']}. "
-          f"Saved {path}. Estimated cost ${res.get('estimated_cost_usd')}.")
+    for kern, ok in summary["agreement_ok"].items():
+        print(f"  {kern}: {'agrees' if ok else 'DOES NOT agree'} with the plain check everywhere")
+    print(f"v3 is cheaper than v1 over the four 7B layers from {summary['v3_from_rows']} rows on. Saved {path}. "
+          f"Estimated cost ${res.get('estimated_cost_usd')}.")

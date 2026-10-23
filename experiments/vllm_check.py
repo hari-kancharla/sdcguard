@@ -31,6 +31,7 @@ import sys
 import time
 
 MODEL = "Qwen/Qwen2.5-1.5B-Instruct"     # bf16, public, has biases on q/k/v (tests the bias path)
+LIGHT = 16                               # requests at a time in the light-load timing
 FLIP_LAYER = "model.layers.10.mlp.down_proj"
 
 
@@ -254,6 +255,20 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     res.update(seconds=round(dt, 3), seconds_each_run=[round(t, 3) for t in times], output_tokens=n_out,
                prompt_tokens=n_in, output_tokens_per_s=round(n_out / dt, 1),
                total_tokens_per_s=round((n_in + n_out) / dt, 1), first_outputs=[o.outputs[0].text for o in outs[:64]])
+    # light load (added October 22, 2026, before any run; reported, no threshold): LIGHT requests at a time, the same
+    # tokens each, three timed runs, median. Its decoding steps have LIGHT rows, where the check costs the most
+    # relative to the layers' own work; the clean report below covers this traffic too
+    light = prompts[:LIGHT]
+    ltimes = []
+    for _ in range(3):
+        t1 = time.time()
+        louts = llm.generate(light, sp, use_tqdm=False)
+        ltimes.append(time.time() - t1)
+    ldt = sorted(ltimes)[1]
+    ln = sum(len(o.outputs[0].token_ids) for o in louts)
+    res.update(light_requests=len(light), light_seconds=round(ldt, 3),
+               light_seconds_each_run=[round(t, 3) for t in ltimes], light_output_tokens_per_s=round(ln / ldt, 1),
+               light_first_outputs=[o.outputs[0].text for o in louts])
     if role == "guarded":
         res["clean"] = llm.apply_model(_guard_report)
         res["flipped"] = llm.apply_model(_flip)
@@ -262,11 +277,23 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(out, f"{tag or role}.json"), "w") as f:
         json.dump(res, f, indent=1, default=str)
-    print(json.dumps({k: v for k, v in res.items() if k != "first_outputs"}, indent=1, default=str), flush=True)
+    print(json.dumps({k: v for k, v in res.items() if k not in ("first_outputs", "light_first_outputs")}, indent=1,
+                     default=str), flush=True)
     failures = _guarded_failures(res) if role == "guarded" else []
     if failures:
         print("VALIDATION FAILED: " + "; ".join(failures), flush=True)
     return 1 if failures else 0
+
+
+def _light(baseline: dict, guarded: dict):
+    """The light-load timing of both runs: throughput with and without the checks, the slowdown, and whether the
+    light runs' completions were the same (reported; not a criterion). None if either run didn't time it."""
+    b, g = baseline.get("light_output_tokens_per_s"), guarded.get("light_output_tokens_per_s")
+    if not b or not g:
+        return None
+    return {"requests": guarded.get("light_requests"), "output_tokens_per_s": {"without": b, "with": g},
+            "slowdown_pct": round(100 * (b / g - 1), 2),
+            "same_outputs": baseline.get("light_first_outputs") == guarded.get("light_first_outputs")}
 
 
 def compare(out: str, passed_as: str | None = None):
@@ -284,6 +311,7 @@ def compare(out: str, passed_as: str | None = None):
         "same_outputs": f"{same}/{len(b['first_outputs'])}",
         "output_tokens_per_s": {"without": b["output_tokens_per_s"], "with": g["output_tokens_per_s"]},
         "slowdown_pct": round(100 * (b["output_tokens_per_s"] / g["output_tokens_per_s"] - 1), 2),
+        "light_load": _light(b, g),
         "layers_checked": clean.get("layers"),
         "layers_that_actually_ran_checks": clean.get("layers_with_executed_checks"),
         "layers_with_a_nonzero_residual": clean.get("layers_checked_since_last_read"),
@@ -341,6 +369,7 @@ def add_share(out: str, tag: str):
         "same_outputs": f"{same}/{len(b['first_outputs'])}",
         "output_tokens_per_s": g["output_tokens_per_s"],
         "slowdown_pct": round(100 * (b["output_tokens_per_s"] / g["output_tokens_per_s"] - 1), 2),
+        "light_load": _light(b, g),
         "layers_checked": clean.get("layers"), "clean_alerts": len(clean.get("alerts", [])),
         "worst_clean_z": clean.get("worst_clean_z"),
         "flagged_after_flip": sorted({x["where"] for x in after.get("alerts", [])}),

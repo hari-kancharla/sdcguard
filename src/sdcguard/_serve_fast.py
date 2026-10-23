@@ -2,7 +2,7 @@
 
 The plain serving check (serve.check_static_impl) is about 40 small PyTorch operations per layer.
 Under CUDA graphs each still costs a kernel, so on a 1.1B model it made decoding 2.6x slower
-(H100, October 18). Three designs here do the same arithmetic per layer:
+(H100, October 18). Two designs here do the same arithmetic per layer:
 
   v1  cuBLAS   E = x @ (block sums of W, as three bf16/fp16 parts)     (same call as the plain check)
       _check   for its rows and blocks: |x_row|^2 and |x_row|_1, the plain and signed sums, sum of
@@ -12,14 +12,12 @@ Under CUDA graphs each still costs a kernel, so on a 1.1B model it made decoding
   v3  cuBLAS   E, the same call
       _sums    the four sums of each 128-wide block of y, and the row norms of x, in one launch
       _score   the same scoring as _check, one (row, block) pair per lane (see "v3" below)
-  v5  _fused   one launch, no cuBLAS: E with Triton's dot, split over k, the row norms and the sums of y, and
-               the last program of each tile scores it (see "v5" below)
 
 check() runs v1 below V3_FROM_ROWS rows and v3 from there on: on an H100, v3 cost less than v1 summed over
-Qwen2.5-7B's four linear layers from 256 rows on and more below (docs/METHOD.md, "The serving kernel"). v5 runs
-below V5_BELOW_ROWS rows, 0 until a timing run says where it is cheaper. Each CUDA graph is captured for one batch
-size, so the choice is fixed inside a graph. SDCGUARD_SERVE_KERNEL=v1, v3 or v5 forces one design (the timing run
-and the tests use it).
+Qwen2.5-7B's four linear layers from 96 rows on and more below (docs/METHOD.md, "The serving kernel"). Each CUDA
+graph is captured for one batch size, so the choice is fixed inside a graph. SDCGUARD_SERVE_KERNEL=v1 or v3 forces
+one design (the timing run and the tests use it). Two other designs were timed and removed: v2 (October 22, about
+twice v1's cost) and v5 (one fused kernel for few rows, October 22: no cheaper than v1).
 
 The state row holds two int64 keys: (bits of z << 32) | position of the worst checksum, and
 (bits of z << 32) | bits of its noise. z >= 0, and the bits of non-negative floats sort like the
@@ -31,7 +29,6 @@ and corrupted layers of several shapes (verified()); otherwise the plain check i
 from __future__ import annotations
 
 import os
-import threading
 from typing import Optional
 
 import torch
@@ -337,7 +334,7 @@ if HAVE_TRITON:
     @triton.jit
     def _judge(plain, signed, sq, l1, xn, asum, e0, e1, jb, wid, ok, SCALE, B2N, B2M, BMAX, BMB, BSUM, k, u, h,
                abs_floor, l1c, zt, lim_a, lim_big, NPARTS: tl.constexpr):
-        """The scoring of _check for a vector of (row, block) pairs (v3's _score and v5's _fused share it): from the
+        """The scoring of _check for a vector of (row, block) pairs, for v3's _score: from the
         four sums of the block of y, the row norms of x and E's parts summed (e0, e1), (z of the worse checksum, its
         noise, whether it is the signed one, and how many of the pair's two checksums couldn't be judged). ok masks
         the pairs that exist."""
@@ -529,214 +526,11 @@ if HAVE_TRITON:
                 zt, CAPM, CAPD, cst, cw, ctag, cfo, ncap, BW, BKX, COUNTS, CAPTURE)
 
 
-# ---------------------------------------------------------------- v5: one kernel per layer for few rows
-#
-# With few rows v1 and v3 cost mostly fixed amounts per layer (the October 22 profile): cuBLAS spends 7 to 8 us on
-# E at 1 row though its data loads in 0.4 to 4, and each further kernel adds at least 2 to 3 us and a gap. v5 does
-# the whole check in one launch, with no cuBLAS call:
-#
-#   _fused  programs (split s of the sum over k, G blocks of y, BM rows). Each computes its part of E for its blocks
-#           and rows with Triton's dot (fp32 accumulation, as cuBLAS) and of the row norms of x from the same loads,
-#           and the four sums of some rows of its blocks of y (rows s, s + NS, ...), and writes them to a scratch
-#           buffer. Then it adds 1 to its tile's counter; the program that finds NS - 1 there is the last of its tile:
-#           it resets the counter, adds the NS parts in a fixed order (deterministic) and scores the tile's pairs
-#           with _judge, as _score does.
-#
-# The counters are zero between launches (each last program resets its own). Each layer has its own counters, in
-# V5_SETS sets, one per CUDA stream that runs v5: launches on one stream run one after another, and two streams never
-# share a set (_counter_slice). Work captured into a CUDA graph keeps the set of the stream it was captured on, so one
-# layer's graphs captured on one stream must not be replayed on two streams at the same time (vLLM captures on one
-# stream and replays on one). A count left over by such misuse would make every later check of that tile wrong.
-# Its sums run in another order than cuBLAS's, so a score can differ from v1's in its last bits; it is held to the
-# plain check's answers, as v3 is.
-
-if HAVE_TRITON:
-
-    @triton.jit
-    def _fused_tail(X, Y, EP, XP, YS, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, nb, bs, rem,
-                    sxm, sxk, sym, syn, tile, rt, ct, u, h, abs_floor, l1c, zt, lim_a, lim_big,
-                    CAPM, CAPD, cst, cw, ctag, cfo, ncap,
-                    BM: tl.constexpr, G: tl.constexpr, BW: tl.constexpr, NS: tl.constexpr, SP: tl.constexpr,
-                    NPARTS: tl.constexpr, BKX: tl.constexpr, COUNTS: tl.constexpr, CAPTURE: tl.constexpr):
-        """The last program of a tile: the NS parts of E and of the row norms added up, the sums of y, scoring."""
-        q = tl.arange(0, BM * G)                                             # the tile's (row, block) pairs
-        rl = q // G
-        gq = q - rl * G
-        rg = rt.to(tl.int64) * BM + rl
-        jb = ct * G + gq
-        ok = (rg < m) & (jb < nb)
-        last = (jb == nb - 1) & (rem > 0)
-        wid = tl.where(last, rem, bs)
-        sp = tl.arange(0, SP)
-        lm = (sp < NS)[:, None] & ok[None, :]
-        TS: tl.constexpr = BM * 2 * G
-        # (written by the tile's other programs in this launch: read from L2, not from this SM's L1)
-        eb = EP + (tile * NS).to(tl.int64) * (NPARTS * TS)
-        eo = sp[:, None] * (NPARTS * TS) + (rl * (2 * G) + 2 * gq)[None, :]
-        e0 = tl.zeros((BM * G,), dtype=tl.float32)
-        e1 = tl.zeros((BM * G,), dtype=tl.float32)
-        for i in tl.static_range(NPARTS):
-            e0 += tl.sum(tl.load(eb + eo + i * TS, mask=lm, other=0.0, cache_modifier=".cg"), axis=0)
-            e1 += tl.sum(tl.load(eb + eo + i * TS + 1, mask=lm, other=0.0, cache_modifier=".cg"), axis=0)
-        xb = XP + (tile * NS).to(tl.int64) * (2 * BM)
-        xo = sp[:, None] * (2 * BM) + rl[None, :]
-        asq = tl.sum(tl.load(xb + xo, mask=lm, other=0.0, cache_modifier=".cg"), axis=0)
-        asum = tl.sum(tl.load(xb + BM + xo, mask=lm, other=0.0, cache_modifier=".cg"), axis=0)
-        xn = tl.sqrt(asq)
-        yb = YS + tile.to(tl.int64) * (4 * BM * G)
-        plain = tl.load(yb + q, mask=ok, other=0.0, cache_modifier=".cg")
-        signed = tl.load(yb + BM * G + q, mask=ok, other=0.0, cache_modifier=".cg")
-        sq = tl.load(yb + 2 * BM * G + q, mask=ok, other=0.0, cache_modifier=".cg")
-        l1 = tl.load(yb + 3 * BM * G + q, mask=ok, other=0.0, cache_modifier=".cg")
-        zc, dc, sec, unk = _judge(plain, signed, sq, l1, xn, asum, e0, e1, jb, wid, ok, SCALE, B2N, B2M, BMAX, BMB,
-                                  BSUM, k, u, h, abs_floor, l1c, zt, lim_a, lim_big, NPARTS)
-        _report(zc, dc, sec, unk, ok, rg * nb + jb, tile == 0, X, Y, STATE, slot, sc, nb, bs, rem, k, sxm, sxk, sym,
-                syn, zt, CAPM, CAPD, cst, cw, ctag, cfo, ncap, BW, BKX, COUNTS, CAPTURE)
-
-    @triton.jit
-    def _fused_ysums(Y, S, YS, m, nb, bs, rem, s_full, s_last, sym, syn, tile, rt, ct, ps, j,
-                     BM: tl.constexpr, G: tl.constexpr, BW: tl.constexpr, NS: tl.constexpr, FULL: tl.constexpr):
-        """The four sums of the tile's blocks in one of its rows (local row ps + NS * j). FULL: every block is bs
-        wide (bs = BW), so the masks are whole blocks and the loads vectorize."""
-        g = tl.arange(0, G)
-        jb = ct * G + g
-        bmask = jb < nb
-        w = tl.arange(0, BW)
-        rl = ps + NS * j
-        rg = rt.to(tl.int64) * BM + rl
-        ok_r = (rl < BM) & (rg < m)
-        if FULL:
-            wmask = bmask[:, None] & (w < BW)[None, :]
-            sg = tl.load(S + s_full + w)[None, :]
-        else:
-            last = (jb == nb - 1) & (rem > 0)
-            wid = tl.where(last, rem, bs)
-            wmask = (w[None, :] < wid[:, None]) & bmask[:, None]                  # (G, BW)
-            sg = tl.load(S + tl.where(last, s_last, s_full)[:, None] + w[None, :], mask=wmask & ok_r, other=0.0)
-        yv = tl.load(Y + rg * sym + (jb[:, None].to(tl.int64) * bs + w[None, :]) * syn, mask=wmask & ok_r,
-                     other=0.0).to(tl.float32)
-        o = rl * G + g
-        yb = YS + tile.to(tl.int64) * (4 * BM * G)
-        sm = bmask & ok_r
-        tl.store(yb + o, tl.sum(yv, axis=1), mask=sm)
-        tl.store(yb + BM * G + o, tl.sum(yv * sg, axis=1), mask=sm)
-        tl.store(yb + 2 * BM * G + o, tl.sum(yv * yv, axis=1), mask=sm)
-        tl.store(yb + 3 * BM * G + o, tl.sum(tl.abs(yv), axis=1), mask=sm)
-
-    @triton.jit
-    def _fused_e(X, P, rm, rmask, ct, k_lo, k_hi, k, sxm, sxk, spk, spc, two_nb, BM: tl.constexpr, G: tl.constexpr,
-                 BK: tl.constexpr, NPARTS: tl.constexpr, IEEE: tl.constexpr, COLMASK: tl.constexpr):
-        """This program's part of E (rows rm, the tile's 2 G columns of each part, k in [k_lo, k_hi)) and of the row
-        norms of x from the same loads."""
-        cc = tl.arange(0, 2 * G)
-        col = ct * (2 * G) + cc
-        a0 = tl.zeros((BM, 2 * G), dtype=tl.float32)
-        a1 = tl.zeros((BM, 2 * G), dtype=tl.float32)
-        a2 = tl.zeros((BM, 2 * G), dtype=tl.float32)
-        asq = tl.zeros((BM,), dtype=tl.float32)
-        asum = tl.zeros((BM,), dtype=tl.float32)
-        for k0 in range(k_lo, k_hi, BK):
-            rk = k0 + tl.arange(0, BK)
-            # (the split's length is a multiple of BK, so only the end of k cuts a step short: masking against k,
-            # whose divisibility the compiler knows, keeps the loads vectorized)
-            kmask = rk < k
-            xv = tl.load(X + rm[:, None] * sxm + rk[None, :] * sxk, mask=rmask[:, None] & kmask[None, :], other=0.0)
-            xf = xv.to(tl.float32)
-            asq += tl.sum(xf * xf, axis=1)
-            asum += tl.sum(tl.abs(xf), axis=1)
-            pb = P + rk[:, None] * spk + col[None, :] * spc
-            if COLMASK:
-                pmk = kmask[:, None] & (col < two_nb)[None, :]
-            else:
-                pmk = kmask[:, None] & (cc < 2 * G)[None, :]
-            p0 = tl.load(pb, mask=pmk, other=0.0)
-            if IEEE:      # (Triton's CPU interpreter gets bf16 dots wrong; widening to fp32 is exact)
-                a0 = tl.dot(xf, p0.to(tl.float32), a0, input_precision="ieee")
-            else:
-                a0 = tl.dot(xv, p0, a0)
-            if NPARTS == 3:
-                p1 = tl.load(pb + two_nb * spc, mask=pmk, other=0.0)
-                p2 = tl.load(pb + 2 * two_nb * spc, mask=pmk, other=0.0)
-                if IEEE:
-                    a1 = tl.dot(xf, p1.to(tl.float32), a1, input_precision="ieee")
-                    a2 = tl.dot(xf, p2.to(tl.float32), a2, input_precision="ieee")
-                else:
-                    a1 = tl.dot(xv, p1, a1)
-                    a2 = tl.dot(xv, p2, a2)
-        return a0, a1, a2, asq, asum
-
-    # only what changes with the batch (m), or between layers without changing the work's shape, is left
-    # unspecialized; the strides stay specialized, so contiguous x, y and parts get vectorized loads
-    @triton.jit(do_not_specialize=["slot", "sc", "m", "nb", "rem", "s_last", "nct", "cst", "cw", "ctag", "cfo",
-                                   "ncap"])
-    def _fused(X, Y, P, S, EP, XP, YS, CNT, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, nb, bs, rem,
-               s_full, s_last, sxm, sxk, sym, syn, spk, spc, two_nb, nct, kc, u, h, abs_floor, l1c, zt, lim_a,
-               lim_big, CAPM, CAPD, cst, cw, ctag, cfo, ncap,
-               BM: tl.constexpr, G: tl.constexpr, BK: tl.constexpr, BW: tl.constexpr, NS: tl.constexpr,
-               SP: tl.constexpr, RPS: tl.constexpr, NPARTS: tl.constexpr, IEEE: tl.constexpr, BKX: tl.constexpr,
-               SPKU: tl.constexpr, NB2U: tl.constexpr, FULL: tl.constexpr, COUNTS: tl.constexpr,
-               CAPTURE: tl.constexpr):
-        ps = tl.program_id(0)                 # which part of the sum over k
-        ct = tl.program_id(1)                 # which G blocks of y (2 G columns of each part of E)
-        rt = tl.program_id(2)                 # which BM rows
-        tile = rt * nct + ct
-        r = tl.arange(0, BM)
-        rm = rt.to(tl.int64) * BM + r
-        rmask = rm < m
-        cc = tl.arange(0, 2 * G)
-        # spk and two_nb arrive divided by SPKU and NB2U (8 when they are multiples of 8): multiplied back here, the
-        # compiler sees that a row of parts and each part's columns start on 16 bytes, so the loads vectorize
-        spk = spk * SPKU
-        two_nb = two_nb * NB2U
-        k_lo = ps * kc
-        k_hi = tl.minimum(k_lo + kc, k)
-        # a tile whose blocks all exist needs no mask over the columns (a mask the compiler can't prove whole
-        # 16-byte groups of would make every load a scalar one); only the last tile of a layer can be partial
-        if (ct + 1) * G <= nb:
-            a0, a1, a2, asq, asum = _fused_e(X, P, rm, rmask, ct, k_lo, k_hi, k, sxm, sxk, spk, spc, two_nb,
-                                             BM, G, BK, NPARTS, IEEE, False)
-        else:
-            a0, a1, a2, asq, asum = _fused_e(X, P, rm, rmask, ct, k_lo, k_hi, k, sxm, sxk, spk, spc, two_nb,
-                                             BM, G, BK, NPARTS, IEEE, True)
-        TS: tl.constexpr = BM * 2 * G
-        eb = EP + ((tile * NS + ps) * NPARTS).to(tl.int64) * TS
-        eo = r[:, None] * (2 * G) + cc[None, :]
-        tl.store(eb + eo, a0, mask=rmask[:, None])
-        if NPARTS == 3:
-            tl.store(eb + TS + eo, a1, mask=rmask[:, None])
-            tl.store(eb + 2 * TS + eo, a2, mask=rmask[:, None])
-        xb = XP + (tile * NS + ps).to(tl.int64) * (2 * BM)
-        tl.store(xb + r, asq, mask=rmask)
-        tl.store(xb + BM + r, asum, mask=rmask)
-        if RPS <= 8:
-            for j in tl.static_range(RPS):
-                _fused_ysums(Y, S, YS, m, nb, bs, rem, s_full, s_last, sym, syn, tile, rt, ct, ps, j, BM, G, BW, NS,
-                             FULL)
-        else:
-            for j in range(RPS):
-                _fused_ysums(Y, S, YS, m, nb, bs, rem, s_full, s_last, sym, syn, tile, rt, ct, ps, j, BM, G, BW, NS,
-                             FULL)
-        if NS > 1:
-            # every thread's stores before the count (the barrier), made visible to the GPU by the release
-            tl.debug_barrier()
-            prev = tl.atomic_add(CNT + tile, 1, sem="acq_rel")
-            if prev == NS - 1:
-                tl.store(CNT + tile, 0)                                 # (all NS have counted: ready for the next)
-                tl.debug_barrier()
-                _fused_tail(X, Y, EP, XP, YS, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, nb, bs, rem,
-                            sxm, sxk, sym, syn, tile, rt, ct, u, h, abs_floor, l1c, zt, lim_a, lim_big,
-                            CAPM, CAPD, cst, cw, ctag, cfo, ncap, BM, G, BW, NS, SP, NPARTS, BKX, COUNTS, CAPTURE)
-        else:
-            tl.debug_barrier()
-            _fused_tail(X, Y, EP, XP, YS, SCALE, B2N, B2M, BMAX, BMB, BSUM, STATE, slot, sc, m, k, nb, bs, rem,
-                        sxm, sxk, sym, syn, tile, rt, ct, u, h, abs_floor, l1c, zt, lim_a, lim_big,
-                        CAPM, CAPD, cst, cw, ctag, cfo, ncap, BM, G, BW, NS, SP, NPARTS, BKX, COUNTS, CAPTURE)
-
-
-# Set by the October 22 timing run (results/serve_cost/h100_20261022_140222.json, docs/METHOD.md): v3 was cheaper
-# than v1 over the four 7B layers from 256 rows on, and 64 blocks per _sums program cheaper than 32 at most row
-# counts, the rule written before the run (on the 1.5B model 64 was dearer from 1,024 rows on; reported there).
-V3_FROM_ROWS = 256
+# Set by the October 22 timing runs (results/serve_cost/, docs/METHOD.md): 64 blocks per _sums program were cheaper
+# than 32 at most row counts (h100_20261022_140222.json; on the 1.5B model dearer from 1,024 rows on), and v3 was
+# cheaper than v1 over the four 7B layers from 96 rows on, the rule written for v3 applied to the later run's finer
+# row counts (h100_20261022_191009.json; the first run had none between 64 and 256)
+V3_FROM_ROWS = 96
 SUMS_P = 64           # blocks of y per _sums program (a 64 x 128 tile)
 SUMS_XR = 4           # rows of x per _sums program
 SCORE_Q = 256         # (row, block) pairs per _score program, about two per lane
@@ -793,168 +587,6 @@ def check_v3(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full:
             num_warps=4, **stages)
 
 
-V5_G = 8              # blocks of y per v5 tile (2 x 8 = 16 columns of each part of E, the smallest dot width)
-V5_SETS = 16          # streams that can run v5 on one device (each has its own set of every layer's counters)
-V5_ROWS_MAX = 255     # the most rows v5's counters are reserved for at load time (warm()), at least
-
-
-V5_T64_FROM_ROWS = 17   # v5's tiles are 16 rows below this many rows and 64 from here on (until a timing run sets it)
-
-
-def config_v5(m: int, k: int, nb: int, device: torch.device, force_bm: Optional[int] = None):
-    """(BM, BK, splits of k, k per split) for _fused. Tiles of 16 rows below V5_T64_FROM_ROWS rows, else 64. The sum
-    over k is split so that one tile of rows makes about two programs per SM (each part reading its stretch of the
-    parts of E at once), at most 32 ways for 16-row tiles and 8 for 64-row ones: the last program of a tile reads back
-    every split's partial E, so splitting further than the bandwidth needs would cost more than it saves. Nothing
-    depends on m within a tile height, so warm() can compile every variant served."""
-    bm = force_bm or (16 if m < V5_T64_FROM_ROWS else 64)
-    bk = 128 if bm == 16 else 64
-    nct = _group._cdiv(nb, V5_G)
-    steps = _group._cdiv(k, bk)
-    target = max(1, _group._target_programs(device) // 2)
-    ns = max(1, min(32 if bm == 16 else 8, steps, _group._cdiv(target, nct)))
-    per = _group._cdiv(steps, ns)
-    ns = _group._cdiv(steps, per)                                   # (no empty split)
-    return bm, bk, ns, per * bk
-
-
-_CNT: dict = {}           # (device, layer) -> (counters, per set): V5_SETS sets, int32, zero between launches
-_CNT_SET: dict = {}       # (device, stream) -> its set
-_CNT_KEEP: list = []      # every counter buffer ever made: a captured CUDA graph may still use an older one
-_CNT_LOCK = threading.Lock()
-V5_FALLBACKS = [0]        # v5 calls that ran v1 or v3 instead (no free set of counters, or a capture needing more)
-
-
-def _capturing(device: torch.device) -> bool:
-    return device.type == "cuda" and torch.cuda.is_current_stream_capturing()
-
-
-def _stream_key(device: torch.device) -> int:
-    return torch.cuda.current_stream(device).cuda_stream if device.type == "cuda" else 0
-
-
-def _grow_counters(device: torch.device, layer: int, tiles: int) -> bool:
-    """At least `tiles` counters per set for this layer (its parts' address) on this device. Never allocates while a
-    CUDA graph is being captured (memory made then is not initialized until the graph runs): False then. A new
-    buffer is zeroed and the device waited for before any stream can use it; sets are 32 counters apart (128 bytes,
-    so every set's address is aligned alike: no recompile for an odd set) and grow at least twofold."""
-    key = (_group._dev_key(device), layer)
-    with _CNT_LOCK:
-        ent = _CNT.get(key)
-        if ent is not None and ent[1] >= tiles:
-            return True
-        if _capturing(device):
-            return False
-        per = -(-max(tiles, 2 * ent[1] if ent else 0, 32) // 32) * 32
-        buf = torch.zeros(V5_SETS * per, dtype=torch.int32, device=device)
-        if device.type == "cuda":
-            torch.cuda.synchronize(device)
-        _CNT_KEEP.append(buf)
-        _CNT[key] = (buf, per)
-        return True
-
-
-def _counter_slice(device: torch.device, layer: int, tiles: int) -> Optional[torch.Tensor]:
-    """This layer's counters for one v5 launch on the current stream (zero, at least `tiles` of them), or None."""
-    if not _grow_counters(device, layer, tiles):
-        return None
-    dk = _group._dev_key(device)
-    stream = _stream_key(device)
-    with _CNT_LOCK:
-        idx = _CNT_SET.get((dk, stream))
-        if idx is None:
-            idx = sum(1 for d, _s in _CNT_SET if d == dk)
-            if idx >= V5_SETS:
-                return None
-            _CNT_SET[(dk, stream)] = idx
-        buf, per = _CNT[(dk, layer)]
-    return buf[idx * per:(idx + 1) * per]
-
-
-def _v5_tiles_max(nb: int) -> int:
-    """The most tiles a v5 launch on a layer with nb blocks has at up to max(V5_ROWS_MAX, V5_BELOW_ROWS - 1) rows,
-    with the tile heights config_v5 picks."""
-    rows = max(V5_ROWS_MAX, V5_BELOW_ROWS - 1)
-    t16 = _group._cdiv(min(rows, V5_T64_FROM_ROWS - 1), 16)
-    t64 = _group._cdiv(rows, 64) if rows >= V5_T64_FROM_ROWS else 0
-    return max(1, t16, t64) * _group._cdiv(nb, V5_G)
-
-
-def _reserve_counters(device: torch.device, layer: int, nb: int) -> None:
-    """At load time: enough counters for v5 on this layer for every batch size it serves."""
-    _grow_counters(device, layer, _v5_tiles_max(nb))
-
-
-def counters_clean(device: Optional[torch.device] = None) -> bool:
-    """Every v5 counter is zero (call when no v5 launch is running: after waiting for the device)."""
-    dk = None if device is None else _group._dev_key(device)
-    with _CNT_LOCK:
-        bufs = [b for (d, _l), (b, _p) in _CNT.items() if dk is None or d == dk]
-    return all(int(b.abs().sum()) == 0 for b in bufs)
-
-
-def check_v5(x2: torch.Tensor, y2: torch.Tensor, parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor,
-             scale: torch.Tensor, b2n: torch.Tensor, b2max: torch.Tensor, bmax: torch.Tensor, bmax_bias: torch.Tensor,
-             bsum: torch.Tensor, wsq: torch.Tensor, width: torch.Tensor, state: torch.Tensor, slot: int, z: float,
-             abs_floor: float, _bm: Optional[int] = None, cap_meta: Optional[torch.Tensor] = None,
-             cap_data: Optional[torch.Tensor] = None, cap_w: int = 0, cap_tag: int = 0) -> None:
-    """check(), with v5's one kernel (_fused): same arguments, same result. _bm: rows per tile (16 or 64)."""
-    from .checksum import BIG, DTYPE_MAX, HALF_TINY_STEP, UNIT_ROUNDOFF, l1_floor_coef
-    from .serve import CAP_FLAGS, CAPTURE_SLOTS, STATE_COLS
-    counts = state.dim() == 2 and state.shape[1] >= STATE_COLS
-    m, n = y2.shape
-    if m == 0 or n == 0:
-        return
-    dt = y2.dtype
-    if x2.dtype != dt:
-        x2 = x2.to(dt)
-    k = x2.shape[1]
-    nb = b2n.shape[0]
-    bs = pair_full.shape[0]
-    if bs > 128:
-        raise ValueError(f"the Triton serving check takes blocks up to 128 wide, not {bs}")
-    rem = n - (n // bs) * bs
-    nparts = 3 if parts.shape[1] == 6 * nb else 1
-    # low-precision dots on the GPU's tensor cores (fp32 accumulation, as cuBLAS); in fp32 elsewhere
-    ieee = parts.dtype != dt or not x2.is_cuda
-    bm, bk, ns, kc = config_v5(m, k, nb, y2.device, _bm)
-    nct = _group._cdiv(nb, V5_G)
-    nrt = _group._cdiv(m, bm)
-    tiles = nrt * nct
-    cnt = _counter_slice(y2.device, parts.data_ptr(), tiles) if ns > 1 else state
-    if cnt is None:
-        V5_FALLBACKS[0] += 1
-        return (check_v3 if m >= V3_FROM_ROWS else check_v1)(
-            x2, y2, parts, pair_full, pair_rem, scale, b2n, b2max, bmax, bmax_bias, bsum, wsq, width, state, slot, z,
-            abs_floor, cap_meta=cap_meta, cap_data=cap_data, cap_w=cap_w, cap_tag=cap_tag)
-    capture = cap_meta is not None and cap_data is not None
-    if capture and not (cap_meta.dtype == torch.int64 and cap_data.dtype == torch.float32 and cap_w >= bs
-                        and cap_data.shape[1] >= cap_w + k and cap_meta.numel() > CAP_FLAGS + slot):
-        raise ValueError("the capture buffer doesn't fit this layer")
-    ne = tiles * ns * nparts * bm * 2 * V5_G
-    nx = tiles * ns * 2 * bm
-    buf = torch.empty(ne + nx + tiles * 4 * bm * V5_G, dtype=torch.float32, device=y2.device)
-    st = _group.pipeline_stages(y2.device, None)
-    stages = {} if st is None else {"num_stages": st}
-    bw = max(16, _pow2_ceil(bs))
-    spku = 8 if parts.stride(0) % 8 == 0 else 1
-    nb2u = 8 if (2 * nb) % 8 == 0 else 1
-    with _group._on(y2.device):
-        _fused[(ns, nct, nrt)](
-            x2, y2, parts, _group._sign_table(y2.device), buf[:ne], buf[ne:ne + nx], buf[ne + nx:], cnt, scale, b2n,
-            b2max, bmax, bmax_bias, bsum, state, slot, state.stride(0), m, k, nb, bs, rem, _group._sign_offset(bs),
-            _group._sign_offset(rem) if rem else 0, x2.stride(0), x2.stride(1), y2.stride(0), y2.stride(1),
-            parts.stride(0) // spku, parts.stride(1), 2 * nb // nb2u, nct, kc,
-            float(UNIT_ROUNDOFF[dt]), float(HALF_TINY_STEP[dt]), float(abs_floor), float(l1_floor_coef(k)), float(z),
-            float(min(DTYPE_MAX[dt], BIG)), float(BIG),
-            cap_meta if capture else state, cap_data if capture else buf,
-            cap_data.stride(0) if capture else 0, int(cap_w), int(cap_tag), CAP_FLAGS, CAPTURE_SLOTS,
-            BM=bm, G=V5_G, BK=bk, BW=bw, NS=ns, SP=_pow2_ceil(ns), RPS=_group._cdiv(bm, ns), NPARTS=nparts, IEEE=ieee,
-            BKX=max(16, min(4096, _pow2_ceil(k))), SPKU=spku, NB2U=nb2u,
-            FULL=bool(rem == 0 and bs == bw and y2.stride(1) == 1), COUNTS=counts, CAPTURE=capture, num_warps=4,
-            **stages)
-
-
 def _expected_parts(x2: torch.Tensor, parts: torch.Tensor, nb: int, dt: torch.dtype):
     """E = x @ parts as v1 makes it: cuBLAS with fp32 output for the three low-precision parts on a GPU, fp32
     elsewhere; and how many parts it has."""
@@ -965,63 +597,42 @@ def _expected_parts(x2: torch.Tensor, parts: torch.Tensor, nb: int, dt: torch.dt
     return x2.float() @ parts.float(), 1
 
 
-# v5 runs below this many rows in auto mode; 0 until a timing run on GPUs says where it is cheaper (docs/METHOD.md),
-# and only on the GPU generations it was timed and checked on (compute capability majors): a fault in a kernel that
-# wasn't run on a generation ends the process instead of falling back
-V5_BELOW_ROWS = 0
-V5_MAJORS = (9,)
-FORCED = ("v1", "v3", "v5")
-
-
-def _v5_here(device: Optional[torch.device]) -> bool:
-    if device is None or device.type != "cuda":
-        return True                       # (Triton's CPU interpreter in the tests)
-    try:
-        return _group._major(device) in V5_MAJORS
-    except Exception:  # noqa: BLE001
-        return False
+FORCED = ("v1", "v3")
 
 
 def mode() -> str:
-    """"auto" (v5 below V5_BELOW_ROWS rows, v1 below V3_FROM_ROWS, v3 from there on), or one design forced by
-    SDCGUARD_SERVE_KERNEL."""
+    """"auto" (v1 below V3_FROM_ROWS rows, v3 from there on), or one design forced by SDCGUARD_SERVE_KERNEL."""
     v = os.environ.get("SDCGUARD_SERVE_KERNEL", "auto")
     return v if v in FORCED else "auto"
 
 
-def kernel_for(m: int, device: Optional[torch.device] = None) -> str:
-    """The design check() runs for a batch of m rows (on this device)."""
+def kernel_for(m: int) -> str:
+    """The design check() runs for a batch of m rows."""
     md = mode()
     if md != "auto":
         return md
-    if m < V5_BELOW_ROWS and _v5_here(device):
-        return "v5"
     return "v3" if m >= V3_FROM_ROWS else "v1"
 
 
-def kernels(device: Optional[torch.device] = None) -> tuple:
-    """The designs check() can run in this mode (on this device): the first-use comparison and warm() cover each."""
+def kernels() -> tuple:
+    """The designs check() can run in this mode (the first-use comparison and warm() cover each)."""
     md = mode()
-    if md == "v5":
-        return ("v5", "v1", "v3")        # (v5 runs v1 or v3 when it can't have counters)
-    if md != "auto":
-        return (md,)
-    return (("v5",) if V5_BELOW_ROWS > 0 and _v5_here(device) else ()) + ("v1", "v3")
+    return ("v1", "v3") if md == "auto" else (md,)
 
 
 def tile_heights(kern: str = "v1") -> tuple:
     """The rows-per-program settings the first-use comparison and warm() try for a design (v3 has none: its
-    programs take pairs, whatever the rows; v5 has two tile heights)."""
-    return {"v3": (None,), "v5": (16, 64)}.get(kern, (1, 2, 4, 8, 16))
+    programs take pairs, whatever the rows)."""
+    return (None,) if kern == "v3" else (1, 2, 4, 8, 16)
 
 
-_CHECKS = {"v1": "check_v1", "v3": "check_v3", "v5": "check_v5"}
+_CHECKS = {"v1": "check_v1", "v3": "check_v3"}
 
 
 def check(*args, kern: Optional[str] = None, **kwargs) -> None:
     """Check one layer on the GPU (serve.check_static_impl's arguments and result) with the design for this batch
     size (kern forces one)."""
-    kern = kern or kernel_for(args[1].shape[0], args[1].device)
+    kern = kern or kernel_for(args[1].shape[0])
     return globals()[_CHECKS[kern]](*args, **kwargs)
 
 
@@ -1092,11 +703,8 @@ def _probe(device: torch.device, dtype: torch.dtype):
               (7, 2048, 5632, False, None), (33, 130, 129, True, None), (300, 64, 2000, False, None),
               (16 * T + 3, 64, 1100, True, None)]
     shapes += [(64, 192, 1100, i % 2 == 0, bm) for i, bm in enumerate(tile_heights("v1"))]
-    # every design in use on every shape, whatever the rows (v1's shapes with fixed rows per program only for v1);
-    # v5 with each of its tile heights on every shape
-    runs = [(kern, sh) for kern in kernels(device) if kern != "v5" for sh in shapes if kern == "v1" or sh[4] is None]
-    if "v5" in kernels(device):
-        runs += [("v5", sh[:4] + (bm,)) for bm in tile_heights("v5") for sh in shapes if sh[4] is None]
+    # every design in use on every shape, whatever the rows (v1's shapes with fixed rows per program only for v1)
+    runs = [(kern, sh) for kern in kernels() for sh in shapes if kern == "v1" or sh[4] is None]
     for kern, (m, k, n, with_bias, bm) in runs:
         W = (torch.randn(n, k, generator=g, dtype=torch.float32) / k ** 0.5).to(device=device, dtype=dtype)
         b = torch.randn(n, generator=g, dtype=torch.float32).to(device=device, dtype=dtype) if with_bias else None
@@ -1162,9 +770,7 @@ def warm(parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor, s
         from .serve import STATE_COLS
         st = torch.zeros(1, STATE_COLS, dtype=torch.int64, device=dev)    # (the layout the guard's state has)
         cm, cd = _capture_buffers(dev, k)                                  # (the guard always passes one)
-        if "v5" in kernels(dev):
-            _reserve_counters(dev, parts.data_ptr(), b2n.shape[0])
-        for kern in kernels(dev):
+        for kern in kernels():
             for bm in tile_heights(kern):
                 check(x, y, parts, pair_full, pair_rem, scale, b2n, b2max, bmax, bmax_bias, bsum, wsq, width, st, 0,
                       6.0, 1e-20, kern=kern, _bm=bm, cap_meta=cm, cap_data=cd, cap_w=128, cap_tag=2)

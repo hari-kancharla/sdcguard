@@ -1413,6 +1413,47 @@ it can be fixed and timed again under these rules. The script prints each criter
 numbers (`summarize()`, tested in `tests/test_serve_cost_runner.py`). The 1.5B model is reported, not judged. Either
 way the vLLM runs described at the start of this section then measure the cost in a real model.
 
+**What the v5 run found (October 22): 1 met, 2 and 3 not; v5 is removed.** Code fingerprint 43e38e8086ae (commit
+faf352d), `results/serve_cost/h100_20261022_191009.json`, one H100, 4.9 minutes of GPU time, about $0.36.
+1. Met. v1, v3 and v5 each passed the first-use comparison in bf16 and fp16 and printed ALL AGREE over the
+   comparison set (172 cases each).
+2. Not met as written, though not for v5's answers: its scores agreed with the plain check in every case (both tile
+   heights, every shape and row count, clean and changed, 0 disagreements) and every counter was at zero at the end,
+   but 125 timed calls fell back to v1 or v3. All were on layers timed with four or more copies (1.5B qkv_proj,
+   o_proj and down_proj, 7B qkv_proj and o_proj) at 128 rows and up, mostly with 16-row tiles forced. The timing
+   script's own fault: its warm-up called only the first three copies, so the later ones were first used inside a
+   CUDA graph capture, needing more counters than the load-time reservation, which v5 then correctly declined to
+   allocate.
+3. Not met. At 1 row, summed over the four 7B layers, v5 added 56.2 µs and v1 54.9 (102%). It was dearer at
+   every row count of the run: by 2% to 5% up to 16 rows, by 14% to 169% above.
+
+By layer it was mixed. At 1 row on 7B v5 added 9.2 µs to qkv_proj (v1: 13.0), 8.1 to o_proj (13.0) and 14.0 to
+down_proj (15.2), but 24.8 to gate_up_proj (13.6): there it read the 12.7 MB of parts at about 0.5 TB/s, where
+cuBLAS's E reads the same in 6.7 µs, about 1.9 TB/s. On the 1.5B model it was dearer on every layer but down_proj
+(qkv_proj 14.7 against 9.8, with 0.3 MB of parts), so each launch also carried a fixed time of about 8 to 14 µs, far
+above the 2 to 3 µs of `_sums` or `_score` in the v3 run. The causes weren't measured further. v5 is removed from the
+code (it is in commit faf352d); the scoring helpers it shared with v3 (`_judge`, `_report`) stay, and v1 and v3 passed
+the GPU comparisons above with them.
+
+The same run timed v1 and v3 at more row counts than the v3 run did, with the layer copies described above.
+Summed over the four 7B layers, v3 cost less than v1 at 96 rows (78.4 µs against 80.6) and at every larger row
+count of the run (128: 78.8 against 85.4; 192: 86.0 against 108.3; 224: 96.8 against 131.7; 256: 92.2 against
+128.9), and more at 64 (75.2 against 70.5). The rule written for v3 (used from the smallest row count from which it
+is cheaper at that and every larger one) gives 96 on these row counts, which the v3 run, with nothing between 64 and
+256, could not show; `V3_FROM_ROWS` is now 96. On the 1.5B model v3 is slightly dearer at 96 and 128 rows (57.9
+against 55.4, 58.3 against 57.5) and cheaper from 160. The numbers in this run were lower than in the v3 run, not
+higher as the copies would suggest (v1 at 1 row on 7B: 54.9 µs against 64.6; v3 at 256: 92.2 against 105.7), so the
+variation from run to run, 10 to 15%, is larger than the effect of the copies. Against the four 7B layers' own time
+the check still adds a lot: 30% at 1 row, 38% at 64 (v1), 41% at 128, 43% at 256, 30% at 1,024 and 23% at 4,096
+(v3). The vLLM runs measure what that comes to in a model, where the linear layers are only part of each step.
+
+**Added to the vLLM runs before they run (October 22).** Each model's runs (`experiments/vllm_check.py`, every
+role) also time 16 requests at a time, with the same 128 output tokens each, three timed runs and the median, right
+after the 256-request timing and before the clean report, which therefore covers that traffic too. It is reported
+with and without sdcguard, with whether its completions matched, and has no threshold: with 16 rows per decoding
+step the check costs the most relative to the layers' own work (above: 30% to 34% of the 7B layers' time at 1 to 16
+rows), so it is the number to give for light traffic next to the 256-request one.
+
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 
 On B200 the Triton training-check kernels hit "CUDA error: misaligned address" in their first-use
