@@ -1382,6 +1382,36 @@ cause was something else, and that's written here), `baseline_fresh` (does vLLM,
 own completions, and pick the same launch configs?), and `fused_fresh` against both. About 20 minutes for the
 diagnostic's six runs of the 7B, about $1.60, so about 45 to 50 minutes and $3.70 in all with the quantized runs.
 
+**What the third diagnostic found (October 23): the rule met, and the quantized runs passed.** Code fingerprint
+ce3966db3cc9 (commit adca707), [results/machete_diag3_oct23](../results/machete_diag3_oct23) (7.9 minutes, about
+$0.64 by function time) and [results/quant3_oct23](../results/quant3_oct23) (20.7 minutes, about $1.67).
+
+- `fused` met the rule: all 256 completions and all 16 of the light load the same as `baseline`'s (the first 64
+  too); the compiled code byte for byte the same in all 3 graphs, names included; no kernel autotuned anew; all 112
+  layers ran checks.
+- Reported: `fused_renamed` (the op named `machete_checked`) gave every completion the same too. Its 4 kernels were
+  named after the op, 3 of them were autotuned anew, and each picked the launch config its `machete_mm` twin has
+  in `baseline` (XBLOCK 1024 with 4 warps; R0_BLOCK 4096 with 16 warps). `fused_slots` (the slot as a constant)
+  compiled 29 graphs instead of 3, with the same kernels byte for byte and nothing autotuned anew, and every
+  completion the same. So in this run neither difference changed a completion.
+- `baseline_fresh`, vLLM alone compiled in a cache of its own: 228 of 256 completions the same as `baseline`'s (58
+  of the first 64, 15 of 16), with its code byte for byte the same. Of its 12 autotuned kernels, 11 picked
+  `baseline`'s configs and one didn't: the fused add + RMSNorm kernel (`triton_red_fused_fused_add_rms_norm_
+  machete_mm_0`) took R0_BLOCK 2048 instead of 4096, another order of additions. `fused_fresh` changed the same 28
+  completions, and is the same as `baseline_fresh`.
+- Reading: vLLM's compiled completions of this model depend on Triton's autotuning, which times its candidates
+  and can settle on another reduction block, so other rounding. A kernel with another name is autotuned anew and
+  can land either way. That is consistent with the 5 of 64 changed in round 2 (its kernels were renamed), but not
+  shown for round 2 itself, whose launch configs weren't recorded by kernel. With kernels identical to vLLM's,
+  the check reuses vLLM's own tuning; on a fresh cache it gives what vLLM itself gives there.
+- Quantized runs, criteria 1 to 5 unchanged: met on all five (GPTQ and AWQ, 1.5B on Marlin and Machete, 7B on
+  Machete). Each: 64 of 64 completions and 16 of 16 light the same as the baseline and as untouched vLLM (PyTorch's
+  default reductions, compared from the saved completions), all 112 layers ran checks (118,272 checks, none
+  unjudged), no clean alert (worst score 2.89), the layer with the flipped weight bit named by its alert and by
+  `verify_weights()`. Every layer checked cost 44.8% of output tokens per second on the 7B (40.7% at 16 requests)
+  and 12% to 30% on the 1.5B models (48% to 61% at 16 requests); 1 layer in 8 on the 7B cost 1.0% (5.9% at 16
+  requests), with 64 of 64 the same. Machete's layers are checked in 0.5.0.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

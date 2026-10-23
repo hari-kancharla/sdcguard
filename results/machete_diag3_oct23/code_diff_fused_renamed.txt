@@ -1,0 +1,6 @@
+===== 0 kernels only in this run
+===== 0 kernels only in baseline
+===== 4 kernels only in this run, byte for byte: triton_poi_fused_machete_checked_mul_silu_slice_1 triton_red_fused__to_copy_embedding_machete_checked_rms_norm_0 triton_red_fused_fused_add_rms_norm_machete_checked_0 triton_red_fused_fused_add_rms_norm_machete_checked_2
+===== 4 kernels only in baseline, byte for byte: triton_poi_fused_machete_mm_mul_silu_slice_1 triton_red_fused__to_copy_embedding_machete_mm_rms_norm_0 triton_red_fused_fused_add_rms_norm_machete_mm_0 triton_red_fused_fused_add_rms_norm_machete_mm_2
+===== 0 graph sequences only in this run
+===== 0 graph sequences only in baseline

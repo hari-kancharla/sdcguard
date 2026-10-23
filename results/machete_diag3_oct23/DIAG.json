@@ -1,0 +1,285 @@
+{
+ "model": "Qwen/Qwen2.5-7B-Instruct-AWQ",
+ "prompts": 256,
+ "baseline_code": {
+  "graphs": 3,
+  "with_code": 3
+ },
+ "baseline_kernels": 8,
+ "baseline_autotuned": 12,
+ "runs": {
+  "fused": {
+   "same": "256/256",
+   "same_first_64": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 3,
+    "with_code": 3,
+    "captured": true,
+    "kernels": 8,
+    "kernels_base": 8,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "raw_only_here": [],
+    "raw_only_in_base": [],
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true,
+    "raw_same": true
+   },
+   "autotuned_here": 0,
+   "autotuned_like_baseline": 0,
+   "autotuned_unlike_baseline": [],
+   "autotuned_not_in_baseline": [],
+   "autotuned_kernels_not_in_baseline": [],
+   "autotuned_kernels_unlike_baseline": []
+  },
+  "fused_renamed": {
+   "same": "256/256",
+   "same_first_64": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 3,
+    "with_code": 3,
+    "captured": true,
+    "kernels": 8,
+    "kernels_base": 8,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "raw_only_here": [
+     "triton_poi_fused_machete_checked_mul_silu_slice_1",
+     "triton_red_fused__to_copy_embedding_machete_checked_rms_norm_0",
+     "triton_red_fused_fused_add_rms_norm_machete_checked_0",
+     "triton_red_fused_fused_add_rms_norm_machete_checked_2"
+    ],
+    "raw_only_in_base": [
+     "triton_poi_fused_machete_mm_mul_silu_slice_1",
+     "triton_red_fused__to_copy_embedding_machete_mm_rms_norm_0",
+     "triton_red_fused_fused_add_rms_norm_machete_mm_0",
+     "triton_red_fused_fused_add_rms_norm_machete_mm_2"
+    ],
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true,
+    "raw_same": false
+   },
+   "autotuned_here": 3,
+   "autotuned_like_baseline": 0,
+   "autotuned_unlike_baseline": [],
+   "autotuned_not_in_baseline": [
+    "28d76426d7a1e8cd0ffe6b75b7722438123d98d9e8d8ba066a44c9fa0eeaa70a",
+    "608872f42b346dc0bc3edbf8e75f63213256f29c85499f113f20c2d618427758",
+    "8c06c991339cf773ac65d2f6df26a84e47ae42d3522fb8961210964bc449494d"
+   ],
+   "autotuned_kernels_not_in_baseline": [
+    "triton_poi_fused_machete_checked_mul_silu_slice_1",
+    "triton_red_fused_fused_add_rms_norm_machete_checked_0",
+    "triton_red_fused_fused_add_rms_norm_machete_checked_2"
+   ],
+   "autotuned_kernels_unlike_baseline": []
+  },
+  "fused_slots": {
+   "same": "256/256",
+   "same_first_64": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 29,
+    "with_code": 29,
+    "captured": true,
+    "kernels": 8,
+    "kernels_base": 8,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "raw_only_here": [],
+    "raw_only_in_base": [],
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true,
+    "raw_same": true
+   },
+   "autotuned_here": 0,
+   "autotuned_like_baseline": 0,
+   "autotuned_unlike_baseline": [],
+   "autotuned_not_in_baseline": [],
+   "autotuned_kernels_not_in_baseline": [],
+   "autotuned_kernels_unlike_baseline": []
+  },
+  "baseline_fresh": {
+   "same": "228/256",
+   "same_first_64": "58/64",
+   "light_same": "15/16",
+   "all_same": false,
+   "differing": [
+    0,
+    11,
+    12,
+    22,
+    23,
+    33,
+    65,
+    66,
+    77,
+    87,
+    98,
+    120,
+    131,
+    141,
+    152,
+    163,
+    173,
+    174,
+    175,
+    184,
+    185,
+    195,
+    206,
+    217,
+    228,
+    238,
+    239,
+    249
+   ],
+   "inductor_cache": "its own",
+   "checks": null,
+   "code": {
+    "graphs": 3,
+    "with_code": 3,
+    "captured": true,
+    "kernels": 8,
+    "kernels_base": 8,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "raw_only_here": [],
+    "raw_only_in_base": [],
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true,
+    "raw_same": true
+   },
+   "autotuned_here": 12,
+   "autotuned_like_baseline": 11,
+   "autotuned_unlike_baseline": [
+    "15ff4b49f754da6d3613c840420c2ea70497b7970bcceaf0a6a8aa9cdec54994"
+   ],
+   "autotuned_not_in_baseline": [],
+   "autotuned_kernels_not_in_baseline": [],
+   "autotuned_kernels_unlike_baseline": [
+    "triton_red_fused_fused_add_rms_norm_machete_mm_0"
+   ]
+  },
+  "fused_fresh": {
+   "same": "228/256",
+   "same_first_64": "58/64",
+   "light_same": "15/16",
+   "all_same": false,
+   "differing": [
+    0,
+    11,
+    12,
+    22,
+    23,
+    33,
+    65,
+    66,
+    77,
+    87,
+    98,
+    120,
+    131,
+    141,
+    152,
+    163,
+    173,
+    174,
+    175,
+    184,
+    185,
+    195,
+    206,
+    217,
+    228,
+    238,
+    239,
+    249
+   ],
+   "inductor_cache": "its own",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 3,
+    "with_code": 3,
+    "captured": true,
+    "kernels": 8,
+    "kernels_base": 8,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "raw_only_here": [],
+    "raw_only_in_base": [],
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true,
+    "raw_same": true
+   },
+   "autotuned_here": 12,
+   "autotuned_like_baseline": 11,
+   "autotuned_unlike_baseline": [
+    "15ff4b49f754da6d3613c840420c2ea70497b7970bcceaf0a6a8aa9cdec54994"
+   ],
+   "autotuned_not_in_baseline": [],
+   "autotuned_kernels_not_in_baseline": [],
+   "autotuned_kernels_unlike_baseline": [
+    "triton_red_fused_fused_add_rms_norm_machete_mm_0"
+   ]
+  }
+ },
+ "fix": "fused",
+ "exit_codes": {
+  "baseline": 0,
+  "fused": 0,
+  "fused_renamed": 0,
+  "fused_slots": 0,
+  "baseline_fresh": 0,
+  "fused_fresh": 0
+ }
+}

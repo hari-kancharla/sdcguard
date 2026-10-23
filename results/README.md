@@ -33,6 +33,8 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `machete_diag_oct23/` | October 23: which part of the INT4 Machete patch changed completions, eight variants against vLLM without sdcguard (the check as an op of its own did; loading, probing and adding the bias after Machete didn't) | `DIAG.json`, and `docs/METHOD.md`, INT4 section |
 | `machete_diag2_oct23/` | October 23: the Machete diagnostic's second round: the GEMM and the check as one op, against vLLM without sdcguard, completions and Inductor's code compared (64 of 64 the same; the same kernels apart from their names) | `DIAG.json`, and `docs/METHOD.md`, INT4 section |
 | `quant_oct23/` | October 23: the INT4 runs after it: every criterion met on the four 1.5B runs (Machete and Marlin); Qwen2.5-7B-Instruct-AWQ on Machete changed 5 of 64 completions (everything else met) | each model's `SUMMARY.json`, and `docs/METHOD.md`, INT4 section |
+| `machete_diag3_oct23/` | October 23: the third round: the op named `machete_mm`, taking the layer's checksums (256 of 256 the same, code byte for byte vLLM's, nothing autotuned anew); one variant per difference; vLLM alone, compiled fresh, changed 28 of 256 through one autotuning choice | `DIAG.json`, and `docs/METHOD.md`, INT4 section |
+| `quant3_oct23/` | October 23: the INT4 runs after round 3: every criterion met on all five, the 7B on Machete included (64 of 64 the same as untouched vLLM); every layer cost 45% on the 7B, 1 in 8 cost 1% | each model's `SUMMARY.json`, and `docs/METHOD.md`, INT4 section |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the
