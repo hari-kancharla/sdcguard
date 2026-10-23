@@ -6,27 +6,53 @@ then scramble their weights, as the real ones repack them, so nothing can read t
 reference weights are computed independently, in float64, from the formulas in _quant's docstring."""
 import sys
 import types
+from typing import Optional
 
 import pytest
 import torch
 from torch import nn
 
+import _vllm_custom_ops
+import _vllm_machete
 from _vllm_standins import install_fake_vllm, load, plugin_env
 
 BF = torch.bfloat16
 
 
 class WT:
-    """vLLM's ScalarType, as far as the plugin reads it."""
+    """vLLM's ScalarType, as far as the plugin and vLLM's Machete code read it."""
 
-    def __init__(self, name, bits, bias):
-        self.name, self.size_bits, self.bias = name, bits, bias
+    def __init__(self, name, bits, bias, id):
+        self.name, self.size_bits, self.bias, self.id = name, bits, bias, id
 
     def __str__(self):
         return self.name
 
 
-U4B8, U8B128, U4 = WT("uint4b8", 4, 8), WT("uint8b128", 8, 128), WT("uint4", 4, 0)
+U4B8, U8B128, U4 = WT("uint4b8", 4, 8, 101), WT("uint8b128", 8, 128, 102), WT("uint4", 4, 0, 103)
+
+# The stand-in kernels by their repacked weights' address: what the stand-in machete_mm (vLLM's custom op) computes
+_BY_QWEIGHT = {}
+
+
+@torch.library.custom_op("sdcguard_test::machete_mm", mutates_args=())
+def _machete_mm(a: torch.Tensor, b_q: torch.Tensor, b_type_id: int, out_type: Optional[torch.dtype],
+                b_group_scales: Optional[torch.Tensor], b_group_zeros: Optional[torch.Tensor],
+                b_group_size: Optional[int], b_channel_scales: Optional[torch.Tensor],
+                a_token_scales: Optional[torch.Tensor], schedule: Optional[str]) -> torch.Tensor:
+    """torch.ops._C.machete_mm as vLLM 0.31 declares it: one opaque call, here the stand-in kernel's GEMM."""
+    return _BY_QWEIGHT[b_q.data_ptr()]._gemm(b_q, a)
+
+
+@_machete_mm.register_fake
+def _(a, b_q, b_type_id, out_type, b_group_scales, b_group_zeros, b_group_size, b_channel_scales, a_token_scales,
+      schedule):
+    return torch.empty((a.size(0), b_q.size(1)), device=a.device, dtype=a.dtype)       # vLLM's machete_mm_fake
+
+
+# what vLLM's wrapper (vllm._custom_ops.machete_mm) reaches as torch.ops._C.machete_mm
+TORCH_SHIM = types.SimpleNamespace(ops=types.SimpleNamespace(_C=types.SimpleNamespace(
+    machete_mm=torch.ops.sdcguard_test.machete_mm)))
 
 
 def pack(codes, bits, axis):
@@ -71,12 +97,17 @@ class Cfg:
 
 
 class _Kernel:
+    """A stand-in for vLLM's MPLinearKernel subclasses. Its apply_weights is its own (Marlin's here); the Machete
+    stand-in runs vLLM's MacheteLinearKernel.apply_weights instead (_vllm_machete), whose machete_mm call reaches
+    _gemm through the stand-in op. _gemm's result is what both compute."""
     RULE = None
     FAULT = None                                   # (row, col, amount): a wrong output, for the alert tests
     FUSED = True                                   # Machete's zero-point rounding (bool, or a function of the batch)
 
     def __init__(self, c, wq="qweight", ws="scales", wz=None):
         self.config, self.w_q_name, self.w_s_name, self.w_zp_name = c, wq, ws, wz
+
+    _get_weight_params = _vllm_machete._get_weight_params
 
     def _read(self, layer):
         c = self.config
@@ -108,8 +139,9 @@ class _Kernel:
         self._perm = torch.randperm(W.numel(), generator=torch.Generator().manual_seed(1))
         self._inv = torch.argsort(self._perm)
         self._shape = W.shape
-        # the repacked weights: the matrix's bits in an order only this kernel knows
-        layer.qweight = param(W.reshape(-1)[self._perm].contiguous().view(torch.int16))
+        # the repacked weights: the matrix's bits in an order only this kernel knows, (k, n) as Machete's are
+        layer.qweight = param(W.reshape(-1)[self._perm].contiguous().view(torch.int16).reshape(W.shape[1], -1))
+        _BY_QWEIGHT[layer.qweight.data_ptr()] = self
         layer.scales = param(layer.scales.data.flip(0).contiguous())
         if self.RULE == "marlin":
             if self.w_zp_name is None:
@@ -120,19 +152,24 @@ class _Kernel:
                 self._bperm = torch.arange(n).view(-1, 32).flip(1).reshape(-1) if n % 32 == 0 else torch.arange(n)
                 layer.bias.data = layer.bias.data[self._bperm].contiguous()
 
-    def _w(self, layer):
-        return layer.qweight.data.view(BF)[self._inv].view(self._shape)
+    def _w(self, qweight):
+        return qweight.detach().reshape(-1).view(BF)[self._inv].view(self._shape)
 
-    def apply_weights(self, layer, x, bias=None):
-        W = self._w(layer)
+    def _gemm(self, qweight, x2):
+        """x2 (m, k) times the kernel's weights: fp32 accumulation, one rounding (and FAULT, if set)."""
+        W = self._w(qweight)
         f = type(self).FUSED
         if callable(f):
-            W = self._by_fused[bool(f(x.reshape(-1, x.shape[-1]).shape[0]))]
-        y = (x.reshape(-1, x.shape[-1]).float() @ W.float().t()).to(x.dtype)
+            W = self._by_fused[bool(f(x2.shape[0]))]
+        y = (x2.float() @ W.float().t()).to(x2.dtype)
         if type(self).FAULT is not None:
             r, col, amount = type(self).FAULT
             if r < y.shape[0]:
                 y[r, col] += amount
+        return y
+
+    def apply_weights(self, layer, x, bias=None):
+        y = self._gemm(layer.qweight, x.reshape(-1, x.shape[-1]))
         if bias is not None:
             b = bias
             if self.RULE == "marlin":
@@ -146,15 +183,21 @@ class _Kernel:
 
 
 def install_kernels(monkeypatch):
-    """vllm.model_executor.kernels.linear.mixed_precision.{marlin,machete} with fresh kernel classes."""
+    """vllm.model_executor.kernels.linear.mixed_precision.{marlin,machete} with fresh kernel classes, and
+    vllm._custom_ops with vLLM's machete_mm wrapper. The Machete class runs vLLM's own apply_weights."""
     M, Runner = install_fake_vllm(monkeypatch.setitem)
     base = "vllm.model_executor.kernels.linear.mixed_precision"
     for n in ("vllm.model_executor.kernels", "vllm.model_executor.kernels.linear", base):
         monkeypatch.setitem(sys.modules, n, types.ModuleType(n))
+    monkeypatch.setattr(_vllm_custom_ops, "torch", TORCH_SHIM)
+    monkeypatch.setattr(_vllm_machete, "ops", _vllm_custom_ops)
+    monkeypatch.setitem(sys.modules, "vllm._custom_ops", _vllm_custom_ops)
     classes = {}
     for mod, cls, rule in (("marlin", "MarlinLinearKernel", "marlin"), ("machete", "MacheteLinearKernel", "machete")):
         m = types.ModuleType(f"{base}.{mod}")
         K = type(cls, (_Kernel,), {"RULE": rule})
+        if rule == "machete":
+            K.apply_weights = _vllm_machete.apply_weights
         setattr(m, cls, K)
         monkeypatch.setitem(sys.modules, f"{base}.{mod}", m)
         classes[rule] = K
@@ -348,7 +391,7 @@ def test_changed_quantized_weights_are_reported_as_changed(monkeypatch, tmp_path
     model = _model(classes, rule="machete", wt=U4B8, group=64)
     lay = model[0]
     with torch.no_grad():
-        lay.qweight.data[123] ^= 0x4000                     # a flipped bit in the repacked weights
+        lay.qweight.data.view(-1)[123] ^= 0x4000            # a flipped bit in the repacked weights
     lay(x_in())
     g = plugin.guard()
     assert g.verify_weights() == ["model.layers.0.qkv_proj"]
@@ -505,8 +548,8 @@ def test_sdcguard_quant_0_leaves_quantized_layers_alone(monkeypatch, tmp_path):
 def test_marlins_bias_is_added_by_one_opaque_call_and_machetes_by_a_plain_add(monkeypatch, tmp_path):
     """Marlin adds the bias inside its kernel, rounded; the plugin's own addition must not be fused by torch.compile
     into the next operations (which would keep it in fp32), so it is one custom op. Machete adds it after its GEMM,
-    which torch.compile does fuse; the plugin adds it with a plain (out of place) add, which compiles the same way
-    (test_machetes_bias_compiles_to_vllms_own_values)."""
+    which torch.compile does fuse; the plugin runs vLLM's own add_ for it (test_checked_machete_layers_compile_to_
+    vllms_own_values)."""
     from sdcguard import _quant
     op = _quant.add_bias_op()
     y, b = torch.randn(3, 5).to(BF), torch.randn(5).to(BF)
@@ -539,66 +582,234 @@ def test_the_vllm_experiment_refuses_pairs_run_on_different_kernels():
     assert "baseline and guarded ran with different VLLM_DISABLED_KERNELS" in module._comparison_failures(b, g)
 
 
-# ---------------------------------------------------------------- Machete's bias under torch.compile
-@torch.library.custom_op("sdcguard_test::machete_mm", mutates_args=())
-def _machete_mm(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
-    return (x.float() @ w.float().t()).to(x.dtype)
-
-
-@_machete_mm.register_fake
-def _(x, w):
-    return x.new_empty(x.shape[0], w.shape[0])
-
-
-class _OpaqueMachete(_Kernel):
-    """Machete as vLLM 0.31 calls it: one opaque GEMM (ops.machete_mm), then output.add_(bias)."""
-    RULE = "machete"
-
-    def apply_weights(self, layer, x, bias=None):
-        out = torch.ops.sdcguard_test.machete_mm(x.reshape(-1, x.shape[-1]), self._w(layer))
-        if bias is not None:
-            out.add_(bias)
-        return out.reshape(*x.shape[:-1], -1)
-
-
+# ---------------------------------------------------------------- Machete under torch.compile
 def _rope(t, cos, sin):
     a, b = t.chunk(2, -1)
     return torch.cat([a * cos - b * sin, b * cos + a * sin], -1)
 
 
-@pytest.mark.parametrize("opaque", ["1", "0"])
-def test_machetes_bias_compiles_to_vllms_own_values(monkeypatch, tmp_path, opaque):
-    """qkv_proj with a bias, then the split and the rotary embedding, compiled with vLLM's Inductor setting
-    (auto_functionalized v1): Inductor fuses the bias into the rotary math and rounds once. The checked layer, with
-    the check as one opaque op (as on a GPU) or traced, must compile to the same values bit for bit. With an in-place
-    add after the check it didn't (q and k differed), and on an H100 1 of 64 completions changed (October 22)."""
+def _diag():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / "experiments" / "machete_diag.py"
+    spec = importlib.util.spec_from_file_location("machete_diag_for_test_quant", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _machete_block(monkeypatch, tmp_path, opaque="1"):
+    """Two checked Machete layers in what Inductor fuses around vLLM's: qkv_proj with a bias, its split and the
+    rotary embedding of q and k; then o_proj without a bias, the residual add and an RMSNorm. Returns the plugin,
+    the layers, and block(apply) where apply(kernel, layer, x, bias) is the layer's apply_weights."""
     import torch._inductor.config as ic
     M, Runner, classes = install_kernels(monkeypatch)
-    K = type("MacheteLinearKernel", (_OpaqueMachete,), {})
-    monkeypatch.setattr(sys.modules["vllm.model_executor.kernels.linear.mixed_precision.machete"],
-                        "MacheteLinearKernel", K)
     plugin = plugin_env(monkeypatch, tmp_path, SDCGUARD_OPAQUE=opaque)
     plugin.register()
-    monkeypatch.setattr(ic, "enable_auto_functionalized_v2", False)
-    lay = load(nn.ModuleList([QLin(K, k=256, n=192, wt=U4B8, group=64, bias=True)]))[0]
-    assert len(plugin.guard().layers) == 1
-    kern = lay.quant_method.kernel
+    monkeypatch.setattr(ic, "enable_auto_functionalized_v2", False)        # vLLM's Inductor setting
+    monkeypatch.setattr(ic, "fx_graph_cache", False)
+    K = classes["machete"]
+    qkv, o = load(nn.ModuleList([QLin(K, k=256, n=192, wt=U4B8, group=64, bias=True,
+                                      prefix="model.layers.0.self_attn.qkv_proj"),
+                                 QLin(K, k=64, n=256, wt=U4, group=64, prefix="model.layers.0.self_attn.o_proj",
+                                      seed=1)]))
+    assert [la["name"] for la in plugin.guard().layers] == [qkv.prefix, o.prefix]
     g = torch.Generator().manual_seed(5)
     cos, sin = torch.randn(64, 32, generator=g).to(BF), torch.randn(64, 32, generator=g).to(BF)
+    w_norm = (torch.rand(256, generator=g) + 0.5).to(BF)
 
-    def block(f, x):
-        q, k, v = f(x).split([64, 64, 64], -1)
-        return _rope(q, cos, sin), _rope(k, cos, sin), v
+    def block(apply):
+        def f(x):
+            q, k, v = apply(qkv.quant_method.kernel, qkv, x, qkv.bias).split([64, 64, 64], -1)
+            q, k = _rope(q, cos, sin), _rope(k, cos, sin)
+            h = x + apply(o.quant_method.kernel, o, v, None)
+            hf = h.float()
+            n = (hf * torch.rsqrt(hf.pow(2).mean(-1, keepdim=True) + 1e-6)).to(h.dtype) * w_norm
+            return q, k, n, h
+        return f
+    return plugin, (qkv, o), block
+
+
+def _patched(kernel, layer, x, bias):
+    return type(kernel).apply_weights(kernel, layer, x, bias)           # the plugin's Machete apply_weights
+
+
+@pytest.mark.parametrize("opaque", ["1", "0"])
+def test_checked_machete_layers_compile_to_vllms_own_values(monkeypatch, tmp_path, opaque):
+    """Compiled with vLLM's Inductor setting, the checked layers give vLLM's own values bit for bit (vLLM's
+    apply_weights, _vllm_machete, compiled the same way), with SDCGUARD_OPAQUE either way (Machete always uses the
+    one op), and every check runs."""
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path, opaque)
     x = x_in(m=64)
     torch._dynamo.reset()
     try:
-        want = torch.compile(lambda t: block(lambda u: _OpaqueMachete.apply_weights(kern, lay, u, lay.bias), t))(x)
-        got = torch.compile(lambda t: block(lay, t))(x)
+        want = torch.compile(block(_vllm_machete.apply_weights), fullgraph=True)(x)
+        got = torch.compile(block(_patched), fullgraph=True)(x)
     finally:
         torch._dynamo.reset()
-    for name, a, b in zip("qkv", want, got):
+    for name, a, b in zip(("q", "k", "norm", "residual"), want, got):
         assert torch.equal(a, b), f"{name}: {int((a != b).sum())} of {a.numel()} values differ"
-    assert plugin.guard().counts()["model.layers.0.qkv_proj"]["checks"] >= 1
+    c = plugin.guard().counts()
+    assert c[qkv.prefix]["checks"] >= 1 and c[o.prefix]["checks"] >= 1
+    assert plugin.poll(wait=True) == []
+
+
+def test_checked_machete_layers_compile_to_vllms_own_kernels(monkeypatch, tmp_path):
+    """Inductor generates the same kernels for the checked layers as for vLLM's own code, and calls them and the
+    opaque ops in the same order: sdcguard::machete_checked where vLLM has machete_mm, nothing added (no copies of
+    the check's buffers, no check op of its own). experiments/machete_diag.py compares the same on a GPU."""
+    from torch._inductor.utils import run_and_get_code
+    diag = _diag()
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    x = x_in(m=64)
+    torch._dynamo.reset()
+    try:
+        _, want = run_and_get_code(torch.compile(block(_vllm_machete.apply_weights), fullgraph=True), x)
+        torch._dynamo.reset()
+        _, got = run_and_get_code(torch.compile(block(_patched), fullgraph=True), x)
+    finally:
+        torch._dynamo.reset()
+    assert len(want) == len(got) == 1
+    w, g = diag.kernels_and_calls(want[0]), diag.kernels_and_calls(got[0])
+    assert w["kernels"] and g["kernels"] == w["kernels"]
+    assert g["calls"] == w["calls"] and g["calls"].count("X:MACHETE") == 2
+    assert "sdcguard.machete_checked" in got[0] and "sdcguard_test.machete_mm" in want[0]
+    assert "check_static" not in got[0]
+
+
+def test_the_kernel_comparison_sees_a_check_op_of_its_own(monkeypatch, tmp_path):
+    """The comparison above can fail: the plugin's earlier design (Machete, then the check as an op of its own, then
+    y + bias) compiles to another call sequence. (On the CPU with PyTorch 2.14.1 it also generated another kernel for
+    the bias and rotary embedding, storing the bias sum rounded to bf16 where vLLM's kernel keeps it in fp32, and
+    other q and k values; on an H100 that design changed 2 to 3 of 64 completions.)"""
+    from torch._inductor.utils import run_and_get_code
+    from sdcguard.serve import _op
+    diag = _diag()
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    op = _op()
+
+    def separate(kernel, layer, x, bias):
+        y = _vllm_machete.apply_weights(kernel, layer, x, None)
+        op(x.reshape(-1, x.shape[-1]), y.reshape(-1, y.shape[-1]), *layer._sdcguard_args[0])
+        return y + bias if bias is not None else y
+    x = x_in(m=64)
+    torch._dynamo.reset()
+    try:
+        _, want = run_and_get_code(torch.compile(block(_vllm_machete.apply_weights), fullgraph=True), x)
+        torch._dynamo.reset()
+        _, got = run_and_get_code(torch.compile(block(separate), fullgraph=True), x)
+    finally:
+        torch._dynamo.reset()
+    w, g = diag.kernels_and_calls(want[0]), diag.kernels_and_calls(got[0])
+    assert g["calls"] != w["calls"] and g["calls"].count("X:sdcguard.check_static") == 2
+    cmp = diag.compare_code({"kernels": w["kernels"], "sequences": [w["calls"]], "with_code": 1},
+                            {"kernels": g["kernels"], "sequences": [g["calls"]], "with_code": 1})
+    assert cmp["captured"] and not cmp["same"]
+
+
+def test_a_wrong_machete_output_is_caught_under_torch_compile(monkeypatch, tmp_path):
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    K = type(qkv.quant_method.kernel)
+    x = x_in(m=64)
+    torch._dynamo.reset()
+    try:
+        f = torch.compile(block(_patched), fullgraph=True)
+        f(x)
+        assert plugin.poll(wait=True) == []
+        K.FAULT = (7, 100, 3.0)
+        f(x)
+    finally:
+        K.FAULT = None
+        torch._dynamo.reset()
+    ev = plugin.poll(wait=True)
+    # FAULT is the stand-in Machete class's: both layers' GEMMs computed row 7, output 100 wrong (each check judges
+    # its own layer's output against its own input, so qkv's wrong output doesn't make o_proj alarm by itself)
+    assert sorted(e.detail["where"] for e in ev) == sorted([qkv.prefix, o.prefix])
+    for e in ev:
+        assert e.detail["row"] == 7 and e.detail["recheck"]["verdict"] == "output_wrong", e.detail
+
+
+def test_the_machete_op_takes_the_check_ops_arguments_without_the_buffers_it_writes(monkeypatch, tmp_path):
+    """serve.OP_BUFFERS names where op_args has the tensors the check writes, which the op looks up instead
+    (ServeGuard.buffers); what's left is what it takes after Machete's own arguments, in its schema's order."""
+    from sdcguard import serve
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    g = plugin.guard()
+    names = [a.name for a in plugin._machete_op().default._schema.arguments][6:]
+    check = [a.name for a in torch.ops.sdcguard.check_static.default._schema.arguments][2:]
+    assert [check[i] for i in serve.OP_BUFFERS] == ["state", "cap_meta", "cap_data"]
+    assert names == [n for n in check if n not in ("state", "cap_meta", "cap_data")]
+    for slot in range(2):
+        args = g.op_args(slot, False)
+        assert len(args) == len(check)
+        assert all(args[i] is b for i, b in zip(serve.OP_BUFFERS, g.buffers(slot)))
+        rest = plugin._without_buffers(args, serve.OP_BUFFERS)
+        assert len(rest) == len(names) and all(a is b for a, b in zip(rest, [a for i, a in enumerate(args)
+                                                                             if i not in serve.OP_BUFFERS]))
+
+
+@torch.library.custom_op("sdcguard_test::tagged", mutates_args=(), tags=(torch.Tag.needs_fixed_stride_order,))
+def _tagged(x: torch.Tensor) -> torch.Tensor:
+    return x.clone()
+
+
+def test_the_machete_op_gets_machete_mms_layout_tags(monkeypatch, tmp_path):
+    """Inductor lays out a custom op's inputs by its layout tag, or by one default for every op without one: the
+    plugin's op takes machete_mm's (here the stand-in's: none), so the two are laid out alike either way."""
+    from sdcguard import vllm_plugin
+    assert vllm_plugin._layout_tags(torch.ops.sdcguard_test.tagged) == (torch.Tag.needs_fixed_stride_order,)
+    assert vllm_plugin._layout_tags(torch.ops.sdcguard_test.machete_mm) == ()
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    assert plugin._MACHETE["tags"] == () and plugin._layout_tags(plugin._MACHETE["op"]) == ()
+
+
+def test_the_copied_machete_code_is_the_code_its_fingerprints_name():
+    """_vllm_machete and _vllm_custom_ops are vLLM 0.31.0's code verbatim; the fingerprints in _quant were computed
+    from vLLM 0.31.0, 0.32.0 and main's source files (identical there), on Pythons 3.10 to 3.13."""
+    from sdcguard import _quant
+    assert _quant.code_fingerprint(_vllm_machete.apply_weights) in _quant.MACHETE_APPLY_KNOWN
+    assert _quant.code_fingerprint(_vllm_custom_ops.machete_mm) in _quant.MACHETE_MM_KNOWN
+
+
+def test_code_fingerprints_ignore_formatting_and_catch_changes(tmp_path, monkeypatch):
+    import importlib
+    from sdcguard import _quant
+    variants = {
+        "same": "def f(self, x, bias=None):\n    y = g(x)  # comment\n    if bias is not None:\n        y.add_(bias)"
+                "\n    return y\n",
+        "formatted": 'def f(\n    self,\n    x: int,\n    bias: "T | None" = None,\n) -> int:\n    """Doc."""\n'
+                     "    y = g(\n        x,\n    )\n\n    if bias is not None:\n        y.add_(bias)\n    return y\n",
+        "changed": "def f(self, x, bias=None):\n    y = g(x)\n    if bias is not None:\n        y = y + bias\n"
+                   "    return y\n",
+        "default": "def f(self, x, bias=0):\n    y = g(x)\n    if bias is not None:\n        y.add_(bias)\n"
+                   "    return y\n",
+    }
+    monkeypatch.syspath_prepend(str(tmp_path))
+    fp = {}
+    for name, src in variants.items():
+        (tmp_path / f"fp_{name}.py").write_text(src)
+        fp[name] = _quant.code_fingerprint(importlib.import_module(f"fp_{name}").f)
+    assert fp["same"] == fp["formatted"] and fp["same"] is not None
+    assert len({fp["same"], fp["changed"], fp["default"]}) == 3
+    assert _quant.code_fingerprint(len) is None                          # no Python source
+
+
+def test_machete_code_other_than_vllms_known_one_is_not_checked(monkeypatch, tmp_path, caplog):
+    """A vLLM whose Machete apply_weights isn't the code the plugin copies: its layers run vLLM's own code,
+    unchecked, and the start-up count says why."""
+    M, Runner, classes = install_kernels(monkeypatch)
+    monkeypatch.setattr(classes["machete"], "apply_weights", _Kernel.apply_weights)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    model = _model(classes, rule="machete", wt=U4B8, group=64, bias=True)
+    assert plugin.guard() is None or not plugin.guard().layers
+    r = plugin.layer_report(model)
+    assert r["checked"] == 0 and r["quantized_or_moe"] == 1
+    assert any("other than vLLM 0.31.0's and 0.32.0's" in why for why in r["unchecked_by_method"]), r
+    assert "isn't the code sdcguard's check copies" in caplog.text
+    lay, x = model[0], x_in()
+    assert torch.equal(lay(x), _Kernel.apply_weights(lay.quant_method.kernel, lay, x, lay.bias))
+    assert plugin.layer_report(load(nn.ModuleList([QLin(classes["marlin"], wt=U4B8, group=64)])))["checked"] == 1
 
 
 def test_the_vllm_experiment_flips_nothing_when_no_quantized_layer_is_checked(monkeypatch, tmp_path):

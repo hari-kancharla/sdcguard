@@ -162,7 +162,7 @@ def test_failed_or_locked_remote_still_downloads_then_fails(runner, monkeypatch,
 def test_successful_remote_and_download_complete(runner, monkeypatch, phase, capsys):
     monkeypatch.setattr(runner, "vllm", _remote("vllm finished"))
     monkeypatch.setattr(runner, "demo", _remote("demo finished"))
-    monkeypatch.setattr(runner, "machete_diag", _remote("machete_diag finished"))
+    monkeypatch.setattr(runner, "machete_diag", _remote({"message": "machete_diag finished", "fix": None}))
     monkeypatch.setattr(runner, "bundle", _remote(_archive()))
     runner.main(phase)
     assert (runner.LOCAL / "runs/gpu_r3/log.txt").exists()
@@ -206,12 +206,49 @@ def test_experiment_gate_accepts_real_current_serving_report_fields(monkeypatch)
         guard.detach()
 
 
-def test_machete_diag_runs_the_diagnostic_and_records_its_exit(runner, monkeypatch):
-    calls = _fake_tee(runner, monkeypatch, {})
-    assert "finished" in runner.machete_diag()
+def test_machete_diag_runs_the_diagnostic_and_records_its_exit_and_fix(runner, monkeypatch):
+    calls = []
+
+    def tee(cmd, log_path, **_):
+        calls.append(Path(log_path).stem)
+        Path(log_path).write_text("log\n")
+        Path(cmd[cmd.index("--out") + 1], "DIAG.json").write_text(json.dumps({"fix": "fused"}))
+        return 0
+    monkeypatch.setattr(runner, "_tee", tee)
+    r = runner.machete_diag()
+    assert r["fix"] == "fused" and "finished" in r["message"] and "met the rule: fused" in r["message"]
     assert calls == ["diag"]
-    assert json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())["passed"] is True
+    status = json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())
+    assert status["passed"] is True and status["fix"] == "fused"
     _fake_tee(runner, monkeypatch, {"diag": 1})
     with pytest.raises(RuntimeError, match="exit code 1"):
         runner.machete_diag(force=True)
-    assert json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())["passed"] is False
+    status = json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())
+    assert status["passed"] is False and status["fix"] is None
+
+
+@pytest.mark.parametrize("fix,quant_runs", [("fused", True), ("fused_declared", False), (None, False)])
+def test_machete_fix_runs_the_int4_check_only_when_the_shipped_fix_met_the_rule(runner, monkeypatch, capsys, fix,
+                                                                                 quant_runs):
+    ran = []
+    monkeypatch.setattr(runner, "machete_diag", _remote({"message": "machete_diag finished", "fix": fix}))
+    monkeypatch.setattr(runner, "quant", SimpleNamespace(remote=lambda *a: ran.append(a) or "quant finished"))
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    if quant_runs:
+        runner.main("machete_fix")
+        out = capsys.readouterr().out
+        assert "starting the INT4 runs" in out and "quant finished" in out and "Done." in out
+    else:
+        with pytest.raises(SystemExit, match="INT4 runs weren't started"):
+            runner.main("machete_fix")
+        assert "Done." not in capsys.readouterr().out
+    assert len(ran) == (1 if quant_runs else 0)
+    assert (runner.LOCAL / "runs/gpu_r3/log.txt").exists()            # results downloaded either way
+
+
+def test_a_failed_quant_after_the_fix_is_a_failure(runner, monkeypatch):
+    monkeypatch.setattr(runner, "machete_diag", _remote({"message": "machete_diag finished", "fix": "fused"}))
+    monkeypatch.setattr(runner, "quant", _remote(RuntimeError("quantized-model validation failed")))
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    with pytest.raises(SystemExit, match="quantized-model validation failed"):
+        runner.main("machete_fix")

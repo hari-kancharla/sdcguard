@@ -71,6 +71,53 @@ def add_bias_op():
         return _ADD[0]
 
 
+_SKIP_FIELDS = frozenset(("ctx", "type_comment", "kind", "type_params", "annotation", "returns"))
+
+
+def _ast_shape(node):
+    """A nested tuple of an AST's node types and values, without what doesn't change what the code does (load or
+    store context, type comments and annotations, a string constant's kind) and without positions. The same on
+    Pythons 3.10 to 3.13 for the functions fingerprinted below (checked on each)."""
+    import ast
+    if isinstance(node, ast.AST):
+        return (type(node).__name__,
+                tuple((f, _ast_shape(getattr(node, f, None))) for f in node._fields if f not in _SKIP_FIELDS))
+    if isinstance(node, list):
+        return tuple(_ast_shape(x) for x in node)
+    return node
+
+
+def code_fingerprint(fn) -> Optional[str]:
+    """16 hex digits that change when a function's code changes, but not with its formatting, comments, docstring
+    or type annotations: its arguments and body, parsed. None when its source can't be read."""
+    import ast
+    import hashlib
+    import inspect
+    import textwrap
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    except (OSError, TypeError, SyntaxError, IndentationError):
+        return None
+    if not tree.body or not isinstance(tree.body[0], (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return None
+    f = tree.body[0]
+    body = f.body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        body = body[1:]
+    return hashlib.sha256(repr((_ast_shape(f.args), _ast_shape(body))).encode()).hexdigest()[:16]
+
+
+# The plugin replaces Machete's apply_weights with a copy of vLLM's that calls one opaque op for Machete's GEMM and
+# the check together (machete_apply_weights in vllm_plugin._patch_quant, and vllm_plugin._machete_op), and that op
+# calls torch.ops._C.machete_mm exactly as vLLM's Python wrapper does. Those copies are only right for the vLLM code
+# they were copied from: these are the fingerprints of MacheteLinearKernel.apply_weights and
+# vllm._custom_ops.machete_mm in vLLM 0.31.0, unchanged in 0.32.0 and on main (October 23, 2026). Any other code:
+# Machete's layers aren't checked, and say why.
+MACHETE_APPLY_KNOWN = frozenset({"0b57e96e0254ff1f"})
+MACHETE_MM_KNOWN = frozenset({"a0b7b9fc3a58d060"})
+
+
 def _dims(p: torch.Tensor) -> tuple:
     """(input dim, output dim) of a 2-D vLLM parameter, from its metadata (one may be missing: then it's the other
     axis, as vLLM's permute_param_layout_ takes it)."""

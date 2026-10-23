@@ -1232,6 +1232,74 @@ candidate fix: that vLLM's own graph rounds Machete's bias sum to bf16 before wh
 patch (in place or not) doesn't. It decides no release criterion; a fix follows from it, and the quantized runs
 are then repeated with the criteria above.
 
+**What the diagnostic found (October 23).** Code fingerprint 4f75f47ff57b (commit a56db68),
+`results/machete_diag_oct23/`, 14.5 minutes, about $1.17. Completions the same as without sdcguard:
+
+| Variant | of 64 | of 16 (light load) |
+|---|---|---|
+| `wrap_only` | 64 | 16 |
+| `split_inplace` | 64 | 16 |
+| `split_oop` | 64 | 16 |
+| `split_rounded` | 61 | 14 |
+| `check_no_bias` | 62 | 15 |
+| `check_bias` | 61 | 15 |
+| `full` | 61 | 15 |
+| `full_rounded` | 61 | 14 |
+
+Applied as written, the rule above names `split_rounded`, the first of the first seven to differ, as "calling
+Machete without its bias". That reading is wrong, and so was the rule: `split_rounded` also rounds the bias sum, while
+`split_inplace` and `split_oop`, which call Machete without its bias and add it after (in place, or not), gave every
+completion. `split_rounded` belonged with `full_rounded`, as a test of rounding, not among the seven. What the runs
+show: loading, probing and registering change nothing, and neither does calling Machete without its bias and adding
+it afterwards; rounding the bias sum to bf16 does change completions, so vLLM's graph keeps that sum unrounded and
+`full_rounded` is not a fix; the check as an op of its own changes completions on layers without a bias
+(`check_no_bias`) and with one (`check_bias`, whose 80 completions are all those of `full`); and once the bias sum is
+rounded, the 112 checks change nothing more (`full_rounded` and `split_rounded` gave the same 80 completions).
+
+**The fix (written October 23, before the run below).** Under torch.compile, Machete's GEMM and the check are now
+one opaque op, `sdcguard::machete_checked`: vLLM's graph has it where it had `machete_mm`, with the same inputs (and
+the check's read-only tensors) and the same output, and nothing else. The op finds the buffers the check writes by
+the layer's slot (as vLLM's attention ops find the KV cache through vLLM's forward context), so it is declared as
+mutating none of its arguments, which is true of them, and it carries `machete_mm`'s layout tags, which decide how
+Inductor lays out a custom op's inputs (each run records both ops' tags). The plugin runs a copy of vLLM 0.31's
+`MacheteLinearKernel.apply_weights` with only that call replaced, and checks Machete's layers only where vLLM's
+`apply_weights` and `_custom_ops.machete_mm` are the code it copies (by fingerprint: the same in 0.31.0, 0.32.0 and on
+main); otherwise they run unchecked and are listed with why. On the CPU (`tests/test_quant.py`: qkv_proj with a
+bias, its rotary embedding, then o_proj, a residual add and an RMSNorm, compiled with vLLM's Inductor setting):
+- the check as an op of its own generated another kernel for the bias and the rotary embedding, which stored the bias
+  sum rounded to bf16 where vLLM's kernel keeps it in fp32, and other q and k values (PyTorch 2.14.1). That is the
+  effect of rounding the bias, and on the H100 `full` changed the same three prompts as `split_rounded` did (0, 11
+  and 33; prompts 0 and 11 to other text than `split_rounded`'s);
+- the one op generated the same kernels as vLLM's own code, called in the same order, and the same values, on
+  PyTorch 2.14.1 and 2.8.0;
+- the one op with the buffers passed to it and declared as mutated gave the same values but other kernel code on
+  PyTorch 2.8.0 (the RMSNorm after o_proj wrote to a new buffer instead of reusing Machete's output). On a GPU, kernel
+  code that differs is autotuned anew and can get another reduction order, so that form wasn't used.
+
+**The run that tests the fix (written October 23, before it runs).** `modal run scripts/modal_vllm.py --phase
+machete_fix`, one H100, vLLM 0.31.0 with the PyTorch it pins (2.13): `experiments/machete_diag.py` (round 2), and
+then, only if the shipped fix meets the rule below, the quantized runs above (`--phase quant`) with criteria 1 to 5
+as written. About 45 minutes and $3.50 in all (15 minutes and $1.20 if the quantized runs don't start). The
+diagnostic runs Qwen2.5-1.5B-Instruct-GPTQ-Int4 on Machete in six fresh processes: `baseline` (no sdcguard),
+`separate` (the patch as in the runs above), `fused` (the patch as it is now) and `fused_declared` (the one op with
+the buffers passed and declared as mutated), these four sharing one Inductor cache in that order, as vllm_check's
+runs do; then `baseline_fresh` and `fused_fresh`, each compiling into an Inductor cache of its own, as a server with
+sdcguard does (the plugin keeps its own compile cache). Each records its 64 and 16 completions, Inductor's code for
+every graph it compiled (its debug trace: the graph after its passes, the IR after fusion, the generated code), the
+launch configs Triton's autotuning saved, and the checks every registered layer ran.
+
+Rule, for `fused`: every completion, 64 and 16, the same as `baseline`'s; where code was captured, the same Triton
+kernels (their code with kernel names, comments and the backend hash taken out) and in every compiled graph the same
+order of kernel launches and opaque calls (`machete_checked` counted as `machete_mm`); and every registered layer
+ran checks. If `fused` meets it, the quantized runs start. If it doesn't and `fused_declared` does, that form becomes
+the fix and the quantized runs are a run of their own. If neither does, Machete's layers are not checked in 0.5.0
+(they are listed as quantized layers left over, with why), Marlin's are, and the README says so.
+
+Reported, deciding nothing: `separate` (expected to change completions again; its code shows what the separate op
+changes on a GPU), `baseline_fresh` (does vLLM, compiling anew, give its own completions? If it doesn't, no plugin
+can promise the same completions across fresh compiles, and the claim becomes "the same compiled kernels"),
+`fused_fresh` against both baselines, and the kernels each run autotuned anew.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

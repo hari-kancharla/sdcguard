@@ -30,6 +30,7 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `serve_cost/` | October 22: the serving check's cost kernel by kernel on an H100, three runs: v2 against v1 (v1 stayed), v3 against v1 (v3 used from 256 rows), and v5 against both with more row counts (v5 no cheaper and removed; v3 cheaper from 96 rows) | `docs/METHOD.md`, serving kernel section |
 | `v050/` | October 22: the 0.5.0 serving checks on an H100 (comparison set ALL AGREE, capture criteria 6, 7 and 8 met) | `docs/METHOD.md`, serving kernel section |
 | `vllm_oct22/` | October 22: vLLM 0.31 with Qwen2.5 1.5B and 7B on the 0.5.0 code, every layer and 1 in 8 checked, at 256 and at 16 requests at a time; every criterion met | each model's `SUMMARY.json` |
+| `machete_diag_oct23/` | October 23: which part of the INT4 Machete patch changed completions, eight variants against vLLM without sdcguard (the check as an op of its own did; loading, probing and adding the bias after Machete didn't) | `DIAG.json`, and `docs/METHOD.md`, INT4 section |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the

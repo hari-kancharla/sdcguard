@@ -2,10 +2,13 @@
 
     modal run scripts/modal_vllm.py --phase vllm   # about 25 min, about $2 (a 75-minute limit on the whole run)
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
-    modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 50 min, about $4 (75-minute limit)
+    modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 26 min, about $2.10 (75-minute limit)
     modal run scripts/modal_vllm.py --phase outputs  # the gate's output check, about 12 min, about $1
-    modal run scripts/modal_vllm.py --phase machete_diag  # which part of the Machete patch changes completions,
-                                                          # about 20 min, about $1.60
+    modal run scripts/modal_vllm.py --phase machete_diag  # the Machete patch against vLLM's own completions and
+                                                          # compiled kernels, about 15 min, about $1.20
+    modal run scripts/modal_vllm.py --phase machete_fix   # machete_diag, then quant if the fix meets the rule in
+                                                          # docs/METHOD.md: about 45 min, about $3.50 (15 and $1.20
+                                                          # if it doesn't)
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -292,12 +295,13 @@ def outputs(force: bool = False, source: dict | None = None) -> str:
     return f"outputs finished in {(time.monotonic() - t0) / 60:.1f} minutes: {codes}"
 
 
-@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=40 * 60)
-def machete_diag(force: bool = False, source: dict | None = None) -> str:
-    """Which part of sdcguard's Machete patch changes completions (experiments/machete_diag.py): one model, run
-    without sdcguard and with each variant of the patch, every completion compared."""
+@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=60 * 60)
+def machete_diag(force: bool = False, source: dict | None = None) -> dict:
+    """sdcguard's Machete patch against vLLM without it (experiments/machete_diag.py): one model, every completion
+    and every compiled graph's code compared. Returns {"message", "fix"}: the variant that met the rule in
+    docs/METHOD.md, or None."""
     t0 = time.monotonic()
-    deadline = t0 + 40 * 60 - 120
+    deadline = t0 + 60 * 60 - 120
     msg = _locked("machete_diag", force)
     if msg:
         raise RuntimeError(msg)
@@ -305,18 +309,23 @@ def machete_diag(force: bool = False, source: dict | None = None) -> str:
     if os.path.isdir(out):
         os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
     os.makedirs(out, exist_ok=True)
-    code = None
+    code, fix = None, None
     try:
         code = _tee([sys.executable, f"{R}/experiments/machete_diag.py", "--out", out], f"{out}/diag.txt",
                     cwd="/root", timeout=max(0, deadline - time.monotonic()))
+        try:
+            fix = json.load(open(f"{out}/DIAG.json")).get("fix") if code == 0 else None
+        except (OSError, ValueError):
+            fix = None
     finally:
         with open(f"{out}/STATUS.json", "w") as f:
-            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+            json.dump({"exit_code": code, "passed": code == 0, "fix": fix, "source": source,
                        **_cost((time.monotonic() - t0) / 60)}, f)
         vol.commit()
     if code != 0:
         raise RuntimeError(f"Machete diagnostic failed (exit code {code}); diagnostics were saved to {out}")
-    return f"machete_diag finished in {(time.monotonic() - t0) / 60:.1f} minutes"
+    return {"message": f"machete_diag finished in {(time.monotonic() - t0) / 60:.1f} minutes; the fix that met the "
+                       f"rule: {fix or 'none'}", "fix": fix}
 
 
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
@@ -357,14 +366,18 @@ def bundle() -> bytes:
 ESTIMATES = {
     "vllm": "about 25 minutes on 1 H100: roughly $2 (75-minute function limit; about $6 at requested resources "
             "for a run that uses the whole limit, not a spending cap)",
-    "quant": "about 50 minutes on 1 H100: roughly $4 (75-minute function limit; about $6 at requested resources "
-             "for a run that uses the whole limit, not a spending cap)",
+    "quant": "about 26 minutes on 1 H100: roughly $2.10 (24.6 and 26.1 minutes on October 22; 75-minute function "
+             "limit, about $6 at requested resources for a run that uses the whole limit, not a spending cap)",
     "outputs": "about 12 minutes on 1 H100: roughly $1 (40-minute function limit, about $3.20 at requested "
                "resources for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
             "resources for a run that uses the whole limit, not a spending cap)",
-    "machete_diag": "about 20 minutes on 1 H100: roughly $1.60 (40-minute function limit; about $3.20 at requested "
+    "machete_diag": "about 15 minutes on 1 H100: roughly $1.20 (60-minute function limit; about $4.80 at requested "
                     "resources for a run that uses the whole limit, not a spending cap)",
+    "machete_fix": "the Machete diagnostic (about 15 minutes, roughly $1.20), then, only if the fix meets the rule "
+                   "written in docs/METHOD.md, the INT4 runs (about 26 minutes, roughly $2.10): about 45 minutes and "
+                   "$3.50 in all on 1 H100 (limits 60 and 75 minutes; at most about $10.90 at requested resources, "
+                   "not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -393,11 +406,25 @@ def main(phase: str = "vllm", force: bool = False):
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))
-        elif phase == "machete_diag":
-            message = machete_diag.remote(force, src)
+        elif phase in ("machete_diag", "machete_fix"):
+            result = machete_diag.remote(force, src)
+            message = result.get("message") if isinstance(result, dict) else str(result)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))
+            elif phase == "machete_fix":
+                if isinstance(result, dict) and result.get("fix") == "fused":
+                    print("The shipped fix met the rule written in docs/METHOD.md: starting the INT4 runs "
+                          f"(--phase quant: {ESTIMATES['quant']}).", flush=True)
+                    message = quant.remote(force, src)
+                    print(message, flush=True)
+                    if str(message).startswith("NOT STARTED"):
+                        failures.append(str(message))
+                else:
+                    fix = result.get("fix") if isinstance(result, dict) else None
+                    failures.append(f"the shipped Machete fix didn't meet the rule in docs/METHOD.md (the variant "
+                                    f"that did: {fix or 'none'}; runs/gpu_r3/machete_diag/DIAG.json has why), so the "
+                                    "INT4 runs weren't started")
         elif phase == "demo":
             message = demo.remote(force, src)
             print(message, flush=True)

@@ -50,8 +50,9 @@ worker afterwards; otherwise every updated layer is reported (with weights_chang
 vLLM's CPU offloading, an offloaded layer's weights can't be read back as its own: its alerts leave
 weights_changed_since_load unknown, and refresh() turns its check off and lists it in guard().unsupported.
 
-Quantized layers (SDCGUARD_QUANT=0 leaves them alone): a quantized layer is checked without its bias, which the
-plugin then adds itself in the activation dtype (the kernels add it the same way, so the output is unchanged), and a
+Quantized layers (SDCGUARD_QUANT=0 leaves them alone): a quantized layer is checked without its bias, which is then
+added as its kernel adds it (Marlin's rounded once in the activation dtype; Machete's by vLLM's own code, with the GEMM
+and the check as one op in the compiled graph), so the output is unchanged, and a
 CPU copy of its quantized weights is kept, about the size of the layer, so an alert can be rechecked
 (SDCGUARD_QUANT_RECHECK=0 keeps none: alerts then say they can't be rechecked). refresh() can't recompute a quantized
 layer's checksums after its kernel repacked the weights: it turns that layer's check off and says so.
@@ -70,6 +71,7 @@ import hashlib
 import logging
 import os
 import re
+import threading
 import time
 from typing import Optional
 
@@ -92,6 +94,8 @@ NOT_A_MATRIX = "-D weight (a convolution kept in a linear layer)"
 # over (SDCGUARD_REQUIRE). Layers of a quantized method whose kernel isn't hooked at all are reported by the method.
 QUANT = "quantized, not checked: "
 QUANT_KERNELS = ("MarlinLinearKernel", "MacheteLinearKernel")
+# How Machete's checked calls appear in vLLM's traced graph (_graph_key): 2, one op for the GEMM and the check
+MACHETE_GRAPH = 2
 
 # The expert weights of vLLM's fused MoE layers (RoutedExperts, FusedMoE in older releases): bf16/fp16/fp8 as
 # w13_weight/w2_weight, packed INT4 and the like as w13_qweight or w13_weight_packed. No `weight` attribute.
@@ -450,7 +454,8 @@ def _graph_key(share: float, offset: int, inline: bool) -> str:
     from . import __version__
     from .serve import OP_SCHEMA
     env = os.environ
-    return hashlib.sha256(repr((__version__, OP_SCHEMA, share, offset, float(env.get("SDCGUARD_Z", "6")), inline,
+    return hashlib.sha256(repr((__version__, OP_SCHEMA, MACHETE_GRAPH, share, offset, float(env.get("SDCGUARD_Z", "6")),
+                                inline,
                                 env.get("SDCGUARD_FAST", "1") != "0", env.get("SDCGUARD_SERVE_FAST", "1") != "0",
                                 env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0")).encode()
                           ).hexdigest()[:12]
@@ -517,24 +522,122 @@ def _quant_cant_check(kernel, layer) -> Optional[str]:
     return None
 
 
+# Machete under torch.compile: its GEMM and the check run as one opaque op (_machete_op), set up by _machete_ready.
+_MACHETE = {"op": None, "mm": None, "ops": None, "tags": None}
+_LAYOUT_TAGS = ("needs_exact_strides", "needs_contiguous_strides", "needs_fixed_stride_order", "flexible_layout")
+_MACHETE_OP = [None]
+_machete_lock = threading.Lock()
+
+
+def _layout_tags(op) -> tuple:
+    """An op's layout tags (how Inductor lays out its inputs; an op without one gets
+    torch._functorch.config.custom_op_default_layout_constraint, the same for every op outside aten)."""
+    known = [t for t in (getattr(torch._C.Tag, n, None) for n in _LAYOUT_TAGS) if t is not None]
+    return tuple(t for t in getattr(getattr(op, "default", op), "tags", ()) if t in known)
+
+
+def _machete_op(tags: tuple = ()):
+    """sdcguard::machete_checked: Machete's GEMM (torch.ops._C.machete_mm, called as vLLM's Python wrapper calls
+    it) and then the check of its output, as one opaque op returning that output. Under torch.compile vLLM's graph
+    then has one opaque call where it had machete_mm, taking the same inputs (and the check's read-only ones) and
+    giving the same output, with nothing else added for Inductor to fuse around.
+    It takes no tensor it writes: the check's results go to the guard's buffers (ServeGuard.buffers, by the layer's
+    slot), as vLLM's attention ops write the KV cache they find through vLLM's forward context. So it is declared
+    as mutating nothing, which is true of its arguments, and Inductor treats its output like machete_mm's. Declared
+    as mutating buffers passed in, it compiled to other code on PyTorch 2.8 (on the CPU, the RMSNorm after o_proj
+    wrote to a new buffer instead of reusing Machete's output: other kernel code, which on a GPU is autotuned anew).
+    A check as an op of its own after Machete (the plugin until October 23, 2026) changed 2 to 3 of 64 greedy
+    completions on an H100, the same prompts rounding the bias sum changed; on the CPU, Inductor then stored qkv's
+    bias sum rounded to bf16 where vLLM's kernel keeps it in fp32 (experiments/machete_diag.py, docs/METHOD.md).
+    tests/test_quant.py compares Inductor's code for this op with vLLM's own. It gets machete_mm's layout tags
+    (_layout_tags), so Inductor lays out its inputs as it does machete_mm's. Registered once per process, with the
+    tags of the first call. None on a PyTorch without torch.library.custom_op."""
+    with _machete_lock:
+        if _MACHETE_OP[0] is None:
+            from .serve import check_static_any
+            try:
+                @torch.library.custom_op("sdcguard::machete_checked", mutates_args=(), tags=tuple(tags))
+                def machete_checked(a: torch.Tensor, b_q: torch.Tensor, b_type_id: int,
+                                    b_group_scales: Optional[torch.Tensor], b_group_zeros: Optional[torch.Tensor],
+                                    b_group_size: Optional[int],
+                                    parts: torch.Tensor, pair_full: torch.Tensor, pair_rem: torch.Tensor,
+                                    scale: torch.Tensor, b2n: torch.Tensor, b2max: torch.Tensor, bmax: torch.Tensor,
+                                    bmax_bias: torch.Tensor, bsum: torch.Tensor, wsq: torch.Tensor,
+                                    width: torch.Tensor, slot: int, z: float, abs_floor: float, cap_w: int,
+                                    cap_tag: int) -> torch.Tensor:
+                    mm, g = _MACHETE["mm"], _STATE["guard"]
+                    if mm is None or g is None:
+                        raise RuntimeError("sdcguard::machete_checked called before Machete was set up")
+                    # vllm._custom_ops.machete_mm(a, b_q, b_type, b_group_zeros=..., b_group_scales=...,
+                    # b_group_size=...): out_type, channel and token scales and schedule left at None
+                    y = mm(a, b_q, b_type_id, None, b_group_scales, b_group_zeros, b_group_size, None, None, None)
+                    state, cap_meta, cap_data = g.buffers(slot)
+                    check_static_any(a, y, parts, pair_full, pair_rem, scale, b2n, b2max, bmax, bmax_bias, bsum, wsq,
+                                     width, state, slot, z, abs_floor, cap_meta, cap_data, cap_w, cap_tag)
+                    return y
+
+                @machete_checked.register_fake
+                def _(a, b_q, b_type_id, b_group_scales, b_group_zeros, b_group_size, parts, pair_full, pair_rem,
+                      scale, b2n, b2max, bmax, bmax_bias, bsum, wsq, width, slot, z, abs_floor, cap_w, cap_tag):
+                    return torch.empty((a.size(0), b_q.size(1)), device=a.device, dtype=a.dtype)   # as vLLM's fake
+
+                _MACHETE_OP[0] = torch.ops.sdcguard.machete_checked
+            except (AttributeError, RuntimeError):      # very old PyTorch, or already registered
+                _MACHETE_OP[0] = getattr(getattr(torch.ops, "sdcguard", None), "machete_checked", None) or False
+        return _MACHETE_OP[0] or None
+
+
+def _without_buffers(args: tuple, at: tuple) -> tuple:
+    """The check op's arguments (ServeGuard.op_args) without the tensors it writes (at = serve.OP_BUFFERS: state,
+    then cap_meta and cap_data next to each other): what sdcguard::machete_checked takes after Machete's own."""
+    st, cm, cd = at
+    return args[:st] + args[st + 1:cm] + args[cd + 1:]
+
+
+def _machete_ready(orig_apply) -> Optional[str]:
+    """Set up the checked Machete call, or say why Machete's layers can't be checked. The plugin's Machete
+    apply_weights is a copy of vLLM's with its machete_mm call replaced, and the op calls torch.ops._C.machete_mm as
+    vLLM's wrapper does: both are right only for the code they copy, so that code must be what _quant's
+    fingerprints say (vLLM 0.31.0 and 0.32.0)."""
+    from . import _quant
+    try:
+        import importlib
+        ops = importlib.import_module("vllm._custom_ops")
+        fa, fm = _quant.code_fingerprint(orig_apply), _quant.code_fingerprint(ops.machete_mm)
+        if fa not in _quant.MACHETE_APPLY_KNOWN or fm not in _quant.MACHETE_MM_KNOWN:
+            log.warning("sdcguard: not checking Machete's layers: this vLLM's MacheteLinearKernel.apply_weights or "
+                        "_custom_ops.machete_mm isn't the code sdcguard's check copies (fingerprints %s and %s)",
+                        fa, fm)
+            return f"{QUANT}MacheteLinearKernel code other than vLLM 0.31.0's and 0.32.0's, which the check copies"
+        mm = ops.machete_mm.__globals__["torch"].ops._C.machete_mm   # what the wrapper calls
+        tags = _layout_tags(mm)
+        op = _machete_op(tags)
+    except Exception as e:  # noqa: BLE001  (never break model loading)
+        log.warning("sdcguard: not checking Machete's layers: %s: %s", type(e).__name__, e)
+        return f"{QUANT}MacheteLinearKernel: setting up its check failed ({type(e).__name__})"
+    if op is None:
+        return f"{QUANT}MacheteLinearKernel: this PyTorch can't register sdcguard's Machete op"
+    _MACHETE.update(op=op, mm=mm, ops=ops, tags=tags)
+    return None
+
+
 def _patch_quant(op, select, inline: bool) -> list:
     """Check the layers vLLM runs with Marlin's and Machete's weight-only INT kernels (GPTQ, AWQ, compressed-tensors
     W4A16 and W8A16): before the kernel repacks a layer's weights, read the matrix it will multiply by (_quant), let
     it repack, run it on unit vectors to confirm that reading bit for bit (for Machete with zero points, whose
-    rounding the compiler decides, with both readings _quant knows), then register the layer. Every call then runs
-    the kernel without the bias, checks that output, and adds the bias the way the kernel would have: Marlin inside
-    its kernel, rounded to the activation dtype (here one opaque call, _quant.add_bias_op, so torch.compile can't
-    fuse it into the next operations and keep it unrounded); Machete after its GEMM with add_, which torch.compile
-    fuses into what follows (qkv's rotary embedding then sees q and k plus bias unrounded). Here Machete's bias is
-    added out of place: with vLLM's Inductor settings (auto_functionalized v1), an add_ on the kernel's output
-    after the check op, which reads that output, compiled differently from vLLM's own in a CPU reproduction (q and
-    k came out different), the likely cause of 1 of 64 greedy completions changing on an H100 on October 22, 2026;
-    y + bias compiles to vLLM's values there, bit for bit (tests/test_quant.py).
+    rounding the compiler decides, with both readings _quant knows), then register the layer.
+    Marlin adds the bias inside its kernel, rounded to the activation dtype: every call runs the kernel without the
+    bias, checks that output (the check op), and adds the bias by one opaque call (_quant.add_bias_op, so
+    torch.compile can't fuse it into the next operations and keep it unrounded).
+    Machete adds it after its GEMM with add_, which torch.compile fuses into what follows unrounded (qkv's rotary
+    embedding then sees q and k plus bias in fp32). Its calls run vLLM's own apply_weights code with the GEMM and
+    the check as one opaque op (_machete_op), then add_(bias) as vLLM does, so the compiled graph is vLLM's with one
+    op swapped; eagerly, vLLM's machete_mm, the check, then add_ (the check runs on the same stream first).
     select(layer) -> True to check it (SDCGUARD_SHARE), else sets the layer's reason. Returns the kernel classes
     patched."""
     import importlib
     from . import _quant
-    from .serve import check_static_any, check_static_impl
+    from .serve import OP_BUFFERS, check_static_any, check_static_impl
     keep = os.environ.get("SDCGUARD_QUANT_RECHECK", "1") != "0"
     add_bias = _quant.add_bias_op()
     patched = []
@@ -550,12 +653,14 @@ def _patch_quant(op, select, inline: bool) -> list:
         if getattr(K, "_sdcguard", False):
             patched.append(cls_name)
             continue
+        kernel_why = _machete_ready(orig_apply) if rule == _quant.MACHETE else None
 
-        def process_weights_after_loading(self, layer, _orig=orig_pwal, _apply=orig_apply, _rule=rule):
+        def process_weights_after_loading(self, layer, _orig=orig_pwal, _apply=orig_apply, _rule=rule,
+                                          _kernel_why=kernel_why):
             w = bias = qw = None
             again = bool(getattr(layer, "_sdcguard_slot", 0))
             try:
-                why = _quant_cant_check(self, layer)
+                why = _quant_cant_check(self, layer) or _kernel_why
                 if why is None and not again and not select(layer):
                     why = layer._sdcguard_why
                 if why is None:
@@ -623,7 +728,8 @@ def _patch_quant(op, select, inline: bool) -> list:
                 if not again:
                     layer._sdcguard_why = FAILED
 
-        def apply_weights(self, layer, x, bias=None, _orig=orig_apply, _rule=rule):
+        def apply_weights(self, layer, x, bias=None, _orig=orig_apply):
+            """Marlin: the kernel without the bias, the check, then the bias rounded once (as Marlin adds it)."""
             a = getattr(layer, "_sdcguard_args", None)
             if a is None:
                 return _orig(self, layer, x, bias)
@@ -634,17 +740,38 @@ def _patch_quant(op, select, inline: bool) -> list:
                 fn = check_static_any
             fn(x.reshape(-1, x.shape[-1]), y.reshape(-1, y.shape[-1]), *a[0])
             if bias is not None:
-                if _rule == _quant.MACHETE:
-                    # Machete's apply_weights adds it in place after its GEMM; out of place gives the same values
-                    # eagerly, and under torch.compile it compiles as vLLM's own does, while an in-place add after
-                    # the check op changes how Inductor fuses what follows (see _patch_quant)
-                    y = y + bias
-                else:
-                    y = add_bias(y, layer._sdcguard_qbias)        # Marlin's bias (its own copy is permuted)
+                y = add_bias(y, layer._sdcguard_qbias)            # Marlin's bias (its own copy is permuted)
             return y
 
+        def machete_apply_weights(self, layer, x, bias=None, _orig=orig_apply, _buffers=OP_BUFFERS):
+            """vLLM 0.31's MacheteLinearKernel.apply_weights (Apache-2.0; _machete_ready makes sure it's the code
+            running), its machete_mm call replaced by sdcguard::machete_checked under torch.compile, and by
+            machete_mm followed by the check eagerly. Always the op under torch.compile, even where the PyTorch
+            check would otherwise be traced in (SDCGUARD_OPAQUE=0): that would add its operations to vLLM's graph."""
+            a = getattr(layer, "_sdcguard_args", None)
+            if a is None:
+                return _orig(self, layer, x, bias)
+            c = self.config
+            w_q, w_s, w_zp = self._get_weight_params(layer)
+            x_2d = x.reshape(-1, x.shape[-1])
+            out_shape = x.shape[:-1] + (c.partition_weight_shape[1],)
+            if c.zero_points:
+                assert w_zp is not None
+            else:
+                w_zp = None
+            if torch.compiler.is_compiling():
+                output = _MACHETE["op"](x_2d, w_q, c.weight_type.id, w_s, w_zp, c.group_size,
+                                        *_without_buffers(a[0], _buffers))
+            else:
+                output = _MACHETE["ops"].machete_mm(a=x_2d, b_q=w_q, b_type=c.weight_type, b_group_zeros=w_zp,
+                                                    b_group_scales=w_s, b_group_size=c.group_size)
+                check_static_any(x_2d, output, *a[0])
+            if bias is not None:
+                output.add_(bias)  # In-place add
+            return output.reshape(out_shape)
+
         K.process_weights_after_loading = process_weights_after_loading
-        K.apply_weights = apply_weights
+        K.apply_weights = machete_apply_weights if rule == _quant.MACHETE else apply_weights
         K._sdcguard = True
         patched.append(cls_name)
     return patched
