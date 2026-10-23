@@ -1201,6 +1201,37 @@ What was found and changed, after seeing that run:
 
 The criteria for the second run stay as written above.
 
+**What the second run found (October 22): Marlin met every criterion; Machete met all but 2, unchanged.** Code
+fingerprint 78c664d5b914 (commit d9b8bad), `runs/gpu_r3/quant/`, 26.1 minutes, about $2.10.
+- Marlin, AWQ and GPTQ: every criterion met again (112 of 112 layers, 64 of 64 completions and all 16 of the
+  light-load ones identical, highest clean score 2.2 and 2.3, the flip caught with the recheck saying the weights
+  changed). Each request took 29.2% (AWQ) and 19.2% (GPTQ) longer with every layer checked at 256 requests at a time,
+  61.9% and 61.2% at 16.
+- Machete, all three models: changes 1 and 2 worked. The probe kept every one of the 112 layers on Machete, AWQ's
+  with its zero points read as rounded once, and criteria 1, 3 and 4 were met (no alert in clean traffic, highest
+  scores 2.3 to 2.8; the flipped scale named by both checks, its row kept). Criterion 2 was not: 62 of 64
+  completions identical (AWQ 1.5B), 63 (GPTQ 1.5B), 60 (AWQ 7B), and the light-load sets differed too. GPTQ's
+  completions with and without sdcguard were each exactly those of the first run, so the change is deterministic
+  and change 3 above did not change it: it was not the cause, or not the only one.
+- AWQ 7B with 1 in 8 layers: the run also failed on this experiment's own rule, which counted the 97 layers the
+  share leaves out as "unchecked" (`_quant_failures` now allows them when a share is set); its completions differed
+  too (58 of 64).
+
+**A diagnostic before any fix (written October 22, before it runs).** `experiments/machete_diag.py`
+(`modal run scripts/modal_vllm.py --phase machete_diag`, one H100, about 20 minutes) runs Qwen2.5-1.5B-Instruct-
+GPTQ-Int4 on Machete once without sdcguard and then eight times with it, each time with sdcguard's Machete
+apply_weights replaced by a variant: `wrap_only` (sdcguard reads, probes and registers every layer, and
+apply_weights is vLLM's own), `split_inplace`, `split_oop` and `split_rounded` (Machete without the bias, then the
+bias added in place, out of place, or by one opaque call that rounds the sum to bf16 once, as the Marlin patch adds
+it; no check), `check_no_bias` and `check_bias` (the shipped patch with the check only on layers without, or only
+with, a bias), `full` (as shipped) and `full_rounded` (as shipped, but the bias added by that opaque call). Each
+compares its 64 completions and 16 light-load completions with those without sdcguard. The first of the first seven
+variants, in that order, whose completions differ locates the cause: loading if `wrap_only`, calling Machete
+without its bias if a `split` variant, and the check op on that kind of layer otherwise. `full_rounded` tests one
+candidate fix: that vLLM's own graph rounds Machete's bias sum to bf16 before what follows, which sdcguard's
+patch (in place or not) doesn't. It decides no release criterion; a fix follows from it, and the quantized runs
+are then repeated with the criteria above.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
@@ -1453,6 +1484,38 @@ after the 256-request timing and before the clean report, which therefore covers
 with and without sdcguard, with whether its completions matched, and has no threshold: with 16 rows per decoding
 step the check costs the most relative to the layers' own work (above: 30% to 34% of the 7B layers' time at 1 to 16
 rows), so it is the number to give for light traffic next to the 256-request one.
+
+**The serving checks of 0.5.0 on an H100 (October 22): ALL AGREE, and 6, 7 and 8 met.** Code fingerprint
+78c664d5b914 (commit d9b8bad, v1 below 96 rows and v3 from there on), `results/v050/h100_20261022_203828.json`,
+`modal run scripts/modal_v050.py`, 2.0 minutes, about $0.14. The comparison set printed ALL AGREE (172 cases), and
+the 0.4.0 capture criteria were met as written: the one-time fault (replay 66 of 200, inside a CUDA graph) was kept
+as it alarmed and rechecked as wrong, the checker fault (replay 133) was rechecked as right (not blamed on the
+GPU); capturing cost the clean check 3.3% (76.8 µs to 79.3 per replay of the four layers); and under contention
+every alert came with its row while slots were free (14 alerts, 12 rows kept, the 2 others counted as dropped once
+the 4 slots were full, as designed).
+
+**The vLLM runs on the 0.5.0 code (October 22): every criterion met on both models.** Code fingerprint 78c664d5b914
+(commit d9b8bad), `results/vllm_oct22/`, `modal run scripts/modal_vllm.py --phase vllm`, 12.2 minutes, about $0.99.
+In every guarded run (every layer, and 1 in 8) every registered layer executed checks after warm-up, no checksum
+went unjudged, clean traffic raised no alert (highest score 2.82 on 7B, 2.15 on 1.5B; the alarm line is 6), the
+64 compared completions and the 16 light-load ones were identical to plain vLLM's, and the flipped weight bit was
+named by both the serving check and the weight checksums, with the alarming row kept and rechecked as "weights
+changed". Throughput, vLLM 0.31's default compiled mode, median of three timed runs (each light-load run's three
+times were within 1.3% of each other):
+
+| model, layers checked | 256 requests: tokens/s, plain / with checks | each request longer by | 16 requests: tokens/s | each request longer by |
+|---|---|---|---|---|
+| Qwen2.5-7B, every layer (112) | 22,755 / 18,293 | 24.4% | 2,456 / 1,928 | 27.4% |
+| Qwen2.5-7B, 1 in 8 (15) | 22,755 / 22,174 | 2.6% | 2,456 / 2,390 | 2.8% |
+| Qwen2.5-1.5B, every layer (112) | 37,424 / 33,385 | 12.1% | 6,439 / 4,313 | 49.3% |
+| Qwen2.5-1.5B, 1 in 8 (15) | 37,424 / 36,175 | 3.5% | 6,439 / 5,988 | 7.5% |
+
+On 7B, checking every layer cost less than on October 20 (requests 29.7% longer then, 24.4% now; throughput 22.9%
+lower then, 19.6% now), which is what v3 from 96 rows predicts. The timings above predict these numbers: 28 times the
+four layers' added time per step at 16 rows (v1, 60.4 µs) is 1.69 ms, and decoding steps in the light-load run took
+1.8 ms longer (8.3 against 6.5 ms per token); at 256 rows (v3, 92.2 µs) it is 2.58 ms, and steps took 2.74 ms longer.
+With 16 requests on the 1.5B model, whose layers do little work per token, checking every layer is expensive (49%);
+1 in 8 layers cost 2.6% to 7.5% on both models at both loads.
 
 ## Blackwell: the Triton kernel fault, bisected (October 19, 2026)
 

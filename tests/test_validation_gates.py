@@ -206,3 +206,18 @@ def test_vllm_light_load_is_reported_without_deciding_anything(tmp_path, vllm_ex
     assert vllm_experiment.compare(str(tmp_path)) == []                 # (a different light completion fails nothing)
     summary = json.loads((tmp_path / "SUMMARY.json").read_text())
     assert summary["light_load"]["slowdown_pct"] == 25.0 and summary["validation"]["passed"]
+
+
+def test_vllm_quant_rule_allows_the_layers_a_share_leaves_out(vllm_experiment):
+    """--expect-quant with 1 in 8 layers: the layers the share leaves out are not "left unchecked" (the October 22
+    INT4 run failed on that alone); with every layer checked, the same reason is still an error."""
+    def result(share, unchecked):
+        return {"expect_quant": "MacheteLinearKernel", "share": share,
+                "clean": [{"layers": 15, "quant_layers": 15, "kernels": {"MacheteLinearKernel, uint4": 15},
+                           "layer_report": {"unchecked_by_method": unchecked}}]}
+    skipped = {"LM head": 1, vllm_experiment.NOT_SELECTED: 97}
+    assert vllm_experiment._quant_failures(result("0.125", skipped)) == []
+    assert vllm_experiment._quant_failures(result("1", skipped))                     # every layer meant: an error
+    assert vllm_experiment._quant_failures(result("0.125", {"LM head": 1, "MarlinLinearKernel": 2}))
+    from sdcguard import vllm_plugin
+    assert vllm_experiment.NOT_SELECTED == vllm_plugin.NOT_SELECTED

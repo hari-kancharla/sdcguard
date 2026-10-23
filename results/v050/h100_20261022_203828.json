@@ -1,0 +1,408 @@
+{
+  "launcher_source": {
+    "sha256": "78c664d5b914be691b39541b0b9e93094aba0e81717522813961067461dc6663",
+    "files": 176
+  },
+  "source_on_gpu": {
+    "sha256": "78c664d5b914be691b39541b0b9e93094aba0e81717522813961067461dc6663",
+    "files": 176
+  },
+  "matches_launcher": true,
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "torch": "2.14.1+cu130",
+  "compare": {
+    "exit": 0,
+    "cases": 172,
+    "last": "ALL AGREE",
+    "disagree": [],
+    "stderr": ""
+  },
+  "report": {
+    "capture": {
+      "layers": 4,
+      "width": 4096,
+      "batch": 8,
+      "replays": 200,
+      "graph": true,
+      "first_use_comparison": {
+        "bfloat16": true,
+        "float16": true
+      },
+      "uses_fast": [
+        true,
+        true,
+        true,
+        true
+      ],
+      "fault": {
+        "replay": 66,
+        "layer": "1",
+        "row": 5,
+        "col": 1000,
+        "added": 4.154120445251465
+      },
+      "checker_fault": {
+        "replay": 133,
+        "layer": "2",
+        "block": 7
+      },
+      "alerts": [
+        {
+          "replay": 66,
+          "where": "1",
+          "captured": {
+            "row": 5,
+            "col_block": 7,
+            "with_bias": true,
+            "z": 167.17599487304688
+          },
+          "verdict": "output_wrong",
+          "outside_envelope": 1,
+          "evidence": "/tmp/sdcguard_capture_wku6hu99/evidence_0"
+        },
+        {
+          "replay": 133,
+          "where": "2",
+          "captured": {
+            "row": 1,
+            "col_block": 7,
+            "with_bias": true,
+            "z": 1174.136474609375
+          },
+          "verdict": "output_agrees",
+          "outside_envelope": 0,
+          "evidence": "/tmp/sdcguard_capture_wku6hu99/evidence_1"
+        }
+      ],
+      "evidence_holds_the_wrong_value": true,
+      "stats": {
+        "alerts": 2,
+        "captured": 2,
+        "captures_dropped": 0,
+        "checks_executed": 813
+      },
+      "check_us": {
+        "without": 76.76032066345215,
+        "with": 79.2855978012085
+      }
+    },
+    "capture_stress": {
+      "layers": 6,
+      "k": 4096,
+      "n": 4096,
+      "batch": 8,
+      "graph": true,
+      "slots": 4,
+      "uses_fast": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "clean_before": 0,
+      "a": {
+        "made": 256,
+        "alerts": [
+          {
+            "where": 3,
+            "row": 2,
+            "col_block": 9,
+            "captured": {
+              "row": 1,
+              "col_block": 1,
+              "with_bias": true,
+              "z": 170.49752807617188
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ],
+        "captured_was_made_wrong": true
+      },
+      "clean_between": [
+        0,
+        0,
+        0
+      ],
+      "b": {
+        "made": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            2,
+            2
+          ],
+          [
+            3,
+            3,
+            3
+          ]
+        ],
+        "alerts": [
+          {
+            "where": 0,
+            "row": 0,
+            "col_block": 0,
+            "captured": {
+              "row": 0,
+              "col_block": 0,
+              "with_bias": true,
+              "z": 149.9435272216797
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 1,
+            "row": 1,
+            "col_block": 1,
+            "captured": {
+              "row": 1,
+              "col_block": 1,
+              "with_bias": true,
+              "z": 153.93838500976562
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 2,
+            "row": 2,
+            "col_block": 2,
+            "captured": {
+              "row": 2,
+              "col_block": 2,
+              "with_bias": true,
+              "z": 161.70794677734375
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 3,
+            "row": 3,
+            "col_block": 3,
+            "captured": {
+              "row": 3,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 165.3571014404297
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ]
+      },
+      "c": {
+        "made": [
+          [
+            0,
+            0,
+            0
+          ],
+          [
+            1,
+            1,
+            1
+          ],
+          [
+            2,
+            2,
+            2
+          ],
+          [
+            3,
+            3,
+            3
+          ],
+          [
+            4,
+            4,
+            4
+          ],
+          [
+            5,
+            5,
+            5
+          ]
+        ],
+        "alerts": [
+          {
+            "where": 0,
+            "row": 0,
+            "col_block": 0,
+            "captured": {
+              "row": 0,
+              "col_block": 0,
+              "with_bias": true,
+              "z": 155.1092071533203
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 1,
+            "row": 1,
+            "col_block": 1,
+            "captured": {
+              "row": 1,
+              "col_block": 1,
+              "with_bias": true,
+              "z": 169.3689727783203
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 2,
+            "row": 2,
+            "col_block": 2,
+            "captured": {
+              "row": 2,
+              "col_block": 2,
+              "with_bias": true,
+              "z": 164.5918731689453
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 3,
+            "row": 3,
+            "col_block": 3,
+            "captured": {
+              "row": 3,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 178.1841278076172
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          },
+          {
+            "where": 4,
+            "row": 4,
+            "col_block": 4,
+            "captured": null,
+            "capture_missing": "the capture buffer was full (2 rows not kept)",
+            "verdict": null,
+            "outside_envelope": null
+          },
+          {
+            "where": 5,
+            "row": 5,
+            "col_block": 5,
+            "captured": null,
+            "capture_missing": "the capture buffer was full (2 rows not kept)",
+            "verdict": null,
+            "outside_envelope": null
+          }
+        ],
+        "then": {
+          "made": [
+            [
+              5,
+              1,
+              2
+            ]
+          ],
+          "alerts": [
+            {
+              "where": 5,
+              "row": 1,
+              "col_block": 2,
+              "captured": {
+                "row": 1,
+                "col_block": 2,
+                "with_bias": true,
+                "z": 160.58033752441406
+              },
+              "capture_missing": null,
+              "verdict": "output_wrong",
+              "outside_envelope": 1
+            }
+          ]
+        },
+        "dropped": 2
+      },
+      "d": {
+        "made": [
+          [
+            0,
+            2,
+            3
+          ],
+          [
+            1,
+            3,
+            4
+          ]
+        ],
+        "alerts_first_read": [],
+        "alerts_second_read": [
+          {
+            "where": 0,
+            "row": 2,
+            "col_block": 3,
+            "captured": {
+              "row": 2,
+              "col_block": 3,
+              "with_bias": true,
+              "z": 161.45419311523438
+            },
+            "capture_missing": null,
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ],
+        "alerts_last_read": [
+          {
+            "where": 1,
+            "captured": {
+              "row": 3,
+              "col_block": 4,
+              "with_bias": true,
+              "z": 175.7519073486328
+            },
+            "verdict": "output_wrong",
+            "outside_envelope": 1
+          }
+        ]
+      },
+      "stats": {
+        "alerts": 14,
+        "captured": 12,
+        "captures_dropped": 2,
+        "checks_executed": 90
+      }
+    }
+  },
+  "criteria": {
+    "6 capture in a CUDA graph: the one-time fault kept as it alarmed, a checker fault not blamed": true,
+    "7 capture costs the clean check at most 5%": true,
+    "8 capture under contention: racing programs, every layer at once, a full buffer, reads in flight": true
+  },
+  "all met": true,
+  "minutes": 2.0,
+  "estimated_cost_usd": 0.14
+}

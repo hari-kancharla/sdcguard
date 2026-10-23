@@ -111,7 +111,7 @@ def test_demo_success_is_explicit(runner, monkeypatch):
     assert json.loads((Path(runner.RUNS) / "demo/STATUS.json").read_text())["passed"] is True
 
 
-@pytest.mark.parametrize("phase", ["vllm", "demo"])
+@pytest.mark.parametrize("phase", ["vllm", "demo", "machete_diag"])
 def test_locked_phase_is_not_a_fresh_validation(runner, monkeypatch, phase):
     calls = _fake_tee(runner, monkeypatch, {})
     monkeypatch.setattr(runner, "_locked", lambda *a: "NOT STARTED: an earlier run may be active")
@@ -158,10 +158,11 @@ def test_failed_or_locked_remote_still_downloads_then_fails(runner, monkeypatch,
     assert "Done." not in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("phase", ["vllm", "demo", "fetch"])
+@pytest.mark.parametrize("phase", ["vllm", "demo", "machete_diag", "fetch"])
 def test_successful_remote_and_download_complete(runner, monkeypatch, phase, capsys):
     monkeypatch.setattr(runner, "vllm", _remote("vllm finished"))
     monkeypatch.setattr(runner, "demo", _remote("demo finished"))
+    monkeypatch.setattr(runner, "machete_diag", _remote("machete_diag finished"))
     monkeypatch.setattr(runner, "bundle", _remote(_archive()))
     runner.main(phase)
     assert (runner.LOCAL / "runs/gpu_r3/log.txt").exists()
@@ -203,3 +204,14 @@ def test_experiment_gate_accepts_real_current_serving_report_fields(monkeypatch)
                                             "flipped": ["layer"]}) == []
     finally:
         guard.detach()
+
+
+def test_machete_diag_runs_the_diagnostic_and_records_its_exit(runner, monkeypatch):
+    calls = _fake_tee(runner, monkeypatch, {})
+    assert "finished" in runner.machete_diag()
+    assert calls == ["diag"]
+    assert json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())["passed"] is True
+    _fake_tee(runner, monkeypatch, {"diag": 1})
+    with pytest.raises(RuntimeError, match="exit code 1"):
+        runner.machete_diag(force=True)
+    assert json.loads((Path(runner.RUNS) / "machete_diag/STATUS.json").read_text())["passed"] is False

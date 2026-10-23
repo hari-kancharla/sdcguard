@@ -45,9 +45,13 @@ def _kept_row(alert, layer: str) -> bool:
             and (alert.get("recheck") or {}).get("verdict") == "weights_changed")
 
 
+NOT_SELECTED = "not selected by SDCGUARD_SHARE"       # (sdcguard.vllm_plugin's reason for a layer left out by a share)
+
+
 def _quant_failures(result: dict) -> list[str]:
     """--expect-quant: every checked layer is quantized and run by the expected kernel, and nothing but the LM head
-    went unchecked."""
+    went unchecked (and, when only a share of the layers is checked, the layers the share leaves out; the October 22
+    run with 1 in 8 failed only on those, an error in this rule)."""
     kernel = result.get("expect_quant")
     if not kernel:
         return []
@@ -61,7 +65,9 @@ def _quant_failures(result: dict) -> list[str]:
         if not kinds or any(not str(k).startswith(kernel) for k in kinds):
             errors.append(f"worker {i}: checked layers ran {sorted(kinds)}, expected {kernel} only")
         report = c.get("layer_report") or {}
-        left = {k: v for k, v in (report.get("unchecked_by_method") or {}).items() if k != "LM head"}
+        shared = str(result.get("share", "1")) not in ("1", "1.0")
+        left = {k: v for k, v in (report.get("unchecked_by_method") or {}).items()
+                if k != "LM head" and not (shared and k == NOT_SELECTED)}
         if not report or left:
             errors.append(f"worker {i}: layers left unchecked besides the LM head: {left or 'no layer report'}")
     return errors

@@ -4,6 +4,8 @@
     modal run scripts/modal_vllm.py --phase demo   # 1-minute live demo (experiments/demo_vllm.py), about $0.40
     modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 50 min, about $4 (75-minute limit)
     modal run scripts/modal_vllm.py --phase outputs  # the gate's output check, about 12 min, about $1
+    modal run scripts/modal_vllm.py --phase machete_diag  # which part of the Machete patch changes completions,
+                                                          # about 20 min, about $1.60
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -290,6 +292,33 @@ def outputs(force: bool = False, source: dict | None = None) -> str:
     return f"outputs finished in {(time.monotonic() - t0) / 60:.1f} minutes: {codes}"
 
 
+@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=40 * 60)
+def machete_diag(force: bool = False, source: dict | None = None) -> str:
+    """Which part of sdcguard's Machete patch changes completions (experiments/machete_diag.py): one model, run
+    without sdcguard and with each variant of the patch, every completion compared."""
+    t0 = time.monotonic()
+    deadline = t0 + 40 * 60 - 120
+    msg = _locked("machete_diag", force)
+    if msg:
+        raise RuntimeError(msg)
+    out = f"{RUNS}/machete_diag"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/machete_diag.py", "--out", out], f"{out}/diag.txt",
+                    cwd="/root", timeout=max(0, deadline - time.monotonic()))
+    finally:
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       **_cost((time.monotonic() - t0) / 60)}, f)
+        vol.commit()
+    if code != 0:
+        raise RuntimeError(f"Machete diagnostic failed (exit code {code}); diagnostics were saved to {out}")
+    return f"machete_diag finished in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
 def demo(force: bool = False, source: dict | None = None) -> str:
     """The 1-minute vLLM demo (experiments/demo_vllm.py), for a screen recording of your terminal."""
@@ -334,6 +363,8 @@ ESTIMATES = {
                "resources for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
             "resources for a run that uses the whole limit, not a spending cap)",
+    "machete_diag": "about 20 minutes on 1 H100: roughly $1.60 (40-minute function limit; about $3.20 at requested "
+                    "resources for a run that uses the whole limit, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -359,6 +390,11 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
         elif phase == "outputs":
             message = outputs.remote(force, src)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED"):
+                failures.append(str(message))
+        elif phase == "machete_diag":
+            message = machete_diag.remote(force, src)
             print(message, flush=True)
             if str(message).startswith("NOT STARTED"):
                 failures.append(str(message))
