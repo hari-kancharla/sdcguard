@@ -211,6 +211,8 @@ def test_machete_diag_runs_the_diagnostic_and_records_its_exit_and_fix(runner, m
 
     def tee(cmd, log_path, **_):
         calls.append(Path(log_path).stem)
+        assert cmd[cmd.index("--model") + 1] == "Qwen/Qwen2.5-7B-Instruct-AWQ"     # round 3 (docs/METHOD.md)
+        assert cmd[cmd.index("--prompts") + 1] == "256"
         Path(log_path).write_text("log\n")
         Path(cmd[cmd.index("--out") + 1], "DIAG.json").write_text(json.dumps({"fix": "fused"}))
         return 0

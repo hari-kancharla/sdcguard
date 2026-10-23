@@ -1300,6 +1300,88 @@ changes on a GPU), `baseline_fresh` (does vLLM, compiling anew, give its own com
 can promise the same completions across fresh compiles, and the claim becomes "the same compiled kernels"),
 `fused_fresh` against both baselines, and the kernels each run autotuned anew.
 
+**What the run found (October 23).** Code fingerprint 7685141b635d (commit 2df6b13). The diagnostic
+(`results/machete_diag2_oct23/`, 21.7 minutes, about $1.75), against `baseline`, PyTorch 2.13.0 and vLLM 0.31.0:
+
+| Run | of 64 | of 16 | Inductor's code | Autotuned anew |
+|---|---|---|---|---|
+| `separate` | 61 | 15 | other kernels (2 not in `baseline`, 3 missing) and call orders | 5 kernels |
+| `fused` | 64 | 16 | the same in all 29 graphs | 1 kernel |
+| `fused_declared` | 61 | 15 | other kernels (1 not in `baseline`, 2 missing) | 1 kernel |
+| `baseline_fresh` | 64 | 16 | the same | 8 kernels, all with `baseline`'s configs |
+| `fused_fresh` | 64 | 16 | the same in all 29 graphs | 8 kernels: 7 with `baseline`'s configs, 1 it doesn't have |
+
+Every sdcguard run checked all 112 layers. `fused` met the rule, so the quantized runs started. `separate` changed
+prompts 0, 11 and 33, as `full` did in the first diagnostic. `fused_declared` behaved on the H100 as on the CPU with
+PyTorch 2.8: other kernel code and other completions.
+
+The quantized runs (`results/quant_oct23/`, 24.3 minutes, about $1.96) met criteria 1, 3 and 4 on all five: 112 of
+112 layers checked by the expected kernel, only the LM head left out, no alert in clean traffic (highest scores 2.26
+to 2.72), and the flipped scale caught in `model.layers.10.mlp.down_proj`, with the recheck saying the weights
+changed. Criterion 2:
+
+| Model, kernel | of 64 | Light load (16) | Slower at 256 requests at a time | At 16 |
+|---|---|---|---|---|
+| Qwen2.5-1.5B-Instruct-AWQ, Machete | 64 | all the same | 14.9% | 46.9% |
+| Qwen2.5-1.5B-Instruct-GPTQ-Int4, Machete | 64 | all the same | 10.2% | 46.4% |
+| Qwen2.5-1.5B-Instruct-AWQ, Marlin | 64 | all the same | 13.1% | 56.6% |
+| Qwen2.5-1.5B-Instruct-GPTQ-Int4, Marlin | 64 | all the same | 20.2% | 61.5% |
+| Qwen2.5-7B-Instruct-AWQ, Machete | **59** | some differed | 24.6% | 38.4% |
+| the same, 1 in 8 layers checked | **57** | some differed | 4.5% | 5.3% |
+
+So both 1.5B models now give vLLM's completions on Machete (62 and 63 of 64 before), and the 7B does not.
+
+**What was found after it (written before the next run).** The 7B's changed prompts were mostly the same ones as
+on October 22 with the plugin before the fix (prompts 0, 12, 23 and 44 then; 0, 12, 23, 36 and 44 now; prompt 12 at
+character 27 and prompt 44 at character 256 both times), also with only 15 layers checked, while `baseline` was the
+same on both days: the cause was not how the check is attached. Round 2's traces show something both plugins had in
+common: Inductor names the kernels it generates after the ops fused into them, without the op's namespace. Of the 9
+distinct kernels in the 1.5B model's graphs, 4 are named after Machete's GEMM in `baseline`
+(`triton_red_fused_fused_add_rms_norm_machete_mm_0` and `_2`, the residual adds and RMSNorms; the first piece's
+embedding and RMSNorm; and `triton_poi_fused_machete_mm_mul_silu_slice_1`, SiluAndMul), and in `fused` the same 4
+came out under `machete_checked` names, their code otherwise the same byte for byte. PyTorch 2.13 writes a kernel's
+name into the code it hashes (`config.triton.unique_kernel_names`, on by default), and Triton's autotuning results
+are cached by that hash, so a renamed kernel can't reuse `baseline`'s launch config. In `fused`, one kernel was
+autotuned anew: a pointwise config (XBLOCK only), so SiluAndMul's, the one renamed pointwise kernel; the 3 renamed
+reduction kernels wrote no autotuning result. In `fused_fresh`, 7 of its 8 autotuned kernels had `baseline`'s
+cache entries and the 8th didn't. Not known yet: whether the 7B's kernels (hidden size 3,584, a wider MLP) autotune
+where the 1.5B's didn't, whether autotuning picked other configs there, and whether that changed the completions.
+The next run records which kernels each run autotunes, by name, and tests it.
+
+A second difference both plugins had: the op took each layer's slot (and the check's other arguments) as constants
+in vLLM's graph, so no two layers' pieces of the graph (the parts between attention ops) were the same, and each was
+compiled on its own: `baseline` compiled 3 graphs, `fused` 29 (and the October 23 quantized run's log shows 7 and 43
+seconds of compiling for the 7B). Inductor makes some decisions while compiling by timing candidates (combining
+kernels, here: `benchmark_combo_kernel`, which vLLM turns on), and on the 1.5B model all 29 compiles came out the
+same; on the 7B, with larger kernels, that isn't known.
+
+The changes, both: the op is now named `machete_mm`, in sdcguard's namespace (`sdcguard::machete_mm`), so Inductor
+generates vLLM's kernels byte for byte, names included; and it takes one tensor of the layer's checksums instead of
+the slot and the check's arguments, and finds the layer and the rest from it when it runs, so every layer's piece is
+the same graph and is compiled once, as without sdcguard. `tests/test_quant.py` checks both on the CPU: the kernels
+byte for byte, and the second of two layers a hit in Inductor's graph cache (with a control: Marlin's check, which
+still takes the slot, misses).
+
+**The third diagnostic (written October 23, before it runs).** `modal run scripts/modal_vllm.py --phase
+machete_fix`, as before: `experiments/machete_diag.py` on Qwen2.5-7B-Instruct-AWQ with 256 requests at a time (as
+vllm_check sends; all 256 completions compared, and the first 64 that vllm_check compares counted too), runs
+`baseline`, `fused` (the plugin as it is now), `fused_renamed` (the same op named `machete_checked`, as in round 2)
+and `fused_slots` (named `machete_mm`, but taking the slot and the check's arguments as constants, as in round 2) in
+one Inductor cache in that order, then `baseline_fresh` and `fused_fresh` in caches of their own; then,
+only if `fused` meets the rule, the quantized runs with criteria 1 to 5 unchanged.
+
+Rule, for `fused`, as before with two additions: every completion the same as `baseline`'s (256 and 16); where
+code was captured, the same kernels and call orders, and now the same kernels byte for byte, names included; for a
+run in the shared cache, no kernel autotuned anew; every registered layer ran checks. If `fused` doesn't meet it,
+the quantized runs don't start, and Machete's layers go unchecked in 0.5.0 unless a further run finds the cause
+(listed as quantized layers left over, with why; Marlin's stay checked); the README says which.
+
+Reported, deciding nothing: `fused_renamed` and `fused_slots`, each with one of the two differences back (whichever
+changes completions, and how its code and autotuning differ, says which difference mattered; if neither does, the
+cause was something else, and that's written here), `baseline_fresh` (does vLLM, compiling the 7B anew, give its
+own completions, and pick the same launch configs?), and `fused_fresh` against both. About 20 minutes for the
+diagnostic's six runs of the 7B, about $1.60, so about 45 to 50 minutes and $3.70 in all with the quantized runs.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

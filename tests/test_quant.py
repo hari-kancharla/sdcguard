@@ -655,9 +655,11 @@ def test_checked_machete_layers_compile_to_vllms_own_values(monkeypatch, tmp_pat
 
 
 def test_checked_machete_layers_compile_to_vllms_own_kernels(monkeypatch, tmp_path):
-    """Inductor generates the same kernels for the checked layers as for vLLM's own code, and calls them and the
-    opaque ops in the same order: sdcguard::machete_checked where vLLM has machete_mm, nothing added (no copies of
-    the check's buffers, no check op of its own). experiments/machete_diag.py compares the same on a GPU."""
+    """Inductor generates the same kernels for the checked layers as for vLLM's own code, byte for byte, names
+    included (Triton caches autotuning by a kernel's code: a kernel under another name is autotuned anew), and
+    calls them and the opaque ops in the same order: sdcguard::machete_mm where vLLM has _C::machete_mm, nothing
+    added (no copies of the check's buffers, no check op of its own). experiments/machete_diag.py compares the
+    same on a GPU."""
     from torch._inductor.utils import run_and_get_code
     diag = _diag()
     plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
@@ -672,8 +674,9 @@ def test_checked_machete_layers_compile_to_vllms_own_kernels(monkeypatch, tmp_pa
     assert len(want) == len(got) == 1
     w, g = diag.kernels_and_calls(want[0]), diag.kernels_and_calls(got[0])
     assert w["kernels"] and g["kernels"] == w["kernels"]
+    assert g["raw"] == w["raw"]                                          # names included
     assert g["calls"] == w["calls"] and g["calls"].count("X:MACHETE") == 2
-    assert "sdcguard.machete_checked" in got[0] and "sdcguard_test.machete_mm" in want[0]
+    assert "torch.ops.sdcguard.machete_mm" in got[0] and "torch.ops.sdcguard_test.machete_mm" in want[0]
     assert "check_static" not in got[0]
 
 
@@ -729,23 +732,134 @@ def test_a_wrong_machete_output_is_caught_under_torch_compile(monkeypatch, tmp_p
         assert e.detail["row"] == 7 and e.detail["recheck"]["verdict"] == "output_wrong", e.detail
 
 
-def test_the_machete_op_takes_the_check_ops_arguments_without_the_buffers_it_writes(monkeypatch, tmp_path):
-    """serve.OP_BUFFERS names where op_args has the tensors the check writes, which the op looks up instead
-    (ServeGuard.buffers); what's left is what it takes after Machete's own arguments, in its schema's order."""
-    from sdcguard import serve
+def test_the_machete_op_finds_its_layer_from_the_checksums_it_gets(monkeypatch, tmp_path):
+    """sdcguard::machete_mm takes Machete's arguments and one tensor of the layer's checksums; the slot and the rest
+    of the check's arguments come from the guard when it runs, so nothing in the traced graph differs between
+    layers."""
     plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
     g = plugin.guard()
-    names = [a.name for a in plugin._machete_op().default._schema.arguments][6:]
-    check = [a.name for a in torch.ops.sdcguard.check_static.default._schema.arguments][2:]
-    assert [check[i] for i in serve.OP_BUFFERS] == ["state", "cap_meta", "cap_data"]
-    assert names == [n for n in check if n not in ("state", "cap_meta", "cap_data")]
-    for slot in range(2):
-        args = g.op_args(slot, False)
-        assert len(args) == len(check)
-        assert all(args[i] is b for i, b in zip(serve.OP_BUFFERS, g.buffers(slot)))
-        rest = plugin._without_buffers(args, serve.OP_BUFFERS)
-        assert len(rest) == len(names) and all(a is b for a, b in zip(rest, [a for i, a in enumerate(args)
-                                                                             if i not in serve.OP_BUFFERS]))
+    names = [a.name for a in plugin._machete_op().default._schema.arguments]
+    assert names == ["a", "b_q", "b_type_id", "b_group_scales", "b_group_zeros", "b_group_size", "checksums"]
+    for slot, lay in enumerate((qkv, o)):
+        assert lay._sdcguard_args[0][0] is g.layers[slot]["cs"].parts
+        assert plugin._slot_of(g, lay._sdcguard_args[0][0]) == slot
+    assert plugin._slot_of(g, torch.zeros(3)) is None
+    old = g.layers[1]["cs"].parts                     # checksums recomputed (a weight reload): the table follows
+    monkeypatch.setattr(g.layers[1]["cs"], "parts", old.clone())
+    assert plugin._slot_of(g, g.layers[1]["cs"].parts) == 1 and plugin._slot_of(g, old) is None
+
+
+def test_a_machete_layer_whose_check_was_turned_off_is_not_checked_by_the_op(monkeypatch, tmp_path):
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    g = plugin.guard()
+    kern = o.quant_method.kernel
+    x = x_in(k=64, m=8)
+    key = o._sdcguard_args[0][0]
+    w_q, w_s, w_zp = kern._get_weight_params(o)
+    c = kern.config
+    run = lambda: plugin._MACHETE["op"](x, w_q, c.weight_type.id, w_s, w_zp, c.group_size, key)  # noqa: E731
+    before = g.counts()[o.prefix]["checks"]
+    y = run()
+    assert torch.equal(y, _Kernel.apply_weights(kern, o, x)) and g.counts()[o.prefix]["checks"] == before + 1
+    monkeypatch.setattr(o, "_sdcguard_args", None)    # what refresh() does to a quantized layer
+    assert torch.equal(run(), y) and g.counts()[o.prefix]["checks"] == before + 1
+
+
+def test_two_machete_layers_compile_to_one_cached_graph(monkeypatch, tmp_path):
+    """Two layers of the same shape: the second compile is a hit in Inductor's FX graph cache (vLLM compiles each
+    piece between attention ops once for all the layers, without sdcguard and with it now; when the op took the
+    layer's slot as a constant, every layer's piece compiled anew)."""
+    import torch._inductor.config as ic
+    from torch._dynamo.utils import counters
+    from torch._inductor.utils import fresh_inductor_cache
+    M, Runner, classes = install_kernels(monkeypatch)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    monkeypatch.setattr(ic, "enable_auto_functionalized_v2", False)
+    monkeypatch.setattr(ic, "fx_graph_cache", True)
+    K = classes["machete"]
+    a, b = load(nn.ModuleList([QLin(K, k=256, n=192, wt=U4B8, group=64, prefix=f"model.layers.{i}.mlp.down_proj",
+                                    seed=i) for i in range(2)]))
+    x = x_in(m=16)
+    with fresh_inductor_cache():
+        outs = []
+        for lay in (a, b):
+            torch._dynamo.reset()
+            hits = counters["inductor"]["fxgraph_cache_hit"]
+            outs.append(torch.compile(lambda t, lay=lay: _patched(lay.quant_method.kernel, lay, t, None),
+                                      fullgraph=True)(x))
+        torch._dynamo.reset()
+    assert counters["inductor"]["fxgraph_cache_hit"] == hits + 1       # the second layer's graph: a hit
+    for lay, y in zip((a, b), outs):
+        assert torch.equal(y, _Kernel.apply_weights(lay.quant_method.kernel, lay, x))
+    c = plugin.guard().counts()
+    assert c[a.prefix]["checks"] == 1 and c[b.prefix]["checks"] == 1          # each layer checked as itself
+    # the control: Marlin's check still takes its slot as a constant, so its second layer compiles anew
+    m1, m2 = load(nn.ModuleList([QLin(classes["marlin"], k=256, n=192, wt=U4B8, group=64,
+                                      prefix=f"model.layers.{i}.mlp.up_proj", seed=i) for i in (5, 6)]))
+    with fresh_inductor_cache():
+        for lay in (m1, m2):
+            torch._dynamo.reset()
+            hits = counters["inductor"]["fxgraph_cache_hit"]
+            torch.compile(lambda t, lay=lay: lay.quant_method.kernel.apply_weights(lay, t, None), fullgraph=True)(x)
+        torch._dynamo.reset()
+    assert counters["inductor"]["fxgraph_cache_hit"] == hits
+
+
+def test_the_diagnostics_variants_each_bring_back_one_difference(monkeypatch, tmp_path):
+    """experiments/machete_diag.py's fused_renamed (the op named machete_checked) gives vLLM's kernels under other
+    names; fused_slots (the slot and the check's arguments as constants) gives them byte for byte, but each layer's
+    graph compiles anew. Both give vLLM's values and run every check."""
+    import torch._inductor.config as ic
+    from torch._dynamo.utils import counters
+    from torch._inductor.utils import fresh_inductor_cache, run_and_get_code
+    diag = _diag()
+    plugin, (qkv, o), block = _machete_block(monkeypatch, tmp_path)
+    x = x_in(m=64)
+    torch._dynamo.reset()
+    _, want = run_and_get_code(torch.compile(block(_vllm_machete.apply_weights), fullgraph=True), x)
+    w = diag.kernels_and_calls(want[0])
+    # fused_renamed
+    monkeypatch.setitem(plugin._MACHETE, "op", diag._diag_op("machete_checked", with_slots=False))
+    torch._dynamo.reset()
+    out, got = run_and_get_code(torch.compile(block(_patched), fullgraph=True), x)
+    g = diag.kernels_and_calls(got[0])
+    assert g["kernels"] == w["kernels"] and g["calls"] == w["calls"] and g["raw"] != w["raw"]
+    assert any("machete_checked" in n for n in g["raw"].values())
+    torch._dynamo.reset()
+    # fused_slots: install its apply_weights on the stand-in class, then compile two layers of the same shape
+    monkeypatch.setitem(plugin._MACHETE, "op", plugin._machete_op())
+    K = type(qkv.quant_method.kernel)
+    import inspect
+    orig = inspect.signature(K.apply_weights).parameters["_orig"].default
+    fake_machete = types.SimpleNamespace(MacheteLinearKernel=K)
+    for n in ("vllm.model_executor.kernels.linear.mixed_precision",):
+        monkeypatch.setattr(sys.modules[n], "machete", fake_machete, raising=False)
+    monkeypatch.setitem(sys.modules, "vllm.model_executor.kernels.linear.mixed_precision.machete", fake_machete)
+    monkeypatch.setattr(plugin, "register", lambda: None)
+    monkeypatch.setattr(K, "apply_weights", K.apply_weights)
+    diag._install("fused_slots")
+    assert K.apply_weights is not _patched and orig is _vllm_machete.apply_weights
+    torch._dynamo.reset()
+    out2, got2 = run_and_get_code(torch.compile(block(_patched), fullgraph=True), x)
+    g2 = diag.kernels_and_calls(got2[0])
+    assert g2["raw"] == w["raw"] and g2["calls"] == w["calls"]
+    for a, b in zip(out2, out):
+        assert torch.equal(a, b)
+    torch._dynamo.reset()
+    monkeypatch.setattr(ic, "fx_graph_cache", True)
+    a, b = load(nn.ModuleList([QLin(K, k=256, n=192, wt=U4B8, group=64, prefix=f"model.layers.{i}.mlp.down_proj",
+                                    seed=i) for i in (7, 8)]))
+    with fresh_inductor_cache():
+        for lay in (a, b):
+            torch._dynamo.reset()
+            hits = counters["inductor"]["fxgraph_cache_hit"]
+            torch.compile(lambda t, lay=lay: K.apply_weights(lay.quant_method.kernel, lay, t, None),
+                          fullgraph=True)(x_in(m=16))
+        torch._dynamo.reset()
+    assert counters["inductor"]["fxgraph_cache_hit"] == hits         # the second layer compiled anew
+    c = plugin.guard().counts()
+    assert all(c[n]["checks"] >= 1 for n in (qkv.prefix, o.prefix, a.prefix, b.prefix))
 
 
 @torch.library.custom_op("sdcguard_test::tagged", mutates_args=(), tags=(torch.Tag.needs_fixed_stride_order,))

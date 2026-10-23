@@ -1,0 +1,166 @@
+{
+ "model": "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4",
+ "baseline_code": {
+  "graphs": 3,
+  "with_code": 3
+ },
+ "baseline_kernels": 7,
+ "runs": {
+  "separate": {
+   "same": "61/64",
+   "light_same": "15/16",
+   "all_same": false,
+   "differing": [
+    0,
+    11,
+    33
+   ],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 29,
+    "with_code": 29,
+    "captured": true,
+    "kernels": 6,
+    "kernels_base": 7,
+    "kernels_only_here": 2,
+    "kernels_only_in_base": 3,
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 3,
+    "sequences_only_in_base": 3,
+    "same": false
+   },
+   "autotuned_here": 5
+  },
+  "fused": {
+   "same": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 29,
+    "with_code": 29,
+    "captured": true,
+    "kernels": 7,
+    "kernels_base": 7,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true
+   },
+   "autotuned_here": 1
+  },
+  "fused_declared": {
+   "same": "61/64",
+   "light_same": "15/16",
+   "all_same": false,
+   "differing": [
+    0,
+    11,
+    33
+   ],
+   "inductor_cache": "shared",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 29,
+    "with_code": 29,
+    "captured": true,
+    "kernels": 6,
+    "kernels_base": 7,
+    "kernels_only_here": 1,
+    "kernels_only_in_base": 2,
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 2,
+    "sequences_only_in_base": 2,
+    "same": false
+   },
+   "autotuned_here": 1
+  },
+  "baseline_fresh": {
+   "same": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "its own",
+   "checks": null,
+   "code": {
+    "graphs": 3,
+    "with_code": 3,
+    "captured": true,
+    "kernels": 7,
+    "kernels_base": 7,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true
+   },
+   "autotuned_here": 8,
+   "autotuned_like_baseline": 8,
+   "autotuned_unlike_baseline": []
+  },
+  "fused_fresh": {
+   "same": "64/64",
+   "light_same": "16/16",
+   "all_same": true,
+   "differing": [],
+   "inductor_cache": "its own",
+   "checks": [
+    {
+     "layers": 112,
+     "layers_with_checks": 112
+    }
+   ],
+   "code": {
+    "graphs": 29,
+    "with_code": 29,
+    "captured": true,
+    "kernels": 7,
+    "kernels_base": 7,
+    "kernels_only_here": 0,
+    "kernels_only_in_base": 0,
+    "sequences": 3,
+    "sequences_base": 3,
+    "sequences_only_here": 0,
+    "sequences_only_in_base": 0,
+    "same": true
+   },
+   "autotuned_here": 8,
+   "autotuned_like_baseline": 7,
+   "autotuned_unlike_baseline": []
+  }
+ },
+ "fix": "fused",
+ "exit_codes": {
+  "baseline": 0,
+  "separate": 0,
+  "fused": 0,
+  "fused_declared": 0,
+  "baseline_fresh": 0,
+  "fused_fresh": 0
+ }
+}

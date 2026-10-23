@@ -5,10 +5,10 @@
     modal run scripts/modal_vllm.py --phase quant  # INT4 models, about 26 min, about $2.10 (75-minute limit)
     modal run scripts/modal_vllm.py --phase outputs  # the gate's output check, about 12 min, about $1
     modal run scripts/modal_vllm.py --phase machete_diag  # the Machete patch against vLLM's own completions and
-                                                          # compiled kernels, about 15 min, about $1.20
+                                                          # compiled kernels, about 20 min, about $1.60
     modal run scripts/modal_vllm.py --phase machete_fix   # machete_diag, then quant if the fix meets the rule in
-                                                          # docs/METHOD.md: about 45 min, about $3.50 (15 and $1.20
-                                                          # if it doesn't)
+                                                          # docs/METHOD.md: about 45 to 50 min, about $3.70 (20
+                                                          # and $1.60 if it doesn't)
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -295,6 +295,11 @@ def outputs(force: bool = False, source: dict | None = None) -> str:
     return f"outputs finished in {(time.monotonic() - t0) / 60:.1f} minutes: {codes}"
 
 
+# round 3 (docs/METHOD.md): the model whose completions still changed in the INT4 runs after round 2, as many
+# requests at once as vllm_check sends; its runs are the script's default list
+MACHETE_DIAG_ARGS = ("--model", "Qwen/Qwen2.5-7B-Instruct-AWQ", "--prompts", "256")
+
+
 @app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=60 * 60)
 def machete_diag(force: bool = False, source: dict | None = None) -> dict:
     """sdcguard's Machete patch against vLLM without it (experiments/machete_diag.py): one model, every completion
@@ -311,7 +316,8 @@ def machete_diag(force: bool = False, source: dict | None = None) -> dict:
     os.makedirs(out, exist_ok=True)
     code, fix = None, None
     try:
-        code = _tee([sys.executable, f"{R}/experiments/machete_diag.py", "--out", out], f"{out}/diag.txt",
+        code = _tee([sys.executable, f"{R}/experiments/machete_diag.py", "--out", out, *MACHETE_DIAG_ARGS],
+                    f"{out}/diag.txt",
                     cwd="/root", timeout=max(0, deadline - time.monotonic()))
         try:
             fix = json.load(open(f"{out}/DIAG.json")).get("fix") if code == 0 else None
@@ -372,12 +378,12 @@ ESTIMATES = {
                "resources for a run that uses the whole limit, not a spending cap)",
     "demo": "about 5 minutes on 1 H100: roughly $0.40 (15-minute function limit; about $1.20 at requested "
             "resources for a run that uses the whole limit, not a spending cap)",
-    "machete_diag": "about 15 minutes on 1 H100: roughly $1.20 (60-minute function limit; about $4.80 at requested "
+    "machete_diag": "about 20 minutes on 1 H100: roughly $1.60 (60-minute function limit; about $4.80 at requested "
                     "resources for a run that uses the whole limit, not a spending cap)",
-    "machete_fix": "the Machete diagnostic (about 15 minutes, roughly $1.20), then, only if the fix meets the rule "
-                   "written in docs/METHOD.md, the INT4 runs (about 26 minutes, roughly $2.10): about 45 minutes and "
-                   "$3.50 in all on 1 H100 (limits 60 and 75 minutes; at most about $10.90 at requested resources, "
-                   "not a spending cap)",
+    "machete_fix": "the Machete diagnostic (about 20 minutes, roughly $1.60), then, only if the fix meets the rule "
+                   "written in docs/METHOD.md, the INT4 runs (about 26 minutes, roughly $2.10): about 45 to 50 "
+                   "minutes and $3.70 in all on 1 H100 (limits 60 and 75 minutes; at most about $10.90 at requested "
+                   "resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 

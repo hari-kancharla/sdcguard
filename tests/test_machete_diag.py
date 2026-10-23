@@ -60,12 +60,15 @@ def test_generated_code_is_read_as_kernels_and_a_call_order(diag):
     assert r["calls"] == ["X:MACHETE", f"K:{ids[True]}", f"K:{ids[False]}"]
 
 
-def test_kernel_ids_ignore_names_but_not_code(diag):
+def test_kernel_ids_ignore_names_but_not_code_and_raw_ids_see_both(diag):
     renamed = TRITON.replace("triton_poi_fused_add_0", "triton_poi_fused_add_7").replace(
         "'backend_hash': 'ABC123'", "'backend_hash': 'FFFF'").replace("# a comment", "# another")
-    assert diag.kernels_and_calls(renamed) == diag.kernels_and_calls(TRITON)
+    r, t = diag.kernels_and_calls(renamed), diag.kernels_and_calls(TRITON)
+    assert r["kernels"] == t["kernels"] and r["calls"] == t["calls"]
+    assert set(r["raw"]) != set(t["raw"]) and sorted(r["raw"].values()) == ["triton_poi_fused_add_7",
+                                                                            "triton_red_fused_rms_1"]
     changed = TRITON.replace("x0 = xindex", "x0 = xindex + 1")
-    assert set(diag.kernels_and_calls(changed)["kernels"]) != set(diag.kernels_and_calls(TRITON)["kernels"])
+    assert set(diag.kernels_and_calls(changed)["kernels"]) != set(t["kernels"])
 
 
 def test_every_kind_of_opaque_call_is_kept_in_order(diag):
@@ -76,7 +79,7 @@ def test_every_kind_of_opaque_call_is_kept_in_order(diag):
     assert [c for c in calls if c.startswith("X:")] == ["X:MACHETE", "X:sdcguard.check_static",
                                                         "X:higher_order.auto_functionalized", "X:aten.copy_",
                                                         "X:extern.mm"]
-    for op in ("sdcguard.machete_checked", "sdcguard_diag.machete_checked_declared", "_C.machete_mm"):
+    for op in ("sdcguard.machete_mm", "sdcguard_diag.machete_checked", "sdcguard_diag.machete_mm", "_C.machete_mm"):
         c = TRITON.replace("torch.ops._C.machete_mm.default", f"torch.ops.{op}.default")
         assert diag.kernels_and_calls(c)["calls"][0] == "X:MACHETE"
 
@@ -95,9 +98,17 @@ def test_code_summary_and_comparison(diag, tmp_path):
     base = diag.code_summary(_trace(tmp_path / "b", [TRITON, None, None]))
     assert base["graphs"] == 3 and base["with_code"] == 1 and len(base["sequences"]) == 1
     same = diag.code_summary(_trace(tmp_path / "s", [TRITON.replace("torch.ops._C.machete_mm",
-                                                                    "torch.ops.sdcguard.machete_checked")] * 3))
+                                                                    "torch.ops.sdcguard.machete_mm")] * 3))
     c = diag.compare_code(base, same)
-    assert c["same"] and c["captured"] and c["kernels_only_here"] == [] and c["sequences_only_here"] == 0
+    assert c["same"] and c["raw_same"] and c["captured"] and c["kernels_only_here"] == []
+    assert c["sequences_only_here"] == 0 and c["raw_only_here"] == []
+    # the same code under other names (round 2: the op named machete_checked): same, but not byte for byte
+    renamed = diag.code_summary(_trace(tmp_path / "r", [TRITON.replace("triton_red_fused_rms_1",
+                                                                       "triton_red_fused_rms_machete_checked_1")]))
+    c = diag.compare_code(base, renamed)
+    assert c["same"] and not c["raw_same"]
+    assert c["raw_only_here"] == ["triton_red_fused_rms_machete_checked_1"]
+    assert c["raw_only_in_base"] == ["triton_red_fused_rms_1"]
     other = diag.code_summary(_trace(tmp_path / "o", [TRITON.replace("x0 = xindex", "x0 = xindex + 1")]))
     c = diag.compare_code(base, other)
     assert not c["same"] and len(c["kernels_only_here"]) == 1 and len(c["kernels_only_in_base"]) == 1
@@ -110,6 +121,7 @@ def test_code_summary_and_comparison(diag, tmp_path):
 
 
 def _result(outputs, light, checks=((112, 112),), autotuned=None, cache="shared"):
+    """One run's JSON; light: its light-load completions."""
     return {"model": "m", "outputs": outputs, "light_outputs": light, "inductor_cache": cache,
             "checks": [{"layers": a, "layers_with_checks": b} for a, b in checks], "autotuned": autotuned or {}}
 
@@ -122,51 +134,88 @@ def _write(out, name, res, code=TRITON):
         _trace(out / "code" / name, [code])
 
 
+RUNS_ALL = ["baseline", "fused", "fused_renamed", "fused_slots", "separate", "baseline_fresh", "fused_fresh"]
+
+
 def test_the_comparison_and_the_rule_that_picks_the_fix(diag, tmp_path):
     out = tmp_path
-    fused_code = TRITON.replace("torch.ops._C.machete_mm", "torch.ops.sdcguard.machete_checked")
-    _write(out, "baseline", {**_result(["a", "b"], ["a"]), "autotuned": {"k1": {"XBLOCK": 64}, "k2": {"XBLOCK": 8}}})
-    _write(out, "separate", _result(["a", "x"], ["a"]), TRITON.replace(
+    fused_code = TRITON.replace("torch.ops._C.machete_mm", "torch.ops.sdcguard.machete_mm")
+    renamed_code = fused_code.replace("triton_red_fused_rms_1", "triton_red_fused_rms_machete_checked_1")
+    _write(out, "baseline", {**_result(["a", "b", "c"], ["a"]),
+                             "autotuned": {"k1": {"XBLOCK": 64}, "k2": {"XBLOCK": 8}}})
+    _write(out, "separate", _result(["a", "x", "c"], ["a"]), TRITON.replace(
         "    del buf0\n", "    torch.ops.sdcguard.check_static.default(buf0)\n"))
-    _write(out, "fused", _result(["a", "b"], ["a"]), fused_code)
-    _write(out, "fused_declared", _result(["a", "b"], ["a"]), fused_code)
-    _write(out, "baseline_fresh", _result(["a", "b"], ["a"], autotuned={"k1": {"XBLOCK": 64}, "k2": {"XBLOCK": 16}},
-                                          cache="its own"))
-    s = diag.compare(str(out))
+    _write(out, "fused", _result(["a", "b", "c"], ["a"]), fused_code)
+    _write(out, "fused_renamed", {**_result(["a", "b", "y"], ["a"], autotuned={"k9": {"R0_BLOCK": 16}}),
+                                  "autotuned_kernels": {"k9": ["triton_red_fused_rms_machete_checked_1"]}},
+           renamed_code)
+    _write(out, "fused_slots", _result(["a", "b", "c"], ["a"]), fused_code)
+    _write(out, "baseline_fresh", _result(["a", "b", "c"], ["a"], cache="its own",
+                                          autotuned={"k1": {"XBLOCK": 64}, "k2": {"XBLOCK": 16}}))
+    s = diag.compare(str(out), RUNS_ALL)
     r = s["runs"]
-    assert r["separate"]["same"] == "1/2" and r["separate"]["differing"] == [1] and not r["separate"]["all_same"]
+    assert s["prompts"] == 3 and s["baseline_autotuned"] == 2
+    assert r["separate"]["same"] == "2/3" and r["separate"]["differing"] == [1] and not r["separate"]["all_same"]
     assert r["separate"]["code"]["sequences_only_here"] == 1 and not r["separate"]["code"]["same"]
-    assert r["fused"]["all_same"] and r["fused"]["code"]["same"]
+    assert r["fused"]["all_same"] and r["fused"]["code"]["same"] and r["fused"]["code"]["raw_same"]
+    rn = r["fused_renamed"]
+    assert rn["code"]["same"] and not rn["code"]["raw_same"] and rn["differing"] == [2]
+    assert rn["code"]["raw_only_here"] == ["triton_red_fused_rms_machete_checked_1"]
+    assert rn["autotuned_here"] == 1 and rn["autotuned_not_in_baseline"] == ["k9"]
+    assert rn["autotuned_kernels_not_in_baseline"] == ["triton_red_fused_rms_machete_checked_1"]
     fresh = r["baseline_fresh"]
     assert fresh["autotuned_like_baseline"] == 1 and fresh["autotuned_unlike_baseline"] == ["k2"]
     assert r["fused_fresh"] == {"error": "no result"}
     assert s["fix"] == "fused"
     assert json.loads((out / "DIAG.json").read_text()) == s
     assert "graph sequences only in this run" in (out / "code_diff_separate.txt").read_text()
-    # fused: one completion different -> fused_declared, if it meets the rule
-    _write(out, "fused", _result(["a", "z"], ["a"]), fused_code)
-    assert diag.compare(str(out))["fix"] == "fused_declared"
+    assert "triton_red_fused_rms_machete_checked_1" in (out / "code_diff_fused_renamed.txt").read_text()
+    assert r["fused_slots"]["all_same"]
+    # fused: one completion different -> no fix (the other variants are reported, they're not candidates)
+    _write(out, "fused", _result(["a", "z", "c"], ["a"]), fused_code)
+    assert diag.compare(str(out), RUNS_ALL)["fix"] is None
     # the same completions, but other kernels: not a fix
-    _write(out, "fused_declared", _result(["a", "b"], ["a"]), TRITON.replace("x0 = xindex", "x0 = xindex + 1"))
-    assert diag.compare(str(out))["fix"] is None
+    _write(out, "fused", _result(["a", "b", "c"], ["a"]), TRITON.replace("x0 = xindex", "x0 = xindex + 1"))
+    assert diag.compare(str(out), RUNS_ALL)["fix"] is None
+    # the same completions and code, but under other kernel names: not a fix either
+    _write(out, "fused", _result(["a", "b", "c"], ["a"]), renamed_code)
+    assert diag.compare(str(out), RUNS_ALL)["fix"] is None
+    # and in the shared cache, a kernel autotuned anew: not a fix
+    _write(out, "fused", _result(["a", "b", "c"], ["a"], autotuned={"k7": {"XBLOCK": 64}}), fused_code)
+    assert diag.compare(str(out), RUNS_ALL)["fix"] is None
+    _write(out, "fused", _result(["a", "b", "c"], ["a"]), fused_code)
+    assert diag.compare(str(out), RUNS_ALL)["fix"] == "fused"
 
 
-@pytest.mark.parametrize("entry,ok", [
-    ({"all_same": True, "code": {"captured": True, "same": True},
-      "checks": [{"layers": 112, "layers_with_checks": 112}]}, True),
-    ({"all_same": True, "code": {"captured": False, "same": False}, "checks": [{"layers": 3, "layers_with_checks": 3}]},
-     True),                                                  # no code captured: the completions decide
-    ({"all_same": False, "code": {"captured": True, "same": True}, "checks": [{"layers": 3, "layers_with_checks": 3}]},
-     False),
-    ({"all_same": True, "code": {"captured": True, "same": False}, "checks": [{"layers": 3, "layers_with_checks": 3}]},
-     False),
-    ({"all_same": True, "code": {"captured": True, "same": True},
-      "checks": [{"layers": 112, "layers_with_checks": 111}]}, False),          # a layer whose check never ran
-    ({"all_same": True, "code": {"captured": True, "same": True}, "checks": [None]}, False),
-    ({"all_same": True, "code": {"captured": True, "same": True}, "checks": None}, False),
+def test_the_first_64_completions_are_counted_too(diag, tmp_path):
+    """vllm_check compares the first 64 of 256 requests: the diagnostic counts both."""
+    base = [f"t{i}" for i in range(256)]
+    other = list(base)
+    other[100] = "x"
+    _write(tmp_path, "baseline", _result(base, ["a"]))
+    _write(tmp_path, "fused", _result(other, ["a"]))
+    r = diag.compare(str(tmp_path), ["baseline", "fused"])["runs"]["fused"]
+    assert r["same"] == "255/256" and r["same_first_64"] == "64/64" and r["differing"] == [100]
+
+
+GOOD = {"all_same": True, "code": {"captured": True, "same": True, "raw_same": True}, "inductor_cache": "shared",
+        "autotuned_here": 0, "checks": [{"layers": 112, "layers_with_checks": 112}]}
+
+
+@pytest.mark.parametrize("change,ok", [
+    ({}, True),
+    ({"code": {"captured": False, "same": False, "raw_same": False}}, True),   # no code captured: the rest decides
+    ({"all_same": False}, False),
+    ({"code": {"captured": True, "same": False, "raw_same": False}}, False),
+    ({"code": {"captured": True, "same": True, "raw_same": False}}, False),     # other kernel names
+    ({"autotuned_here": 2}, False),                         # in the shared cache, a kernel autotuned anew
+    ({"autotuned_here": 8, "inductor_cache": "its own"}, True),                 # its own cache: all autotuned anew
+    ({"checks": [{"layers": 112, "layers_with_checks": 111}]}, False),          # a layer whose check never ran
+    ({"checks": [None]}, False),
+    ({"checks": None}, False),
 ])
-def test_the_fix_rule(diag, entry, ok):
-    assert diag._ok(entry) is ok
+def test_the_fix_rule(diag, change, ok):
+    assert diag._ok({**GOOD, **change}) is ok
 
 
 def test_autotuned_configs_are_read_from_the_cache_by_time(diag, tmp_path):
@@ -181,6 +230,9 @@ def test_autotuned_configs_are_read_from_the_cache_by_time(diag, tmp_path):
     # the launch config only: what the benchmarking took and the Triton cache hash change between identical picks
     assert diag._autotuned(str(tmp_path), since=2000) == {"cnew": {"XBLOCK": 64, "num_warps": 4, "num_stages": 1}}
     assert set(diag._autotuned(str(tmp_path), since=0)) == {"cold", "cnew"}
+    (tmp_path / "cd" / "cnew.py").write_text("import triton\n@triton.jit\ndef triton_red_fused_rms_norm_machete_mm_0("
+                                            "in_ptr0):\n    pass\ndef helper():\n    pass\n")
+    assert diag._autotuned_names(str(tmp_path), since=2000) == {"cnew": ["triton_red_fused_rms_norm_machete_mm_0"]}
 
 
 def _fake_vllm(monkeypatch, log):
@@ -258,37 +310,96 @@ def test_a_missing_machete_op_stops_the_run(diag, monkeypatch):
         diag._install("fused")
 
 
-def test_the_declared_op_registers_and_is_declared_as_mutating_the_buffers(diag):
-    op = diag._declared_op()
-    assert diag._declared_op() is op
-    schema = op.default._schema
-    mutated = [a.name for a in schema.arguments if a.alias_info is not None and a.alias_info.is_write]
-    assert mutated == ["state", "cap_meta", "cap_data"]
+def test_the_stand_in_ops_register_with_the_arguments_they_say(diag):
+    """fused_renamed's op: the plugin's arguments under round 2's name; fused_slots': named machete_mm, with the
+    slot and the check's other arguments (round 2's); both declared as mutating nothing."""
     from sdcguard import vllm_plugin
     shipped = vllm_plugin._machete_op().default._schema
-    assert not any(a.alias_info is not None and a.alias_info.is_write for a in shipped.arguments)
-    assert [a.name for a in shipped.arguments] == [a.name for a in schema.arguments
-                                                    if a.name not in ("state", "cap_meta", "cap_data")]
+    assert shipped.name == "sdcguard::machete_mm" and shipped.arguments[-1].name == "checksums"
+    renamed = diag._diag_op("machete_checked", with_slots=False)
+    assert diag._diag_op("machete_checked", with_slots=False) is renamed
+    assert renamed.default._schema.name == "sdcguard_diag::machete_checked"
+    assert [a.name for a in renamed.default._schema.arguments] == [a.name for a in shipped.arguments]
+    slots = diag._diag_op("machete_mm", with_slots=True)
+    names = [a.name for a in slots.default._schema.arguments]
+    assert slots.default._schema.name == "sdcguard_diag::machete_mm"
+    assert names[:6] == [a.name for a in shipped.arguments][:6] and names[6] == "parts" and "slot" in names
+    assert "state" not in names and "cap_meta" not in names
+    for op in (renamed, slots, vllm_plugin._machete_op()):
+        assert not any(a.alias_info is not None and a.alias_info.is_write for a in op.default._schema.arguments)
+
+
+def test_fused_renamed_swaps_the_op_and_wrap_only_runs_vllms_own(diag, monkeypatch):
+    log = []
+    K, shipped = _fake_vllm(monkeypatch, log)
+    monkeypatch.setattr(diag, "_diag_op", lambda name, with_slots: f"op {name} {with_slots}")
+    diag._install("fused_renamed")
+    from sdcguard import vllm_plugin
+    assert K.apply_weights is shipped and vllm_plugin._MACHETE["op"] == "op machete_checked False"
+    log.clear()
+    K2, shipped2 = _fake_vllm(monkeypatch, log)
+    diag._install("wrap_only")
+    layer = types.SimpleNamespace(_sdcguard_args=(("a",) * 19, None))
+    K2.apply_weights(K2(), layer, Out(log), "bias")
+    assert log == [("vllm", True)]                            # registered layers too: vLLM's own, no check
+
+
+def test_fused_slots_passes_the_slot_and_the_checks_constants(diag, monkeypatch):
+    log, got = [], []
+    K, shipped = _fake_vllm(monkeypatch, log)
+    monkeypatch.setattr(diag, "_diag_op", lambda name, with_slots: (lambda *a: got.append(a) or Out(log)))
+    diag._install("fused_slots")
+    assert K.apply_weights is not shipped
+    args = tuple(f"t{i}" for i in range(11)) + ("state", 7, 6.0, 1e-20, "cap_meta", "cap_data", 128, 16)
+    layer = types.SimpleNamespace(_sdcguard_args=(args, None))
+    kern = K()
+    kern.config = types.SimpleNamespace(partition_weight_shape=(4, 3), zero_points=False,
+                                        weight_type=types.SimpleNamespace(id=101), group_size=64)
+    kern._get_weight_params = lambda layer: ("w_q", "w_s", "w_zp")
+
+    class X:
+        shape = (2, 4)
+
+        def reshape(self, *a):
+            return self
+    monkeypatch.setattr(torch.compiler, "is_compiling", lambda: True)
+    K.apply_weights(kern, layer, X(), None)
+    assert got[0][1:6] == ("w_q", 101, "w_s", None, 64)
+    assert got[0][6:] == tuple(f"t{i}" for i in range(11)) + (7, 6.0, 1e-20, 128, 16)
 
 
 @pytest.mark.parametrize("codes,exit", [
-    ({}, 0), ({"separate": 1, "fused_declared": 124, "baseline_fresh": 1, "fused_fresh": 1}, 0),
+    ({}, 0), ({"fused_renamed": 1, "baseline_fresh": 124, "fused_fresh": 1}, 0),
     ({"fused": 1}, 1), ({"baseline": 1}, 1),
 ])
 def test_the_diagnostic_fails_only_when_a_run_the_decision_needs_failed(diag, monkeypatch, tmp_path, codes, exit):
-    ran = []
+    ran, seen = [], []
 
     def fake_run(cmd, timeout):
         v = cmd[cmd.index("--variant") + 1]
         ran.append(v)
+        seen.append((cmd[cmd.index("--model") + 1], cmd[cmd.index("--prompts") + 1]))
         return types.SimpleNamespace(returncode=codes.get(v, 0))
     monkeypatch.setattr(diag.subprocess, "run", fake_run)
-    monkeypatch.setattr(diag, "compare", lambda out: {"fix": None})
+    monkeypatch.setattr(diag, "compare", lambda out, runs: {"fix": None, "runs_compared": runs})
     monkeypatch.setattr(diag, "LOCAL", str(tmp_path / "local"))
-    monkeypatch.setattr(sys, "argv", ["machete_diag.py", "--out", str(tmp_path)])
+    monkeypatch.setattr(sys, "argv", ["machete_diag.py", "--out", str(tmp_path), "--model", "m/7b", "--prompts",
+                                      "256"])
     assert diag.main() == exit
     assert ran == (["baseline"] if codes.get("baseline") else list(diag.RUNS))
-    assert json.loads((tmp_path / "DIAG.json").read_text())["exit_codes"] == {v: codes.get(v, 0) for v in ran}
+    assert set(seen) == {("m/7b", "256")}
+    d = json.loads((tmp_path / "DIAG.json").read_text())
+    assert d["exit_codes"] == {v: codes.get(v, 0) for v in ran}
+    if not codes.get("baseline"):
+        assert d["runs_compared"] == list(diag.RUNS)
+
+
+@pytest.mark.parametrize("runs", ["fused,baseline", "baseline,separate", "baseline,fused,nonsense", ""])
+def test_a_run_list_must_start_with_baseline_and_include_fused(diag, monkeypatch, tmp_path, runs):
+    monkeypatch.setattr(sys, "argv", ["machete_diag.py", "--out", str(tmp_path), "--runs", runs])
+    monkeypatch.setattr(diag.subprocess, "run", lambda *a, **k: pytest.fail("ran"))
+    with pytest.raises(SystemExit):
+        diag.main()
 
 
 def test_one_run_end_to_end_with_a_stand_in_vllm(diag, monkeypatch, tmp_path):

@@ -81,8 +81,6 @@ CAP_REC = 6
 CAP_HEAD = 2
 CAP_FLAGS = CAP_HEAD + (CAPTURE_SLOTS + 1) * CAP_REC
 OP_SCHEMA = 2           # the check op's arguments (vllm_plugin keys its compile cache on it); 2: capture buffers
-# where op_args(...) has the tensors the check writes: state, then cap_meta and cap_data (ServeGuard.buffers)
-OP_BUFFERS = (11, 15, 16)
 
 
 _PHI = (math.sqrt(5.0) - 1.0) / 2.0
@@ -802,15 +800,8 @@ class ServeGuard:
             return
         check_static_any(x.reshape(-1, cs.k), y.reshape(-1, cs.n), *self.op_args(slot, with_bias))
 
-    def buffers(self, slot: int) -> tuple:
-        """(state, cap_meta, cap_data): what layer `slot`'s check writes, as they are now (op_args holds them at
-        OP_BUFFERS; _grow reallocates them while layers are still being registered)."""
-        dev = self.layers[slot]["device"]
-        cm, cd = self._cap[dev]
-        return self._state[dev], cm, cd
-
     def op_args(self, slot: int, with_bias: bool = True) -> tuple:
-        """Everything the check op takes after x2 and y2, for layer `slot` (the buffers it writes at OP_BUFFERS)."""
+        """Everything the check op takes after x2 and y2, for layer `slot`."""
         lay = self.layers[slot]
         return (*lay["cs"].tensors(with_bias), self._state[lay["device"]], slot, float(self.z),
                 float(self.abs_floor), *self._cap_args(slot, with_bias))
