@@ -2,6 +2,7 @@
 import importlib.util
 import io
 import json
+import os
 import sys
 import tarfile
 from pathlib import Path
@@ -254,3 +255,49 @@ def test_a_failed_quant_after_the_fix_is_a_failure(runner, monkeypatch):
     monkeypatch.setattr(runner, "bundle", _remote(_archive()))
     with pytest.raises(SystemExit, match="quantized-model validation failed"):
         runner.main("machete_fix")
+
+
+def _spawned(value):
+    def get():
+        if isinstance(value, Exception):
+            raise value
+        return value
+    return SimpleNamespace(spawn=lambda *a, **k: SimpleNamespace(get=get))
+
+
+def test_the_serve_phase_passes_only_when_all_three_server_runs_pass(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    for tag in ("serve032", "serve032_tp2", "serve031"):
+        monkeypatch.setattr(runner, tag, _spawned(f"{tag}: exit code 0 in 12.0 minutes"))
+    runner.main("serve")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "serve032_tp2", _spawned("serve032_tp2: exit code 1 in 12.0 minutes"))
+    with pytest.raises(SystemExit, match="serve032_tp2: exit code 1"):
+        runner.main("serve")
+    monkeypatch.setattr(runner, "serve031", _spawned(RuntimeError("container lost")))
+    with pytest.raises(SystemExit, match="serve031 did not complete"):
+        runner.main("serve")
+
+
+def test_the_l4_phase_needs_both_models_to_pass(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "quant_l4", _remote(
+        "quant_l4: {'awq1.5b_marlin_l4': 0, 'gptq1.5b_marlin_l4': 0} in 20.0 minutes"))
+    runner.main("quant_l4")
+    monkeypatch.setattr(runner, "quant_l4", _remote(
+        "quant_l4: {'awq1.5b_marlin_l4': 0, 'gptq1.5b_marlin_l4': 1} in 20.0 minutes"))
+    with pytest.raises(SystemExit, match="gptq1.5b_marlin_l4': 1"):
+        runner.main("quant_l4")
+
+
+def test_the_serve_run_records_its_status_and_gpus(runner, monkeypatch, tmp_path):
+    import torch
+    seen = []
+    monkeypatch.setattr(runner, "_tee", lambda cmd, log, **k: seen.append(cmd) or 0)
+    monkeypatch.setattr(runner, "_locked", lambda *a: None)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda i=0: "NVIDIA H100 80GB HBM3")
+    msg = runner._serve("serve032_tp2", 2, False, {"sha256": "x"}, runner.RATE_TP2, "2 H100s")
+    st = json.load(open(os.path.join(runner.RUNS, "serve032_tp2", "STATUS.json")))
+    assert "exit code 0" in msg and st["passed"] and st["gpus"] == ["NVIDIA H100 80GB HBM3"] * 2
+    assert seen[0][-2:] == ["--tp", "2"] and "vllm_serve_check.py" in seen[0][1]

@@ -9,6 +9,9 @@
     modal run scripts/modal_vllm.py --phase machete_fix   # machete_diag, then quant if the fix meets the rule in
                                                           # docs/METHOD.md: about 45 to 50 min, about $3.70 (20
                                                           # and $1.60 if it doesn't)
+    modal run scripts/modal_vllm.py --phase serve     # real `vllm serve`, plain and guarded: vLLM 0.32 on 1 and 2
+                                                      # H100s, 0.31 on 1, at once: about 15 min each, about $5
+    modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -46,6 +49,7 @@ import sys
 import tarfile
 import time
 from pathlib import Path
+from typing import Optional
 
 import modal
 
@@ -57,6 +61,8 @@ ROUND = "r3"
 DATA, RUNS = f"{V}/data", f"{V}/runs_{ROUND}"
 LOCK_HOURS = 1.5           # longer than any phase's time limit
 RATE_PER_HOUR = 3.95 + 8 * 0.0472 + 64 * 0.008         # H100 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
+RATE_TP2 = 2 * 3.95 + 16 * 0.0472 + 128 * 0.008        # 2 H100s + 16 cores + 128 GiB
+RATE_L4 = 0.80 + 8 * 0.0472 + 32 * 0.008               # L4 + 8 cores + 32 GiB
 
 
 def _source() -> dict:
@@ -72,9 +78,9 @@ def _source() -> dict:
     return {"sha256": h.hexdigest(), "files": n}
 
 
-def _cost(minutes: float) -> dict:
-    return {"minutes": round(minutes, 1), "estimated_cost_usd": round(minutes / 60 * RATE_PER_HOUR, 2),
-            "cost_note": f"function time x ${RATE_PER_HOUR:.2f}/hour (H100, 8 cores, 64 GiB at Oct 20 prices); "
+def _cost(minutes: float, rate: float = RATE_PER_HOUR, what: str = "H100, 8 cores, 64 GiB") -> dict:
+    return {"minutes": round(minutes, 1), "estimated_cost_usd": round(minutes / 60 * rate, 2),
+            "cost_note": f"function time x ${rate:.2f}/hour ({what} at Oct 20 prices); "
                          "image pull and startup are billed too and not in this number"}
 
 
@@ -85,20 +91,25 @@ def _skip(p: Path) -> bool:
 
 # vLLM brings its own PyTorch (2.13 for vLLM 0.31). sdcguard is pip-installed here, so vLLM finds its
 # plugin entry point the way it would on a user's machine.
-vllm_image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .apt_install("build-essential")
-    .uv_pip_install("vllm==0.31.0")
-    # VLLM_USE_FLASHINFER_SAMPLER=0: vLLM 0.31's warm-up JIT-compiles FlashInfer's sampler with nvcc, which a
-    # pip install doesn't have (every compiled run on October 18 died there); 0 = vLLM's own PyTorch/Triton sampler
-    .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0"})
-    .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip, copy=True)
-    .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip, copy=True)
-    .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml", copy=True)
-    .add_local_file(LOCAL / "README.md", f"{R}/README.md", copy=True)
-    .add_local_file(LOCAL / "LICENSE", f"{R}/LICENSE", copy=True)
-    .run_commands(f"pip install --no-deps {R}")
-)
+def _vllm_image(version: str):
+    return (
+        modal.Image.debian_slim(python_version="3.12")
+        .apt_install("build-essential")
+        .uv_pip_install(f"vllm=={version}")
+        # VLLM_USE_FLASHINFER_SAMPLER=0: vLLM 0.31's warm-up JIT-compiles FlashInfer's sampler with nvcc, which a
+        # pip install doesn't have (every compiled run on October 18 died there); 0 = vLLM's own sampler
+        .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0"})
+        .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip, copy=True)
+        .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip, copy=True)
+        .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml", copy=True)
+        .add_local_file(LOCAL / "README.md", f"{R}/README.md", copy=True)
+        .add_local_file(LOCAL / "LICENSE", f"{R}/LICENSE", copy=True)
+        .run_commands(f"pip install --no-deps {R}")
+    )
+
+
+vllm_image = _vllm_image("0.31.0")
+vllm032_image = _vllm_image("0.32.0")       # (October 18; the server checks run on it as well as on 0.31)
 
 app = modal.App("sdcguard-vllm", image=vllm_image)
 vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
@@ -358,6 +369,86 @@ def demo(force: bool = False, source: dict | None = None) -> str:
     return f"demo finished (exit code {code})"
 
 
+# the server checks (experiments/vllm_serve_check.py, docs/METHOD.md): real `vllm serve`, plain and guarded, on
+# vLLM 0.32 with 1 and 2 GPUs and on 0.31 with 1; the three run at once
+SERVE_RUNS = {"serve032": ("0.32.0", 1), "serve032_tp2": ("0.32.0", 2), "serve031": ("0.31.0", 1)}
+# (2 GPUs as "H100:2": Modal's documented count syntax; with it Modal may hand out H200s, which STATUS.json records)
+
+
+def _serve(tag: str, tp: int, force: bool, source: Optional[dict], rate: float, what: str) -> str:
+    t0 = time.monotonic()
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_serve_check.py", "--out", out, "--tp", str(tp)],
+                    f"{out}.txt", cwd="/root", timeout=40 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, rate, what)}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def serve032(force: bool = False, source: Optional[dict] = None) -> str:
+    return _serve("serve032", 1, force, source, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="H100:2", cpu=16, memory=131072, timeout=45 * 60)
+def serve032_tp2(force: bool = False, source: Optional[dict] = None) -> str:
+    return _serve("serve032_tp2", 2, force, source, RATE_TP2, "2 H100s, 16 cores, 128 GiB")
+
+
+@app.function(image=vllm_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def serve031(force: bool = False, source: Optional[dict] = None) -> str:
+    return _serve("serve031", 1, force, source, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")
+
+
+# INT4 on another GPU than the H100: on an L4 (sm89) vLLM has no Machete and runs Marlin by itself, with other
+# shapes of its kernels than the H100's
+QUANT_L4_RUNS = (
+    ("awq1.5b_marlin_l4", "Qwen/Qwen2.5-1.5B-Instruct-AWQ", "MarlinLinearKernel", {}, ()),
+    ("gptq1.5b_marlin_l4", "Qwen/Qwen2.5-1.5B-Instruct-GPTQ-Int4", "MarlinLinearKernel", {}, ()),
+)
+
+
+@app.function(image=vllm_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=60 * 60)
+def quant_l4(force: bool = False, source: Optional[dict] = None) -> str:
+    t0 = time.monotonic()
+    deadline = t0 + 60 * 60 - 120
+    msg = _locked("quant_l4", force)
+    if msg:
+        return msg
+    out = f"{RUNS}/quant_l4"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    codes = {}
+    try:
+        for index, (tag, model, kernel, env, extra) in enumerate(QUANT_L4_RUNS):
+            budget = max(0, deadline - time.monotonic()) / (len(QUANT_L4_RUNS) - index)
+            codes[tag] = _tee([sys.executable, f"{R}/experiments/vllm_check.py", "--out", f"{out}/{tag}",
+                               "--model", model, "--expect-quant", kernel, *extra], f"{out}/{tag}.txt", env=env,
+                              cwd="/root", timeout=budget)
+            vol.commit()
+    finally:
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_codes": codes, "passed": len(codes) == len(QUANT_L4_RUNS) and
+                       all(c == 0 for c in codes.values()), "source": source,
+                       **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"quant_l4: {codes} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(volumes=VOLS, cpu=1, memory=4096, timeout=15 * 60)
 def bundle() -> bytes:
     vol.reload()
@@ -384,6 +475,11 @@ ESTIMATES = {
                    "written in docs/METHOD.md, the INT4 runs (about 26 minutes, roughly $2.10): about 45 to 50 "
                    "minutes and $3.70 in all on 1 H100 (limits 60 and 75 minutes; at most about $10.90 at requested "
                    "resources, not a spending cap)",
+    "serve": "real `vllm serve`, plain and guarded: vLLM 0.32 on 1 H100 and on 2, vLLM 0.31 on 1, the three at once; "
+             "about 15 minutes each, roughly $1.20 + $2.40 + $1.20 = about $5 (45-minute limits; at most about $18 at "
+             "requested resources, not a spending cap; building the 0.32 image the first time adds a few minutes)",
+    "quant_l4": "INT4 on Marlin on 1 L4, two 1.5B models: about 20 minutes, roughly $0.50 (60-minute limit, at most "
+                "about $1.50)",
     "fetch": "download only: a few cents",
 }
 
@@ -431,6 +527,23 @@ def main(phase: str = "vllm", force: bool = False):
                     failures.append(f"the shipped Machete fix didn't meet the rule in docs/METHOD.md (the variant "
                                     f"that did: {fix or 'none'}; runs/gpu_r3/machete_diag/DIAG.json has why), so the "
                                     "INT4 runs weren't started")
+        elif phase == "serve":
+            calls = {tag: fn.spawn(force, src) for tag, fn in (("serve032", serve032), ("serve032_tp2", serve032_tp2),
+                                                               ("serve031", serve031))}
+            for tag, call in calls.items():
+                try:
+                    message = call.get()
+                except Exception as e:  # noqa: BLE001
+                    message = f"{tag} did not complete: {type(e).__name__}: {e}"
+                print(message, flush=True)
+                if str(message).startswith("NOT STARTED") or "exit code 0 " not in str(message):
+                    failures.append(str(message))
+        elif phase == "quant_l4":
+            message = quant_l4.remote(force, src)
+            print(message, flush=True)
+            if str(message).startswith("NOT STARTED") or any(f"'{tag}': 0" not in str(message)
+                                                             for tag, *_ in QUANT_L4_RUNS):
+                failures.append(str(message))
         elif phase == "demo":
             message = demo.remote(force, src)
             print(message, flush=True)

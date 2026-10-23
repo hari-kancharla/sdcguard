@@ -1412,6 +1412,34 @@ $0.64 by function time) and [results/quant3_oct23](../results/quant3_oct23) (20.
   and 12% to 30% on the 1.5B models (48% to 61% at 16 requests); 1 layer in 8 on the 7B cost 1.0% (5.9% at 16
   requests), with 64 of 64 the same. Machete's layers are checked in 0.5.0.
 
+### The real server, vLLM 0.32, two GPUs, and INT4 on an L4 (written October 23, before any run)
+
+Every vLLM result above used the offline API with the engine in the same process. People deploy `vllm serve`: an
+API server, an engine and GPU workers in processes of their own. `experiments/vllm_serve_check.py` starts `vllm
+serve` twice, plain and guarded (SDCGUARD=1 with SDCGUARD_REQUIRE=1, alerts posted as JSON to a local webhook,
+Prometheus metrics per GPU worker), and talks to it over HTTP only: 64 completions one at a time (greedy, 128
+tokens), then streamed requests 1, 16 and 256 at a time, then, guarded only, one weight bit flipped in every worker
+through vLLM's /collective_rpc (a test-only worker extension) and more requests. `modal run scripts/modal_vllm.py
+--phase serve` runs it on Qwen2.5-1.5B-Instruct three ways at once: vLLM 0.32.0 (the release of October 18) on one
+H100, 0.32.0 on two with tensor parallelism, and 0.31.0 on one.
+
+Criteria, for the guarded server, each run:
+1. It starts and serves under SDCGUARD_REQUIRE=1 (every registered layer checked; the API server process, which
+   never loads the model, mustn't refuse).
+2. The 64 one-at-a-time completions are identical to the plain server's.
+3. Every GPU worker's metrics: the same number of layers checked on each, 112 with one GPU; no layer whose check
+   never ran; results read back; no alert before the flip.
+4. No alert reaches the webhook during the clean load.
+5. After the flip, an alert naming `model.layers.10.mlp.down_proj` reaches the webhook within 90 seconds, and the
+   metrics count it.
+6. Both servers exit within 120 seconds of SIGINT.
+Reported, deciding nothing: time to first token and request latency (p50, p90, p99) and output tokens per second
+at 1, 16 and 256 requests at a time, guarded against plain. About 15 minutes each, about $5 in all.
+
+`--phase quant_l4`: the INT4 runs of `experiments/vllm_check.py` (criteria 1 to 5 of the INT4 section, unchanged)
+for the AWQ and GPTQ 1.5B models on one L4, where vLLM has no Machete (it needs an H100) and runs Marlin by itself,
+with other shapes of its kernels. About 20 minutes, about $0.50.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
