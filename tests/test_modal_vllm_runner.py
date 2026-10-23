@@ -301,3 +301,13 @@ def test_the_serve_run_records_its_status_and_gpus(runner, monkeypatch, tmp_path
     st = json.load(open(os.path.join(runner.RUNS, "serve032_tp2", "STATUS.json")))
     assert "exit code 0" in msg and st["passed"] and st["gpus"] == ["NVIDIA H100 80GB HBM3"] * 2
     assert seen[0][-2:] == ["--tp", "2"] and "vllm_serve_check.py" in seen[0][1]
+
+
+def test_the_2_gpu_server_check_runs_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "serve032_tp2", _remote("serve032_tp2: exit code 0 in 9.0 minutes"))
+    runner.main("serve_tp2")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "serve032_tp2", _remote("serve032_tp2: exit code 1 in 4.8 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("serve_tp2")

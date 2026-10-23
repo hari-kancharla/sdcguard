@@ -1,0 +1,102 @@
+{
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "tp": 1,
+ "same_one_at_a_time": "64/64",
+ "layers_checked_per_worker": [
+  112.0
+ ],
+ "alerts_clean": 0,
+ "alert_after_flip_s": 0.0,
+ "flip": {
+  "status": 200,
+  "results": [
+   "model.layers.10.mlp.down_proj"
+  ]
+ },
+ "load": [
+  {
+   "at_once": 1,
+   "requests": 16,
+   "plain": {
+    "output_tokens_per_s": 392.9,
+    "ttft_p50_ms": 17.1,
+    "ttft_p90_ms": 23.6,
+    "ttft_p99_ms": 40.9,
+    "latency_p50_ms": 322.6,
+    "latency_p90_ms": 354.0,
+    "latency_p99_ms": 359.4
+   },
+   "guarded": {
+    "output_tokens_per_s": 278.8,
+    "ttft_p50_ms": 16.1,
+    "ttft_p90_ms": 22.7,
+    "ttft_p99_ms": 33.2,
+    "latency_p50_ms": 456.9,
+    "latency_p90_ms": 464.5,
+    "latency_p99_ms": 472.5
+   },
+   "throughput_change_pct": -29.04,
+   "latency_p50_change_pct": 41.63,
+   "latency_p99_change_pct": 31.47,
+   "ttft_p50_change_pct": -5.85,
+   "ttft_p99_change_pct": -18.83
+  },
+  {
+   "at_once": 16,
+   "requests": 128,
+   "plain": {
+    "output_tokens_per_s": 4842.8,
+    "ttft_p50_ms": 50.0,
+    "ttft_p90_ms": 68.6,
+    "ttft_p99_ms": 73.5,
+    "latency_p50_ms": 367.1,
+    "latency_p90_ms": 573.7,
+    "latency_p99_ms": 576.9
+   },
+   "guarded": {
+    "output_tokens_per_s": 3740.4,
+    "ttft_p50_ms": 43.6,
+    "ttft_p90_ms": 95.5,
+    "ttft_p99_ms": 102.1,
+    "latency_p50_ms": 518.4,
+    "latency_p90_ms": 630.9,
+    "latency_p99_ms": 640.6
+   },
+   "throughput_change_pct": -22.76,
+   "latency_p50_change_pct": 41.21,
+   "latency_p99_change_pct": 11.04,
+   "ttft_p50_change_pct": -12.8,
+   "ttft_p99_change_pct": 38.91
+  },
+  {
+   "at_once": 256,
+   "requests": 256,
+   "plain": {
+    "output_tokens_per_s": 11212.4,
+    "ttft_p50_ms": 604.8,
+    "ttft_p90_ms": 2573.0,
+    "ttft_p99_ms": 2594.5,
+    "latency_p50_ms": 2616.0,
+    "latency_p90_ms": 2645.3,
+    "latency_p99_ms": 2762.9
+   },
+   "guarded": {
+    "output_tokens_per_s": 10932.3,
+    "ttft_p50_ms": 400.3,
+    "ttft_p90_ms": 2241.5,
+    "ttft_p99_ms": 2696.9,
+    "latency_p50_ms": 2828.9,
+    "latency_p90_ms": 2872.2,
+    "latency_p99_ms": 2880.9
+   },
+   "throughput_change_pct": -2.5,
+   "latency_p50_change_pct": 8.14,
+   "latency_p99_change_pct": 4.27,
+   "ttft_p50_change_pct": -33.81,
+   "ttft_p99_change_pct": 3.95
+  }
+ ],
+ "vllm": "0.31.0",
+ "passed": true,
+ "failures": []
+}

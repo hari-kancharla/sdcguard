@@ -12,6 +12,7 @@
     modal run scripts/modal_vllm.py --phase serve     # real `vllm serve`, plain and guarded: vLLM 0.32 on 1 and 2
                                                       # H100s, 0.31 on 1, at once: about 15 min each, about $5
     modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
+    modal run scripts/modal_vllm.py --phase serve_tp2  # the 2-GPU server check alone: about 10 min, about $1.60
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -98,7 +99,11 @@ def _vllm_image(version: str):
         .uv_pip_install(f"vllm=={version}")
         # VLLM_USE_FLASHINFER_SAMPLER=0: vLLM 0.31's warm-up JIT-compiles FlashInfer's sampler with nvcc, which a
         # pip install doesn't have (every compiled run on October 18 died there); 0 = vLLM's own sampler
-        .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0"})
+        # VLLM_ALLREDUCE_USE_FLASHINFER=0: vLLM 0.32 reduces across GPUs with FlashInfer's fused all-reduce, which
+        # JIT-compiles with nvcc too, and both 2-GPU servers of October 23 died there before serving, plain vLLM
+        # as well as guarded; 0 = vLLM's own all-reduce (one GPU never reduces)
+        .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0",
+              "VLLM_ALLREDUCE_USE_FLASHINFER": "0"})
         .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip, copy=True)
         .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip, copy=True)
         .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml", copy=True)
@@ -478,6 +483,8 @@ ESTIMATES = {
     "serve": "real `vllm serve`, plain and guarded: vLLM 0.32 on 1 H100 and on 2, vLLM 0.31 on 1, the three at once; "
              "about 15 minutes each, roughly $1.20 + $2.40 + $1.20 = about $5 (45-minute limits; at most about $18 at "
              "requested resources, not a spending cap; building the 0.32 image the first time adds a few minutes)",
+    "serve_tp2": "the 2-GPU server check alone (vLLM 0.32 on 2 H100s): about 10 minutes, roughly $1.60 (45-minute "
+                 "limit, at most about $7.30)",
     "quant_l4": "INT4 on Marlin on 1 L4, two 1.5B models: about 20 minutes, roughly $0.50 (60-minute limit, at most "
                 "about $1.50)",
     "fetch": "download only: a few cents",
@@ -538,6 +545,11 @@ def main(phase: str = "vllm", force: bool = False):
                 print(message, flush=True)
                 if str(message).startswith("NOT STARTED") or "exit code 0 " not in str(message):
                     failures.append(str(message))
+        elif phase == "serve_tp2":
+            message = serve032_tp2.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
         elif phase == "quant_l4":
             message = quant_l4.remote(force, src)
             print(message, flush=True)

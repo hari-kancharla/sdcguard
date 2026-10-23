@@ -1440,6 +1440,42 @@ at 1, 16 and 256 requests at a time, guarded against plain. About 15 minutes eac
 for the AWQ and GPTQ 1.5B models on one L4, where vLLM has no Machete (it needs an H100) and runs Marlin by itself,
 with other shapes of its kernels. About 20 minutes, about $0.50.
 
+**What the runs found (October 23).** Code fingerprint 30f939a08310 (commit 208bba6),
+[results/serve_oct23](../results/serve_oct23), [results/quant_l4_oct23](../results/quant_l4_oct23).
+
+- vLLM 0.32.0 on one H100 (6.6 minutes) and 0.31.0 on one (7.6 minutes): every criterion met. The guarded server
+  started and served under SDCGUARD_REQUIRE=1; 64 of 64 one-at-a-time completions the same as the plain server's;
+  112 layers checked, none never checked, results read back; no alert in clean traffic; the alert naming
+  `model.layers.10.mlp.down_proj` reached the webhook while the requests after the flip were still being sent, and
+  the metrics counted it; both servers exited at once on SIGINT. Reported, against the plain server, with every
+  layer of this 1.5B model checked:
+
+  | vLLM | requests at a time | output tokens/s | request latency p50 / p99 | time to first token p50 |
+  |---|---|---|---|---|
+  | 0.32.0 | 1 | -34.0% | +51.5% / +47.9% | +8.5% |
+  | 0.32.0 | 16 | -30.8% | +44.9% / +43.0% | -1.8% |
+  | 0.32.0 | 256 | -10.1% | +12.7% / +11.4% | -1.1% |
+  | 0.31.0 | 1 | -29.0% | +41.6% / +31.5% | -5.9% |
+  | 0.31.0 | 16 | -22.8% | +41.2% / +11.0% | -12.8% |
+  | 0.31.0 | 256 | -2.5% | +8.1% / +4.3% | -33.8% |
+
+  Time to first token is mostly unchanged; the cost is in each decoded token, largest when few requests share the
+  GPU (the small model's layers are short, so the check is a large share of each step), as the offline runs found.
+- vLLM 0.32.0 on two H100s (4.8 minutes): not judged. Both servers, plain vLLM as well as guarded, died before
+  serving: vLLM 0.32 reduces across GPUs with FlashInfer's fused all-reduce, which JIT-compiles with nvcc, and the
+  image (vLLM installed with pip) has none. The image now sets VLLM_ALLREDUCE_USE_FLASHINFER=0 (vLLM's own
+  all-reduce), and `--phase serve_tp2` reruns this one under the same criteria.
+- INT4 on an L4 (17.2 minutes, about $0.41): criteria 1 to 5 met on both 1.5B models, on Marlin (vLLM's own
+  choice there): 112 layers ran checks, 64 of 64 completions the same as the baseline and as untouched vLLM, no
+  clean alert (worst 2.37), the flipped scale named. Every layer cost 12% to 15% of throughput at 256 requests at a
+  time, 32% to 33% at 16.
+- The gate's output check (8.4 minutes, about $0.68, [results/outputs_oct23](../results/outputs_oct23)): all four
+  expectations met. Same stack, batches of 4: PASS (mean KL 5.1e-4, top-1 agreement 99.6%). Triton attention: PASS
+  (5.1e-4, 99.4%). The AWQ model: FAIL (mean KL 6.1e-2, top-1 agreement 92.9%), past the published 4-bit range for
+  an 8B model; this 1.5B model loses more. `rms_norm_eps` set to 1.0: FAIL (mean KL 11.2, top-1 agreement 0.05%),
+  while sdcguard's matmul checks, on in the same run, checked all 112 layers 18,032 times and raised no alert: the
+  math right, the model wrong, which the output check exists to catch.
+
 ### The fused precise check, a long clean run, and the default check against precise mode (written October 23, before any run)
 
 The fused precise check (`precise="fused"`) met every criterion on October 21, but on 990 clean checks on the H100,

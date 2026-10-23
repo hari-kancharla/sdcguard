@@ -1,0 +1,44 @@
+{
+ "schema": "sdcguard.gate-model-check/1",
+ "ref": "/vol/runs_r3/outputs/ref.json",
+ "ref_digest": "4abf8784fe62501136e88744b4d6314590aca1c460287625cc38e8344b351f80",
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "extra": {
+  "max_num_seqs": 4
+ },
+ "stack": {
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "vllm": "0.31.0",
+  "env": {}
+ },
+ "ref_stack": {
+  "torch": "2.13.0+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "vllm": "0.31.0",
+  "env": {}
+ },
+ "summary": {
+  "positions": 2048,
+  "prompts": 32,
+  "nonfinite_positions": 0,
+  "mean_kl": 0.0005081307903874347,
+  "p99_kl": 0.004306658124579954,
+  "max_kl": 0.03465509892705372,
+  "top1_agreement": 0.99609375,
+  "max_prompt_mean_kl": 0.0014776908030965825,
+  "mean_abs_dlogprob": 0.009658329946822575,
+  "expected_positions": 2048,
+  "missing_positions": 0,
+  "missing_prompts": 0,
+  "extra_results": 0
+ },
+ "verdict": {
+  "verdict": "PASS",
+  "why": "mean KL 5.08e-04 (pass up to 1.0e-03), top-1 agreement 99.61%, worst prompt's mean KL 1.48e-03, over 2048 positions of 32 prompts"
+ },
+ "noise": null,
+ "created": "2026-10-23T14:16:29Z"
+}

@@ -1,0 +1,16 @@
+{
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "tp": 2,
+ "same_one_at_a_time": "None/64",
+ "layers_checked_per_worker": [],
+ "alerts_clean": 0,
+ "alert_after_flip_s": null,
+ "flip": null,
+ "load": [],
+ "vllm": "0.32.0",
+ "passed": false,
+ "failures": [
+  "1: the guarded server didn't start (exit code 1)",
+  "the plain server didn't start (exit code 1)"
+ ]
+}
