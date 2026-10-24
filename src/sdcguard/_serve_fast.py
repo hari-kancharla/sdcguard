@@ -646,6 +646,13 @@ def verified(device: torch.device, dtype: torch.dtype) -> bool:
         return False
     if key not in STATUS:
         from torch.utils._python_dispatch import _disable_current_modes
+
+        from .guard import _exact_reductions_off, _exact_reductions_on
+        # with fp32 partial sums in cuBLAS, as checked layers are served (ServeGuard and the vLLM plugin turn
+        # reduced-precision reductions off): the probe's layers are computed the way served ones are, whatever the
+        # caller's settings (run with PyTorch's defaults, a clean probe layer scored 9 on an L4 where served layers
+        # are checked quietly)
+        hold = _exact_reductions_on()
         try:
             # outside every dispatch mode (a guard, a fault injector) and autocast
             with _disable_current_modes(), torch.no_grad(), torch.autocast(device.type, enabled=False):
@@ -654,6 +661,8 @@ def verified(device: torch.device, dtype: torch.dtype) -> bool:
             return False
         except Exception as e:  # noqa: BLE001
             STATUS[key] = (False, f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}")
+        finally:
+            _exact_reductions_off(hold)
         if not STATUS[key][0]:
             FALLBACKS[0] += 1
             WHY.append(f"serving first-use comparison ({key[0]}, {str(dtype).replace('torch.', '')}): {STATUS[key][1]}")

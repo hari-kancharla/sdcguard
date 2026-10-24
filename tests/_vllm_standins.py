@@ -297,9 +297,9 @@ def moe_kernel_like(x, w13, w2, ids, g, act=0, dtype=torch.bfloat16, blk=64, exp
     times the routing weight rounded, the experts summed in fp32 and rounded once."""
     from sdcguard.serve_moe import _act
     m, h = x.shape
-    out = torch.zeros(m, h)
+    out = torch.zeros(m, h, device=x.device)
     for t in range(m):
-        acc = torch.zeros(h)
+        acc = torch.zeros(h, device=x.device)
         for k in range(ids.shape[1]):
             e = int(ids[t, k])
             if expert_map is not None and e >= 0:

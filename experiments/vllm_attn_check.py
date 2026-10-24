@@ -77,6 +77,8 @@ def server(role: str, out: str, port: int, metrics_port: int):
     if role in GUARDED:
         env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
                    SDCGUARD_METRICS_PORT=str(metrics_port), SDCGUARD_ATTN="0" if role == "noattn" else "1")
+    else:       # plain vLLM with the cuBLAS setting the plugin serves with (sdcguard_test_ext; docs/METHOD.md, A2)
+        env.update(SDCGUARD="0", SDCGUARD_TEST_EXACT="1")
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL, "--port", str(port),
            "--dtype", "bfloat16", "--max-model-len", "4096", "--gpu-memory-utilization", "0.6", "--seed", "0",
            "--attention-backend", BACKEND[role], "--worker-extension-cls", "sdcguard_test_ext.FaultInjection"]
@@ -157,6 +159,7 @@ def run(out: str, port: int, metrics_port: int, roles=ROLES) -> dict:
             r["ready"] = vs.wait_ready(port, proc, timeout=1500)
             if not r["ready"]:
                 continue
+            r["reductions"] = vn.rpc(port, "sdcguard_test_reductions")
             checked = role in GUARDED and role != "noattn"
             if checked:
                 r["attn_at_start"] = stats(port)
@@ -225,6 +228,11 @@ def judge(res: dict) -> tuple:
     for a, b in PAIRS:
         if a not in roles or b not in roles:
             continue
+        for role in (a, b):                 # both with bf16/fp16 cuBLAS partial sums in fp32 (the plugin's setting)
+            red = (res.get(role) or {}).get("reductions")
+            if (res.get(role) or {}).get("ready") and (not isinstance(red, dict) or red.get("bf16") is not False):
+                fails.append(f"A2: {role} didn't keep cuBLAS partial sums in fp32 ({red}), so its answers aren't "
+                             "compared on the same setting")
         for what in ("identity", "long"):
             x, y = (res.get(a) or {}).get(what), (res.get(b) or {}).get(what)
             if x is None or y is None or x != y or any(t is None for t in x):

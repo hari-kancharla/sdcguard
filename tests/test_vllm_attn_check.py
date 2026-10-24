@@ -21,18 +21,20 @@ def passing():
     speed = lambda v: {"16": {"median": {"output_tokens_per_s": v}}}  # noqa: E731
     hit = {"value": "output_wrong_or_misread", "head": "output_wrong_or_misread", "other": "output_wrong_or_misread",
            "kv": "kv_write_wrong", "short": "output_wrong_or_misread"}
+    fp32 = {"bf16": False, "fp16": False}               # cuBLAS partial sums in fp32 on both sides of A2
     return {"roles": list(va.ROLES),
-            "plain": {"ready": True, "identity": ident, "long": long, "speed": speed(1000.0)},
-            "guarded": {"ready": True, "identity": ident, "long": long, "attn_at_start": _stats(),
-                        "attn_clean": _stats(), "clean_alerts": 0, "speed": speed(980.0)},
+            "plain": {"ready": True, "reductions": fp32, "identity": ident, "long": long, "speed": speed(1000.0)},
+            "guarded": {"ready": True, "reductions": fp32, "identity": ident, "long": long,
+                        "attn_at_start": _stats(), "attn_clean": _stats(), "clean_alerts": 0, "speed": speed(980.0)},
             "noattn": {"ready": True, "clean_alerts": 0, "speed": speed(1000.0)},
             "eager": {"ready": True, "attn_at_start": _stats(), "attn_clean": _stats(steps=40), "clean_alerts": 0,
                       "faults": [{"mode": m, "layer": NAMES[k], "mark": NAMES[k], "detected": True,
                                   "rounds_to_detect": 1, "findings": [hit[m]],
                                   "verdicts": ["output_wrong"] if m != "kv" else [], "alerts_other_layers": 0}
                                  for k, m in enumerate(va.MODES)]},
-            "tplain": {"ready": True, "identity": ident, "long": long},
-            "tguarded": {"ready": True, "identity": ident, "long": long, "attn_at_start": _stats("TritonAttentionImpl"),
+            "tplain": {"ready": True, "reductions": fp32, "identity": ident, "long": long},
+            "tguarded": {"ready": True, "reductions": fp32, "identity": ident, "long": long,
+                         "attn_at_start": _stats("TritonAttentionImpl"),
                          "attn_clean": _stats("TritonAttentionImpl"), "clean_alerts": 0}}
 
 
@@ -71,6 +73,12 @@ def test_each_criterion_fails_on_its_own():
     r = passing()
     r["tguarded"]["identity"] = ["c"] * va.IDENTITY
     cases.append((r, "A2: tguarded's identity"))
+    r = passing()
+    r["plain"]["reductions"] = {"bf16": True, "fp16": True}         # plain on PyTorch's default: not comparable
+    cases.append((r, "A2: plain didn't keep cuBLAS partial sums in fp32"))
+    r = passing()
+    r["tplain"]["reductions"] = {"error": "HTTP 500"}
+    cases.append((r, "A2: tplain didn't keep"))
     r = passing()
     r["noattn"]["clean_alerts"] = 2
     cases.append((r, "A3 (noattn): 2 alerts"))
@@ -148,3 +156,29 @@ def test_a4_counts_every_alert_naming_another_layer_unless_its_score_isnt_finite
     assert first["alerts_other_layers"] == 2
     assert first["other_layers"] == ["serve:model.layers.3.mlp.down_proj", f"serve_attn:{NAMES[7]}"]
     assert all(not t["detected"] and t["alerts_other_layers"] == 0 for t in rows[1:])
+
+
+def test_plain_servers_run_with_the_plugins_cublas_setting(monkeypatch, tmp_path):
+    """A2 compares a plain server with a guarded one: the plain one keeps bf16/fp16 cuBLAS partial sums in fp32, as
+    the plugin does (set in vLLM's worker when it imports the test extension), so only sdcguard's checks differ."""
+    import subprocess
+    seen = {}
+
+    class Proc:
+        def __init__(self, cmd, env=None, **kw):
+            seen[env.get("SDCGUARD")] = env
+    with monkeypatch.context() as mp:
+        mp.setattr(va.subprocess, "Popen", Proc)
+        for role in ("plain", "guarded"):
+            _, log = va.server(role, str(tmp_path), 8000, 9000)
+            log.close()
+    assert seen["0"]["SDCGUARD_TEST_EXACT"] == "1" and "SDCGUARD_TEST_EXACT" not in seen["1"]
+    code = ("import torch, sdcguard_test_ext as e; m = torch.backends.cuda.matmul; "
+            "print(m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction, "
+            "e.FaultInjection().sdcguard_test_reductions())")
+    exp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiments")
+    for flag, want in (("1", "False False {'bf16': False, 'fp16': False}"),
+                       ("0", "True True {'bf16': True, 'fp16': True}")):
+        env = dict(os.environ, PYTHONPATH=exp, SDCGUARD_TEST_EXACT=flag)
+        out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=300)
+        assert out.stdout.strip() == want, out.stdout + out.stderr

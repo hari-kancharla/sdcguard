@@ -367,3 +367,22 @@ def test_a_serving_alert_counted_before_the_gpu_errored_fails_the_check(tmp_path
     full = json.load(open(os.path.join(tmp_path, "cpu", "check.json")))
     assert s["result"] == "FAIL" and s["corrupted_results_serving"] >= 1      # the workload says FAIL, and counts it
     assert full["result"] == "FAIL" and full["wrong"]["workload_serving"] >= 1 and code == 1, full["wrong"]
+
+
+def test_the_serving_first_use_comparison_runs_with_fp32_partial_sums(monkeypatch):
+    """The probe's layers are computed as served layers are (cuBLAS reductions in fp32, as ServeGuard and the vLLM
+    plugin set them), whatever the caller's settings, and the settings are let go of afterwards, also on an error."""
+    import torch
+
+    from sdcguard import _serve_fast, guard
+    seen = []
+    monkeypatch.setattr(guard, "_exact_reductions_on", lambda: seen.append("on") or "hold")
+    monkeypatch.setattr(guard, "_exact_reductions_off", lambda h: seen.append(("off", h)))
+    monkeypatch.setattr(_serve_fast, "WHY", [])
+    monkeypatch.setattr(_serve_fast, "FALLBACKS", [0])
+    for probe, ok, want in ((lambda *a: seen.append("probe") or (True, ""), True, ["on", "probe", ("off", "hold")]),
+                            (lambda *a: (_ for _ in ()).throw(RuntimeError("no")), False, ["on", ("off", "hold")])):
+        seen.clear()
+        monkeypatch.setattr(_serve_fast, "STATUS", {})
+        monkeypatch.setattr(_serve_fast, "_probe", probe)
+        assert _serve_fast.verified(torch.device("cpu"), torch.bfloat16) is ok and seen == want

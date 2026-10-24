@@ -2197,6 +2197,22 @@ tensors (queries, outputs, KV cache, query_start_loc, seq_lens, block table, slo
 replay, is read at replay (the replay leaves the state an eager call on that batch leaves), and a step outside a
 model step, or another layer's turn, counts nothing.
 
+First run (October 24, on 582f91c, one L4, about $0.05): did not pass. 57 tests passed, 6 failed, 1 skipped. Every
+capture and replay that reached its check passed: the FP8, norm and attention checks (PyTorch and Triton), the routing
+and linear checks' PyTorch versions, and the fake-tensor test. The failures were outside the graphs: (1) the MoE tests
+never reached the check, because the test's stand-in for vLLM's MoE kernel built its output on the CPU (a bug in the
+test); (2) the routing kernel's first-use comparison required the Triton kernel and the PyTorch version to keep the
+same one of the wrong sampled rows, but on a GPU the kernel's programs race to be the one kept (Triton's interpreter
+runs them in order, so the CPU tests couldn't show it); (3) called directly by a test, the linear kernel's first-use
+comparison computed its probe layers with PyTorch's default cuBLAS settings (bf16 partial sums allowed), unlike served
+layers, and scored a clean probe layer 9; it then kept the Triton check off for the rest of the process, which failed
+the two linear GPU tests of `tests/test_serve.py` too. In serving on the same L4 and software (the qualify run) that
+comparison passed (112 layers on the Triton check). The skip: PyTorch 2.13 has no CUDA graph replay hook, so the
+compiled-model test in `tests/test_serve.py` can't prove replays (it isn't in G5's files). Fixed since: the stand-in
+computes on its inputs' device; the routing comparison checks each kept row against the row it names (one of the
+sampled rows, as given); the linear and MoE comparisons hold fp32 partial sums in cuBLAS while they run. The criteria
+are unchanged; the next graphs run decides them.
+
 ### Attention checks in serving (written October 24, before any run)
 
 The vLLM plugin can now check attention (`src/sdcguard/serve_attn.py`, SDCGUARD_ATTN=1, off by default until this run
@@ -2277,6 +2293,16 @@ tokens per second with and without attention checks, at 16 and 256 requests at o
 check passes and costs at most 3% at 16 at once, it becomes on by default; if it costs more, it stays opt-in. Not
 claimed whatever the outcome: other models or backends (FlashInfer, MLA and the rest), FP8 KV caches, sliding windows,
 attention sinks, soft caps, small errors, and the KV cache's state beyond the sampled tokens' own writes.
+
+Amendment (October 24, after the first graphs run and before any attention run): the plain servers (plain and
+tplain on the H100, plain on the L4) run with PyTorch's bf16 and fp16 reduced-precision cuBLAS reductions off, the
+setting the plugin serves with (`vllm_plugin._exact_reductions`, which changes rounding slightly, as noted at the top),
+set in vLLM's worker by the test's worker extension (SDCGUARD_TEST_EXACT=1). Each server reports its setting, and A2
+also requires both servers of a pair to have it. Why: in the graphs run, the probe computed with PyTorch's default
+setting on an L4 scored a clean layer 9, where served layers (the plugin's setting) are quiet, so a plain server on the
+default could answer differently for a reason that has nothing to do with the checks. A2 now says that the checks
+themselves change no answer. Whether the plugin's setting changes answers against default vLLM on an L4 isn't tested
+here (on H100s earlier runs found no change: N2, M2).
 
 ### Exact operator tests for screening GPUs (written October 24, before any run)
 

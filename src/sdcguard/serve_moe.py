@@ -448,6 +448,8 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
     if not kernel_usable(device, dtype):
         STATUS[key] = (False, "the Triton kernels aren't available here")
         return STATUS[key]
+    from .guard import _exact_reductions_off, _exact_reductions_on
+    hold = _exact_reductions_on()         # fp32 partial sums in cuBLAS, as served layers are checked
     try:
         gen = torch.Generator().manual_seed(0)
         E, H, I, K, M = 6, 192, 96, 3, 5
@@ -494,6 +496,8 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
         STATUS[key] = (True, "")
     except Exception as e:  # noqa: BLE001
         STATUS[key] = (False, f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}")
+    finally:
+        _exact_reductions_off(hold)
     return STATUS[key]
 
 

@@ -372,3 +372,49 @@ def test_a_step_past_2_to_the_31_is_named_exactly():
     _step(rc, a, big, lg, w, bad)
     (ev,) = g.poll(wait=True)
     assert ev.detail["captured"]["step"] == big and ev.detail["recheck"]["captured"]["step"] == big
+
+
+def test_the_first_use_comparison_takes_whichever_sampled_row_a_gpu_keeps():
+    """On a GPU the sampled rows race to be the one kept, so the first-use comparison checks each check's kept row
+    against the row as it was given (one of the sampled rows, with its finding), not against the other check's."""
+    M, E, k, dt = 6, 64, 4, torch.bfloat16
+    lg = _logits(M, E).to(dt)
+    w, ids = vllm_topk(lg, k, True)
+    sampled = sr.sample_rows(torch.tensor(3), torch.tensor(M), 4, "cpu").tolist()
+
+    def kept(row, kind):
+        caps = list(sr.new_caps("cpu", 1, E))
+        caps[0][0] = torch.tensor([1, row, 3, kind, E, sr.DTYPE_CODE[dt]])
+        caps[1][0, :E], caps[2][0, :k], caps[3][0, :k] = lg[row].float(), ids[row].long(), w[row]
+        return caps
+    for row in sampled:                                            # either sampled row is right
+        assert sr._kept_row_wrong(kept(row, 2), "expert", sampled, lg, ids, w, k, E, dt) is None
+    other = next(r for r in range(M) if r not in sampled)
+    assert "a row of" in sr._kept_row_wrong(kept(other, 2), "expert", sampled, lg, ids, w, k, E, dt)
+    assert "wrong record" in sr._kept_row_wrong(kept(sampled[0], 1), "expert", sampled, lg, ids, w, k, E, dt)
+    c = kept(sampled[1], 1)
+    c[3][0, 0] += 0.5
+    assert "isn't the row as given" in sr._kept_row_wrong(c, "weight", sampled, lg, ids, w, k, E, dt)
+    clean = list(sr.new_caps("cpu", 1, E))
+    assert sr._kept_row_wrong(clean, "clean", sampled, lg, ids, w, k, E, dt) is None
+    assert "none should be" in sr._kept_row_wrong(kept(sampled[0], 2), "inactive", sampled, lg, ids, w, k, E, dt)
+
+
+def test_the_first_use_comparison_passes_when_a_gpu_keeps_the_other_sampled_row(monkeypatch):
+    """What a GPU can do: the kernel's other program wins the race and keeps the second sampled row. The comparison
+    still passes (and would fail on a kept row that isn't as given, as the test above shows)."""
+    sampled = sr.sample_rows(torch.tensor(3), torch.tensor(6), 4, "cpu").tolist()
+    assert sampled[0] != sampled[1]
+
+    def racing(logits, tw, ti, k, *rest):
+        sr.route_check_torch(logits, tw, ti, k, *rest)
+        cm, clg, cids, cw = rest[-4:]
+        if int(cm[0, 0]) and int(cm[0, 1]) == sampled[0]:
+            r = sampled[1]
+            cm[0, 1] = r
+            clg[0, :logits.shape[-1]] = logits[r].float()
+            cids[0, :k], cw[0, :k] = ti[r].long(), tw[r].float()
+    monkeypatch.setattr(sr, "route_check_triton", racing)
+    monkeypatch.setattr(sr, "kernel_usable", lambda d: True)
+    monkeypatch.setattr(sr, "STATUS", {})
+    assert sr.verify_kernel(torch.device("cpu"), torch.bfloat16) == (True, "")

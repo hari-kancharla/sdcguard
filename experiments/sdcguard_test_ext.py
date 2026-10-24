@@ -1,7 +1,17 @@
 """A vLLM worker extension for experiments/vllm_serve_check.py, vllm_ready_attrib_check.py and the other server
 experiments (vllm_norm_check.py, vllm_moe_check.py, vllm_attn_check.py), test use
 only: `vllm serve ... --worker-extension-cls sdcguard_test_ext.FaultInjection` adds these methods to every GPU
-worker, and with VLLM_SERVER_DEV_MODE=1 the server's /collective_rpc endpoint calls them in each one."""
+worker, and with VLLM_SERVER_DEV_MODE=1 the server's /collective_rpc endpoint calls them in each one.
+
+With SDCGUARD_TEST_EXACT=1 (a plain server, SDCGUARD=0, compared with a guarded one), importing this module in the
+worker keeps PyTorch's bf16/fp16 cuBLAS partial sums in fp32, as the plugin does in every process it runs in
+(vllm_plugin._exact_reductions): the two servers then differ only by sdcguard's checks."""
+import os as _os
+
+if _os.environ.get("SDCGUARD_TEST_EXACT") == "1":
+    import torch as _torch
+    _torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
+    _torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
 
 
 def _num(v: float):
@@ -314,6 +324,13 @@ class FaultInjection:
                 "not_checked": dict(ac.unsupported), "calls_not_checked": dict(ac.not_checked_calls),
                 "stats": dict(ac.stats), "coverage": ac.coverage(), "cap_rows": ac.cap_rows,
                 "worst": _num(worst[0][1]) if worst else None, "worst_layers": [[k, _num(v)] for k, v in worst[:5]]}
+
+    def sdcguard_test_reductions(self) -> dict:
+        """PyTorch's cuBLAS reduced-precision settings in this worker (False: bf16/fp16 partial sums kept in fp32)."""
+        import torch
+        m = torch.backends.cuda.matmul
+        return {"bf16": bool(m.allow_bf16_reduced_precision_reduction),
+                "fp16": bool(m.allow_fp16_reduced_precision_reduction)}
 
     def sdcguard_test_steps(self) -> dict:
         """The model steps the plugin has marked in this worker, and those with scheduled tokens."""

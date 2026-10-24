@@ -383,7 +383,8 @@ def new_caps(device, rows: int = 256, experts: int = MAX_EXPERTS) -> tuple:
 
 
 def _dev_key(device) -> str:
-    return str(device)
+    from ._group import _dev_key as k                # ("cuda" and "cuda:0" are one device: one comparison)
+    return k(torch.device(device))
 
 
 def kernel_usable(device) -> bool:
@@ -397,8 +398,9 @@ def kernel_usable(device) -> bool:
 def verify_kernel(device, dtype) -> tuple:
     """The Triton kernel against the PyTorch check before its first use on a device and logits dtype: plain top-k
     (softmax, renormalized) and grouped top-k (sigmoid, a bias, scaled), each correct (both quiet, the same counts),
-    with an expert moved and with a weight changed (both name the same finding and row), and an inactive step
-    (nothing changes). (ok, why)."""
+    with an expert moved and with a weight changed in every row (the same counts and finding; each keeps one of the
+    sampled rows, exactly as it was given: on a GPU the samples race to be the one kept, so which one may differ),
+    and an inactive step (nothing changes). (ok, why)."""
     key = (_dev_key(device), dtype)
     if key in STATUS:
         return STATUS[key]
@@ -431,9 +433,11 @@ def verify_kernel(device, dtype) -> tuple:
                        sb, st, 0, 4, 3, *caps)
                     res.append((st.cpu(), [c.cpu() for c in caps]))
                 (s0, c0), (s1, c1) = res
-                if not all(torch.equal(a, b) for a, b in zip(c0[:1] + c0[2:], c1[:1] + c1[2:])) or \
-                        not torch.allclose(c0[1], c1[1]):
-                    raise AssertionError(f"{case}: the kept rows differ")
+                sampled = sample_rows(torch.tensor(3), torch.tensor(M), 4, "cpu").tolist()
+                for name, c in (("PyTorch", c0), ("Triton", c1)):
+                    why = _kept_row_wrong(c, case, sampled, lg, ii, ww, k, E, dtype)
+                    if why:
+                        raise AssertionError(f"{case}: the {name} check's kept row {why}")
                 cnt = [C_CALLS, C_SET, C_WEIGHT, C_ROWS, C_LAST]
                 if [int(s0[0, c]) for c in cnt] != [int(s1[0, c]) for c in cnt]:
                     raise AssertionError(f"{case}: counts differ ({s0[0].tolist()} vs {s1[0].tolist()})")
@@ -449,6 +453,23 @@ def verify_kernel(device, dtype) -> tuple:
     except Exception as e:  # noqa: BLE001
         STATUS[key] = (False, f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}")
     return STATUS[key]
+
+
+def _kept_row_wrong(caps, case: str, sampled: list, lg, ids, w, k: int, E: int, dtype) -> Optional[str]:
+    """What is wrong with the row a check kept in the first-use comparison (new_caps on the CPU), or None. A correct
+    or inactive case keeps nothing; a wrong one keeps one of the sampled rows with its logits, experts and weights
+    exactly as given, the step, the finding and the logits' width and dtype."""
+    meta, klg, kid, kw = (t[0] for t in caps)
+    if case in ("clean", "inactive"):
+        return None if not any(bool(t.abs().sum()) for t in (meta, klg, kid, kw)) else "is there, where none should be"
+    r = int(meta[1])
+    want = [1, r, 3, 2 if case == "expert" else 1, E, DTYPE_CODE.get(dtype, 0)]
+    if meta.tolist() != want or r not in sampled:
+        return f"has the wrong record ({meta.tolist()}, want {want}, a row of {sampled})"
+    if not (torch.equal(klg[:E], lg[r].float()) and torch.equal(kid[:k], ids[r].long()) and
+            torch.equal(kw[:k], w[r].float())):
+        return f"(row {r}) isn't the row as given"
+    return None
 
 
 def _reference_route(logits: torch.Tensor, k: int, scoring: int, renormalize: bool, bias, groups: int,
