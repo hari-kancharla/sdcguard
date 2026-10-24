@@ -92,6 +92,15 @@ OP_SCHEMA = 2           # the check op's arguments (vllm_plugin keys its compile
 _PHI = (math.sqrt(5.0) - 1.0) / 2.0
 
 
+def _matmul_info(lay: dict) -> dict:
+    """The layer's matmul as an alert describes it, so the failure can be replayed at its real shape: output and
+    input features, whether the layer has a bias, the weight's dtype (rows come from the step, see the plugin)."""
+    cs, mod = lay["cs"], lay["module"]
+    w = getattr(mod, "weight", None)
+    return {"out_features": int(cs.n), "in_features": int(cs.k), "bias": getattr(mod, "bias", None) is not None,
+            "weight_dtype": str(getattr(w, "dtype", "")).replace("torch.", "") or None}
+
+
 def select_layer(i: int, share: float, offset: int = 0) -> bool:
     """Is linear layer number i (in model order) one of the checked share? Golden-ratio spacing: a
     share spreads over every kind of layer and every depth (every 4th layer would pick the same
@@ -1307,6 +1316,7 @@ class ServeGuard:
                                                       if self._dropped else "no row was captured for this alert"),
                                   "reading": reading,
                                   "read_window_steps": list(window) if window is not None else None,
+                                  "matmul": _matmul_info(lay),
                                   "last_clean_read_steps": self._last_clean.get(lay["name"]),
                                   "first_alert_for_layer": lay["name"] not in self._alerted},
                           identity=dict(self._identity[key]))

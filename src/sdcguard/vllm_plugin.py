@@ -506,7 +506,8 @@ def _batch_rows(runner, args, kwargs) -> Optional[tuple]:
         ends = list(itertools.accumulate(int(counts[r]) for r in ids))
     except (TypeError, ValueError):
         return None
-    return tuple(ids), ends
+    padded = getattr(getattr(ems, "input_batch", None), "num_tokens_after_padding", None)
+    return tuple(ids), ends, int(padded) if isinstance(padded, int) else None
 
 
 def _rows_split(runner) -> Optional[str]:
@@ -524,8 +525,8 @@ def _record_batch(runner, step: int, args, kwargs) -> None:
         _STATE["step_log"] = collections.deque(maxlen=max(16, int(os.environ.get("SDCGUARD_STEP_LOG", "4096"))))
     split = _rows_split(runner)
     rows = None if split else _batch_rows(runner, args, kwargs)
-    _STATE["step_log"].append((step, rows[0], rows[1]) if rows else
-                              (step, None, split or "the step's batch couldn't be read"))
+    _STATE["step_log"].append((step, rows[0], rows[1], rows[2]) if rows else
+                              (step, None, split or "the step's batch couldn't be read", None))
 
 
 def _attribute(ev) -> None:
@@ -538,7 +539,9 @@ def _attribute(ev) -> None:
       unknown_impact        what neither covers (state that outlives the window, layers not checked)
     Ids are the client's (vLLM's internal suffix removed); "attribution" says how they were found."""
     d = ev.detail
-    steps = {s: (ids, ends) for s, ids, ends in (_STATE.get("step_log") or ())}
+    log_ = _STATE.get("step_log") or ()
+    steps = {e[0]: (e[1], e[2]) for e in log_}
+    padded = {e[0]: (e[3] if len(e) > 3 else None) for e in log_}
     cap = d.get("captured") or {}
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
@@ -556,9 +559,11 @@ def _attribute(ev) -> None:
         if ids is None:
             d["directly_implicated"], d["attribution"] = None, f"unavailable for step {st}: {ends}"
         elif row < ends[-1]:
+            d["step_rows"] = {"tokens": ends[-1], "with_padding": padded.get(st)}
             d["directly_implicated"] = [_external(ids[bisect.bisect_right(ends, row)])]
             d["attribution"] = f"exact: row {row} of step {st}, where the check alarmed, belonged to this request"
         else:
+            d["step_rows"] = {"tokens": ends[-1], "with_padding": padded.get(st)}
             d["directly_implicated"] = []
             d["attribution"] = f"row {row} of step {st} is CUDA-graph padding (the step had {ends[-1]} tokens)"
     elif d.get("read_window_steps"):

@@ -321,3 +321,23 @@ def test_the_readiness_and_attribution_check_runs_alone_and_fails_on_a_nonzero_e
     monkeypatch.setattr(runner, "ready_attrib", _remote("ready_attrib: exit code 1 in 39.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("ready_attrib")
+
+
+def test_the_live_catch_runs_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "live_catch", _remote("live_catch: exit code 0 in 52.0 minutes"))
+    runner.main("live_catch")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "live_catch", _remote("live_catch: exit code 1 in 50.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("live_catch")
+
+
+def test_the_decisions_run_alone_and_fail_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "decisions", _remote("decisions: exit code 0 in 41.0 minutes"))
+    runner.main("decisions")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "decisions", _remote("decisions: exit code 1 in 40.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("decisions")

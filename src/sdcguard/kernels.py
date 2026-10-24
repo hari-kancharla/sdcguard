@@ -16,6 +16,7 @@ matmul work (2 m n k per call). Two inventories compare:
     sdcguard kernels record --out burn.json --seconds 120 -- ./gpu_burn 60
     sdcguard kernels coverage serve.json --test burn.json      # which of the workload's kernels the test ran
     sdcguard kernels diff before.json after.json               # which kernels an upgrade changed
+    sdcguard kernels test serve.json --out tested.json       # run each inventoried call again here, judged
     sdcguard kernels show serve.json
     sdcguard kernels parse cublaslt.*.log --out inv.json       # logs you already have
 
@@ -253,6 +254,158 @@ def diff(before: dict, after: dict) -> dict:
             "gone": gone, "work_share_on_new_kernels": (sum(a[k] for k in new) / total) if total else None}
 
 
+# ---------------------------------------------------------------- testing the inventoried calls
+_HALF_TYPES = {"fp16": "float16", "bf16": "bfloat16"}
+
+
+def rerunnable(kernel: dict, shape: dict) -> Optional[str]:
+    """None when this version can run the call again as a linear layer (y = x W^T [+ b], fp16 or bf16, no other
+    epilogue), else why not."""
+    t = kernel["types"]
+    if not (t[0] == t[1] == t[3] and t[0] in _HALF_TYPES):
+        return f"data types {t} (only fp16 and bf16 linear layers are re-run)"
+    if (shape["transa"], shape["transb"]) != ("OP_T", "OP_N"):
+        return f"transposes {shape['transa']}/{shape['transb']} (a linear layer is OP_T/OP_N)"
+    if kernel.get("epilogue") not in ("DEFAULT", "BIAS"):
+        return f"epilogue {kernel.get('epilogue')}"
+    if shape.get("batch", 1) != 1:
+        return "a batched GEMM"
+    return None
+
+
+def _test_worker(argv) -> int:
+    """Run each linear-layer call of shapes.json `repeats` times into a NaN-filled output and judge every output
+    element against float64 (on the same GPU, with FP64 kernels, unless --cpu-reference), as the gate does."""
+    import torch
+    import torch.nn.functional as F
+    from .gate import _U32, _UNIT, _judge
+    shapes_path, out_path, repeats, ref_dev = argv[0], argv[1], int(argv[2]), argv[3]
+    todo = json.load(open(shapes_path))
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    results = []
+    g = torch.Generator(device="cpu").manual_seed(0)
+    with torch.no_grad():
+        for item in todo:
+            dt = getattr(torch, item["dtype"])
+            out_f, in_f, rows = item["out"], item["in"], item["rows"]
+            x = (torch.rand(rows, in_f, generator=g) - 0.5).to(dt)
+            w = (torch.rand(out_f, in_f, generator=g) - 0.5).to(dt)
+            b = (torch.rand(out_f, generator=g) - 0.5).to(dt) if item["bias"] else None
+            rd = torch.device("cpu") if ref_dev == "cpu" or dev.type != "cuda" else dev
+            x64, w64 = x.to(rd).double(), w.to(rd).double()
+            acc = x64 @ w64.t()
+            ref = acc + (0 if b is None else b.to(rd).double())
+            bound = (_UNIT[item["dtype"]] * (ref.abs() + (0 if b is None else acc.abs()))
+                     + in_f * _U32 * (x64.abs() @ w64.abs().t())
+                     + (0 if b is None else 2 * _U32 * b.to(rd).double().abs()) + 1e-30)
+            ref, bound = ref.cpu(), bound.cpu()
+            xd, wd = x.to(dev), w.to(dev)
+            bd = None if b is None else b.to(dev)
+            runs = []
+            for _ in range(repeats):
+                pre = torch.full((rows, out_f), float("nan"), dtype=dt, device=dev)
+                ptr = pre.data_ptr()
+                del pre
+                y = F.linear(xd, wd, bd)
+                if dev.type == "cuda":
+                    torch.cuda.synchronize(dev)
+                runs.append(_judge(y, ref, bound, y.data_ptr() == ptr))
+                del y
+            results.append({**item, "runs": runs})
+    from .casefile import software_stack
+    from .check import gemm_settings
+    from .gate import steering_env
+    sw = software_stack(dev) if dev.type == "cuda" else {}
+    cond = {"gpu_name": sw.get("gpu_name", "cpu"), "compute_capability": sw.get("compute_capability"),
+            "sms_visible": sw.get("sms_visible"), "env": steering_env(), "matmul": gemm_settings(),
+            "torch": torch.__version__, "cuda": torch.version.cuda}
+    with open(out_path, "w") as f:
+        json.dump({"device": str(dev), "gpu": cond["gpu_name"], "conditions": cond, "results": results}, f)
+    return 0
+
+
+def _run_worker(todo: list, repeats: int, log_dir: str, cpu_reference: bool) -> tuple:
+    """(the worker's results, the cuBLASLt log lines of its calls)."""
+    os.makedirs(log_dir, exist_ok=True)
+    shapes, out = os.path.join(log_dir, "shapes.json"), os.path.join(log_dir, "results.json")
+    with open(shapes, "w") as f:
+        json.dump(todo, f)
+    env = {**os.environ, "CUBLASLT_LOG_LEVEL": "5", "CUBLASLT_LOG_FILE": os.path.join(log_dir, "cublaslt.%i.log")}
+    p = subprocess.run([sys.executable, "-m", "sdcguard.kernels", "--test-worker", shapes, out, str(repeats),
+                        "cpu" if cpu_reference else "gpu"], env=env, capture_output=True, text=True, timeout=3600)
+    try:
+        res = json.load(open(out))
+    except (OSError, ValueError):
+        raise RuntimeError(f"the test worker failed: {(p.stdout + p.stderr)[-800:]}")
+    return res, read_logs(sorted(glob.glob(os.path.join(log_dir, "cublaslt.*.log"))))
+
+
+def test_calls(inv: dict, repeats: int = 3, log_dir: str = "test_logs", max_shapes: int = 500,
+            cpu_reference: bool = False, runner=None) -> dict:
+    """Run every inventoried linear-layer call again here, at its shape, and judge it. Per call: PASSED when every
+    run was right and cuBLASLt ran here the same kernel the inventory shows for it (algorithm and configuration, data
+    types, epilogue); WRONG when any output was wrong or never written; OTHER KERNEL when the runs were right but
+    cuBLASLt chose another kernel here (other conditions: run this where the workload runs, with its MPS share);
+    NOT RUN for calls this version can't run again. Inputs are random: a fault that needs the workload's own data,
+    or its exact memory layout, may not show."""
+    shapes: dict = {}           # (out, in, rows, bias, dtype) -> the inventory calls with that shape
+    skipped = []
+    for kern in inv["kernels"]:
+        for s in kern["shapes"]:
+            why = rerunnable(kern, s)
+            if why:
+                skipped.append({"call": s["key"], "calls_in_workload": s["calls"], "why": why})
+                continue
+            key = (s["m"], s["k"], s["n"], kern["epilogue"] == "BIAS", _HALF_TYPES[kern["types"][0]])
+            shapes.setdefault(key, []).append((kern, s))
+    order = sorted(shapes, key=lambda k: -sum(s["work"] for _, s in shapes[k]))
+    for key in order[max_shapes:]:
+        skipped += [{"call": s["key"], "calls_in_workload": s["calls"], "why": f"past --max-shapes {max_shapes}"}
+                    for _, s in shapes[key]]
+    order = order[:max_shapes]
+    todo = [{"out": o, "in": i, "rows": n, "bias": b, "dtype": dt} for o, i, n, b, dt in order]
+    res, lines = (runner or _run_worker)(todo, repeats, log_dir, cpu_reference) if todo else ({}, [])
+    ran: dict = {}              # (out, rows, in, type, epilogue) -> kernels cuBLASLt logged here
+    for line in lines:
+        try:
+            c = parse_line(line)
+        except ValueError:
+            continue
+        if c is not None and c["transa"] == "OP_T":
+            ran.setdefault((c["m"], c["n"], c["k"], c["types"][0], c["epilogue"]), set()).add(
+                json.dumps(c["algo"], sort_keys=True))
+    by_shape = {(r["out"], r["in"], r["rows"], r["bias"], r["dtype"]): r for r in res.get("results", [])}
+    rows, counts = [], {"PASSED": 0, "WRONG": 0, "OTHER KERNEL": 0, "NOT RUN": len(skipped)}
+    for key in order:
+        r = by_shape.get(key)
+        o, i, n, b, dt = key
+        here = ran.get((o, n, i, {"float16": "fp16", "bfloat16": "bf16"}[dt], "BIAS" if b else "DEFAULT"), set())
+        runs = (r or {}).get("runs") or []
+        bad = sum(1 for x in runs if x["wrong"] or (x.get("unwritten") or 0))
+        for kern, s in shapes[key]:
+            want = json.dumps(kern["algo"], sort_keys=True)
+            if not runs:
+                verdict = "NOT RUN"
+            elif bad:
+                verdict = "WRONG"
+            else:
+                verdict = "PASSED" if here == {want} else "OTHER KERNEL"
+            counts[verdict] += 1
+            rows.append({"verdict": verdict, "call": s["key"], "calls_in_workload": s["calls"],
+                         "issues": kern.get("issues") or [], "runs": len(runs), "runs_wrong": bad,
+                         "kernel_in_workload": kern["algo"], "kernels_here": [json.loads(h) for h in sorted(here)],
+                         "worst_error_over_bound": max((x.get("worst_error_over_bound") or 0 for x in runs),
+                                                       default=None)})
+    return {"format": FORMAT + "/test", "gpu": res.get("gpu"), "conditions": res.get("conditions"),
+            "repeats": repeats, "counts": counts,
+            "calls": rows, "not_run": skipped,
+            "warning": None if (ran or not todo) else "cuBLASLt logged no matmul here (no GPU, or its log didn't reach "
+                                                      "the file), so no call can pass",
+            "note": "random inputs at the workload's shapes, judged against float64 computed " +
+                    ("on the CPU" if cpu_reference or res.get("device", "cuda").startswith("cpu")
+                     else "on the same GPU with FP64 kernels")}
+
+
 # ---------------------------------------------------------------- recording
 def _gpus() -> list:
     try:
@@ -381,11 +534,39 @@ def main(argv=None) -> int:
     c.add_argument("workload")
     c.add_argument("--test", action="append", required=True, help="a test's inventory (repeat for several)")
     c.add_argument("--json", action="store_true")
+    ce = sub.add_parser("test", help="run every inventoried linear-layer call again here and judge it")
+    ce.add_argument("inventory")
+    ce.add_argument("--out")
+    ce.add_argument("--repeats", type=int, default=3)
+    ce.add_argument("--logs", default=None, help="folder for the worker's cuBLASLt log (default: next to --out)")
+    ce.add_argument("--max-shapes", type=int, default=500)
+    ce.add_argument("--cpu-reference", action="store_true", help="compute the float64 reference on the CPU")
+    ce.add_argument("--json", action="store_true")
     d = sub.add_parser("diff", help="kernels an upgrade or change added or dropped")
     d.add_argument("before")
     d.add_argument("after")
     d.add_argument("--json", action="store_true")
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["--test-worker"]:
+        return _test_worker(argv[1:])
     a = p.parse_args(argv)
+    if a.cmd == "test":
+        r = test_calls(_load(a.inventory), a.repeats, a.logs or (os.path.splitext(a.out or "kernel_test")[0] + "_logs"),
+                    a.max_shapes, a.cpu_reference)
+        _save(r, a.out)
+        if a.json:
+            print(json.dumps(r, indent=1))
+        else:
+            c = r["counts"]
+            if r.get("warning"):
+                print("warning: " + r["warning"])
+            print(f"{c['PASSED']} calls passed, {c['WRONG']} wrong, {c['OTHER KERNEL']} ran another kernel here, "
+                  f"{c['NOT RUN']} not run ({r['note']}).")
+            for row in r["calls"]:
+                if row["verdict"] != "PASSED":
+                    issues = (f" [known issue {', '.join(i['issue'] for i in row['issues'])}]" if row["issues"] else "")
+                    print(f"  {row['verdict']}: {row['call']} ({row['runs_wrong']} of {row['runs']} runs wrong){issues}")
+        return 1 if r["counts"]["WRONG"] else (0 if not r["counts"]["OTHER KERNEL"] and r["calls"] else 2)
     if a.cmd == "record":
         cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
         if not cmd:

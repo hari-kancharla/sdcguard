@@ -87,6 +87,8 @@ PROMPTS = [
 
 # ---------------------------------------------------------------- the metrics (no vLLM needed)
 def _lp(v) -> float:
+    if isinstance(v, dict):                     # a server's JSON: {"logprob": ..., "rank": ..., "decoded_token": ...}
+        return float(v["logprob"])
     return float(getattr(v, "logprob", v))
 
 
@@ -228,6 +230,77 @@ def ref_digest(ref: dict) -> str:
     return hashlib.sha256(blob).hexdigest()
 
 
+# ---------------------------------------------------------------- against a running server (what is deployed)
+def _post(url: str, path: str, body: dict, timeout: float = 600.0) -> dict:
+    from .perf import _conn
+    c, base = _conn(url, timeout)
+    try:
+        c.request("POST", base + path, body=json.dumps(body), headers={"Content-Type": "application/json"})
+        r = c.getresponse()
+        raw = r.read()
+        if r.status != 200:
+            raise RuntimeError(f"{path}: HTTP {r.status}: {raw[:300]!r}")
+        return json.loads(raw)
+    finally:
+        c.close()
+
+
+def _server_stack(url: str, model: str, extra_stack: Optional[dict]) -> dict:
+    from .perf import server_version
+    return {"vllm": server_version(url), "served_model": model, "url": url, **(extra_stack or {})}
+
+
+def make_ref_url(url: str, out: str, tokens: int = 64, model: Optional[str] = None,
+                 extra_stack: Optional[dict] = None) -> dict:
+    """The reference from a running vLLM server: the chat template applied by its /tokenize, greedy completions of
+    `tokens` tokens with ignore_eos, and the top-20 log-probabilities at every position, by token id (the server
+    needs --max-logprobs of at least 20, vLLM's default)."""
+    from .perf import server_model
+    model = model or server_model(url)
+    records = []
+    for p in PROMPTS:
+        ids = _post(url, "/tokenize", {"model": model, "messages": [{"role": "user", "content": p}],
+                                       "add_generation_prompt": True})["tokens"]
+        r = _post(url, "/v1/completions", {"model": model, "prompt": ids, "max_tokens": tokens, "temperature": 0.0,
+                                           "logprobs": TOP, "ignore_eos": True, "return_tokens_as_token_ids": True,
+                                           "return_token_ids": True})
+        ch = r["choices"][0]
+        lp = ch["logprobs"]
+        comp = ch.get("token_ids") or [int(t.split(":", 1)[1]) for t in lp["tokens"]]
+        tops = [{k.split(":", 1)[1]: float(v) for k, v in (pos or {}).items()} for pos in lp["top_logprobs"]]
+        records.append({"prompt_ids": list(ids), "completion_ids": list(comp), "logprobs": tops})
+    ref = {"schema": REF_SCHEMA, "model": model, "dtype": None, "max_len": None, "tokens": tokens, "extra": {},
+           "via": "server", "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+           "stack": _server_stack(url, model, extra_stack), "records": records}
+    with open(out, "w") as f:
+        json.dump(ref, f)
+    return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}
+
+
+def check_url(ref_path: str, out: str, url: str, model: Optional[str] = None, noise_path: Optional[str] = None,
+              extra_stack: Optional[dict] = None) -> dict:
+    """model-check against a running server: each prompt plus its recorded completion sent as token ids, scored with
+    prompt_logprobs (teacher forcing, as the offline check does). `model` is the name the server serves; the noise
+    run must come from the reference's own model, as offline."""
+    from .perf import server_model
+    ref = json.load(open(ref_path))
+    if ref.get("schema") != REF_SCHEMA:
+        raise ValueError(f"{ref_path} isn't a {REF_SCHEMA} file")
+    served = model or server_model(url)
+    cand = []
+    for rec in ref["records"]:
+        try:
+            r = _post(url, "/v1/completions", {"model": served, "prompt": rec["prompt_ids"] + rec["completion_ids"],
+                                               "max_tokens": 1, "temperature": 0.0, "prompt_logprobs": TOP})
+            plp = r["choices"][0].get("prompt_logprobs")
+        except Exception:  # noqa: BLE001  (a prompt without a result: compare() counts its positions as missing)
+            plp = None
+        cand.append(None if plp is None else [None if pos is None else {int(k): v for k, v in pos.items()}
+                                              for pos in plp])
+    return _finish(ref, ref_path, cand, out, served, ref.get("extra") or {}, noise_path,
+                   _server_stack(url, served, extra_stack))
+
+
 # ---------------------------------------------------------------- the vLLM runs
 def _stack() -> dict:
     out = {}
@@ -287,6 +360,12 @@ def check(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[
     inputs = [TokensPrompt(prompt_token_ids=r["prompt_ids"] + r["completion_ids"]) for r in ref["records"]]
     outs = llm.generate(inputs, sp, use_tqdm=False)
     cand = [o.prompt_logprobs for o in outs]
+    return _finish(ref, ref_path, cand, out, model or ref["model"], extra if extra is not None else ref["extra"],
+                   noise_path, _stack())
+
+
+def _finish(ref: dict, ref_path: str, cand: list, out: str, model: str, extra, noise_path: Optional[str],
+            stack: dict) -> dict:
     res = compare(ref, cand)
     digest = ref_digest(ref)
     noise, noise_why = None, None
@@ -300,7 +379,7 @@ def check(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[
             noise_why = "the --noise run scored another model than the reference's, so its differences aren't noise"
     v = ({"verdict": "INCONCLUSIVE", "why": noise_why} if noise_why else verdict(res["summary"], noise))
     run = {"schema": CHECK_SCHEMA, "ref": os.path.abspath(ref_path), "ref_digest": digest,
-           "model": model or ref["model"], "extra": extra if extra is not None else ref["extra"], "stack": _stack(),
+           "model": model, "extra": extra, "stack": stack,
            "ref_stack": ref.get("stack"),
            "summary": res["summary"], "verdict": v, "noise": noise,
            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
@@ -338,23 +417,35 @@ def main(argv) -> int:
     p = argparse.ArgumentParser(prog="sdcguard gate model-ref|model-check")
     sub = p.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("model-ref", help="record reference completions and their top-20 log-probabilities")
-    r.add_argument("--model", required=True)
+    r.add_argument("--model", default=None)
     r.add_argument("--out", required=True)
     r.add_argument("--tokens", type=int, default=64)
     r.add_argument("--dtype", default="bfloat16")
     r.add_argument("--max-len", type=int, default=2048)
     r.add_argument("--vllm-arg", action="append", help="KEY=VALUE passed to vllm.LLM (JSON values allowed)")
+    r.add_argument("--url", default=None, help="record from this running vLLM server instead of loading the model here")
+    r.add_argument("--stack", action="append", help="KEY=VALUE recorded as part of the server's stack (gpu, say)")
     c = sub.add_parser("model-check", help="score the recorded completions on this stack and compare")
     c.add_argument("ref")
     c.add_argument("--out", required=True)
     c.add_argument("--model", default=None, help="another model than the reference's (a quantized one, say)")
     c.add_argument("--noise", default=None, help="a model-check file from the reference's own stack")
     c.add_argument("--vllm-arg", action="append", help="KEY=VALUE passed to vllm.LLM (JSON values allowed)")
+    c.add_argument("--url", default=None, help="score on this running vLLM server instead of loading the model here")
+    c.add_argument("--stack", action="append", help="KEY=VALUE recorded as part of the server's stack (gpu, say)")
     a = p.parse_args(argv)
     if a.cmd == "model-ref":
+        if a.url:
+            print(json.dumps(make_ref_url(a.url, a.out, a.tokens, a.model, _extra(a.stack)), indent=1))
+            return 0
+        if not a.model:
+            p.error("model-ref needs --model (or --url)")
         print(json.dumps(make_ref(a.model, a.out, a.tokens, a.dtype, a.max_len, _extra(a.vllm_arg)), indent=1))
         return 0
-    run = check(a.ref, a.out, a.model, _extra(a.vllm_arg) if a.vllm_arg else None, a.noise)
+    if a.url:
+        run = check_url(a.ref, a.out, a.url, a.model, a.noise, _extra(a.stack))
+    else:
+        run = check(a.ref, a.out, a.model, _extra(a.vllm_arg) if a.vllm_arg else None, a.noise)
     print(json.dumps({"summary": run["summary"], "verdict": run["verdict"]}, indent=1))
     return {"PASS": 0, "WARN": 1, "FAIL": 1}.get(run["verdict"]["verdict"], 2)
 

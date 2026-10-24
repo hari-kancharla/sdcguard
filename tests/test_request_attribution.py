@@ -70,7 +70,7 @@ class _Sched:
         self.num_scheduled_tokens = counts
 
 
-def _runner_module(monkeypatch, plan):
+def _runner_module(monkeypatch, plan, padded=False):
     """A V2-like GPUModelRunner: execute_model(scheduler_output) runs the model on one row per scheduled token and
     keeps the step's batch (req_ids in batch order) on execute_model_state, as vLLM 0.32's does."""
     import sys
@@ -83,6 +83,9 @@ def _runner_module(monkeypatch, plan):
         def execute_model(self, scheduler_output):
             ids = sorted(scheduler_output.num_scheduled_tokens)          # vLLM sorts the batch
             self.execute_model_state = types.SimpleNamespace(input_batch=types.SimpleNamespace(req_ids=ids))
+            if padded:
+                self.execute_model_state.input_batch.num_tokens_after_padding = \
+                    sum(scheduler_output.num_scheduled_tokens.values()) + 2
             rows = sum(scheduler_output.num_scheduled_tokens.values())
             return self.model(torch.randn(rows + 2, 256).to(torch.bfloat16))    # + 2 rows of graph padding
     mod.GPUModelRunner = GPUModelRunner
@@ -108,6 +111,9 @@ def test_the_plugin_names_the_request_whose_row_alarmed(monkeypatch, tmp_path):
     assert d["captured"]["step"] == 3 and d["directly_implicated"] == ["chat-b"] and d["attribution"].startswith("exact")
     assert d["potentially_exposed"]["read_window"]["requests"] == ["chat-a", "chat-b", "chat-c"]
     assert any("prefix-cache" in u for u in d["unknown_impact"])
+    # what a replay at the real shape needs: the layer's matmul and the step's rows (this stand-in has no padding)
+    assert d["matmul"]["out_features"] == 256 and d["matmul"]["in_features"] == 256
+    assert d["step_rows"] == {"tokens": 8, "with_padding": None}
     _faulty_linear(monkeypatch, {1: 9})            # a padding row
     r.execute_model(_Sched(reqs))
     (ev,) = plugin.poll(wait=True)
@@ -153,3 +159,16 @@ def test_attribution_is_unavailable_rather_than_guessed(monkeypatch):
     p._attribute(ev)
     assert ev.detail["directly_implicated"] is None and "microbatches" in ev.detail["attribution"]
     assert p._external("chat-1-deadbeef") == "chat-1" and p._external("plain") == "plain"
+
+
+def test_the_step_rows_with_padding_come_from_vllms_batch(monkeypatch, tmp_path):
+    M, _ = install_fake_vllm(monkeypatch.setitem)
+    Runner = _runner_module(monkeypatch, None, padded=True)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    model = load(nn.Sequential(Lin(M, 256, 256, "model.layers.0.proj")))
+    r = Runner(model)
+    _faulty_linear(monkeypatch, {1: 1})
+    r.execute_model(_Sched({"q-00000000": 3}))
+    (ev,) = plugin.poll(wait=True)
+    assert ev.detail["step_rows"] == {"tokens": 3, "with_padding": 5} and ev.detail["directly_implicated"] == ["q"]

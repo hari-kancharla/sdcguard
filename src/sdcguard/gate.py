@@ -648,6 +648,28 @@ def rewrite_pin(text: str, bias: bool, name: str) -> tuple:
     return "\n".join(out) + "\n", rows
 
 
+def merge_pins(texts: list) -> tuple:
+    """One TunableOp results file from several pin files of the same stack (the files `pin` wrote for several
+    shapes): the validator lines of the first, then every GEMM row once. Raises ValueError if the files' validators
+    differ (they were made on different PyTorch, cuBLASLt or GPU, which TunableOp would reject). Returns (the file,
+    how many GEMM rows it holds)."""
+    validators, rows, seen = None, [], set()
+    for text in texts:
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        v = [ln for ln in lines if ln.startswith("Validator")]
+        if validators is None:
+            validators = v
+        elif v != validators:
+            raise ValueError("the pin files were made on different stacks (their TunableOp validators differ)")
+        for ln in lines:
+            if not ln.startswith("Validator"):
+                key = ",".join(ln.split(",")[:2])
+                if key not in seen:
+                    seen.add(key)
+                    rows.append(ln)
+    return "\n".join((validators or []) + rows) + "\n", len(rows)
+
+
 def _pin_worker(argv) -> int:
     case_dir, out = argv[0], argv[1]
     try:

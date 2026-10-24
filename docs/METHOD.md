@@ -1580,6 +1580,74 @@ tested on stand-ins on the CPU (`tests/test_request_attribution.py`). Not covere
 (dual-batch overlap) and sequence parallelism, where the plugin says attribution is unavailable, and speculative
 decoding.
 
+### The cuBLAS bug inside the real server (written October 24, before any run)
+
+Every catch of cuBLAS issue 6862950 so far came from the offline check, the gate and single synthetic layers; the
+vLLM plugin itself has met only injected faults, and has never run as an MPS client on Hopper, the condition that
+triggers the bug. `experiments/vllm_live_catch.py` (`modal run scripts/modal_vllm.py --phase live_catch`, one H200
+with the MPS daemon, vLLM 0.32.0, Qwen2.5-1.5B-Instruct in bf16, about 55 to 70 minutes and $5 to $6.50) runs the
+guarded server three ways with cuBLASLt's log on: as an MPS client at 100% (the reference), at 40%, and at 40% with
+a TunableOp file pinning every shape the 40% inventory flagged to algorithm 66 with a 1x1x1 cluster. Alerts now
+carry what a replay at the real shape needs: the layer's output and input features and bias, and the step's rows
+with CUDA-graph padding.
+
+First, a finding with no pass line: whether this model's GEMMs reach the affected kernel at all at 40% on this
+H200 (`sdcguard kernels` on the server's log: any call on algorithm 66 with 4 or more CTAs per cluster, in FP16 or
+BF16). If none does, that is the result, written here as found, and criteria 3 to 5 don't apply. If some do:
+1. Both servers start and serve under SDCGUARD_REQUIRE=1.
+2. No alert at 100%.
+3. At least one alert at 40%, and at least one alert's captured row rechecked in float64 as wrong.
+4. For at least one alert: the replay at its real shape (`sdcguard gate capture` with the alert's out and in
+   features, rows and bias, in a fresh process) is wrong in at least 19 of 20 runs at 40% and right in 20 of 20 at
+   100%, and the kernel cuBLASLt's log shows for it at 40% is one the server's inventory shows for that shape
+   (same algorithm and cluster). The replay of the kept row and block alone (`gate add`, today's way) is reported
+   beside it, with no line.
+5. Reported, deciding nothing: how many of the 64 completions at 40% differ from 100%; and the pinned run: alerts,
+   completions differing from 100%, and whether the flagged kernel still ran (whether TunableOp's pins reach
+   vLLM's compiled GEMMs is itself unknown before the run). Also each replayed case run at 40% with the pin file
+   (`gate workaround`, 20 runs): the fix checked on the very call the server got wrong.
+6. Reported, deciding nothing, the first GPU run of `sdcguard kernels test`: on each server's inventory at that
+   server's share, every logged bf16 linear-layer call run again on its own (random inputs, 3 runs, float64
+   reference). Expected: at 40%, the calls flagged for 6862950 WRONG and no other call WRONG; at 100%, no call
+   WRONG.
+
+The verdict is one of: CAUGHT (1 to 4 met), NOT EXERCISED (the server never ran the affected kernel at 40%: no
+catch, and none claimed; a forced reproduction outside the server is other evidence, with another scope), NOT
+CAUGHT (it ran, and a criterion failed) or DIDN'T START. Only CAUGHT is reported as a catch inside vLLM. With any
+replay, `reproduce/` keeps the cases, the pin file, the conditions and the commands, so someone else can rerun the
+wrong call and its fix without this script.
+Not claimed whatever the outcome: anything about other models, GPUs or MPS shares, or about hardware faults.
+
+### Decisions on four changes to a vLLM server (written October 24, before any run)
+
+`sdcguard decide` puts four questions about one change to a serving stack side by side and keeps them apart:
+whether the checked arithmetic is right against float64 (the vLLM plugin's alerts and what it covered), whether the
+model's outputs stay inside a quality budget (`gate model-check` against the trusted stack, now also against a
+running server with `--url`), whether the change is as fast as it has to be (`sdcguard perf`, the same load on both
+sides, a change inside the spread between rounds counted as noise), and where the answer holds. It has only run on
+files made by hand. `experiments/vllm_change_decisions.py` (`modal run scripts/modal_vllm.py --phase decisions`, one
+H100, vLLM 0.32.0, about 35 to 50 minutes and $3 to $4) runs it on a real `vllm serve` of Qwen2.5-7B-Instruct with
+sdcguard on as deployed (one layer in eight per step), five server launches: the trusted stack (`base`: the
+reference and the baseline's speed), the same stack started again (`same`), Triton attention (`triton`), the AWQ
+INT4 model on Machete (`awq`), and the trusted stack with one weight of model.layers.10.mlp.down_proj multiplied by
+2^8 after start (`fault`: what flipping bit 10 of a bf16 weight does when that bit is 0). Each change is decided
+against `base` under two policies: `hold` (no quality loss: model-check PASS; throughput no lower, within the noise)
+and `speed` (at least 10% more throughput; model-check WARN accepted). The decision's load is 128 prompts at 16 at a
+time, 128 tokens each, 3 rounds; one request at a time is reported only.
+
+Criteria:
+1. All five servers start and serve with SDCGUARD_REQUIRE=1.
+2. `same` under `hold` is ACCEPT; `fault` is REJECT under both policies.
+3. The rejection of `fault` gives the arithmetic reason and names model.layers.10.mlp.down_proj.
+4. No arithmetic FAULT on `same`, `triton` or `awq`.
+5. Every decision has its arithmetic, approximation and performance sections.
+
+Reported as found, deciding nothing: every other decision (`triton` and `awq` under both policies, `same` under
+`speed`, where no gain is expected), the speed changes, and the model-check verdict on `fault`: whether a quality
+check alone would have passed the faulty server. Not claimed whatever the outcome: anything about other models,
+GPUs, loads or vLLM versions; and a decision covers the prompts and load it ran, the plugin's checked layers and
+nothing else (attention, norms and sampling only through the quality check).
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

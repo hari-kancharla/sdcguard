@@ -18,6 +18,20 @@ class FaultInjection:
                 return name
         return ""
 
+    def sdcguard_test_scale(self, suffix: str, k: int) -> str:
+        """Multiply weight [0, 7] of the first linear layer whose name ends with `suffix` by 2**k: exact in bf16 and
+        fp16 (the exponent changes, the mantissa doesn't), and what flipping an exponent bit that was 0 does (k = 8
+        is bit 10 of a bf16 weight). k = -8 afterwards restores it. Returns the layer's name, or ""."""
+        import torch
+        for name, mod in self.get_model().named_modules():
+            w = getattr(mod, "weight", None)
+            if name.endswith(suffix) and isinstance(w, torch.Tensor) and w.dim() == 2 and w.element_size() == 2:
+                with torch.no_grad():
+                    w.data[0, 7] *= 2.0 ** k
+                torch.cuda.synchronize()
+                return name
+        return ""
+
     def sdcguard_test_stop_reads(self) -> bool:
         """Make the plugin stop reading results back (its checks keep running on the GPU, nobody reads them), the
         way a broken read path would: what `sdcguard ready` must call NOT PROTECTED while vLLM serves."""

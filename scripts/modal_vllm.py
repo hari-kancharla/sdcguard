@@ -14,6 +14,8 @@
     modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
     modal run scripts/modal_vllm.py --phase serve_tp2  # the 2-GPU server check alone: about 10 min, about $1.60
     modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 40 min, $3-4
+    modal run scripts/modal_vllm.py --phase live_catch     # cuBLAS 6862950 live in vllm serve on an H200: about $5-6.50
+    modal run scripts/modal_vllm.py --phase decisions      # `sdcguard decide` on four server changes: about $3-4
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -447,6 +449,82 @@ def ready_attrib(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=70 * 60)
+def decisions(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_change_decisions.py: `sdcguard decide` on four changes to a real `vllm serve` (vLLM 0.32,
+    Qwen2.5-7B-Instruct, one H100)."""
+    t0 = time.monotonic()
+    tag = "decisions"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_change_decisions.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=65 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+RATE_H200 = 4.54 + 8 * 0.0472 + 64 * 0.008             # H200 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="H200", cpu=8, memory=65536, timeout=90 * 60)
+def live_catch(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_live_catch.py on one H200 with the MPS daemon running: cuBLAS issue 6862950 inside the real
+    server, its replay at the alert's real shape, and the pinned workaround."""
+    import shutil
+    t0 = time.monotonic()
+    tag = "live_catch"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code, mps = None, shutil.which("nvidia-cuda-mps-control")
+    base = dict(os.environ, CUDA_MPS_PIPE_DIRECTORY="/tmp/mps_pipe", CUDA_MPS_LOG_DIRECTORY="/tmp/mps_log")
+    started = False
+    try:
+        if not mps:
+            raise RuntimeError("nvidia-cuda-mps-control isn't in this container")
+        os.makedirs(base["CUDA_MPS_PIPE_DIRECTORY"], exist_ok=True)
+        os.makedirs(base["CUDA_MPS_LOG_DIRECTORY"], exist_ok=True)
+        p = subprocess.run([mps, "-d"], env=base, capture_output=True, text=True, timeout=60)
+        if p.returncode != 0:
+            raise RuntimeError(f"the MPS daemon didn't start: {(p.stdout + p.stderr)[-500:]}")
+        started = True
+        os.environ.update(CUDA_MPS_PIPE_DIRECTORY=base["CUDA_MPS_PIPE_DIRECTORY"],
+                          CUDA_MPS_LOG_DIRECTORY=base["CUDA_MPS_LOG_DIRECTORY"])
+        code = _tee([sys.executable, f"{R}/experiments/vllm_live_catch.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=85 * 60)
+    except Exception as e:  # noqa: BLE001  (a run that couldn't start is a result too, never a pass)
+        with open(f"{out}.txt", "a") as f:
+            f.write(f"\nNOT RUN: {type(e).__name__}: {e}\n")
+    finally:
+        if started:
+            subprocess.run([mps], input="quit\n", env=base, capture_output=True, text=True, timeout=60)
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "verdict": {0: "CAUGHT", 3: "NOT EXERCISED"}.get(code, "see SUMMARY.json"),
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_H200, "H200, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 # INT4 on another GPU than the H100: on an L4 (sm89) vLLM has no Machete and runs Marlin by itself, with other
 # shapes of its kernels than the H100's
 QUANT_L4_RUNS = (
@@ -519,6 +597,13 @@ ESTIMATES = {
     "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, three server "
                     "starts): about 35 to 45 minutes, roughly $3 to $4 (60-minute limit, at most about $4.90 at "
                     "requested resources, not a spending cap)",
+    "live_catch": "cuBLAS issue 6862950 inside real `vllm serve` on 1 H200 as an MPS client (100% and 40%, then "
+                  "40% with the pinned workaround), with replays at the alert's real shape and `kernels test` on "
+                  "both inventories: about 55 to 70 minutes, roughly $5 to $6.50 (90-minute limit, at most about "
+                  "$8 at requested resources, not a spending cap)",
+    "decisions": "`sdcguard decide` on four changes to a real `vllm serve` of Qwen2.5-7B-Instruct on 1 H100 (5 server "
+                 "launches: about 35 to 50 minutes, roughly $3 to $4; 70-minute limit, at most about $5.70 at "
+                 "requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -584,6 +669,16 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
         elif phase == "ready_attrib":
             message = ready_attrib.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "decisions":
+            message = decisions.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "live_catch":
+            message = live_catch.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))
