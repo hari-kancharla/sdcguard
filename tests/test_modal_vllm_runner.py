@@ -383,3 +383,24 @@ def test_the_fp8_residuals_run_alone(runner, monkeypatch, capsys):
     monkeypatch.setattr(runner, "fp8_residuals", _remote("fp8_residuals: exit code 0 in 6.0 minutes"))
     runner.main("fp8_residuals")
     assert "Done." in capsys.readouterr().out
+
+
+def test_the_norms_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "norms", _remote("norms: exit code 0 in 41.0 minutes"))
+    runner.main("norms")
+    out = capsys.readouterr().out
+    assert "Done." in out and "RMSNorm" in out
+    monkeypatch.setattr(runner, "norms", _remote("norms: exit code 1 in 41.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("norms")
+
+
+def test_the_qualify_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "qualify", _remote("qualify: exit code 0 in 33.0 minutes"))
+    runner.main("qualify")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "qualify", _remote("qualify: exit code 1 in 33.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("qualify")

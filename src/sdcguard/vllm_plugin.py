@@ -12,6 +12,10 @@ nothing). What it does, in every vLLM process:
     running the kernel on unit vectors (_quant.py);
   - after every matmul of a checked linear layer, queues the check (one custom op, so
     torch.compile keeps a single graph and CUDA graphs capture it);
+  - with SDCGUARD_NORMS=1 (off by default for now), after every call of an RMSNorm layer, queues its check
+    (serve_norm.py: every output against the norm recomputed in fp32 from its input and its weights at load; one
+    opaque custom op, so torch.compile can't merge the recompute with the norm it checks; SDCGUARD_NORM_Z sets its
+    line in roundoffs, default 6);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -62,7 +66,8 @@ layer's checksums after its kernel repacked the weights: it turns that layer's c
 Not checked: FP8 and other quantized layers outside Marlin's and Machete's INT4/INT8 weight-only kernels (and on
 Marlin, layers with one scale per output, which it applies after accumulating), fused MoE experts, router gates that
 vLLM computes with its own GEMM (GateLinear with a bf16 weight and fp32 output), attention (including MLA's decode
-path, whose matmuls use copies of kv_b_proj's weight, so kv_b_proj is checked in prefill only), the LM head.
+path, whose matmuls use copies of kv_b_proj's weight, so kv_b_proj is checked in prefill only), the LM head, norms
+other than RMSNorm and GemmaRMSNorm (each run's log lists them), the residual adds fused into norms.
 Tested against vLLM 0.31 (V1 engine); vLLM's internal APIs change, so the plugin checks what it
 patches and turns itself off (with a log line) if something is missing.
 """
@@ -86,7 +91,8 @@ import torch
 log = logging.getLogger("sdcguard")
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
-          "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None}
+          "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
+          "norm_classes": [], "norms_stale": False}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -545,8 +551,11 @@ def _attribute(ev) -> None:
     cap = d.get("captured") or {}
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
+    norms = bool(_STATE.get("norm_classes"))
     d["unknown_impact"] = [
         "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
+        ("the plugin checks linear layers and RMSNorm layers; attention, MoE experts, the KV cache and sampling aren't "
+         "checked") if norms else
         "the plugin checks linear layers only; attention, norms, MoE experts, the KV cache and sampling aren't checked"]
     if _share(os.environ.get("SDCGUARD_SHARE", "1")) < 1:
         d["unknown_impact"].append("SDCGUARD_SHARE checks the same subset of layers every step; the others aren't seen")
@@ -586,6 +595,12 @@ def _attribute(ev) -> None:
 
 def _on_alert(ev) -> None:
     d, i = ev.detail, ev.identity
+    if ev.detector == "serve_norm":
+        log.warning("sdcguard ALERT: norm %s on %s (%s, PCI %s, host %s) z=%s (row %s, column %s: %s, expected %s; %s)",
+                    d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
+                    d.get("max_z"), d.get("row"), d.get("col"), d.get("output"), d.get("expected"),
+                    (d.get("recheck") or {}).get("verdict"))
+        return
     log.warning("sdcguard ALERT: %s on %s (%s, PCI %s, host %s) z=%s (row %s, block %s, %s checksum)",
                 d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
                 d.get("max_z"), d.get("row"), d.get("col_block"), d.get("checksum"))
@@ -621,6 +636,7 @@ def _rearm() -> None:
     layer's check off: quantized layers, weights cast to fp32), not only to what was checked at start-up."""
     _STATE["reported"] = False
     _STATE["rechecked"] = None
+    _STATE["norms_stale"] = True          # norm layers take their current weights at the next model step
 
 
 def _exact_reductions() -> None:
@@ -645,17 +661,22 @@ def _graph_key(share: float, offset: int, inline: bool) -> str:
     """A hash of what sdcguard builds into vLLM's traced graph: which layers have a check (SDCGUARD_SHARE,
     SDCGUARD_OFFSET, SDCGUARD_ALLOW_CPU), the constants in each check's call (its slot, and z), whether the check
     is traced in or called as the custom op (SDCGUARD_OPAQUE, SDCGUARD_FAST, SDCGUARD_SERVE_FAST), whether quantized
-    layers are checked (SDCGUARD_QUANT), the sdcguard version, and the check op's arguments (serve.OP_SCHEMA: a graph
-    traced with other arguments can't run)."""
+    layers are checked (SDCGUARD_QUANT), the sdcguard version, the check op's arguments (serve.OP_SCHEMA: a graph
+    traced with other arguments can't run), and whether norms are checked, with what line and op arguments
+    (SDCGUARD_NORMS, SDCGUARD_NORM_Z, serve_norm.NORM_SCHEMA)."""
     from . import __version__
     from .serve import OP_SCHEMA
     env = os.environ
     z = _z_from(env.get("SDCGUARD_Z", "6")) or 6.0
+    norms = None
+    if env.get("SDCGUARD_NORMS", "0") == "1":        # (serve_norm imports Triton: only when norms are checked)
+        from .serve_norm import NORM_SCHEMA
+        norms = (NORM_SCHEMA, _norm_line())
     return hashlib.sha256(repr((__version__, OP_SCHEMA, MACHETE_GRAPH, share, offset, z,
                                 inline,
                                 env.get("SDCGUARD_FAST", "1") != "0", env.get("SDCGUARD_SERVE_FAST", "1") != "0",
-                                env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0")).encode()
-                          ).hexdigest()[:12]
+                                env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0", norms)
+                               ).encode()).hexdigest()[:12]
 
 
 def _cache_root(key: str) -> str:
@@ -983,6 +1004,117 @@ def _patch_quant(op, select, inline: bool) -> list:
     return patched
 
 
+def _norm_line() -> float:
+    """SDCGUARD_NORM_Z, the norm check's line in roundoffs of the output dtype (default 6). A correct norm can be 4
+    off, so a line below 4.5 (or one that isn't a number) uses 6, with a warning."""
+    from .serve_norm import MIN_LINE, NORM_Z
+    text = os.environ.get("SDCGUARD_NORM_Z", "")
+    if not text:
+        return NORM_Z
+    v = _z_from(text)
+    if v is None or v < MIN_LINE:
+        log.warning("sdcguard: SDCGUARD_NORM_Z=%r isn't a line of at least %s roundoffs; using %s", text, MIN_LINE,
+                    NORM_Z)
+        return NORM_Z
+    return v
+
+
+def _patch_norms() -> list:
+    """vLLM's RMSNorm and GemmaRMSNorm: after the norm, the check of a registered layer (serve_norm.check_call). At
+    register(), before any model is built: vLLM binds each norm's forward when it constructs the layer, and its
+    forward_cuda calls forward_native, so patching forward_native covers both. Returns the classes patched."""
+    try:
+        from vllm.model_executor.layers import layernorm as LN
+    except Exception as e:  # noqa: BLE001
+        log.warning("sdcguard: vLLM's norm layers not found (%s: %s); norms aren't checked", type(e).__name__, e)
+        return []
+    from .serve_norm import check_call
+    done = []
+    for cname in ("RMSNorm", "GemmaRMSNorm"):
+        cls = getattr(LN, cname, None)
+        orig = vars(cls).get("forward_native") if cls is not None else None
+        if orig is None:
+            continue
+        if getattr(cls, "_sdcguard_norm_orig", None) is not None:
+            done.append(cname)
+            continue
+
+        def forward_native(self, x, residual=None, _orig=orig):
+            out = _orig(self, x, residual)
+            a = getattr(self, "_sdcguard_norm", None)
+            if a is not None:
+                if torch.compiler.is_compiling():
+                    check_call(a, x, residual, out)
+                else:
+                    try:
+                        check_call(a, x, residual, out)
+                    except Exception as e:  # noqa: BLE001  (never break serving: this layer goes unchecked)
+                        _norm_failed(self, e)
+            return out
+
+        forward_native.__doc__ = orig.__doc__
+        cls._sdcguard_norm_orig = orig
+        cls.forward_native = forward_native
+        done.append(cname)
+    return done
+
+
+def _norm_failed(mod, e: Exception) -> None:
+    mod.__dict__.pop("_sdcguard_norm", None)
+    g = _STATE["guard"]
+    if g is not None:
+        g.stats["norm_check_errors"] = g.stats.get("norm_check_errors", 0) + 1
+    log.warning("sdcguard: a norm check failed (%s: %s); that layer isn't checked from now on", type(e).__name__, e)
+
+
+def _register_norms(runner) -> Optional[dict]:
+    """After vLLM loaded the model and before it compiles it or captures CUDA graphs: register its RMSNorm layers
+    with the guard (once per process), and log how many are checked and what other norms the model has."""
+    if not _STATE.get("norm_classes") or _STATE.get("norms_registered"):
+        return None
+    _STATE["norms_registered"] = True
+    model = None
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        log.warning("sdcguard: couldn't find the model to register its norm layers; norms aren't checked")
+        return None
+    from .serve_norm import kind_of
+    found = []
+    others = {}
+    for name, mod in model.named_modules():
+        kind = kind_of(mod)
+        if kind is not None:
+            found.append((name, mod, kind))
+        elif "norm" in type(mod).__name__.lower() and not any(True for _ in mod.children()):
+            others[name] = type(mod).__name__
+    if not found:
+        log.info("sdcguard: no RMSNorm layers in this model%s", f" (other norms: {len(others)})" if others else "")
+        return None
+    dev = found[0][1].weight.device
+    g = _guard(dev)
+    nc = g.norm_checks(_norm_line())
+    for name, mod, kind in found:
+        nc.add(mod, name or type(mod).__name__, kind)
+    for name, cname in others.items():
+        nc.unsupported[name] = f"{cname}: not an RMSNorm the check knows"
+    dt = getattr(getattr(runner, "model_config", None), "dtype", None)
+    dtypes = {d for d in (dt, *(m.weight.dtype for _, m, _ in found)) if d in (torch.bfloat16, torch.float16)}
+    nc.finalize(dtypes=tuple(dtypes) or (torch.bfloat16,))
+    status = nc.kernel_status()
+    how = "the Triton kernel" if status and all(v[0] for v in status.values()) else \
+        "the PyTorch check (" + "; ".join(f"{k}: {v[1]}" for k, v in status.items() if not v[0]) + ")"
+    rest = {}
+    for why in nc.unsupported.values():
+        rest[why] = rest.get(why, 0) + 1
+    log.info("sdcguard: checking %d of %d norm layers with %s, line %g%s", len(nc.layers), len(nc.layers) +
+             len(nc.unsupported), how, nc.line,
+             "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
+    return {"checked": len(nc.layers), "not_checked": dict(nc.unsupported), "kernel": status}
+
+
 def register() -> None:
     """vLLM general-plugin entry point. Runs in every vLLM process; safe to call more than once. With
     SDCGUARD_REQUIRE, anything that keeps it from checking refuses to serve (an error here stops vLLM's startup):
@@ -1077,6 +1209,10 @@ def register() -> None:
     M.apply = apply
     M._sdcguard = True
     _STATE["patched"] = True
+    if os.environ.get("SDCGUARD_NORMS", "0") == "1":
+        from .serve_norm import norm_op
+        norm_op()                             # registered here, in every process, before any graph is traced
+        _STATE["norm_classes"] = _patch_norms()
     if os.environ.get("SDCGUARD_QUANT", "1") != "0":
         _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
@@ -1093,6 +1229,19 @@ def register() -> None:
         if getattr(GM, "_sdcguard", False):
             return True
         orig_exec = GM.execute_model
+        orig_load = getattr(GM, "load_model", None)
+
+        if orig_load is not None and _STATE.get("norm_classes"):
+            def load_model(self, *args, **kwargs):
+                out = orig_load(self, *args, **kwargs)
+                try:
+                    _register_norms(self)
+                except Exception as e:  # noqa: BLE001  (never break model loading)
+                    log.warning("sdcguard: registering norm layers failed (%s: %s); norms aren't checked",
+                                type(e).__name__, e)
+                return out
+
+            GM.load_model = load_model
 
         def execute_model(self, *args, **kwargs):
             if not _STATE.get("reported"):
@@ -1105,6 +1254,12 @@ def register() -> None:
                     _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
             step = _STATE["steps"] + 1
             g0 = _STATE["guard"]
+            if g0 is not None and _STATE.get("norms_stale") and g0.norms is not None:
+                _STATE["norms_stale"] = False
+                try:
+                    g0.norms.refresh()           # the weights were reloaded: compare norms with the new ones
+                except Exception as e:  # noqa: BLE001
+                    log.warning("sdcguard: couldn't take the norm layers' new weights: %s", e)
             if g0 is not None:
                 try:
                     g0.mark_step(step)           # before the step's work is queued, outside its CUDA graph

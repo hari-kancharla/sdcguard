@@ -129,11 +129,19 @@ def main():
                 pass
 
             def do_GET(self):
+                text = os.environ.get("SDCGUARD_SHARE", "1").strip()   # the weights checked follow the share
+                try:
+                    num, _, den = text.rstrip("%").partition("/")
+                    share = float(num) / (float(den) if den else 100.0 if text.endswith("%") else 1.0)
+                except ValueError:
+                    share = 1.0
+                ratio = round(min(1.0, share) * 0.97, 4)
                 with lock:
                     body = (f'sdcguard_protection_info{{UUID="GPU-fake",pid="{os.getpid()}",version="x",z="6",'
                             f'share="{os.environ.get("SDCGUARD_SHARE", "1")}"}} 1.0\n'
                             f"sdcguard_layers_checked 112\nsdcguard_layers_never_checked 0\n"
-                            f"sdcguard_weights_checked_ratio 0.97\nsdcguard_checks_executed_total {state['checks']}\n"
+                            f"sdcguard_weights_checked_ratio {ratio}\n"
+                            f"sdcguard_checks_executed_total {state['checks']}\n"
                             f"sdcguard_reads_total {state['reads']}\n").encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))

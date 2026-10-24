@@ -1773,6 +1773,80 @@ layer (at the 99.9th percentile), an FP8 check can use the current noise model w
 bf16 check (the run gives the size). Either way, no FP8 check is called supported until one meets criteria of its
 own on a real server (same answers as plain vLLM, no clean alert, a flipped weight caught).
 
+### Norm checks in serving (written October 24, before any run)
+
+The vLLM plugin can now check RMSNorm layers too (`src/sdcguard/serve_norm.py`, SDCGUARD_NORMS=1, off by default
+until this run says otherwise): after every call of an RMSNorm or
+GemmaRMSNorm layer, each output is compared with the norm recomputed in fp32 from the input the layer used (the
+returned sum, when the residual add is fused in) and the weights it had at load. vLLM rounds once (its CUDA kernel,
+eager mode) or twice (its native PyTorch version, which torch.compile runs), and its native fused version normalizes
+the sum before rounding it, so a correct output is within 4 bf16 roundings of the recompute (4.03 counting the
+products of the rounding errors, and the recompute's own fp32 rounding adds about 0.0003). An output's score is its
+distance from the recompute in roundings of its own size; the line is 6. The check runs as one opaque custom op (a
+Triton kernel, compared with the PyTorch version at first use on each GPU), because traced into the compiled graph
+it would be merged with the norm's own mean and rsqrt and compare the norm with itself.
+
+What a flip of one bit of a norm weight w does to the outputs that use it: sign and exponent bits change w by a
+factor of 2 or more; mantissa bit k (0 to 6) changes it by between 2^(k-8) and 2^(k-7) of its value. Caught for sure
+when the change is over about 10 roundings (3.9%): sign, exponent, and mantissa bits 4 to 6 (at least 16 roundings).
+Bit 0 (at most 2 roundings) can reach a score of 6.06 only if w is a power of two and every rounding falls the same
+way, so it is practically never caught. Bits 1 to 3 are between the two.
+
+`experiments/vllm_norm_check.py` (`modal run scripts/modal_vllm.py --phase norms`, one H100, vLLM 0.32.0, bf16,
+prefix caching off on every server, about 35 to 50 minutes and $2.80 to $4): Qwen2.5-1.5B-Instruct plain, guarded
+(SDCGUARD_REQUIRE=1, SDCGUARD_NORMS=1, compiled with CUDA graphs, vLLM's default), guarded without norm checks
+(SDCGUARD_NORMS=0) and
+guarded in eager mode; Qwen3-1.7B (per-head q/k norms) plain and guarded. The trials: 40 flips on the guarded
+Qwen2.5 (bits 15, 14, 10, 7 three times each, 6 to 0 four times each, at norm layers and positions drawn with seed
+0), each with 4 requests and a read with the flip in place, then the bit flipped back; 5 exact-naming trials on the
+eager server (32 requests at once, one holding a marker token whose row of one norm's output is made wrong after the
+norm, the design of A4 above); 4 flips of bit 14 in Qwen3's q/k norms.
+
+Criteria:
+- N1: every server starts; each guarded one checks every RMSNorm layer (57 in Qwen2.5-1.5B, 113 in Qwen3-1.7B)
+  with the Triton kernel.
+- N2: the guarded servers' 64 greedy completions are identical to plain vLLM's (both models).
+- N3: no alert with no fault on any guarded server (identity requests, the speed load); the worst norm score read
+  back stays at or below 4.05 (compiled and eager). A worst score above that fails the bound even with no alert.
+- N4: every flip of bits 15, 14, 10, 7, 6, 5, 4 of a nonzero weight is caught by an alert naming the flipped layer;
+  no alert with a finite score names another layer during a trial (a norm weight changes the next layers' inputs,
+  not their arithmetic); every flip is undone.
+- N5: in all 5 exact-naming trials, every alert with a kept row names exactly the request holding the marker.
+- N6: the 4 Qwen3 q/k norm flips are caught, naming the layer, with no finite-score alert elsewhere.
+
+Reported, not criteria: detection and changed answers by bit for bits 3 to 0, non-finite alerts on other layers,
+and the cost: output tokens per second with and without norm checks at 16 and 256 requests at once. Decided now: if
+norm checks pass and cost at most 5% at 16 at once, they become on by default; if they cost more, they stay
+opt-in. Not claimed whatever the outcome: rates
+for hardware faults in norm arithmetic (only weights are flipped here, and output corruption in eager mode), norms
+fused into other kernels, or models with other norms (each run's log lists the norm layers it doesn't check).
+
+### Qualify on a real server (written October 24, before any run)
+
+`sdcguard qualify` has only run against stand-in servers. Reading its defaults against decide's while preparing this
+run found that they contradicted each other: qualify checked 1/8 of the layers by default, and decide's default
+policy counts the plugin's silence only when it checks at least half the weights, so on a real server qualify with its
+own defaults could not have accepted anything (the stand-in reported 97% coverage whatever the share). Qualify now
+checks every layer by default, and the stand-in's coverage follows the share.
+
+`experiments/vllm_qualify_check.py` (`modal run scripts/modal_vllm.py --phase qualify`, one L4, vLLM 0.32.0,
+Qwen2.5-1.5B-Instruct in bf16, about 30 to 40 minutes and $0.70 to $1): one `sdcguard qualify` with its defaults (the
+plugin on every linear layer, decide's default policy, no policy file) and --repeat-baseline, with three
+candidates: `same` (the baseline's configuration), `triton` (--attention-backend TRITON_ATTN; the quality check said
+PASS for it on an H100 on October 23) and `badeps` (rms_norm_eps set to 1.0 through --hf-overrides; FAIL on the H100,
+mean KL 11.2).
+
+Criteria:
+- Q1: all five servers start; qualify writes REPORT.md and exits 1 (one REJECT expected).
+- Q2: `same` is ACCEPT, with arithmetic NO FAULT OBSERVED (the plugin's coverage counts) and isolation NO LEAK SEEN.
+- Q3: `badeps` is REJECT for quality (OUTSIDE), with arithmetic NO FAULT OBSERVED: the arithmetic is right, the
+  configuration is wrong, and the decision keeps the two apart.
+- Q4: no alert on any server (no fault is injected).
+
+Reported, not a criterion: `triton`'s decision (expected ACCEPT from the H100 result), each server's speed and the
+isolation probes' details. Not claimed: anything about other models or GPUs, or about decisions under policies other
+than the default.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

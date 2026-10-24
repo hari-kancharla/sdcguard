@@ -58,3 +58,15 @@ def test_the_sdcguard_command_runs_qualify(capsys):
     except SystemExit as e:
         assert e.code == 0
     assert "--candidate" in capsys.readouterr().out
+
+
+def test_a_share_too_small_for_the_policy_is_not_accepted(tmp_path):
+    """With one layer in eight checked, the plugin's silence can't stand for no fault under decide's default policy
+    (at least half the weights): the unchanged stack isn't ACCEPTed on that silence."""
+    out = str(tmp_path / "q")
+    code = qualify.main([
+        "--out", out, "--baseline", "fake/m", "--candidate", "same=fake/m", "--share", "1/8", "--no-isolation",
+        "--no-perf", "--serve-cmd", f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}",
+        "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8", "--startup-timeout", "30"])
+    row = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]["same"]
+    assert code != 0 and row["decision"] != "ACCEPT" and row["arithmetic"] != "NO FAULT OBSERVED", row

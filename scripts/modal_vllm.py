@@ -19,6 +19,8 @@
     modal run scripts/modal_vllm.py --phase isolation      # vLLM #62124 and controls on 0.31 and 0.32, 2 L4s: under $1
     modal run scripts/modal_vllm.py --phase sensitivity    # 80 weight bit flips in a served model, 1 H100: about $2
     modal run scripts/modal_vllm.py --phase fp8_residuals  # vLLM's FP8 GEMM against exact arithmetic, 1 H100: under $1
+    modal run scripts/modal_vllm.py --phase norms          # RMSNorm checks in vllm serve, 1 H100: about $3 to $4
+    modal run scripts/modal_vllm.py --phase qualify        # `sdcguard qualify` with its defaults on 1 L4: about $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -532,6 +534,62 @@ def fp8_residuals(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
+def norms(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_norm_check.py: the plugin's RMSNorm checks in real `vllm serve` (vLLM 0.32, Qwen2.5-1.5B and
+    Qwen3-1.7B, one H100): coverage, identical answers, clean scores against the bound, norm weight flips, exact
+    request naming in eager mode, and the cost."""
+    t0 = time.monotonic()
+    tag = "norms"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_norm_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=70 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=60 * 60)
+def qualify(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_qualify_check.py: one `sdcguard qualify` with its defaults and the plugin on (vLLM 0.32,
+    Qwen2.5-1.5B-Instruct, one L4): the baseline twice, then the same stack, another attention kernel and a wrong
+    rms_norm_eps."""
+    t0 = time.monotonic()
+    tag = "qualify"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_qualify_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=57 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 def _isolation(version: str, force: bool, source: Optional[dict]) -> str:
     t0 = time.monotonic()
     tag = f"isolation{version.replace('.', '')}"
@@ -706,6 +764,13 @@ ESTIMATES = {
     "fp8_residuals": "vLLM's FP8 GEMM against exact arithmetic on 16 layers of a 1.5B model, 1 H100: about 5 to 10 "
                      "minutes, roughly $0.40 to $0.80 (20-minute limit, at most about $1.60 at requested resources, "
                      "not a spending cap)",
+    "norms": "the plugin's RMSNorm checks in real `vllm serve` on 1 H100: Qwen2.5-1.5B plain, guarded, without norm "
+             "checks and eager, then Qwen3-1.7B plain and guarded (6 server launches, 44 weight flips, 5 naming "
+             "trials, the cost): about 35 to 50 minutes, roughly $2.80 to $4 (75-minute limit, at most about $6 at "
+             "requested resources, not a spending cap)",
+    "qualify": "one `sdcguard qualify` with its defaults on 1 L4 (Qwen2.5-1.5B: the baseline twice, the same stack, "
+               "Triton attention, a wrong rms_norm_eps; 5 server launches): about 30 to 40 minutes, roughly $0.70 to "
+               "$1 (60-minute limit, at most about $1.45 at requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -787,6 +852,16 @@ def main(phase: str = "vllm", force: bool = False):
                     failures.append(str(message))
         elif phase == "fp8_residuals":
             message = fp8_residuals.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "qualify":
+            message = qualify.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "norms":
+            message = norms.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

@@ -8,7 +8,8 @@ give one decision per candidate with its evidence.
 
 Each configuration is what follows `vllm serve` (the model and its flags). One at a time, on the same GPUs and port,
 each is started with the sdcguard plugin on (SDCGUARD=1, SDCGUARD_REQUIRE=1, its metrics and alert log; --share,
-default 1/8; --no-plugin leaves it off) and, once it answers:
+default 1: every layer, since a qualification run is a test and decide's default policy counts the plugin's silence
+only when it checks at least half the weights; --no-plugin leaves it off) and, once it answers:
 
   baseline     the quality reference (`gate model-ref --url`): greedy completions with their top-20 log-probabilities
   again        with --repeat-baseline, the baseline started a second time: its quality check is the noise floor
@@ -254,7 +255,8 @@ def main(argv=None) -> int:
     p.add_argument("--no-plugin", action="store_true", help="serve without the sdcguard plugin (no arithmetic source)")
     p.add_argument("--no-isolation", action="store_true")
     p.add_argument("--no-perf", action="store_true")
-    p.add_argument("--share", default="0.125", help="SDCGUARD_SHARE for every server (default 1/8)")
+    p.add_argument("--share", default="1", help="SDCGUARD_SHARE for every server (default 1: every layer; decide's "
+                   "default policy counts the plugin's silence only when it checks at least half the weights)")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--metrics-port", type=int, default=9400)
     p.add_argument("--tokens", type=int, default=64, help="tokens per reference completion")

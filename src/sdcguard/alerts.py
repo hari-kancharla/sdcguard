@@ -199,6 +199,11 @@ class Metrics:
     sdcguard_last_read_timestamp_seconds    when (a stale value means checks stopped being read)
     sdcguard_protection_info{UUID,pid,version,z,share}  1: which GPU and process this is, and how it checks
                                             (for `sdcguard ready`, which checks the server from outside)
+    sdcguard_norms_checked                  norm layers (RMSNorm) this process checks
+    sdcguard_norm_worst_score               worst norm score at the last read (a correct norm stays at or below 4,
+                                            alarm line 6); norm alerts count in sdcguard_alerts_total too
+    sdcguard_norm_checks_executed_total     norm calls checked, counted on the GPU
+    sdcguard_norm_unjudged_outputs_total    norm outputs that couldn't be judged (a non-finite input, or an overflow)
     """
 
     def __init__(self, port: Optional[int] = None, registry=None, addr: str = "0.0.0.0"):
@@ -228,6 +233,13 @@ class Metrics:
         self.last = Gauge("sdcguard_last_read_timestamp_seconds", "When results were last read back", registry=r)
         self.info = Gauge("sdcguard_protection_info", "Which GPU and process this is, and how it checks (value 1)",
                           ["UUID", "pid", "version", "z", "share"], registry=r)
+        self.norms = Gauge("sdcguard_norms_checked", "Norm layers (RMSNorm) this process checks", registry=r)
+        self.norm_worst = Gauge("sdcguard_norm_worst_score", "Worst norm score at the last read", registry=r)
+        self.norm_executed = Counter("sdcguard_norm_checks_executed", "Norm calls checked, counted on the GPU",
+                                     registry=r)
+        self.norm_unjudged = Counter("sdcguard_norm_unjudged_outputs", "Norm outputs that couldn't be judged",
+                                     registry=r)
+        self._seen_norms: dict = {}               # id(norm checks) -> (calls, unjudged) already exported
         self.port = None
         if port is not None:
             start_http_server(int(port), addr=addr, registry=r)
@@ -253,6 +265,21 @@ class Metrics:
             self.unchecked.labels(method=why).set(n)
         self.never_checked.set(len(report.get("never_checked") or ()))
         self.weight_share.set(float(report.get("weight_share_checked") or 0.0))
+
+    def observe_norms(self, norms, events: list, worst: float) -> None:
+        """After a read of a guard's norm checks (serve_norm.NormChecks)."""
+        self.norms.set(len(norms.layers))
+        self.norm_worst.set(float(worst) if worst == worst else 0.0)
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        ex, un = int(norms.stats.get("calls_checked", 0)), int(norms.stats.get("unjudged_outputs", 0))
+        pex, pun = self._seen_norms.get(id(norms), (0, 0))
+        if ex > pex:
+            self.norm_executed.inc(ex - pex)
+        if un > pun:
+            self.norm_unjudged.inc(un - pun)
+        self._seen_norms[id(norms)] = (max(ex, pex), max(un, pun))
 
     def observe(self, guard, scores: Iterable[tuple], events: list) -> None:
         """scores: (layer name, score) for every layer read back."""
