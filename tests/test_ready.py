@@ -69,9 +69,11 @@ def test_two_workers_checking_while_vllm_serves_are_protected(close):
     assert _run([a, b], v) == 0
 
 
-def test_an_idle_server_is_protected_with_a_note(close, capsys):
-    a = _srv(close, _page())
-    assert _run([a]) == 0 and "idle" in capsys.readouterr().out
+def test_an_idle_server_is_protected_only_when_vllm_says_it_is_idle(close, capsys):
+    v = _srv(close, "vllm:generation_tokens_total 10\n")          # no tokens between the reads
+    assert _run([_srv(close, _page())], v) == 0 and "idle" in capsys.readouterr().out
+    # without vLLM's metrics, checks that didn't move can't be told from stopped checks
+    assert _run([_srv(close, _page())]) == 2 and "can't be told apart" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("change,needle", [
@@ -105,7 +107,7 @@ def test_two_workers_on_one_gpu_or_with_other_layer_counts_are_not_protected(clo
 
 
 def test_expected_layers_and_weights_are_enforced(close):
-    a = _srv(close, _page(weights=0.5))
+    a = _srv(close, _page(weights=0.5), _page(weights=0.5, executed=150))
     assert _run([a], extra=("--layers", "112")) == 0
     assert _run([_srv(close, _page())], extra=("--layers", "56")) == 1
     assert _run([_srv(close, _page(weights=0.5))], extra=("--min-weights", "0.9")) == 1

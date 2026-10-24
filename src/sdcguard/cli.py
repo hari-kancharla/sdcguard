@@ -333,6 +333,8 @@ def main(argv=None) -> int:
     sub.add_parser("casefile", help="what saved evidence of a failure supports (experimental)", add_help=False)
     sub.add_parser("ready", help="is this vLLM server's math being checked right now? (asked from outside)",
                    add_help=False)
+    sub.add_parser("kernels", help="which GPU matmul kernels a workload runs, and how many of them a test ran",
+                   add_help=False)
     sub.add_parser("gate", help="keep wrong matmuls as test cases and check every upgrade against them",
                    add_help=False)
     sub.add_parser("nvsentinel", help="send check results and job alerts to NVIDIA NVSentinel (Kubernetes)",
@@ -389,7 +391,7 @@ def main(argv=None) -> int:
 
 
 _DISPATCHED = ("demo", "selftest", "screen", "check", "board", "casefile", "blas", "issues", "nvsentinel", "gate",
-               "ready")
+               "ready", "kernels")
 
 
 def _dispatch(cmd: str, rest: list) -> int:
@@ -408,6 +410,8 @@ def _dispatch(cmd: str, rest: list) -> int:
         from .casefile import main as m
     elif cmd == "ready":
         from .ready import main as m
+    elif cmd == "kernels":
+        from .kernels import main as m
     elif cmd == "gate":
         from .gate import main as m
     elif cmd == "nvsentinel":

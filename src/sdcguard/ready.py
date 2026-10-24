@@ -12,12 +12,13 @@ worker it was told to expect:
   - the alarm line is at most --max-z (default 6: a server set to alert at z=1000 never alerts);
   - checks have run and their results have been read back at least once;
   - each worker is on its own GPU, and none restarted between the two reads;
-  - if vLLM's own metrics are given (--vllm, the API server's /metrics) and vLLM produced tokens between the two
-    reads, every worker's executed checks went up too. Without --vllm an idle server and one whose checks
-    stopped look the same between two reads, and the result says so.
+  - every worker's executed checks went up between the two reads, or vLLM's own metrics (--vllm, the API
+    server's /metrics) show it produced no tokens in between (idle). If vLLM produced tokens and a worker's checks
+    didn't go up, that worker is serving unchecked. Without --vllm, checks that didn't go up can mean an idle
+    server or stopped checks, so the answer is INCONCLUSIVE: pass --vllm for a definite one.
 
 Exit codes: 0 PROTECTED, 1 NOT PROTECTED, 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
-restarted between the reads). For a Kubernetes readiness probe any nonzero code keeps traffic away, so the
+restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a Kubernetes readiness probe any nonzero code keeps traffic away, so the
 probe's timeoutSeconds must be longer than --window. Only the Python standard library is used, so the check
 runs in a small sidecar as well as in the server's own image.
 
@@ -146,8 +147,8 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
         else:
             notes.append("idle: vLLM produced no tokens between the reads")
     elif not all(grew):
-        notes.append("executed checks didn't go up between the reads on every worker: the server is idle, or "
-                     "checks stopped; pass --vllm to tell these apart")
+        unsure.append("executed checks didn't go up between the reads on every worker: the server is idle, or its "
+                      "checks stopped, and without --vllm these can't be told apart")
     verdict = "NOT PROTECTED" if problems else ("INCONCLUSIVE" if unsure else "PROTECTED")
     return {"verdict": verdict, "problems": problems, "unsure": unsure, "notes": notes, "workers": workers}
 

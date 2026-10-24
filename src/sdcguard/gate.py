@@ -98,6 +98,7 @@ _ALGO = re.compile(r"algoId=(\d+)")
 _TILE = re.compile(r"\btile=(?:MATMUL_TILE_)?(\w+)")
 _STAGES = re.compile(r"\bstages=(?:MATMUL_STAGES_)?(\w+)")
 _CLUSTER = re.compile(r"clusterShape=(?:CLUSTER_SHAPE_)?(\w+)|CLUSTER_SHAPE_(\w+)")
+_LT_CALL = re.compile(r"\[cublasLt\w*Matmul\]")
 
 
 def parse_lt_log(text: str) -> dict:
@@ -106,7 +107,8 @@ def parse_lt_log(text: str) -> dict:
     kernels: dict = {}
     calls = 0
     for line in text.splitlines():
-        if "cublasLtMatmul]" not in line or "algoId=" not in line:
+        # cublasLtMatmul, and the typed entry points legacy cuBLAS calls go through (cublasLtHSHMatmul, ...)
+        if not _LT_CALL.search(line) or "algoId=" not in line:
             continue
         calls += 1
         a = _ALGO.search(line)
