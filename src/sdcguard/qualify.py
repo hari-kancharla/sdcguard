@@ -252,7 +252,8 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
                "isolation": row.get("isolation") in ("LEAK", "UNMEASURED") and not a.no_isolation,
                "consistency": row.get("consistency") in ("INCONSISTENT", "UNMEASURED") and
                not getattr(a, "no_consistency", False),
-               "arithmetic": row.get("arithmetic") not in ("NO FAULT OBSERVED", None),
+               "arithmetic": row.get("arithmetic") not in ("NO FAULT OBSERVED", None) or
+               row.get("weights") == "CHANGED",
                "quantization": row.get("quantization") == "WRONG",
                "performance": row.get("performance") == "MISSES" and bool(row.get("performance_required"))}
     steps = []
@@ -386,6 +387,7 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict
             f.write(dc.render(d) + "\n")
         tp = ((d["performance"].get("metrics") or {}).get("output_tokens_per_s") or {}).get("change")
         rows[name] = {"decision": d["decision"], "arithmetic": d["arithmetic"]["verdict"],
+                      "weights": (d.get("weights") or {}).get("verdict"),
                       "approximation": d["approximation"]["verdict"], "quality_check": d["approximation"].get("check"),
                       "quantization": d["quantization"]["verdict"],
                       "isolation": d["isolation"]["verdict"], "consistency": d["consistency"]["verdict"],
@@ -397,12 +399,14 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict
 
 def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
     lines = ["# Qualification", "", f"Baseline: `vllm serve {configs['baseline']}`", "",
-             "| Candidate | Decision | Arithmetic | Approximation | Isolation | Consistency | Performance | Throughput |",
-             "|---|---|---|---|---|---|---|---|"]
+             "| Candidate | Decision | Arithmetic | Weights | Approximation | Isolation | Consistency | Performance | "
+             "Throughput |",
+             "|---|---|---|---|---|---|---|---|---|"]
     for name, r in rows.items():
         tp = "" if r["throughput_change"] is None else f"{r['throughput_change']:+.1%}"
         q = r["approximation"] + (f" ({r['quality_check']})" if r.get("quality_check") else "")
-        lines.append(f"| {name} | {r['decision']} | {r['arithmetic']} | {q} | {r['isolation']} | "
+        lines.append(f"| {name} | {r['decision']} | {r['arithmetic']} | {r.get('weights') or ''} | {q} | "
+                     f"{r['isolation']} | "
                      f"{r.get('consistency', '')} | {r['performance']} | {tp} |")
     lines.append("")
     for name, r in rows.items():

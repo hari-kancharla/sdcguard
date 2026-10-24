@@ -140,9 +140,13 @@ def test_no_alerts_mean_nothing_without_coverage():
     nothing = dc.plugin_coverage(["sdcguard_layers_checked 0\nsdcguard_checks_executed_total 0\n"])
     r = dc.decide(quality=_quality(), alerts=[], plugin=nothing)
     assert r["decision"] == "NOT DECIDED" and not nothing["checked"]
-    # a confirmed wrong output is a fault whatever the coverage says
+    # a confirmed wrong output, or a changed weight, rejects whatever the coverage says
+    bad = [{"step": 3, "detail": {"recheck": {"verdict": "output_wrong"}}}]
+    r = dc.decide(quality=_quality(), alerts=bad)
+    assert r["decision"] == "REJECT" and r["arithmetic"]["verdict"] == "FAULT"
     bad = [{"step": 3, "detail": {"recheck": {"verdict": "weights_changed"}}}]
-    assert dc.decide(quality=_quality(), alerts=bad)["decision"] == "REJECT"
+    r = dc.decide(quality=_quality(), alerts=bad)
+    assert r["decision"] == "REJECT" and r["weights"]["verdict"] == "CHANGED" and r["arithmetic"]["verdict"] != "FAULT"
     assert COV["checked"] and COV["workers"][0]["share"] == "0.125"
 
 
@@ -168,7 +172,13 @@ def test_changed_weights_are_a_fault_without_a_kept_row():
     ev = [{"step": None, "detail": {"where": "model.layers.10.mlp.down_proj", "weights_changed_since_load": True,
                                     "captured": None}}]
     r = dc.decide(quality=_quality(), alerts=ev, plugin=COV)
-    assert r["decision"] == "REJECT" and "weights changed since load" in r["why"][0] and "step" not in r["why"][0]
+    assert r["decision"] == "REJECT" and r["why"][0].startswith("weights: ") and "step" not in r["why"][0]
+    assert "model.layers.10.mlp.down_proj changed since load (1 alert)" in r["why"][0]
+    # the GPU may multiply right with a wrong weight: the arithmetic stays NO FAULT OBSERVED, the weights CHANGED
+    assert r["arithmetic"]["verdict"] == "NO FAULT OBSERVED" and r["weights"]["verdict"] == "CHANGED"
+    assert r["arithmetic"]["sources"]["plugin_alerts"]["weights_changed"] == 1
+    assert r["arithmetic"]["sources"]["plugin_alerts"]["confirmed_wrong"] == 0
+    assert "1a. Weight integrity" in dc.render(r) and "CHANGED" in dc.render(r)
     ev = [{"step": None, "detail": {"where": "x", "weights_changed_since_load": False, "captured": {"step": 9}}}]
     r = dc.decide(quality=_quality(), alerts=ev, plugin=COV)
     assert r["decision"] == "NOT DECIDED" and "at step 9" in r["arithmetic"]["unresolved"][0]

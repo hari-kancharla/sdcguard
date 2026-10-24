@@ -79,7 +79,8 @@ DEFAULT_POLICY = {"arithmetic": {"min_weights_checked": 0.5},
 NOT_CHECKED = ("attention, normalization, sampling and other non-GEMM kernels: only through the quality check",
                "requests unlike the quality check's prompts and the perf load",
                "faults that need the workload's own data or memory layout to show (the kernel test uses random inputs)")
-_FAULT_RECHECK = {"output_wrong", "weights_changed"}
+_FAULT_RECHECK = {"output_wrong"}
+_WEIGHTS_RECHECK = {"weights_changed"}
 _CLEAR_RECHECK = {"output_agrees"}
 
 
@@ -122,9 +123,9 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
                plugin: Optional[dict] = None, min_weights_checked: Optional[float] = 0.5) -> dict:
     """plugin: plugin_coverage() of the candidate's run. Alerts count as a source of 'no fault' only when the
     coverage shows checks ran on every worker; a confirmed wrong output is a fault whatever the coverage."""
-    faults, unsure, notes, sources = [], [], [], {}
+    faults, unsure, notes, sources, weights = [], [], [], {}, []
     if alerts is not None:
-        n = {"alerts": len(alerts), "confirmed_wrong": 0, "cleared": 0, "unconfirmed": 0,
+        n = {"alerts": len(alerts), "confirmed_wrong": 0, "weights_changed": 0, "cleared": 0, "unconfirmed": 0,
              "coverage": plugin}
         for ev in alerts:
             if ev.get("detector") == "serve_fp8":   # quantization findings: their own section (quantization)
@@ -138,10 +139,11 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
             if rv in _FAULT_RECHECK:
                 n["confirmed_wrong"] += 1
                 faults.append(f"the plugin's alert on {where}{at}: the float64 recheck says {rv}")
-            elif d.get("weights_changed_since_load") is True:
-                # no row was kept for a recheck, but the layer's weights no longer match their load-time checksums
-                n["confirmed_wrong"] += 1
-                faults.append(f"the plugin's alert on {where}{at}: the layer's weights changed since load")
+            elif rv in _WEIGHTS_RECHECK or d.get("weights_changed_since_load") is True:
+                # the layer's weights no longer match their load-time checksums: a changed weight (in GPU memory,
+                # or updated without refresh()), which the GPU may multiply correctly. Its own finding, not arithmetic
+                n["weights_changed"] += 1
+                weights.append({"where": where, "step": step})
             elif rv in _CLEAR_RECHECK:
                 n["cleared"] += 1
             else:
@@ -190,7 +192,31 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
         v = "INCONCLUSIVE"
     else:
         v = "NO FAULT OBSERVED"
-    return {"verdict": v, "faults": faults, "unresolved": unsure, "notes": notes, "sources": sources}
+    return {"verdict": v, "faults": faults, "unresolved": unsure, "notes": notes, "sources": sources,
+            "weights_changed": weights}
+
+
+def weights_section(a: dict, plugin: Optional[dict]) -> dict:
+    """Weight integrity: do the checked layers' weights still match their checksums at load? CHANGED (an alert
+    showed a layer's weights changed since load: a corrupted or overwritten weight, whatever the arithmetic did with
+    it), UNCHANGED (the plugin's checks ran on every worker and none showed it), UNMEASURED (no plugin coverage)."""
+    changed = a.get("weights_changed") or []
+    if changed:
+        layers: dict = {}
+        for w in changed:
+            layers.setdefault(w["where"], []).append(w["step"])
+        names = sorted(layers)
+        first = [s for s in layers[names[0]] if s is not None]
+        why = (f"the weights of {', '.join(names[:3])}" + (f" and {len(names) - 3} more layers" if len(names) > 3
+                                                            else "")
+               + f" changed since load ({len(changed)} alert{'s' if len(changed) != 1 else ''}"
+               + (f", first at step {min(first)}" if first else "")
+               + "): a corrupted or overwritten weight, not wrong arithmetic")
+        return {"verdict": "CHANGED", "layers": names, "alerts": len(changed), "why": why}
+    if plugin is not None and plugin.get("checked"):
+        return {"verdict": "UNCHANGED", "why": "no checked layer's weights differed from their checksums at load"}
+    return {"verdict": "UNMEASURED", "why": "no plugin coverage was given" if plugin is None else
+            "the plugin's metrics show a worker with no checked layer or no check run"}
 
 
 # ---------------------------------------------------------------- 2. approximation
@@ -368,6 +394,7 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
            consistency=None, consistency_baseline=None) -> dict:
     pol = policy_with_defaults(pol)
     a = arithmetic(alerts, gate, kernel_test, plugin, pol["arithmetic"]["min_weights_checked"])
+    wt = weights_section(a, plugin) if alerts is not None else {"verdict": "UNMEASURED", "why": "no alerts were given"}
     qz = quantization_section(alerts, plugin)
     q = approximation(quality, pol)
     p = performance(perf_before, perf_after, pol)
@@ -379,6 +406,8 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
     if a["verdict"] == "FAULT":
         reject.append("arithmetic: " + a["faults"][0] + (f" (and {len(a['faults']) - 1} more)" if len(a["faults"]) > 1
                                                           else ""))
+    if wt["verdict"] == "CHANGED":
+        reject.append("weights: " + wt["why"])
     if qz["verdict"] == "WRONG":
         reject.append("quantization: " + qz["why"])
     if q["verdict"] == "OUTSIDE":
@@ -405,7 +434,8 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
         d, why = "NOT DECIDED", missing
     else:
         d, why = "ACCEPT", ["no reason to reject was found within the scope listed"]
-    return {"schema": SCHEMA, "decision": d, "why": why, "arithmetic": a, "quantization": qz, "approximation": q,
+    return {"schema": SCHEMA, "decision": d, "why": why, "arithmetic": a, "weights": wt, "quantization": qz,
+            "approximation": q,
             "performance": p,
             "isolation": iso, "consistency": con, "scope": s, "policy": pol, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
@@ -419,6 +449,11 @@ def render(r: dict) -> str:
     lines += [f"   note: {n}" for n in a["notes"][:5]]
     for name, src in a["sources"].items():
         lines.append(f"   {name}: {json.dumps(src, default=str)}")
+    wt = r.get("weights") or {}
+    if wt:
+        lines.append(f"1a. Weight integrity (the checked layers' weights against their checksums at load): "
+                     f"{wt.get('verdict')}")
+        lines.append(f"   {wt.get('why')}")
     qz = r.get("quantization") or {}
     if qz and qz.get("verdict") != "UNMEASURED":
         lines.append(f"1b. FP8 quantization (inputs quantized from the step's own rows, by their recipe): "

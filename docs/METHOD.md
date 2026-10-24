@@ -1720,6 +1720,24 @@ the fault went, wasn't among the 15, so the fault drew no alert. Amended before 
 layer in each server with sdcguard (SDCGUARD_SHARE=1, as qualify does), and the cost reported (`base` against
 `plain`) is that of every layer. The criteria stand as written.
 
+Result of the rerun (October 24, on 63f01f5, 26.6 minutes): every criterion met. `same` and `triton` ACCEPT under
+`hold` (throughput +0.7% and +0.6%, within the noise), REJECT under `speed` (no 10% gain); `awq` REJECT under both on
+its quality check (FAIL; 28.9% more throughput than the sdcguard-instrumented bf16 `base`, not than plain vLLM);
+`fault` REJECT under both, the reason naming model.layers.10.mlp.down_proj. What the fault's 649 alerts said: the
+layer's weights no longer matched their checksums at load (`weights_changed`); none showed an output wrong for the
+weights as they were then. That is a corrupted weight, caught: not wrong arithmetic. Reported: the quality check
+passed the faulty server (PASS over 32 prompts, 2,048 positions), so this check alone would have accepted it; the
+faulty server also lost 27.8% of its throughput, a second reason under these policies; every layer checked cost
+22.7% of `base`'s output tokens per second at 16 requests at once against `plain` (2,514 to 1,944); vLLM's Trace
+Replay scored no position for any of the three runs (INCONCLUSIVE), so it says nothing here.
+
+Amendment (October 24, after the rerun): `sdcguard decide` reported the changed weight under its arithmetic
+section, as a confirmed wrong output. A GPU can multiply a corrupted weight correctly, and an engineer needs to know
+which one failed, so a changed weight is now its own section (weights: CHANGED, UNCHANGED or UNMEASURED) and its
+own count (`weights_changed`, apart from `confirmed_wrong`), and still rejects. Criterion 3 reads, from now on: the
+fault's rejection gives the weight reason (or, on the code before this, the arithmetic one) naming the layer;
+criterion 4 also asks for no weights CHANGED on `same`, `triton` and `awq`.
+
 ### Answers that depend on the request before (written October 24, before any run)
 
 A server can compute every matmul right and still answer one request with another's data. vLLM issue #62124
@@ -1762,7 +1780,9 @@ prompts.
 Result (October 24, on 54c3a69, run on vLLM 0.31.0 and 0.32.0 at once): every criterion met on both. fp8pt LEAK: 20
 of 192 primer answers changed with the request before them on 0.31.0, 55 of 180 on 0.32.0 (the bug is still there in
 0.32.0); bf16 and eager 0 of 192 on both; no canary held another request's code; bf16 -> fp8pt REJECT with the
-isolation reason. Reported: bf16 -> eager came out REJECT, not the expected NOT DECIDED, on its quality check alone
+isolation reason. A LEAK here means answers changed with the request before them (cross-request influence);
+no canary held another request's text, so no disclosure of another request's content was shown. Reported: bf16 ->
+eager came out REJECT, not the expected NOT DECIDED, on its quality check alone
 (top-1 agreement under 97%), from the server-reference bug written up under "Qualify on a real server"; its
 isolation was NO LEAK SEEN.
 
@@ -1879,8 +1899,8 @@ fused into other kernels, or models with other norms (each run's log lists the n
 Result (October 24, on 54c3a69): failed N2, met the rest. With norm checks on, 5 of Qwen2.5-1.5B's 64 greedy
 completions differed from plain vLLM's in the compiled server (Qwen3-1.7B's 64 were identical). The likely cause, not
 yet shown: the check's op after each norm changes what Inductor fuses around the norm, so the norm's reduction runs
-in another order and a few near-tie tokens flip; the checks themselves were right. Every flip of bits 2 to 15 of a
-nonzero norm weight was caught (32 of 32), bits 1 and 0 weren't (8 trials, no answer changed); no clean alert (worst
+in another order and a few near-tie tokens flip; the checks themselves were right. Of the 40 flips, every flip of
+bits 2 to 15 of a nonzero norm weight was caught (32 of 32); bits 1 and 0 weren't (8 trials, no answer changed); no clean alert (worst
 clean scores 2.65 compiled, 1.00 eager, 2.52 on Qwen3); the 5 exact-naming trials each named the marked request; the
 4 Qwen3 q/k norm flips were caught. Cost: 7.2% fewer output tokens per second at 16 requests at once, 10.4% at 256.
 Norm checks stay opt-in, for the cost and because they can change a compiled server's answers.
@@ -1926,6 +1946,17 @@ top-1 agreement was counted against the recorded token. Q5 and Q6 failed only be
 before the next run: the reference is recorded with every sampling setting neutral in the request, keeps how often
 its recorded token was its own most likely one, and top-1 agreement is counted against the reference's most likely
 token (the consistency probe's requests are neutral too). The criteria stand as written for the rerun.
+
+Result of the rerun (October 24, on 63f01f5): every criterion met. `same` ACCEPT (top-1 agreement 100%, mean KL
+5.1e-4; arithmetic NO FAULT OBSERVED, isolation NO LEAK SEEN), `triton` ACCEPT, `badeps` REJECT on quality with
+arithmetic NO FAULT OBSERVED; no alert on any of the 5 servers; the deployed `same` PROTECTED under
+`ready --qualified`, `triton` NOT THE QUALIFIED STACK naming the attention backend. The reference's recorded token
+was its own most likely one at every position. `sdcguard consistency` ran on every server: CONSISTENT on all 5,
+prefix-cache hits confirmed on each, decode-vs-prefill largest gap 0.10 nats on the baseline's stack (0.15 on Triton).
+Found in the results, a gap of ours: `badeps` had the trusted stack's fingerprint (the overridden rms_norm_eps
+wasn't part of the stack), so `ready --qualified` would have taken a server started that way for the qualified
+stack. Fixed since: the stack has the model's effective config (a hash), its overrides, its revision and its
+generation config, and `ready` names a difference in any of them (CPU-tested).
 
 ### MoE checks in serving (written October 24, before any run)
 

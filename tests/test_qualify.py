@@ -35,7 +35,8 @@ def test_one_decision_per_candidate_with_its_reason(tmp_path, capsys):
     assert rows["shifted"]["decision"] == "REJECT" and rows["shifted"]["approximation"] == "OUTSIDE"
     assert rows["leaky"]["decision"] == "REJECT" and rows["leaky"]["isolation"] == "LEAK"
     assert any(w.startswith("isolation") for w in rows["leaky"]["why"])
-    assert rows["faulty"]["decision"] == "REJECT" and rows["faulty"]["arithmetic"] == "FAULT"
+    assert rows["faulty"]["decision"] == "REJECT" and rows["faulty"]["weights"] == "CHANGED"   # a changed weight
+    assert rows["faulty"]["arithmetic"] != "FAULT" and any(w.startswith("weights: ") for w in rows["faulty"]["why"])
     assert rows["dead"]["decision"] == "NOT DECIDED"
     report = open(os.path.join(out, "REPORT.md")).read()
     assert "| leaky | REJECT |" in report and "Servers that didn't start: dead" in report

@@ -25,9 +25,19 @@ class _Attn(torch.nn.Module):
     attn_backend = _Backend
 
 
-def _runner(attn=_Backend, mode="VLLM_COMPILE", quant=None):
+class _HFConfig:
+    def __init__(self, **over):
+        self.d = {"hidden_size": 1536, "rms_norm_eps": 1e-6, "_name_or_path": "/some/local/path", **over}
+
+    def to_dict(self):
+        return dict(self.d)
+
+
+def _runner(attn=_Backend, mode="VLLM_COMPILE", quant=None, hf=None, overrides=None, gen="auto"):
     cfg = NS(model_config=NS(model="Qwen/Qwen2.5-1.5B-Instruct", dtype=torch.bfloat16, quantization=quant,
-                             max_model_len=2048, enforce_eager=False),
+                             max_model_len=2048, enforce_eager=False, hf_config=hf or _HFConfig(),
+                             hf_overrides=overrides or {}, generation_config=gen, override_generation_config={},
+                             revision="main"),
              parallel_config=NS(tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1),
              compilation_config=NS(mode=f"CompilationMode.{mode}", cudagraph_mode="CUDAGraphMode.FULL_AND_PIECEWISE"),
              cache_config=NS(cache_dtype="auto"), kernel_config=NS(ir_op_priority=NS(rms_norm=["native"])))
@@ -191,3 +201,19 @@ def test_qualify_records_what_each_candidate_was_tested_on(tmp_path):
     assert t["decode_past_128_tested"] is True and t["max_context_tokens"] > 160 and t["max_concurrency"] is None
     rows = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]
     assert rows["same"]["consistency"] == "CONSISTENT"
+
+
+def test_a_changed_model_config_is_another_stack_and_ready_names_it():
+    """The first qualify GPU run (Oct 24) gave the server started with --hf-overrides '{"rms_norm_eps": 1.0}' the same
+    fingerprint as the trusted one, so `ready --qualified` would have held a misconfigured server to be the qualified
+    stack. The effective config and the overrides are part of the stack now."""
+    good = stack.collect(*_runner())
+    bad = stack.collect(*_runner(hf=_HFConfig(rms_norm_eps=1.0), overrides={"rms_norm_eps": 1.0}))
+    assert good["fingerprint"] != bad["fingerprint"] and bad["hf_overrides"] == "rms_norm_eps=1.0"
+    c = stack.compare(good, bad)
+    assert c["same"] is False and any(d.startswith("model_config:") for d in c["differences"])
+    assert any("rms_norm_eps=1.0" in d for d in c["differences"])
+    # where the config was read from isn't the stack; the generation config is (it sets default sampling)
+    moved = stack.collect(*_runner(hf=_HFConfig(_name_or_path="/elsewhere")))
+    assert moved["fingerprint"] == good["fingerprint"] and good["generation_config"] == "auto"
+    assert stack.collect(*_runner(gen="vllm"))["fingerprint"] != good["fingerprint"]

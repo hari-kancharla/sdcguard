@@ -199,6 +199,7 @@ def decide_all(out: str, roles: list) -> dict:
                 f.write(dc.render(d) + "\n")
             decisions[name] = {"decision": d["decision"], "why": d["why"],
                                "arithmetic": d["arithmetic"]["verdict"],
+                               "weights": (d.get("weights") or {}).get("verdict"),
                                "approximation": d["approximation"]["verdict"],
                                "quality_check": d["approximation"].get("check"),
                                "performance": d["performance"]["verdict"],
@@ -254,12 +255,16 @@ def judge(res: dict) -> tuple:
         if got != want:
             fails.append(f"2: {pol} on {role} decided {got}, expected {want}")
     why = " ".join((dec.get("hold_fault") or {}).get("why") or [])
-    if "arithmetic" not in why or FAULT_LAYER not in why:
-        fails.append(f"3: the fault's rejection doesn't give the arithmetic reason naming {FAULT_LAYER}")
+    # the injected fault is a changed weight: decide reports it under weights (amendment, docs/METHOD.md); a run
+    # on the code before that reported it under arithmetic
+    if not ("weights:" in why or "arithmetic" in why) or FAULT_LAYER not in why:
+        fails.append(f"3: the fault's rejection doesn't give the weight (or arithmetic) reason naming {FAULT_LAYER}")
     for role in ("same", "triton", "awq"):
         a = (dec.get(f"hold_{role}") or {}).get("arithmetic")
         if a == "FAULT":
             fails.append(f"4: a FAULT on {role}, which has none injected")
+        if (dec.get(f"hold_{role}") or {}).get("weights") == "CHANGED":
+            fails.append(f"4: weights CHANGED on {role}, which has none injected")
     for name, d in dec.items():
         if d.get("isolation") == "LEAK":
             fails.append(f"4: an isolation LEAK on {name}, where none is expected")
