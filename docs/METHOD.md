@@ -1830,8 +1830,9 @@ own defaults could not have accepted anything (the stand-in reported 97% coverag
 checks every layer by default, and the stand-in's coverage follows the share.
 
 `experiments/vllm_qualify_check.py` (`modal run scripts/modal_vllm.py --phase qualify`, one L4, vLLM 0.32.0,
-Qwen2.5-1.5B-Instruct in bf16, about 30 to 40 minutes and $0.70 to $1): one `sdcguard qualify` with its defaults (the
-plugin on every linear layer, decide's default policy, no policy file) and --repeat-baseline, with three
+Qwen2.5-1.5B-Instruct in bf16, 7 server launches, about 35 to 50 minutes and $0.85 to $1.20): one `sdcguard
+qualify` with its defaults (the plugin on every linear layer, decide's default policy, no policy file) and
+--repeat-baseline, with three
 candidates: `same` (the baseline's configuration), `triton` (--attention-backend TRITON_ATTN; the quality check said
 PASS for it on an H100 on October 23) and `badeps` (rms_norm_eps set to 1.0 through --hf-overrides; FAIL on the H100,
 mean KL 11.2).
@@ -1842,10 +1843,59 @@ Criteria:
 - Q3: `badeps` is REJECT for quality (OUTSIDE), with arithmetic NO FAULT OBSERVED: the arithmetic is right, the
   configuration is wrong, and the decision keeps the two apart.
 - Q4: no alert on any server (no fault is injected).
+- Q5: the `same` configuration started again as a deployment (the plugin on, its metrics) is PROTECTED under
+  `sdcguard ready --qualified decision_same.json`: the stack the plugin reads from inside the server matches the one
+  recorded in the decision.
+- Q6: the `triton` configuration under the same decision is NOT THE QUALIFIED STACK (exit 1), naming the attention
+  backend as the difference.
 
 Reported, not a criterion: `triton`'s decision (expected ACCEPT from the H100 result), each server's speed and the
 isolation probes' details. Not claimed: anything about other models or GPUs, or about decisions under policies other
 than the default.
+
+### MoE checks in serving (written October 24, before any run)
+
+The vLLM plugin can now check fused MoE layers (`src/sdcguard/serve_moe.py`, SDCGUARD_MOE=1, off by default until
+this run says otherwise). A fused MoE kernel computes every routed expert of every token at once, so no single
+matmul can be checked from outside. Instead, at each model step one MoE layer (they take turns by step number)
+recomputes the routed output of 2 rows of its batch from the layer's own input, routing and expert weights, with the
+rounding steps of vLLM's Triton MoE kernel (TritonExperts: the first matmul rounded to bf16, the activation rounded
+before its multiply and the product rounded, as vLLM's act_and_mul kernel does, the second matmul times the routing
+weight rounded, the experts summed in fp32 and rounded once, as moe_sum does). An output's score is its distance
+from the recompute against a bound made of one rounding of the output, two of the largest expert's output, the
+spread that intermediates rounded differently everywhere would cause, and one worst-placed flip of an
+intermediate; the line is 6. Three early-exit Triton kernels do the work, so the inactive layers cost three
+launches each per step.
+
+On the CPU, against a kernel that rounds the same way but adds in another order, 99.97% of bf16 outputs came out
+identical and the worst clean score was 0.25; a wrong expert, another row's output, an output 1.5 times too large,
+a NaN and a flipped exponent bit scored from 20 to over 1,000. In bf16 the bound means an output must be off by
+roughly a quarter of its value to be seen, so the check is for gross errors (a kernel's indexing, routing weights,
+stale rows, non-finite values), not small ones. It does not see a weight changed in memory: the kernel and the
+recompute read the same expert weights.
+
+`experiments/vllm_moe_check.py` (`modal run scripts/modal_vllm.py --phase moe`, one H100, vLLM 0.32.0,
+ibm-granite/granite-3.1-1b-a400m-instruct in bf16 (24 MoE layers, 32 experts, top 8), --moe-backend triton and
+prefix caching off on every server, about 25 to 35 minutes and $2 to $2.80): plain, guarded (SDCGUARD_REQUIRE=1,
+SDCGUARD_MOE=1, compiled with CUDA graphs), guarded without MoE checks (SDCGUARD_MOE=0) and guarded in eager mode.
+Faults can't be put into a kernel inside captured CUDA graphs from Python, so the compiled server runs clean; the
+eager one runs 6 trials, each making one MoE layer's kernel wrong after the fact (its output 1.5 times too large;
+the kernel given each row's experts shifted by one; each row given another row's output), with up to 16 rounds of
+4 requests at once until an alert names the layer (at once, because a layer checks the batch of the step its turn
+comes in, and a batch of one row hides rows mixed up).
+
+Criteria:
+- M1: every server starts; the guarded and eager servers check all 24 MoE layers with the Triton kernels (passed
+  their first-use comparison on the H100).
+- M2: the guarded server's 64 greedy completions are identical to plain vLLM's.
+- M3: no alert with no fault on the guarded and eager servers; the worst clean score read back is at most 2; the
+  checks ran (active calls counted).
+- M4: all 6 wrong kernels are caught by an alert naming the layer.
+
+Reported, not criteria: rounds until each catch, the MoE backend vLLM uses, and the cost (output tokens per
+second with and without MoE checks, at 16 and 256 requests at once). Decided now: if MoE checks pass and cost at most
+3% at 16 at once, they become on by default; if they cost more, they stay opt-in. Not claimed whatever the outcome:
+other MoE kernels or models, small errors, or faults in expert weights in memory.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

@@ -278,6 +278,10 @@ def still_applies(decision: dict, stack_now: dict) -> dict:
     was = ((decision.get("scope") or {}).get("stacks") or {}).get("candidate") or {}
     if not was:
         return {"applies": None, "why": "the decision doesn't record the stack it was made on"}
+    if was.get("deployed") and stack_now.get("deployed"):
+        from .stack import compare
+        c = compare(was["deployed"], stack_now["deployed"])
+        return {"applies": c["same"], "differences": c["differences"], "why": c["why"]}
     diffs = [f"{k}: {was.get(k)!r} then, {stack_now.get(k)!r} now" for k in _STACK_KEYS
              if k in was and was.get(k) != stack_now.get(k)]
     return {"applies": not diffs, "differences": diffs,

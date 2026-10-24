@@ -48,13 +48,15 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("SDCGUARD_POLL_SECONDS", "1e9")
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k in ("SDCGUARD_REQUIRE", "SDCGUARD_SHARE", "SDCGUARD_OFFSET", "SDCGUARD_WEBHOOK", "SDCGUARD_METRICS_PORT",
-              "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z"):
+              "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z",
+              "SDCGUARD_MOE"):
         monkeypatch.delenv(k, raising=False)
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
     for k, v in (("patched", False), ("guard", None), ("reported", False), ("layers", None), ("steps", 0),
                  ("rechecked", None), ("z", None), ("hooked", False), ("step_log", None), ("norm_classes", []),
-                 ("norms_stale", False), ("norms_registered", False)):
+                 ("norms_stale", False), ("norms_registered", False), ("moe_classes", []), ("moe_registered", False),
+                 ("stack", None)):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin
 
@@ -284,4 +286,111 @@ class NormDecoder(nn.Module):
             x, residual = self.pnorm[i](x, residual)
             x = torch.relu(x)
         x, _ = self.norm(x, residual)
+        return x
+
+
+def moe_kernel_like(x, w13, w2, ids, g, act=0, dtype=torch.bfloat16, blk=64, expert_map=None):
+    """vLLM's Triton MoE kernel's rounding (TritonExperts, 0.31/0.32), with another order of fp32 additions (blocked
+    partial sums): the first matmul rounded, silu rounded then times the up projection rounded, the second matmul
+    times the routing weight rounded, the experts summed in fp32 and rounded once."""
+    from sdcguard.serve_moe import _act
+    m, h = x.shape
+    out = torch.zeros(m, h)
+    for t in range(m):
+        acc = torch.zeros(h)
+        for k in range(ids.shape[1]):
+            e = int(ids[t, k])
+            if expert_map is not None and e >= 0:
+                e = int(expert_map[e])
+            if e < 0:
+                continue
+            w, xf = w13[e].float(), x[t].float()
+            a = sum(w[:, i:i + blk] @ xf[i:i + blk] for i in range(0, h, blk)).to(dtype).float()
+            half = a.shape[0] // 2
+            hv = (_act(a[:half], act).to(dtype).float() * a[half:]).to(dtype).float()
+            w2e = w2[e].float()
+            c = sum(w2e[:, i:i + blk] @ hv[i:i + blk] for i in range(0, half, blk))
+            acc += (c * float(g[t, k])).to(dtype).float()
+        out[t] = acc
+    return out.to(dtype)
+
+
+def install_fake_moe(setitem):
+    """vllm.model_executor.layers.fused_moe.routed_experts.RoutedExperts as vLLM 0.32 has it, as far as the plugin
+    uses it: w13_weight [E, 2I, H] and w2_weight [E, H, I], quant_method (UnquantizedFusedMoEMethod with
+    unquantized_backend TRITON), activation, top_k, apply_router_weight_on_input, expert_map, and forward_modular
+    (called by vLLM's MoE runner with the routing already chosen; here it computes as the Triton kernel rounds)."""
+    import enum
+    for n in ["vllm", "vllm.model_executor", "vllm.model_executor.layers", "vllm.model_executor.layers.fused_moe"]:
+        if n not in sys.modules:
+            setitem(sys.modules, n, types.ModuleType(n))
+    mod = types.ModuleType("vllm.model_executor.layers.fused_moe.routed_experts")
+
+    class UnquantizedMoeBackend(enum.Enum):
+        TRITON = "TRITON"
+        FLASHINFER_CUTLASS = "FlashInfer CUTLASS"
+
+    class MoEActivation(enum.Enum):
+        SILU = "silu"
+        GELU = "gelu"
+        SWIGLUOAI = "swigluoai"
+
+    class UnquantizedFusedMoEMethod:
+        def __init__(self, backend):
+            self.unquantized_backend = backend
+
+    class RoutedExperts(nn.Module):
+        def __init__(self, experts=8, hidden=128, inter=64, top_k=2, backend="TRITON", act="SILU",
+                     dtype=torch.bfloat16, seed=0):
+            super().__init__()
+            g = torch.Generator().manual_seed(seed)
+            self.w13_weight = nn.Parameter((torch.randn(experts, 2 * inter, hidden, generator=g) * 0.05).to(dtype),
+                                           requires_grad=False)
+            self.w2_weight = nn.Parameter((torch.randn(experts, hidden, inter, generator=g) * 0.05).to(dtype),
+                                          requires_grad=False)
+            self.quant_method = UnquantizedFusedMoEMethod(UnquantizedMoeBackend[backend])
+            self.activation = MoEActivation[act]
+            self.top_k, self.apply_router_weight_on_input, self.expert_map = top_k, False, None
+            self.dtype = dtype
+            self.fault = None
+
+        def forward_modular(self, x, topk_weights, topk_ids, shared_experts=None, shared_experts_input=None):
+            from sdcguard.serve_moe import ACT
+            out = moe_kernel_like(x, self.w13_weight, self.w2_weight, topk_ids, topk_weights,
+                                  ACT[self.activation.value], self.dtype)
+            if self.fault is not None:
+                out = self.fault(out)
+            return out
+
+        def forward(self, *a, **k):
+            raise AssertionError("Call forward_modular instead.")
+
+    for c in (RoutedExperts, UnquantizedFusedMoEMethod):
+        c.__module__ = mod.__name__
+    mod.RoutedExperts, mod.UnquantizedFusedMoEMethod = RoutedExperts, UnquantizedFusedMoEMethod
+    mod.UnquantizedMoeBackend, mod.MoEActivation = UnquantizedMoeBackend, MoEActivation
+    setitem(sys.modules, mod.__name__, mod)
+    sys.modules["vllm.model_executor.layers.fused_moe"].routed_experts = mod
+    return mod
+
+
+class MoEDecoder(nn.Module):
+    """A decoder with a fused MoE layer per block, routed as vLLM's runner does (softmax, top-k, renormalized),
+    then forward_modular."""
+
+    def __init__(self, moe_mod, M, n_layers=3, hidden=128, experts=8, top_k=2):
+        super().__init__()
+        torch.manual_seed(0)
+        self.layers = nn.ModuleList([Lin(M, hidden, hidden, f"model.layers.{i}.proj") for i in range(n_layers)])
+        self.gates = [torch.randn(experts, hidden) * 0.1 for _ in range(n_layers)]
+        self.experts = nn.ModuleList([moe_mod.RoutedExperts(experts, hidden, 64, top_k, seed=i)
+                                      for i in range(n_layers)])
+
+    def forward(self, x):
+        for lay, gate, ex in zip(self.layers, self.gates, self.experts):
+            x = lay(x)
+            p = torch.softmax(x.float() @ gate.T, -1)
+            w, ids = torch.topk(p, ex.top_k, -1)
+            w = w / w.sum(-1, keepdim=True)
+            x = ex.forward_modular(x=x, topk_weights=w, topk_ids=ids.to(torch.int32))
         return x

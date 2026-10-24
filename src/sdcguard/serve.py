@@ -608,6 +608,7 @@ class ServeGuard:
         self.unsupported: dict = {}                # layer name -> why it isn't checked
         self.not_selected: list = []               # layers attach() left out by its share (checkable, sampled out)
         self.norms = None                          # serve_norm.NormChecks: norm layers checked too (norm_checks())
+        self.moe = None                            # serve_moe.MoEChecks: fused MoE layers checked too (moe_checks())
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -897,11 +898,12 @@ class ServeGuard:
             if self.layers:
                 self.poll(wait=True)
         finally:
-            if self.norms is not None:
-                try:
-                    self.norms.detach()
-                finally:
-                    self.norms = None
+            for part in ("norms", "moe"):
+                if getattr(self, part) is not None:
+                    try:
+                        getattr(self, part).detach()
+                    finally:
+                        setattr(self, part, None)
             if self._restore:
                 from .guard import _exact_reductions_off
                 _exact_reductions_off(self._restore)
@@ -933,6 +935,14 @@ class ServeGuard:
             from .serve_norm import NORM_Z, NormChecks
             self.norms = NormChecks(self, NORM_Z if line is None else line)
         return self.norms
+
+    def moe_checks(self, line: Optional[float] = None):
+        """The fused MoE layers this guard checks too (serve_moe.MoEChecks), made at the first call: add() each MoE
+        layer and finalize() once, before CUDA graph capture; poll(), mark_step() and detach() take them along."""
+        if self.moe is None:
+            from .serve_moe import MOE_Z, MoEChecks
+            self.moe = MoEChecks(self, MOE_Z if line is None else line)
+        return self.moe
 
     # ---------------------------------------------------------------- results
     def counts(self) -> dict:
@@ -969,7 +979,8 @@ class ServeGuard:
                 "unjudged_checksums": sum(v["unjudged"] for v in c.values()),
                 "layers_with_unjudged": sorted(n for n, v in c.items() if v["unjudged"]),
                 "not_attached": dict(self.unsupported),
-                **({"norms": self.norms.coverage()} if self.norms is not None and self.norms.finalized else {})}
+                **({"norms": self.norms.coverage()} if self.norms is not None and self.norms.finalized else {}),
+                **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {})}
 
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
@@ -1020,8 +1031,9 @@ class ServeGuard:
                 ev = torch.cuda.Event()
                 ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (buf, ev, epoch)
-        if self.norms is not None and self.norms.finalized:
-            events += self.norms.poll(wait=wait)
+        for part in (self.norms, self.moe):
+            if part is not None and part.finalized:
+                events += part.poll(wait=wait)
         return events
 
     def mark_step(self, step: int) -> None:
@@ -1040,8 +1052,9 @@ class ServeGuard:
             w[1] = step
             while len(win) > 256:
                 del win[min(win)]
-        if self.norms is not None and self.norms.finalized:
-            self.norms.mark_step(step)
+        for part in (self.norms, self.moe):
+            if part is not None and part.finalized:
+                part.mark_step(step)
 
     def _next_epoch(self, dev: torch.device, n: int) -> int:
         """After a read of a device's state: the epoch that read covers, which the rows captured during it carry.
@@ -1391,8 +1404,9 @@ class ServeGuard:
         unreadable = self._unreadable_weights()
         with torch.inference_mode(False):             # ordinary tensors, as in add_layer
             n = sum(self._refresh_layer(slot, None, None, unreadable) for slot in range(len(self.layers)))
-            if self.norms is not None:
-                self.norms.refresh()                  # (norm layers aren't counted in the number returned)
+            for part in (self.norms, self.moe):        # (norm and MoE layers aren't counted in the number returned)
+                if part is not None:
+                    part.refresh()
             return n
 
     def refresh_layer(self, slot: int, weight: Optional[torch.Tensor] = None,

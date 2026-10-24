@@ -15,14 +15,20 @@ only when it checks at least half the weights; --no-plugin leaves it off) and, o
   again        with --repeat-baseline, the baseline started a second time: its quality check is the noise floor
   candidates   the quality check against the reference (teacher-forced, `gate model-check --url`)
   every one    `sdcguard isolation` (primer dependence and canaries), `sdcguard perf` (the same load each time), and
-               each GPU worker's sdcguard metrics at the end (what the plugin checked), then the alerts it logged
+               each GPU worker's sdcguard metrics at the end (what the plugin checked), then the alerts it logged;
+               with the plugin on, also the stack it read from inside the server (sdcguard.stack: attention and MoE
+               backends, compilation and CUDA graph modes, versions, GPU, ...), recorded with the decision, so that
+               `sdcguard ready --qualified decision_<name>.json` can later tell whether a running server is that stack
 
 then stopped. Each candidate gets `sdcguard decide` against the baseline under the policy: decision_<name>.json and
-.txt, and REPORT.md has one line per candidate. A server that doesn't start is reported, and its candidate is NOT
-DECIDED. Exit code 0 when every candidate is ACCEPT, 1 when one is REJECT, 2 otherwise.
+.txt, and REPORT.md has one line per candidate. Each candidate not accepted also gets repro_<name>/: why, how its stack
+differs from the baseline's, the evidence files, and rerun.sh, which starts it again and reruns only the checks that
+failed. A server that doesn't start is reported, and its candidate is NOT DECIDED. Exit code 0 when every candidate is
+ACCEPT, 1 when one is REJECT, 2 otherwise.
 
-What this doesn't do: run your real traffic (the prompts are fixed sets, or --prompts-file for the speed load), or
-check what the plugin doesn't (see each decision's scope). Stdlib only, apart from what vLLM itself needs.
+What this doesn't do: run your real traffic (the prompts are fixed sets; --quality-prompts and --prompts-file put your
+own prompts in the quality reference and the speed load), or check what the plugin doesn't (see each decision's
+scope). Stdlib only, apart from what vLLM itself needs.
 """
 from __future__ import annotations
 
@@ -137,9 +143,19 @@ def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Opt
             res["exit_code"] = srv.proc.poll()
             return res
         stack = {"config": config, **a.stack_map}
+        if not a.no_plugin:                           # what the server runs, as the plugin read it from inside
+            from .stack import from_metrics
+            stacks = [from_metrics(t) for t in srv.metrics()]
+            fps = {s.get("fingerprint") for s in stacks if s}
+            if stacks and stacks[0]:
+                stack["deployed"] = stacks[0]
+                res["deployed_stack"] = stacks[0]
+            if len(fps) > 1:
+                res["stack_note"] = f"the workers publish different stacks: {sorted(fps)}"
         try:
             if role == "baseline":
-                res["model_ref"] = gate_model.make_ref_url(srv.url, ref, a.tokens, extra_stack=stack)
+                res["model_ref"] = gate_model.make_ref_url(srv.url, ref, a.tokens, extra_stack=stack,
+                                                           prompts=_lines(a.quality_prompts))
             else:
                 q = gate_model.check_url(ref, os.path.join(out, f"{name}_quality.json"), srv.url,
                                          noise_path=noise, extra_stack=stack)
@@ -181,6 +197,102 @@ def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Opt
     return res
 
 
+def _lines(path: Optional[str]) -> Optional[list]:
+    if not path:
+        return None
+    with open(path) as f:
+        return [line.rstrip("\n") for line in f if line.strip()]
+
+
+REPRO_FILES = ("decision_{n}.json", "decision_{n}.txt", "{n}_quality.json", "{n}_isolation.json", "{n}_alerts.jsonl",
+               "{n}_perf.json", "{n}_server.log", "ref.json", "again_quality.json", "baseline_perf.json")
+
+
+def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) -> Optional[str]:
+    """For a candidate that wasn't accepted: repro_<name>/ with what failed and why, the two stacks and how they
+    differ, the evidence files, and rerun.sh, which starts the candidate as qualify did and reruns only the checks
+    that failed (against the baseline's reference and speed). Returns the folder."""
+    import shutil
+    from .stack import compare
+    d = os.path.join(out, f"repro_{name}")
+    os.makedirs(d, exist_ok=True)
+    for pat in REPRO_FILES:
+        src = os.path.join(out, pat.format(n=name))
+        if os.path.exists(src):
+            shutil.copy2(src, d)
+    for i in range(16):
+        src = os.path.join(out, f"{name}_metrics{i}.txt")
+        if os.path.exists(src):
+            shutil.copy2(src, d)
+    ev = os.path.join(out, f"{name}_evidence")
+    if os.path.isdir(ev):
+        shutil.copytree(ev, os.path.join(d, "evidence"), dirs_exist_ok=True)
+    base, cand = (runs.get("baseline") or {}).get("deployed_stack"), (runs.get(name) or {}).get("deployed_stack")
+    diff = compare(base, cand) if base and cand else {"differences": [], "why": "no stack recorded for both"}
+    serve = " ".join(shlex.quote(x) for x in a.serve_cmd)
+    env = {"SDCGUARD": "1", "SDCGUARD_REQUIRE": "1", "SDCGUARD_SHARE": a.share, **a.env_map} if not a.no_plugin \
+        else dict(a.env_map)
+    failing = {"approximation": row.get("approximation") == "OUTSIDE" or row.get("approximation") == "UNMEASURED",
+               "isolation": row.get("isolation") in ("LEAK", "UNMEASURED") and not a.no_isolation,
+               "arithmetic": row.get("arithmetic") not in ("NO FAULT OBSERVED", None),
+               "performance": row.get("performance") == "MISSES" and bool(row.get("performance_required"))}
+    steps = []
+    if failing["approximation"]:
+        noise = ' --noise "$HERE/again_quality.json"' if os.path.exists(os.path.join(d, "again_quality.json")) else ""
+        steps.append(f'"$PY" -m sdcguard gate model-check "$HERE/ref.json" --url "$URL" --out "$HERE/rerun_quality.json"'
+                     f"{noise}")
+    if failing["isolation"]:
+        steps.append('"$PY" -m sdcguard isolation --url "$URL" --out "$HERE/rerun_isolation.json"')
+    if failing["performance"]:
+        load = f"--concurrency {a.concurrency} --max-tokens {a.max_tokens} --rounds {a.rounds}"
+        if a.prompts_file and os.path.exists(a.prompts_file):
+            shutil.copy2(a.prompts_file, os.path.join(d, "perf_prompts.txt"))
+            load += ' --prompts-file "$HERE/perf_prompts.txt"'
+        steps.append(f'"$PY" -m sdcguard perf --url "$URL" {load} --out "$HERE/rerun_perf.json" && '
+                     '"$PY" -m sdcguard perf --compare "$HERE/baseline_perf.json" "$HERE/rerun_perf.json"')
+    if failing["arithmetic"]:
+        steps.append('ls "$HERE/rerun_alerts.jsonl" 2>/dev/null && echo "alerts logged: $HERE/rerun_alerts.jsonl"')
+        steps.append('for f in "$HERE"/evidence/*.pt; do [ -e "$f" ] && "$PY" -m sdcguard replay "$f"; done')
+    envs = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in env.items())
+    script = f"""#!/bin/sh
+# Rerun what failed for candidate {name}: start it as `sdcguard qualify` did, run the failing checks, stop it.
+# PORT and MPORT pick the ports (default 8000 and 9400); PY the Python with vLLM and sdcguard installed.
+set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+PORT=${{PORT:-8000}}
+MPORT=${{MPORT:-9400}}
+PY=${{PY:-python3}}
+URL=http://127.0.0.1:$PORT
+{envs} SDCGUARD_METRICS_PORT=$MPORT SDCGUARD_LOG="$HERE/rerun_alerts.jsonl" SDCGUARD_EVIDENCE_DIR="$HERE/rerun_evidence" \\
+  {serve} {configs[name]} --port $PORT > "$HERE/rerun_server.log" 2>&1 &
+PID=$!
+# (a background job of a script starts with SIGINT ignored, so it is stopped with SIGTERM, then SIGKILL after 60 s)
+stop() {{ kill -TERM $PID 2>/dev/null; i=0; while kill -0 $PID 2>/dev/null && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done
+  kill -KILL $PID 2>/dev/null; }}
+trap stop EXIT
+until "$PY" -c "import urllib.request,sys; urllib.request.urlopen(sys.argv[1] + '/health', timeout=5)" "$URL" 2>/dev/null; do
+  kill -0 $PID 2>/dev/null || {{ echo "the server exited; see $HERE/rerun_server.log"; exit 3; }}
+  sleep 3
+done
+{chr(10).join(steps) if steps else 'echo "nothing to rerun: see the decision for why it was not accepted"'}
+"""
+    with open(os.path.join(d, "rerun.sh"), "w") as f:
+        f.write(script)
+    os.chmod(os.path.join(d, "rerun.sh"), 0o755)
+    lines = [f"# Candidate {name}: {row.get('decision')}", "",
+             f"Baseline: `{serve} {configs['baseline']}`", "", f"Candidate: `{serve} {configs[name]}`", "",
+             "## Why", "", *[f"- {w}" for w in row.get("why") or []], "",
+             "## What differs between the two stacks (read from inside each server)", "",
+             *([f"- {x}" for x in diff.get("differences") or []] or [f"- {diff.get('why')}"]), "",
+             "## Rerun", "",
+             "`./rerun.sh` starts the candidate the way qualify did and reruns only what failed: " +
+             (", ".join(k for k, v in failing.items() if v) or "nothing (see the decision)") + ". Evidence files:",
+             "", *[f"- {f}" for f in sorted(os.listdir(d)) if f not in ("README.md", "rerun.sh")], ""]
+    with open(os.path.join(d, "README.md"), "w") as f:
+        f.write("\n".join(lines))
+    return d
+
+
 def _load(path: Optional[str]):
     if path and os.path.exists(path):
         with open(path) as f:
@@ -210,6 +322,7 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict
         rows[name] = {"decision": d["decision"], "arithmetic": d["arithmetic"]["verdict"],
                       "approximation": d["approximation"]["verdict"], "quality_check": d["approximation"].get("check"),
                       "isolation": d["isolation"]["verdict"], "performance": d["performance"]["verdict"],
+                      "performance_required": bool(d["performance"].get("required")),
                       "throughput_change": tp, "why": d["why"]}
     return rows
 
@@ -230,6 +343,10 @@ def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
     if not_started:
         lines += ["", "Servers that didn't start: " + ", ".join(not_started) + " (their logs are here)."]
     lines += ["", "Each candidate's full decision, with what was and wasn't checked, is in decision_<name>.txt."]
+    repros = [n for n, r in rows.items() if r.get("repro")]
+    if repros:
+        lines.append("For each one not accepted, repro_<name>/ has the evidence, the two stacks' differences and "
+                     "rerun.sh, which reruns only what failed: " + ", ".join(repros) + ".")
     text = "\n".join(lines) + "\n"
     with open(os.path.join(out, "REPORT.md"), "w") as f:
         f.write(text)
@@ -264,6 +381,8 @@ def main(argv=None) -> int:
     p.add_argument("--max-tokens", type=int, default=128)
     p.add_argument("--rounds", type=int, default=3)
     p.add_argument("--prompts-file", default=None, help="prompts for the speed load, one per line")
+    p.add_argument("--quality-prompts", default=None, help="your prompts for the quality reference, one per line "
+                   "(default: a fixed built-in set of 32)")
     p.add_argument("--startup-timeout", type=float, default=1800.0)
     p.add_argument("--serve-cmd", default=None, help="the command that serves (default: this Python's vllm serve)")
     p.add_argument("--env", action="append", default=[], help="KEY=VALUE for every server (repeat)")
@@ -295,6 +414,12 @@ def main(argv=None) -> int:
         runs[name] = run_one("candidate", name, configs[name], a, a.out, ref, noise)
     _write(os.path.join(a.out, "RUNS.json"), {"configs": configs, "runs": runs})
     rows = decide_all(a.out, names, pol, not a.no_plugin)
+    for name, row in rows.items():
+        if row["decision"] != "ACCEPT" and (runs.get(name) or {}).get("ready"):
+            try:
+                row["repro"] = write_repro(a.out, name, configs, runs, row, a)
+            except Exception as e:  # noqa: BLE001  (the decision stands without its repro folder)
+                row["repro_error"] = f"{type(e).__name__}: {e}"[:300]
     _write(os.path.join(a.out, "QUALIFY.json"), {"configs": configs, "runs": runs, "decisions": rows})
     print(report(a.out, configs, runs, rows))
     ds = [r["decision"] for r in rows.values()]

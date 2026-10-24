@@ -22,8 +22,16 @@ worker it was told to expect:
     Without --vllm, checks that didn't go up can mean an idle server or stopped checks, so the answer is
     INCONCLUSIVE: pass --vllm (and --probe) for a definite one.
 
+With --qualified DECISION.json (a decision `sdcguard qualify` or `sdcguard decide` wrote), it also says whether this
+server is the stack that decision accepted: every worker's sdcguard_stack_info (what the plugin read from inside the
+server: model, dtype, quantization, attention and MoE backends, compilation and CUDA graph modes, parallelism,
+versions, GPU, kernel-steering environment) against the stack recorded in the decision. A different stack is NOT
+THE QUALIFIED STACK, listing what differs; a decision that wasn't ACCEPT is NOT QUALIFIED; a server or decision with
+no stack recorded makes the answer INCONCLUSIVE.
+
 Exit codes: 0 PROTECTED or IDLE (a readiness probe on an idle server must pass, or no traffic ever reaches it;
-use --probe to have IDLE checked), 1 NOT PROTECTED, 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
+use --probe to have IDLE checked), 1 NOT PROTECTED (or, with --qualified, NOT THE QUALIFIED STACK or NOT QUALIFIED),
+2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
 restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a
 Kubernetes readiness probe any nonzero code keeps traffic away, so the probe's timeoutSeconds must be longer than
 --window. Only the Python standard library is used, so the check runs in a small sidecar as well as in the
@@ -84,6 +92,49 @@ def scrape(url: str, timeout: float = 2.0) -> tuple:
         return {}, {}, f"{type(e).__name__}: {getattr(e, 'reason', e)}"
     values, info = parse(text)
     return values, info, None
+
+
+def qualified(decision_path: str, texts: list) -> dict:
+    """Is the server whose workers' metrics pages are `texts` the stack the decision at decision_path accepted?
+    {"verdict": None (it is) | "NOT THE QUALIFIED STACK" | "NOT QUALIFIED" | "INCONCLUSIVE", "why", "differences"}."""
+    from .stack import compare, from_metrics
+    try:
+        with open(decision_path) as f:
+            d = json.load(f)
+    except (OSError, ValueError) as e:
+        return {"verdict": "INCONCLUSIVE", "why": f"the decision {decision_path} couldn't be read ({e})",
+                "differences": []}
+    if d.get("decision") != "ACCEPT":
+        return {"verdict": "NOT QUALIFIED", "why": f"the decision given is {d.get('decision')}, not ACCEPT",
+                "differences": []}
+    was = (((d.get("scope") or {}).get("stacks") or {}).get("candidate") or {}).get("deployed")
+    if not was:
+        return {"verdict": "INCONCLUSIVE", "differences": [],
+                "why": "the decision doesn't record the stack the plugin saw (made without the plugin, or by an older "
+                       "sdcguard)"}
+    diffs, unknown = [], []
+    for i, t in enumerate(texts):
+        live = from_metrics(t or "")
+        c = compare(was, live)
+        if c["same"] is None:
+            unknown.append(f"worker {i}: {c['why']}")
+        elif not c["same"]:
+            diffs += [f"worker {i}: {x}" for x in c["differences"]]
+    if diffs:
+        return {"verdict": "NOT THE QUALIFIED STACK", "differences": diffs,
+                "why": f"{len(diffs)} difference(s) from the stack the decision accepted"}
+    if unknown or not texts:
+        return {"verdict": "INCONCLUSIVE", "differences": [], "why": "; ".join(unknown) or "no worker read"}
+    return {"verdict": None, "differences": [], "fingerprint": was.get("fingerprint"),
+            "why": f"the stack the decision accepted (fingerprint {was.get('fingerprint')}) on every worker"}
+
+
+def _raw(url: str, timeout: float = 2.0) -> str:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return r.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError, ValueError):
+        return ""
 
 
 def _num(text) -> Optional[float]:
@@ -218,6 +269,8 @@ def main(argv=None) -> int:
     p.add_argument("--probe", metavar="URL", help="vLLM's API base (http://host:8000): when the server is idle, send "
                    "two short requests and read again, so the checks are shown running now (PROTECTED) or not "
                    "(NOT PROTECTED) instead of IDLE")
+    p.add_argument("--qualified", metavar="DECISION", help="a decision file (decision_<name>.json from sdcguard "
+                   "qualify): also require this server to be the stack it accepted")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -264,6 +317,19 @@ def main(argv=None) -> int:
                     r2["verdict"] = "INCONCLUSIVE"
                     r2["unsure"].append("vLLM counted no tokens for the probe requests")
                 r = r2
+    if a.qualified:
+        q = qualified(a.qualified, [_raw(u) for u in urls])
+        r["qualified"] = q
+        if q["verdict"] is None:
+            r["notes"].append(q["why"])
+        elif q["verdict"] == "INCONCLUSIVE":
+            r["unsure"].append(q["why"])
+            if r["verdict"] in ("PROTECTED", "IDLE"):
+                r["verdict"] = "INCONCLUSIVE"
+        else:                                        # NOT THE QUALIFIED STACK, NOT QUALIFIED
+            r["problems"] += [q["why"], *q["differences"]]
+            if r["verdict"] != "NOT PROTECTED":
+                r["verdict"] = q["verdict"]
     if a.json:
         print(json.dumps(r, indent=1))
     else:
@@ -274,7 +340,8 @@ def main(argv=None) -> int:
             print(f"  unsure: {line}")
         for line in r["notes"]:
             print(f"  note: {line}")
-    return {"PROTECTED": 0, "IDLE": 0, "NOT PROTECTED": 1}.get(r["verdict"], 2)
+    return {"PROTECTED": 0, "IDLE": 0, "NOT PROTECTED": 1, "NOT THE QUALIFIED STACK": 1,
+            "NOT QUALIFIED": 1}.get(r["verdict"], 2)
 
 
 if __name__ == "__main__":

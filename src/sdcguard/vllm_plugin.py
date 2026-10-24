@@ -16,6 +16,9 @@ nothing). What it does, in every vLLM process:
     (serve_norm.py: every output against the norm recomputed in fp32 from its input and its weights at load; one
     opaque custom op, so torch.compile can't merge the recompute with the norm it checks; SDCGUARD_NORM_Z sets its
     line in roundoffs, default 6);
+  - with SDCGUARD_MOE=1 (off by default for now), at each model step one fused MoE layer (they take turns)
+    recomputes the routed experts' output of 2 rows of its batch, with the rounding of vLLM's Triton MoE kernel,
+    and compares (serve_moe.py: wrong experts, rows, scaling and non-finite values; vLLM's Triton MoE backend only);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -92,7 +95,7 @@ log = logging.getLogger("sdcguard")
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
           "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
-          "norm_classes": [], "norms_stale": False}
+          "norm_classes": [], "norms_stale": False, "moe_classes": []}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -215,6 +218,11 @@ def _guard(device: Optional[torch.device] = None):
                 metrics.identify(uuid, kw["z"], _share(os.environ.get("SDCGUARD_SHARE", "1")))
             except Exception as e:  # noqa: BLE001
                 log.warning("sdcguard: couldn't publish sdcguard_protection_info (%s)", e)
+            if _STATE.get("stack"):           # read at load_model, before this guard existed
+                try:
+                    metrics.stack(_STATE["stack"])
+                except Exception as e:  # noqa: BLE001
+                    log.warning("sdcguard: couldn't publish sdcguard_stack_info (%s)", e)
         _exit_hooks()
         # NVIDIA's listed cuBLAS issues that apply to this GPU: logged here, with the first layer's weights on the
         # worker's own GPU, not in register(). register() also runs in vLLM's front-end process, where initializing
@@ -551,12 +559,14 @@ def _attribute(ev) -> None:
     cap = d.get("captured") or {}
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
-    norms = bool(_STATE.get("norm_classes"))
+    parts = ["linear layers"] + (["RMSNorm layers"] if _STATE.get("norm_classes") else []) + \
+        (["sampled rows of MoE experts"] if _STATE.get("moe_classes") else [])
+    rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
     d["unknown_impact"] = [
         "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
-        ("the plugin checks linear layers and RMSNorm layers; attention, MoE experts, the KV cache and sampling aren't "
-         "checked") if norms else
-        "the plugin checks linear layers only; attention, norms, MoE experts, the KV cache and sampling aren't checked"]
+        f"the plugin checks {' and '.join(parts) if len(parts) < 3 else ', '.join(parts[:-1]) + ' and ' + parts[-1]}"
+        + ("" if len(parts) > 1 else " only") + "; " + ", ".join(["attention", *rest, "the KV cache"]) +
+        " and sampling aren't checked"]
     if _share(os.environ.get("SDCGUARD_SHARE", "1")) < 1:
         d["unknown_impact"].append("SDCGUARD_SHARE checks the same subset of layers every step; the others aren't seen")
     d["potentially_exposed"] = exposed
@@ -636,7 +646,7 @@ def _rearm() -> None:
     layer's check off: quantized layers, weights cast to fp32), not only to what was checked at start-up."""
     _STATE["reported"] = False
     _STATE["rechecked"] = None
-    _STATE["norms_stale"] = True          # norm layers take their current weights at the next model step
+    _STATE["norms_stale"] = True          # norm and MoE layers take their current weights at the next model step
 
 
 def _exact_reductions() -> None:
@@ -1067,6 +1077,96 @@ def _norm_failed(mod, e: Exception) -> None:
     log.warning("sdcguard: a norm check failed (%s: %s); that layer isn't checked from now on", type(e).__name__, e)
 
 
+def _patch_moe() -> list:
+    """vLLM's RoutedExperts (fused MoE): after its experts ran (forward_modular: routing chosen, output finalized),
+    the sampled recompute of a registered layer (serve_moe.check_call). vLLM runs MoE inside an opaque op of its own,
+    so this runs eagerly, also while CUDA graphs are captured. Returns the classes patched."""
+    try:
+        from vllm.model_executor.layers.fused_moe.routed_experts import RoutedExperts
+    except Exception as e:  # noqa: BLE001
+        log.warning("sdcguard: vLLM's RoutedExperts not found (%s: %s); MoE layers aren't checked", type(e).__name__, e)
+        return []
+    if getattr(RoutedExperts, "_sdcguard_moe_orig", None) is not None:
+        return ["RoutedExperts"]
+    orig = vars(RoutedExperts).get("forward_modular")
+    if orig is None:
+        return []
+    from .serve_moe import check_call
+
+    def forward_modular(self, x, topk_weights, topk_ids, shared_experts=None, shared_experts_input=None, _orig=orig):
+        out = _orig(self, x=x, topk_weights=topk_weights, topk_ids=topk_ids, shared_experts=shared_experts,
+                    shared_experts_input=shared_experts_input)
+        a = getattr(self, "_sdcguard_moe", None)
+        if a is not None:
+            try:
+                check_call(a, x, topk_weights, topk_ids, out)
+            except Exception as e:  # noqa: BLE001  (never break serving: this layer goes unchecked)
+                self.__dict__.pop("_sdcguard_moe", None)
+                g = _STATE["guard"]
+                if g is not None:
+                    g.stats["moe_check_errors"] = g.stats.get("moe_check_errors", 0) + 1
+                log.warning("sdcguard: an MoE check failed (%s: %s); that layer isn't checked from now on",
+                            type(e).__name__, e)
+        return out
+
+    forward_modular.__doc__ = orig.__doc__
+    RoutedExperts._sdcguard_moe_orig = orig
+    RoutedExperts.forward_modular = forward_modular
+    return ["RoutedExperts"]
+
+
+def _register_moe(runner) -> Optional[dict]:
+    """After vLLM loaded the model, before CUDA graphs are captured: register its fused MoE layers (once)."""
+    if not _STATE.get("moe_classes") or _STATE.get("moe_registered"):
+        return None
+    _STATE["moe_registered"] = True
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        return None
+    found = [(n, m) for n, m in model.named_modules() if type(m).__name__ in ("RoutedExperts", "FusedMoE")]
+    if not found:
+        return None
+    dev = found[0][1].w13_weight.device if isinstance(getattr(found[0][1], "w13_weight", None), torch.Tensor) else None
+    g = _guard(dev)
+    mc = g.moe_checks()
+    for name, mod in found:
+        mc.add(mod, name or type(mod).__name__)
+    mc.finalize()
+    from .serve_moe import SAMPLES, STATUS as MS
+    kern = {f"{k[0]} {str(k[1]).replace('torch.', '')} act {k[2]}": v for k, v in MS.items()}
+    rest: dict = {}
+    for why in mc.unsupported.values():
+        rest[why] = rest.get(why, 0) + 1
+    log.info("sdcguard: checking %d of %d MoE layers (one layer a step, %s rows each; kernels %s)%s", len(mc.layers),
+             len(found), SAMPLES, kern or "none",
+             "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
+    return {"checked": len(mc.layers), "not_checked": dict(mc.unsupported), "kernel": kern}
+
+
+def _publish_stack(runner) -> Optional[dict]:
+    """After the model loaded: what this server runs (sdcguard.stack), logged and published as sdcguard_stack_info."""
+    from .stack import collect
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    checks = {"share": f"{_share(os.environ.get('SDCGUARD_SHARE', '1')):g}", "z": f"{_STATE.get('z') or 6:g}",
+              "norms": "on" if _STATE.get("norm_classes") else "off",
+              "moe": "on" if _STATE.get("moe_classes") else "off"}
+    info = collect(runner, model, checks)
+    _STATE["stack"] = info
+    g = _STATE["guard"]
+    if g is not None and g.metrics is not None and hasattr(g.metrics, "stack"):
+        g.metrics.stack(info)
+    log.info("sdcguard: stack %s (%s)", info.get("fingerprint"),
+             ", ".join(f"{k} {info[k]}" for k in ("model", "dtype", "quantization", "attention", "moe", "compilation",
+                                                  "cudagraph", "vllm", "gpu") if info.get(k)))
+    return info
+
+
 def _register_norms(runner) -> Optional[dict]:
     """After vLLM loaded the model and before it compiles it or captures CUDA graphs: register its RMSNorm layers
     with the guard (once per process), and log how many are checked and what other norms the model has."""
@@ -1213,6 +1313,8 @@ def register() -> None:
         from .serve_norm import norm_op
         norm_op()                             # registered here, in every process, before any graph is traced
         _STATE["norm_classes"] = _patch_norms()
+    if os.environ.get("SDCGUARD_MOE", "0") == "1":
+        _STATE["moe_classes"] = _patch_moe()
     if os.environ.get("SDCGUARD_QUANT", "1") != "0":
         _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
@@ -1231,14 +1333,19 @@ def register() -> None:
         orig_exec = GM.execute_model
         orig_load = getattr(GM, "load_model", None)
 
-        if orig_load is not None and _STATE.get("norm_classes"):
+        if orig_load is not None:
             def load_model(self, *args, **kwargs):
                 out = orig_load(self, *args, **kwargs)
+                for what, fn in (("norm", _register_norms), ("MoE", _register_moe)):
+                    try:
+                        fn(self)
+                    except Exception as e:  # noqa: BLE001  (never break model loading)
+                        log.warning("sdcguard: registering %s layers failed (%s: %s); they aren't checked", what,
+                                    type(e).__name__, e)
                 try:
-                    _register_norms(self)
-                except Exception as e:  # noqa: BLE001  (never break model loading)
-                    log.warning("sdcguard: registering norm layers failed (%s: %s); norms aren't checked",
-                                type(e).__name__, e)
+                    _publish_stack(self)
+                except Exception as e:  # noqa: BLE001  (the stack is information; never break model loading)
+                    log.warning("sdcguard: couldn't read what this server runs (%s: %s)", type(e).__name__, e)
                 return out
 
             GM.load_model = load_model
@@ -1254,12 +1361,14 @@ def register() -> None:
                     _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
             step = _STATE["steps"] + 1
             g0 = _STATE["guard"]
-            if g0 is not None and _STATE.get("norms_stale") and g0.norms is not None:
+            if g0 is not None and _STATE.get("norms_stale"):
                 _STATE["norms_stale"] = False
-                try:
-                    g0.norms.refresh()           # the weights were reloaded: compare norms with the new ones
-                except Exception as e:  # noqa: BLE001
-                    log.warning("sdcguard: couldn't take the norm layers' new weights: %s", e)
+                for part in (g0.norms, g0.moe):  # the weights were reloaded: compare with the new ones
+                    if part is not None:
+                        try:
+                            part.refresh()
+                        except Exception as e:  # noqa: BLE001
+                            log.warning("sdcguard: couldn't take the new weights of norm or MoE layers: %s", e)
             if g0 is not None:
                 try:
                     g0.mark_step(step)           # before the step's work is queued, outside its CUDA graph

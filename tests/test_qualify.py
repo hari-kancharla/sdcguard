@@ -70,3 +70,77 @@ def test_a_share_too_small_for_the_policy_is_not_accepted(tmp_path):
         "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8", "--startup-timeout", "30"])
     row = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]["same"]
     assert code != 0 and row["decision"] != "ACCEPT" and row["arithmetic"] != "NO FAULT OBSERVED", row
+
+
+def test_a_rejected_candidate_gets_a_repro_folder_that_reruns_what_failed(tmp_path):
+    import subprocess
+    out = str(tmp_path / "q")
+    serve = f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}"
+    qport = _free()
+    code = qualify.main([
+        "--out", out, "--baseline", "fake/m", "--candidate", "same=fake/m", "--candidate", "shifted=fake/m --shift 4",
+        "--candidate", "leaky=fake/m --leak", "--serve-cmd", serve, "--port", str(qport),
+        "--metrics-port", str(_free()), "--tokens", "8", "--concurrency", "4", "--max-tokens", "8", "--rounds", "1",
+        "--startup-timeout", "30"])
+    rows = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]
+    assert code == 1 and "repro" not in rows["same"]
+    shifted, leaky = os.path.join(out, "repro_shifted"), os.path.join(out, "repro_leaky")
+    assert rows["shifted"]["repro"] == shifted and rows["leaky"]["repro"] == leaky
+    sh = open(os.path.join(shifted, "rerun.sh")).read()
+    assert "gate model-check" in sh and "isolation" not in sh and "--shift 4" in sh
+    assert "sdcguard perf" not in sh                     # performance isn't required by the policy: not a reason
+    assert "isolation --url" in open(os.path.join(leaky, "rerun.sh")).read()
+    readme = open(os.path.join(shifted, "README.md")).read()
+    assert "approximation" in readme and "rerun.sh" in readme and "decision_shifted.json" in readme
+    assert os.access(os.path.join(shifted, "rerun.sh"), os.X_OK) and os.path.exists(os.path.join(shifted, "ref.json"))
+    assert "repro_<name>/" in open(os.path.join(out, "REPORT.md")).read()
+    # the rerun reproduces the failure on its own
+    port = _free()
+    env = dict(os.environ, PORT=str(port), MPORT=str(_free()), PY=sys.executable,
+               PYTHONPATH=os.pathsep.join([os.path.join(os.path.dirname(HERE), "src"), os.environ.get("PYTHONPATH", "")]))
+    p = subprocess.run(["sh", os.path.join(shifted, "rerun.sh")], env=env, capture_output=True, text=True, timeout=180)
+    assert p.returncode in (0, 1), p.stdout[-2000:] + p.stderr[-2000:]
+    q = json.load(open(os.path.join(shifted, "rerun_quality.json")))
+    assert q["verdict"]["verdict"] == "FAIL"
+    import socket                                         # and the server it started is stopped
+    with socket.socket() as s:
+        assert s.connect_ex(("127.0.0.1", port)) != 0
+
+
+def test_a_required_speed_target_missed_reruns_the_same_load_and_only_that(tmp_path):
+    import subprocess
+    from types import SimpleNamespace as NS
+    out = str(tmp_path)
+    with open(os.path.join(out, "baseline_perf.json"), "w") as f:
+        f.write("{}")
+    pf = tmp_path / "load.txt"
+    pf.write_text("a\nb\n")
+    a = NS(serve_cmd=["vllm", "serve"], share="1", env_map={"VLLM_X": "a b"}, no_plugin=False, no_isolation=False,
+           concurrency=8, max_tokens=64, rounds=2, prompts_file=str(pf))
+    row = {"decision": "REJECT", "approximation": "WITHIN", "isolation": "NO LEAK SEEN",
+           "arithmetic": "NO FAULT OBSERVED", "performance": "MISSES", "performance_required": True,
+           "why": ["performance: throughput -12%"]}
+    d = qualify.write_repro(out, "slow", {"baseline": "m", "slow": "m --x"}, {}, row, a)
+    path = os.path.join(d, "rerun.sh")
+    sh = open(path).read()
+    assert "--concurrency 8 --max-tokens 64 --rounds 2" in sh and '"$HERE/perf_prompts.txt"' in sh
+    assert "VLLM_X='a b'" in sh and "SDCGUARD_SHARE=1" in sh and "m --x --port $PORT" in sh
+    assert "gate model-check" not in sh and "isolation --url" not in sh
+    assert os.path.exists(os.path.join(d, "perf_prompts.txt")) and os.path.exists(os.path.join(d, "baseline_perf.json"))
+    assert subprocess.run(["sh", "-n", path]).returncode == 0
+    row["performance_required"] = False                  # a speed target the policy doesn't require isn't a reason
+    d2 = qualify.write_repro(out, "slow2", {"baseline": "m", "slow2": "m"}, {}, row, a)
+    assert "sdcguard perf" not in open(os.path.join(d2, "rerun.sh")).read()
+    assert "nothing to rerun" in open(os.path.join(d2, "rerun.sh")).read()
+
+
+def test_your_own_prompts_make_the_quality_reference(tmp_path):
+    out = str(tmp_path / "q")
+    prompts = tmp_path / "prompts.txt"
+    prompts.write_text("What is our refund policy?\nSummarize this ticket.\n\nTranslate: hello\n")
+    qualify.main([
+        "--out", out, "--baseline", "fake/m", "--candidate", "same=fake/m", "--quality-prompts", str(prompts),
+        "--no-isolation", "--no-perf", "--serve-cmd", f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}",
+        "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8", "--startup-timeout", "30"])
+    ref = json.load(open(os.path.join(out, "ref.json")))
+    assert len(ref["records"]) == 3

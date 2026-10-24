@@ -251,14 +251,14 @@ def _server_stack(url: str, model: str, extra_stack: Optional[dict]) -> dict:
 
 
 def make_ref_url(url: str, out: str, tokens: int = 64, model: Optional[str] = None,
-                 extra_stack: Optional[dict] = None) -> dict:
+                 extra_stack: Optional[dict] = None, prompts: Optional[list] = None) -> dict:
     """The reference from a running vLLM server: the chat template applied by its /tokenize, greedy completions of
     `tokens` tokens with ignore_eos, and the top-20 log-probabilities at every position, by token id (the server
     needs --max-logprobs of at least 20, vLLM's default)."""
     from .perf import server_model
     model = model or server_model(url)
     records = []
-    for p in PROMPTS:
+    for p in (prompts or PROMPTS):
         ids = _post(url, "/tokenize", {"model": model, "messages": [{"role": "user", "content": p}],
                                        "add_generation_prompt": True})["tokens"]
         r = _post(url, "/v1/completions", {"model": model, "prompt": ids, "max_tokens": tokens, "temperature": 0.0,

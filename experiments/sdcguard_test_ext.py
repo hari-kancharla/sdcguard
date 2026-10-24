@@ -177,6 +177,81 @@ class FaultInjection:
         self._sdcguard_norm_marks = []
         return n
 
+    def sdcguard_test_flip_expert_bit(self, name: str, which: str, expert: int, row_frac: float, col_frac: float,
+                                      bit: int) -> dict:
+        """Flip one bit of one weight of one expert of the MoE layer named `name` (which: "w13" or "w2"), at
+        row int(row_frac * rows) and column int(col_frac * cols) of this worker's shard; a second call flips it
+        back. Returns where, and the weight's value before and after."""
+        import torch
+        for n, mod in self.get_model().named_modules():
+            w = getattr(mod, f"{which}_weight", None)
+            if n == name and isinstance(w, torch.Tensor) and w.dim() == 3 and w.element_size() == 2:
+                e = int(expert) % w.shape[0]
+                r, c = int(row_frac * w.shape[1]) % w.shape[1], int(col_frac * w.shape[2]) % w.shape[2]
+                with torch.no_grad():
+                    before = float(w.data[e, r, c])
+                    w.data.view(torch.int16)[e, r, c] ^= (1 << bit) if bit < 15 else -(1 << 15)
+                    after = float(w.data[e, r, c])
+                torch.cuda.synchronize()
+                return {"layer": n, "which": which, "expert": e, "row": r, "col": c, "bit": bit,
+                        "before": _num(before), "after": _num(after)}
+        return {}
+
+    def sdcguard_test_moe_stats(self) -> dict:
+        """The plugin's MoE checks in this worker: layers checked and not, kernels, active calls, worst scores."""
+        from sdcguard import serve_moe, vllm_plugin
+        g = vllm_plugin._STATE.get("guard")
+        mc = getattr(g, "moe", None)
+        if mc is None:
+            return {"layers": 0}
+        worst = sorted(mc.worst_seen.items(), key=lambda kv: -kv[1])
+        backends = sorted({str(getattr(getattr(getattr(m, "quant_method", None), "unquantized_backend", None), "name",
+                                       type(getattr(m, "quant_method", None)).__name__))
+                           for _, m in self.get_model().named_modules() if type(m).__name__ == "RoutedExperts"})
+        return {"layers": len(mc.layers), "names": [lay["name"] for lay in mc.layers], "line": mc.line,
+                "kernel": {f"{k[0]} {str(k[1]).replace('torch.', '')} act {k[2]}": list(v)
+                           for k, v in serve_moe.STATUS.items()},
+                "not_checked": dict(mc.unsupported), "stats": dict(mc.stats), "coverage": mc.coverage(),
+                "worst": _num(worst[0][1]) if worst else None, "worst_layers": [[k, _num(v)] for k, v in worst[:5]],
+                "backends": backends, "experts": int(mc.layers[0]["module"].w13_weight.shape[0]) if mc.layers else 0}
+
+    def sdcguard_test_corrupt_moe(self, name: str, mode: str) -> str:
+        """In eager mode (--enforce-eager): from now on, make the kernel of the MoE layer named `name` wrong in one of
+        three ways, before sdcguard's check sees its output: "scale" (the routed output 1.5 times what it should be),
+        "expert" (the kernel given each row's experts shifted by one, so it computes with the wrong ones while the
+        check is given the right ones) or "row" (each row given the next row's output, as stale or mixed-up rows
+        would be). sdcguard_test_uncorrupt_moe undoes it. Returns the layer's name, or ""."""
+        import torch
+        mod = dict(self.get_model().named_modules()).get(name)
+        qm = getattr(mod, "quant_method", None)
+        if qm is None or not hasattr(qm, "apply") or mode not in ("scale", "expert", "row"):
+            return ""
+        orig = qm.apply
+        experts = int(mod.w13_weight.shape[0])
+
+        def apply(*args, **kwargs):
+            if mode == "expert" and isinstance(kwargs.get("topk_ids"), torch.Tensor):
+                kwargs = {**kwargs, "topk_ids": (kwargs["topk_ids"] + 1) % experts}
+            out = orig(*args, **kwargs)
+            if not isinstance(out, torch.Tensor):
+                return out
+            if mode == "scale":
+                return out * 1.5
+            if mode == "row":
+                return torch.roll(out, 1, 0)
+            return out
+        qm.apply = apply
+        self._sdcguard_moe_faults = getattr(self, "_sdcguard_moe_faults", []) + [(qm, orig)]
+        return name
+
+    def sdcguard_test_uncorrupt_moe(self) -> int:
+        n = 0
+        for qm, orig in getattr(self, "_sdcguard_moe_faults", []):
+            qm.apply = orig
+            n += 1
+        self._sdcguard_moe_faults = []
+        return n
+
     def sdcguard_test_stop_reads(self) -> bool:
         """Make the plugin stop reading results back (its checks keep running on the GPU, nobody reads them), the
         way a broken read path would: what `sdcguard ready` must call NOT PROTECTED while vLLM serves."""

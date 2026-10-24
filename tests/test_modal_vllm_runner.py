@@ -404,3 +404,13 @@ def test_the_qualify_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, 
     monkeypatch.setattr(runner, "qualify", _remote("qualify: exit code 1 in 33.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("qualify")
+
+
+def test_the_moe_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "moe", _remote("moe: exit code 0 in 28.0 minutes"))
+    runner.main("moe")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "moe", _remote("moe: exit code 1 in 28.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("moe")

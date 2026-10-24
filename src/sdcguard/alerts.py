@@ -204,6 +204,11 @@ class Metrics:
                                             alarm line 6); norm alerts count in sdcguard_alerts_total too
     sdcguard_norm_checks_executed_total     norm calls checked, counted on the GPU
     sdcguard_norm_unjudged_outputs_total    norm outputs that couldn't be judged (a non-finite input, or an overflow)
+    sdcguard_moe_layers_checked             fused MoE layers this process checks (one a step, 2 rows each)
+    sdcguard_moe_worst_score                worst MoE score at the last read (alarm line 6)
+    sdcguard_moe_checks_executed_total      MoE layer calls checked (rows recomputed), counted on the GPU
+    sdcguard_stack_info{model,...,fingerprint}  1: what this server runs, read from inside it (sdcguard.stack), for
+                                            `sdcguard qualify` and `sdcguard ready --qualified`
     """
 
     def __init__(self, port: Optional[int] = None, registry=None, addr: str = "0.0.0.0"):
@@ -265,6 +270,42 @@ class Metrics:
             self.unchecked.labels(method=why).set(n)
         self.never_checked.set(len(report.get("never_checked") or ()))
         self.weight_share.set(float(report.get("weight_share_checked") or 0.0))
+
+    def observe_moe(self, moe, events: list, worst: float) -> None:
+        """After a read of a guard's MoE checks (serve_moe.MoEChecks)."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_moe_layers", None) is None:
+            self._moe_layers = Gauge("sdcguard_moe_layers_checked", "Fused MoE layers this process checks",
+                                     registry=self.registry)
+            self._moe_worst = Gauge("sdcguard_moe_worst_score", "Worst MoE score at the last read",
+                                    registry=self.registry)
+            self._moe_executed = Counter("sdcguard_moe_checks_executed", "MoE layer calls checked, counted on the GPU",
+                                         registry=self.registry)
+            self._seen_moe = {}
+        self._moe_layers.set(len(moe.layers))
+        self._moe_worst.set(float(worst) if worst == worst else 0.0)
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        ex = int(moe.stats.get("active_calls", 0))
+        prev = self._seen_moe.get(id(moe), 0)
+        if ex > prev:
+            self._moe_executed.inc(ex - prev)
+        self._seen_moe[id(moe)] = max(ex, prev)
+
+    def stack(self, info: dict) -> None:
+        """Set sdcguard_stack_info (sdcguard.stack.collect()); a second call replaces the first."""
+        from .stack import FIELDS
+        from prometheus_client import Gauge
+        labels = [*FIELDS, "fingerprint"]
+        if getattr(self, "_stack_gauge", None) is None:
+            self._stack_gauge = Gauge("sdcguard_stack_info", "What this server runs, read from inside it (value 1)",
+                                      labels, registry=self.registry)
+        try:
+            self._stack_gauge.clear()
+        except AttributeError:
+            pass
+        self._stack_gauge.labels(**{k: str(info.get(k) or "") for k in labels}).set(1)
 
     def observe_norms(self, norms, events: list, worst: float) -> None:
         """After a read of a guard's norm checks (serve_norm.NormChecks)."""

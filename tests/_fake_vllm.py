@@ -30,6 +30,8 @@ def main():
     ap.add_argument("--slow", type=float, default=0.0005)
     ap.add_argument("--fault", action="store_true")
     ap.add_argument("--fail", action="store_true")
+    ap.add_argument("--attention-backend", default="FLASH_ATTN")
+    ap.add_argument("--quantization", default=None)
     a, _ = ap.parse_known_args()
     if a.fail:
         sys.exit(3)
@@ -136,13 +138,18 @@ def main():
                 except ValueError:
                     share = 1.0
                 ratio = round(min(1.0, share) * 0.97, 4)
+                from sdcguard.stack import fingerprint
+                st = {"model": a.model, "dtype": "bfloat16", "attention": a.attention_backend, "vllm": "0.0.fake",
+                      **({"quantization": a.quantization} if a.quantization else {})}
+                st["fingerprint"] = fingerprint(st)
+                stack_line = "sdcguard_stack_info{" + ",".join(f'{k}="{v}"' for k, v in st.items()) + "} 1.0\n"
                 with lock:
                     body = (f'sdcguard_protection_info{{UUID="GPU-fake",pid="{os.getpid()}",version="x",z="6",'
                             f'share="{os.environ.get("SDCGUARD_SHARE", "1")}"}} 1.0\n'
                             f"sdcguard_layers_checked 112\nsdcguard_layers_never_checked 0\n"
                             f"sdcguard_weights_checked_ratio {ratio}\n"
                             f"sdcguard_checks_executed_total {state['checks']}\n"
-                            f"sdcguard_reads_total {state['reads']}\n").encode()
+                            f"sdcguard_reads_total {state['reads']}\n" + stack_line).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()

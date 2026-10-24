@@ -16,7 +16,10 @@ def passing():
             "alerts": {n: 0 for n in ("baseline", "again", "same", "triton", "badeps")},
             "decisions": {"same": dict(row), "triton": dict(row),
                           "badeps": {**row, "decision": "REJECT", "approximation": "OUTSIDE",
-                                     "why": ["approximation: mean KL 11"]}}}
+                                     "why": ["approximation: mean KL 11"]}},
+            "ready_same": {"exit_code": 0, "result": {"verdict": "PROTECTED"}},
+            "ready_triton": {"exit_code": 1, "result": {"verdict": "NOT THE QUALIFIED STACK",
+                                                        "qualified": {"differences": ["worker 0: attention ..."]}}}}
 
 
 def test_the_configurations_are_what_vllm_serve_takes():
@@ -55,6 +58,12 @@ def test_each_criterion_fails_on_its_own():
     r = passing()
     r["alerts"]["triton"] = 2
     cases.append((r, "Q4: alerts with no fault"))
+    r = passing()
+    r["ready_same"] = {"exit_code": 2, "result": {"verdict": "INCONCLUSIVE"}}
+    cases.append((r, "Q5"))
+    r = passing()
+    r["ready_triton"] = {"exit_code": 0, "result": {"verdict": "PROTECTED"}}
+    cases.append((r, "Q6"))
     for res, want in cases:
         ok, fails, _ = vq.judge(res)
         assert not ok and any(want in f for f in fails), (want, fails)
