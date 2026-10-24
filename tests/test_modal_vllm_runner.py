@@ -480,3 +480,24 @@ def test_a_skipped_capture_test_fails_the_graphs_run(runner, monkeypatch):
     assert msg.startswith("graphs: FAILED") and "exit code 0 " not in msg
     status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
     assert status["passed"] is False and len(status["skipped_required"]) == 1      # test_serve.py's skip is allowed
+
+
+def test_the_fp8mm_calibration_runs_on_both_gpus_and_fails_if_either_does(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+
+    class Call:
+        def __init__(self, msg):
+            self.msg = msg
+
+        def get(self):
+            return self.msg
+
+    ok = SimpleNamespace(spawn=lambda *a: Call("fp8mm_cal_h100: exit code 0 in 12.0 minutes"))
+    ok_l4 = SimpleNamespace(spawn=lambda *a: Call("fp8mm_cal_l4: exit code 0 in 9.0 minutes"))
+    monkeypatch.setattr(runner, "fp8mm_cal_h100", ok)
+    monkeypatch.setattr(runner, "fp8mm_cal_l4", ok_l4)
+    runner.main("fp8mm_cal")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "fp8mm_cal_l4", SimpleNamespace(spawn=lambda *a: Call("fp8mm_cal_l4: exit code 1 in 2.0 minutes")))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("fp8mm_cal")

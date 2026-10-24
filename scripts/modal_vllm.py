@@ -23,6 +23,7 @@
     modal run scripts/modal_vllm.py --phase qualify        # `sdcguard qualify` with its defaults on 1 L4: about $1
     modal run scripts/modal_vllm.py --phase moe            # MoE checks in vllm serve, 1 H100: about $2 to $3
     modal run scripts/modal_vllm.py --phase graphs         # every check inside a captured CUDA graph, 1 L4: about $0.25
+    modal run scripts/modal_vllm.py --phase fp8mm_cal      # FP8 GEMM block sums for an FP8 matmul check, H100 + L4: about $1.50
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -650,6 +651,41 @@ def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+def _fp8mm_cal(tag: str, models: str, rate: float, what: str, source: Optional[dict], force: bool) -> str:
+    t0 = time.monotonic()
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/fp8mm_calibration.py", "--out", out, "--models", models],
+                    f"{out}.txt", cwd="/root", timeout=40 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source, "models": models,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, rate, what)}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def fp8mm_cal_h100(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/fp8mm_calibration.py on an H100: Qwen2.5-1.5B (every linear layer) and 7B (5 blocks)."""
+    return _fp8mm_cal("fp8mm_cal_h100", "1.5b,7b", RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=45 * 60)
+def fp8mm_cal_l4(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/fp8mm_calibration.py on an L4 (Ada, sm89): Qwen2.5-1.5B (every linear layer)."""
+    return _fp8mm_cal("fp8mm_cal_l4", "1.5b", RATE_L4, "L4, 8 cores, 32 GiB", source, force)
+
+
 GRAPH_TESTS = ("tests/test_gpu_graphs.py", "tests/test_serve_no_sync.py",
                "tests/test_serve.py::test_gpu_fast_serving_check_agrees_and_is_used",
                "tests/test_serve.py::test_gpu_compiled_cuda_graphs_catch_a_flip")
@@ -923,6 +959,10 @@ ESTIMATES = {
     "graphs": "every serving check inside a captured CUDA graph (pytest on 1 L4 with vLLM 0.32's PyTorch): about 5 to "
               "15 minutes with the image build, roughly $0.15 to $0.40 (30-minute limit, at most about $0.70 at "
               "requested resources, not a spending cap)",
+    "fp8mm_cal": "FP8 GEMM block sums and an emulation of the tensor core's FP8 accumulation on real layers, on 1 H100 "
+                 "(Qwen2.5-1.5B and 7B) and 1 L4 (1.5B) at once: about 10 to 20 minutes each, roughly $0.80 to $1.60 "
+                 "plus $0.25 to $0.50 (45-minute limits, at most about $3.60 and $1.10 at requested resources, not a "
+                 "spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -1022,6 +1062,16 @@ def main(phase: str = "vllm", force: bool = False):
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))
+        elif phase == "fp8mm_cal":
+            calls = {"fp8mm_cal_h100": fp8mm_cal_h100.spawn(force, src), "fp8mm_cal_l4": fp8mm_cal_l4.spawn(force, src)}
+            for tag, call in calls.items():
+                try:
+                    message = call.get()
+                except Exception as e:  # noqa: BLE001
+                    message = f"{tag} did not complete: {type(e).__name__}: {e}"
+                print(message, flush=True)
+                if "exit code 0 " not in str(message):
+                    failures.append(str(message))
         elif phase == "graphs":
             message = graphs.remote(force, src)
             print(message, flush=True)

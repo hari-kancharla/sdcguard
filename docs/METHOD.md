@@ -1848,6 +1848,44 @@ the inputs' sizes) and would catch less than the bf16 check; none is built, and 
 unchecked. What the plugin checks for FP8 layers is their input quantization (SDCGUARD_FP8=1, "An FP8 MoE bug from
 detection to remedy").
 
+### Calibrating an FP8 matmul check (written October 24, before any run)
+
+The model of the error to fit, from published measurements of the tensor cores (DeepSeek-V3's report, section 3.5.2;
+Khattak and Mikaitis, arXiv 2512.07004; MMA-Sim, arXiv 2511.10909) and vLLM 0.32's source: every sm90 configuration
+of vLLM's `cutlass_scaled_mm` uses FP8 fast accumulation, and most sm89 ones do; the tensor core sums 32 products (16
+on Ada) with the running accumulator at a time, aligned to the largest, keeps 13 fractional bits and truncates the
+rest toward zero, over the whole of K; the epilogue is bf16(a_scale * (b_scale * acc)) in FP32. For a row i and a
+block b of 128 output columns, the check would compare the sum of the outputs with the exact sum of the same FP8
+products, E, allowing |O - E| <= z * sqrt(S^2 + alpha^2 A^2 + beta^2 B^2): S the outputs' own bf16 rounding, A = u *
+sqrt(K * Q) the truncation's random part (Q the sum of the squared products, u = 2^-13), B = u * K * Y its bias
+where products add coherently (Y the sum of |y|). On an emulator of that model (CPU, `tests/test_fp8mm_calibration.py`),
+inputs with a common offset moved block sums at K = 8960 by up to 34.7 times S, the same order as the H100 run's 29.7
+(in a unit within a factor of 2 of S); zero-mean inputs by 2.2. B is thousands of times S there, so if the bias
+needs the B term with a beta of even 0.01, the check would allow tens of times the bf16 noise and catch only very
+large errors.
+
+`experiments/fp8mm_calibration.py` (`modal run scripts/modal_vllm.py --phase fp8mm_cal`: one H100 with
+Qwen2.5-1.5B-Instruct, every linear layer, and Qwen2.5-7B-Instruct, every linear layer of blocks 0, 7, 14, 21 and 27;
+one L4 with the 1.5B; about $1 to $2 in all) quantizes each layer as vLLM does (the weight per tensor, the
+activations per token, and separately per tensor), multiplies with vLLM's `cutlass_scaled_mm` and, for comparison,
+cuBLASLt without fast accumulation, on 64 prompts (questions, code, six other languages, numbers, repetition) and 4
+long documents, and keeps r, S, A, B and E for 256 rows of every layer. And for 16 of those rows it recomputes the
+products with the emulator above and the epilogue, and counts the outputs that come out bit for bit as the GPU's.
+
+No pass line; what each outcome decides, written now:
+- If the emulator gives the GPU's outputs bit for bit (or within one bf16 step) on at least 99.99% of outputs on a
+  GPU, the FP8 check there can recompute sampled rows with the tensor core's own arithmetic and compare them exactly,
+  which is far more sensitive than any tolerance; a run on a server would then decide it. If it doesn't, the model is
+  wrong for that GPU in some detail, and the check uses a fitted tolerance.
+- The tolerance is fitted per GPU, recipe and kernel on 52 of the 68 prompts and judged on the other 16: alpha and
+  beta as small as the clean data allow, with the largest clean score on the held-out prompts at most 3 (half the
+  alarm line of 6). Reported with it: how many times the bf16 noise it allows on each layer, so what errors it can
+  see.
+- Either way, no FP8 matmul check is called working until a run on a real server meets criteria of its own (no clean
+  alert, the same answers as plain vLLM, injected faults caught).
+Not claimed whatever the outcome: other models, block-scaled FP8, GPUs other than the H100 and L4, kernels other
+than these.
+
 ### Norm checks in serving (written October 24, before any run)
 
 The vLLM plugin can now check RMSNorm layers too (`src/sdcguard/serve_norm.py`, SDCGUARD_NORMS=1, off by default
