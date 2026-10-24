@@ -33,6 +33,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
+from .serve_norm import pick
 
 FP8_MAX = 448.0
 MIN_SCALE = 1.0 / (448.0 * 512.0)
@@ -116,7 +117,7 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
         ks = xs.reshape(-1)[rows].float().reshape(-1, 1)
         diff = (ks - ref).abs() > SCALE_TOL * ref.abs() + 1e-38
         scale_bad = diff.any()
-        ratio = (ks / ref.clamp(min=1e-38)).reshape(-1)[diff.reshape(-1).to(torch.int64).argmax()]
+        ratio = pick((ks / ref.clamp(min=1e-38)).reshape(-1), diff.reshape(-1).to(torch.int64).argmax())
         use = ks
         divide = True
     else:
@@ -147,7 +148,7 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
                                    torch.where(vb.any(), KIND_VALUES * one,
                                                torch.where(static_bad & armed if static_bad is not None else
                                                            torch.zeros_like(armed), KIND_STATIC * one, zero))))
-    bad_row = rows[vb.to(torch.int64).argmax()] if rows.numel() else zero
+    bad_row = pick(rows, vb.to(torch.int64).argmax()) if rows.numel() else zero
     rec = (step << 32) | (kind << 24) | (bad_row & 0xFFFFFF)
     srow[C_LAST] = torch.where(kind > 0, torch.maximum(srow[C_LAST], rec), srow[C_LAST])
     rb = _bits(ratio.abs().clamp(max=3e38)) if ratio.numel() == 1 else zero

@@ -40,6 +40,7 @@ def main():
     ap.add_argument("--prefix-bug", action="store_true")
     ap.add_argument("--decode-gap", type=float, default=0.0)
     ap.add_argument("--no-enable-prefix-caching", action="store_true")
+    ap.add_argument("--no-vllm-metrics", action="store_true", help="no /metrics page (its counters can't be read)")
     a, _ = ap.parse_known_args()
     if a.fail:
         sys.exit(3)
@@ -92,6 +93,11 @@ def main():
                 return self._send({"data": [{"id": a.model}]})
             if self.path == "/version":
                 return self._send({"version": "0.0.fake"})
+            if self.path == "/metrics" and a.no_vllm_metrics:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if self.path == "/metrics":
                 body = f"vllm:prefix_cache_hits_total {float(state['hits'])}\n".encode()
                 self.send_response(200)

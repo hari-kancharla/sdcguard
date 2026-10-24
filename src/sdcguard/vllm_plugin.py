@@ -95,6 +95,23 @@ import torch
 
 log = logging.getLogger("sdcguard")
 
+
+def _setup_logging() -> None:
+    """Make sdcguard's own lines (what it checks, which kernels, what it can't check) show in vLLM's output. vLLM
+    configures only its own "vllm" logger, so without a handler of ours Python drops sdcguard's INFO lines and prints
+    its warnings bare. Added only when neither sdcguard's logger nor the root logger has a handler (a logging setup of
+    the user's is left alone). SDCGUARD_LOG_LEVEL: DEBUG, INFO (the default), WARNING or ERROR."""
+    root = logging.getLogger()
+    if log.handlers or root.handlers:
+        return
+    h = logging.StreamHandler()
+    h.setFormatter(logging.Formatter("%(levelname)s %(asctime)s %(message)s", "%m-%d %H:%M:%S"))
+    log.addHandler(h)
+    level = os.environ.get("SDCGUARD_LOG_LEVEL", "INFO").upper()
+    log.setLevel(level if level in ("DEBUG", "INFO", "WARNING", "ERROR") else "INFO")
+    log.propagate = False
+
+
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
           "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
           "norm_classes": [], "norms_stale": False, "moe_classes": [], "fp8_classes": [], "route_classes": []}
@@ -391,8 +408,14 @@ def _summary(r: dict) -> str:
         msg += "; not checked: " + ", ".join(f"{n} {why}" for why, n in sorted(r["unchecked_by_method"].items()))
     if r["quantized_or_moe"]:
         msg += (" (the arithmetic of fused MoE experts, FP8 layers and quantized layers outside Marlin's and Machete's "
-                "INT4/INT8 kernels isn't checked yet" +
-                ("; FP8 layers' input quantization is (SDCGUARD_FP8=1)" if _STATE.get("fp8_classes") else "") + ")")
+                "INT4/INT8 kernels isn't checked yet)")
+    if _STATE.get("fp8_classes"):
+        f = _STATE.get("fp8") or {}
+        msg += f"; FP8 input quantization checked on {f.get('checked', 0)} layers (SDCGUARD_FP8=1)"
+        if f.get("not_checked"):
+            msg += f", not on {len(f['not_checked'])}"
+        if _STATE.get("fp8_why"):
+            msg += f"; FP8 linear layers' quantization not checked: {_STATE['fp8_why']}"
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -1267,15 +1290,23 @@ def _patch_fp8() -> list:
     same in vLLM 0.31 and 0.32, Apache-2.0; _fp8_apply_ready makes sure it is the code installed) with that call
     added; the MoE layers' quantization is vLLM's moe_kernel_quantize_input with the check after it. Returns what was
     patched."""
+    import importlib
     import sys as _sys
     from .serve_fp8 import check_call
     patched = []
     try:
-        from vllm.model_executor.kernels.linear.scaled_mm import ScaledMMLinearKernel as smk
+        # the module: vLLM's scaled_mm package exports the ScaledMMLinearKernel class under the module's name, so
+        # `from ...scaled_mm import ScaledMMLinearKernel` gives the class (on vLLM 0.32 that left every FP8 linear
+        # layer unchecked, silently)
+        smk = importlib.import_module("vllm.model_executor.kernels.linear.scaled_mm.ScaledMMLinearKernel")
         K = smk.FP8ScaledMMLinearKernel
         orig = vars(K)["apply_weights"]
+        if not callable(getattr(smk, "as_quantized_activation", None)):
+            raise AttributeError("as_quantized_activation not found next to FP8ScaledMMLinearKernel")
     except Exception as e:  # noqa: BLE001
-        log.info("sdcguard: vLLM's FP8 scaled-mm kernels not found (%s); FP8 layers aren't checked", e)
+        why = f"vLLM's FP8 scaled-mm kernel not found ({type(e).__name__}: {e})"
+        log.warning("sdcguard: not checking the FP8 quantization of linear layers: %s", why)
+        _STATE["fp8_why"] = why
         K = orig = None
     if K is not None and not getattr(K, "_sdcguard_fp8", False):
         why = _fp8_apply_ready(orig)
@@ -1310,7 +1341,7 @@ def _patch_fp8() -> list:
         from vllm.model_executor.layers.fused_moe import utils as mu
         qorig = getattr(mu, "_sdcguard_fp8_orig", None) or mu.moe_kernel_quantize_input
     except Exception as e:  # noqa: BLE001
-        log.info("sdcguard: vLLM's MoE input quantization not found (%s); FP8 MoE layers aren't checked", e)
+        log.warning("sdcguard: vLLM's MoE input quantization not found (%s); FP8 MoE layers aren't checked", e)
         return patched
 
     def moe_kernel_quantize_input(A, A_scale, quant_dtype, per_act_token_quant, block_shape=None, *args,
@@ -1406,11 +1437,13 @@ def _register_fp8(runner) -> Optional[dict]:
                 mod._sdcguard_fp8_moe = {"per_token" if per_token else "per_tensor": a}
                 checked += 1
     if fc is None:
+        _STATE["fp8"] = {"checked": 0, "not_checked": {}, "recipes": sorted(RECIPES)}
         return None
     log.info("sdcguard: checking the FP8 quantization of %d layers%s", checked,
              "; not checked: " + ", ".join(f"{n} ({w})" for n, w in sorted(fc.unsupported.items())[:8])
              if fc.unsupported else "")
-    return {"checked": checked, "not_checked": dict(fc.unsupported), "recipes": sorted(RECIPES)}
+    _STATE["fp8"] = {"checked": checked, "not_checked": dict(fc.unsupported), "recipes": sorted(RECIPES)}
+    return _STATE["fp8"]
 
 
 def _step_rows(args, kwargs) -> Optional[int]:
@@ -1510,6 +1543,7 @@ def register() -> None:
         return
     if _STATE["patched"]:
         return
+    _setup_logging()
     try:
         from vllm.model_executor.layers import linear as L
         M = L.UnquantizedLinearMethod

@@ -263,11 +263,21 @@ def performance(base: Optional[dict], cand: Optional[dict], pol: dict) -> dict:
                           "rounds, so the gain isn't shown")
         elif tp["change"] < g and not (g <= 0 and tp["noise"]):
             misses.append(f"throughput changed {tp['change']:+.1%}, the policy asks for at least {g:+.1%}")
+    unmeasured = []
     for key, metric in (("max_ttft_p99_increase", "ttft_p99_ms"), ("max_itl_p99_increase", "itl_p99_ms")):
         lim, x = p[key], m.get(metric)
-        if lim is not None and x is not None and x["change"] > lim and not x["noise"]:
-            misses.append(f"{metric} rose {x['change']:+.1%}, past the policy's {lim:+.1%}")
-    return {"verdict": "MISSES" if misses else "MEETS", "required": p["required"], "misses": misses, "metrics": m}
+        if lim is None:
+            continue
+        ch = (x or {}).get("change")
+        if not isinstance(ch, (int, float)) or ch != ch or ch in (float("inf"), float("-inf")):
+            unmeasured.append(f"{metric}: the policy limits it, and one of the runs has no value for it")
+        elif ch > lim and not x["noise"]:
+            misses.append(f"{metric} rose {ch:+.1%}, past the policy's {lim:+.1%}")
+    if misses:
+        return {"verdict": "MISSES", "required": p["required"], "misses": misses, "metrics": m}
+    if unmeasured:                     # a limit that can't be read isn't met
+        return {"verdict": "UNMEASURED", "required": p["required"], "why": "; ".join(unmeasured), "metrics": m}
+    return {"verdict": "MEETS", "required": p["required"], "misses": [], "metrics": m}
 
 
 # ---------------------------------------------------------------- 5. isolation

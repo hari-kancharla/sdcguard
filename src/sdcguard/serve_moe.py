@@ -39,7 +39,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
-from .serve_norm import dtype_consts
+from .serve_norm import dtype_consts, pick
 
 MOE_Z = 6.0
 SAMPLES = 2              # rows recomputed per active call
@@ -166,8 +166,8 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     z = torch.where(active, z, torch.zeros_like(z))
     zmax, arg = z.reshape(-1).max(0)
     jrow, col = arg // hdim, arg % hdim
-    row = rows[jrow]
-    yv, rv = y.reshape(-1)[arg], r.reshape(-1)[arg]
+    row = pick(rows, jrow)
+    yv, rv = pick(y.reshape(-1), arg), pick(r.reshape(-1), arg)
     bits = lambda v: v.reshape(1).view(torch.int32).to(torch.int64).reshape(()) & M32  # noqa: E731
     zb = bits(zmax) << 32
     keys = torch.stack([zb | row, zb | col, zb | bits(yv), zb | bits(rv), zb | step])
@@ -179,11 +179,11 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     srow[C_ROWS] += act64 * SAMPLES
     srow[C_UNJ] += act64 * (~judged).sum()
     take = (zmax > line) & (cap_meta[slot, 0] == 0)
-    cap_x[slot, :hdim] = torch.where(take, xr[jrow].float(), cap_x[slot, :hdim])
-    cap_y[slot, :hdim] = torch.where(take, y[jrow], cap_y[slot, :hdim])
+    cap_x[slot, :hdim] = torch.where(take, pick(xr, jrow).float(), cap_x[slot, :hdim])
+    cap_y[slot, :hdim] = torch.where(take, pick(y, jrow), cap_y[slot, :hdim])
     kk = ids.shape[1]
-    cap_ids[slot, :kk] = torch.where(take, ids[jrow].to(cap_ids.dtype), cap_ids[slot, :kk])
-    cap_g[slot, :kk] = torch.where(take, g[jrow].float(), cap_g[slot, :kk])
+    cap_ids[slot, :kk] = torch.where(take, pick(ids, jrow).to(cap_ids.dtype), cap_ids[slot, :kk])
+    cap_g[slot, :kk] = torch.where(take, pick(g, jrow).float(), cap_g[slot, :kk])
     rec = torch.stack([torch.ones_like(row), row, step, zb >> 32]).to(cap_meta.dtype)
     cap_meta[slot] = torch.where(take, rec, cap_meta[slot])
 

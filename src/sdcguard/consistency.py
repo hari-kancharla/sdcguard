@@ -42,6 +42,7 @@ MIN_GAP = 0.5            # nats
 MIN_MARGIN = 1.0         # nats
 DECODE_FACTOR = 4.0
 DECODE_FLOOR = 0.1       # nats
+KV_SPLIT = 96            # the decode gaps are also reported for KV lengths up to this and past it
 DOCS = (
     "The harbor town keeps a ledger of every ship that docks, with its cargo, its crew and the weather on arrival. "
     "Each entry is signed by the harbor master, and the ledger has been kept without a gap for two hundred years. ",
@@ -160,11 +161,13 @@ def prefix_probe(url: str, model: str, doc_tokens: int = 512, max_tokens: int = 
         cases.append({"document": i, "prompt_tokens": len(d) + len(qa), "cache_hit": hit,
                       "floor": compare(cold, cold2), "cached": compare(cold, warm),
                       "cold_tokens": cold["tokens"], "cached_tokens": warm["tokens"]})
-    bad = [c for c in cases if c["cached"]["significant"] and not c["floor"]["significant"]]
+    # a verdict about the cached path needs the cache hit shown (vLLM's counter): without it, either way, the
+    # cached run may not have taken that path
+    bad = [c for c in cases if c["cached"]["significant"] and not c["floor"]["significant"] and c["cache_hit"] is True]
     noisy = [c for c in cases if c["floor"]["significant"]]
     if bad:
         v = "INCONSISTENT"
-    elif errors or not cases or noisy or any(c["cache_hit"] is False for c in cases):
+    elif errors or not cases or noisy or any(c["cache_hit"] is not True for c in cases):
         v = "INCONCLUSIVE"
     else:
         v = "CONSISTENT"
@@ -198,19 +201,27 @@ def decode_probe(url: str, model: str, max_tokens: int = 160, prompts=DECODE_PRO
             errors.append(f"{p!r}: no prompt_logprobs for the completion's tokens")
             continue
         big = next((t for t, g in enumerate(gaps) if g is not None and g > MIN_GAP), None)
+        early = [g for t, g in enumerate(gaps) if g is not None and len(ids) + t <= KV_SPLIT]
+        late = [g for t, g in enumerate(gaps) if g is not None and len(ids) + t > KV_SPLIT]
         cases.append({"prompt": p, "prompt_tokens": len(ids), "tokens": len(dec["tokens"]), "max_gap": round(max(got),
                       6), "mean_gap": round(sum(got) / len(got), 6), "kv_length_at_max": len(ids) + gaps.index(
                       max(got)), "first_over_min_gap": None if big is None else {"position": big,
                                                                                  "kv_length": len(ids) + big},
-                      "missing": sum(g is None for g in gaps)})
+                      "missing": sum(g is None for g in gaps),
+                      # by KV length: decode kernels change tiling with it (#54035: from 97 tokens of KV on)
+                      "mean_gap_kv_upto_split": round(sum(early) / len(early), 6) if early else None,
+                      "mean_gap_kv_past_split": round(sum(late) / len(late), 6) if late else None,
+                      "gaps": [None if g is None else round(g, 6) for g in gaps]})
     largest = max((c["max_gap"] for c in cases), default=None)
+    partial = [c for c in cases if c["missing"]]
     if cases and any(c["first_over_min_gap"] for c in cases):
         v = "INCONSISTENT"
-    elif errors or not cases:
-        v = "INCONCLUSIVE"
+    elif errors or not cases or partial:
+        v = "INCONCLUSIVE"          # a position not measured is a position not shown consistent
     else:
         v = "CONSISTENT"
-    return {"verdict": v, "cases": cases, "errors": errors, "largest_gap": largest}
+    return {"verdict": v, "cases": cases, "errors": errors, "largest_gap": largest, "kv_split": KV_SPLIT,
+            "partial_cases": len(partial)}
 
 
 def judge_against(cand: dict, base: Optional[dict]) -> dict:
@@ -219,8 +230,10 @@ def judge_against(cand: dict, base: Optional[dict]) -> dict:
     out = {"prefix_cache": (cand.get("prefix_cache") or {}).get("verdict", "INCONCLUSIVE"), "why": []}
     cd, bd = cand.get("decode_prefill") or {}, (base or {}).get("decode_prefill") or {}
     cg, bg = cd.get("largest_gap"), bd.get("largest_gap")
-    if cg is None:
-        out["decode_prefill"] = "INCONCLUSIVE"
+    if bd.get("verdict") not in ("CONSISTENT", "INCONSISTENT"):
+        bg = None                   # a baseline whose own probe was incomplete sets no line
+    if cg is None or cd.get("verdict") not in ("CONSISTENT", "INCONSISTENT"):
+        out["decode_prefill"] = "INCONCLUSIVE"      # partial or failed: a measurement with gaps decides nothing
     elif bg is None:
         out["decode_prefill"] = cd.get("verdict", "INCONCLUSIVE")
     else:

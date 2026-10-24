@@ -22,6 +22,7 @@
     modal run scripts/modal_vllm.py --phase norms          # RMSNorm checks in vllm serve, 1 H100: about $3 to $4
     modal run scripts/modal_vllm.py --phase qualify        # `sdcguard qualify` with its defaults on 1 L4: about $1
     modal run scripts/modal_vllm.py --phase moe            # MoE checks in vllm serve, 1 H100: about $2 to $3
+    modal run scripts/modal_vllm.py --phase graphs         # every check inside a captured CUDA graph, 1 L4: about $0.25
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -125,6 +126,9 @@ def _vllm_image(version: str):
 
 vllm_image = _vllm_image("0.31.0")
 vllm032_image = _vllm_image("0.32.0")       # (October 18; the server checks run on it as well as on 0.31)
+# the tests too, for the GPU tests that run on vLLM 0.32's own PyTorch and Triton (the graphs phase)
+tests_image = vllm032_image.uv_pip_install("pytest==9.1.1").add_local_dir(LOCAL / "tests", f"{R}/tests",
+                                                                          ignore=_skip, copy=True)
 
 app = modal.App("sdcguard-vllm", image=vllm_image)
 vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
@@ -646,6 +650,39 @@ def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+GRAPH_TESTS = ("tests/test_gpu_graphs.py", "tests/test_serve_no_sync.py",
+               "tests/test_serve.py::test_gpu_fast_serving_check_agrees_and_is_used",
+               "tests/test_serve.py::test_gpu_compiled_cuda_graphs_catch_a_flip")
+
+
+@app.function(image=tests_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=30 * 60)
+def graphs(force: bool = False, source: Optional[dict] = None) -> str:
+    """tests/test_gpu_graphs.py and the serving checks' other GPU tests on one L4, with vLLM 0.32's PyTorch and
+    Triton: every check (linear, FP8 quantization, MoE, routing, norms; PyTorch and Triton versions) inside a captured
+    CUDA graph. SDCGUARD_GPU_TESTS=1 makes a missing GPU a failure, not a skip."""
+    t0 = time.monotonic()
+    tag = "graphs"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, "-m", "pytest", "-q", "-rfEs", "-p", "no:cacheprovider", *GRAPH_TESTS],
+                    f"{out}/pytest.txt", env={**os.environ, "SDCGUARD_GPU_TESTS": "1"}, cwd=R, timeout=25 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source, "tests": list(GRAPH_TESTS),
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
 def fp8kv(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_fp8kv_check.py: one `sdcguard qualify` on vLLM issue #54035 (an FP8 KV cache's decode and
@@ -865,6 +902,9 @@ ESTIMATES = {
     "fp8kv": "one `sdcguard qualify` on vLLM issue #54035 on 1 H100 (Qwen3-4B: bf16 KV cache, FP8 KV cache, FP8 on "
              "FlashInfer; 3 server launches): about 35 to 50 minutes, roughly $2.80 to $4 (75-minute limit, at most "
              "about $6 at requested resources, not a spending cap)",
+    "graphs": "every serving check inside a captured CUDA graph (pytest on 1 L4 with vLLM 0.32's PyTorch): about 5 to "
+              "15 minutes with the image build, roughly $0.15 to $0.40 (30-minute limit, at most about $0.70 at "
+              "requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -961,6 +1001,11 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
         elif phase == "fp8kv":
             message = fp8kv.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "graphs":
+            message = graphs.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

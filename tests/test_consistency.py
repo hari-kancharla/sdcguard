@@ -99,3 +99,30 @@ def test_the_command_line(server, tmp_path):
                                                                         os.environ.get("PYTHONPATH", "")])))
     assert p.returncode == 1 and p.stdout.startswith("INCONSISTENT")
     assert out.exists()
+
+
+def test_without_the_cache_counter_the_cache_probe_claims_nothing_either_way(server):
+    """vLLM's prefix-cache counter can't be read: the cached run may not have hit the cache, so neither a pass nor
+    a fail is about the cached path."""
+    r = cs.run(server("--no-vllm-metrics"), decode=False)
+    assert r["prefix_cache"]["verdict"] == "INCONCLUSIVE" and r["prefix_cache"]["cache_hits_confirmed"] is None
+    r = cs.run(server("--no-vllm-metrics", "--prefix-bug"), decode=False)
+    assert r["prefix_cache"]["verdict"] == "INCONCLUSIVE"
+
+
+def test_a_partial_decode_measurement_decides_nothing():
+    full = {"verdict": "CONSISTENT", "largest_gap": 0.05, "cases": []}
+    partial = {"verdict": "INCONCLUSIVE", "largest_gap": 0.06, "cases": [], "partial_cases": 1}
+    ok = {"verdict": "CONSISTENT", "cases": [], "cache_hits_confirmed": True}
+    j = cs.judge_against({"prefix_cache": ok, "decode_prefill": partial}, {"decode_prefill": full})
+    assert j["decode_prefill"] == "INCONCLUSIVE" and j["verdict"] == "INCONCLUSIVE"
+    # a baseline that couldn't be measured sets no line: the candidate stands on its own
+    j = cs.judge_against({"prefix_cache": ok, "decode_prefill": full}, {"decode_prefill": partial})
+    assert j["decode_prefill"] == "CONSISTENT" and "decode_line" not in j
+
+
+def test_the_decode_probe_keeps_every_positions_gap_and_splits_them_by_kv_length(server):
+    r = cs.run(server("--decode-gap", "0.4"), prefix=False)
+    c = r["decode_prefill"]["cases"][0]
+    assert len(c["gaps"]) == c["tokens"] and c["missing"] == 0 and r["decode_prefill"]["kv_split"] == 96
+    assert c["mean_gap_kv_past_split"] > c["mean_gap_kv_upto_split"]       # the stand-in drifts past 97 tokens

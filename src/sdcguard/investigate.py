@@ -92,6 +92,10 @@ def investigate(case_dir: str, repeats: int = 20, devices: Optional[list] = None
                 "conditions this machine doesn't reproduce" + (f" ({'; '.join(problems)})" if problems else "")}
     if right:
         ks = {_kernels(usable[d]) for d in wrong + right}
+        if any(not _kernels(usable[d]) for d in wrong + right):
+            return {**out, "verdict": "INCONCLUSIVE", "why": "wrong on some GPUs and right on others, but the kernel "
+                    "log of a run is missing, so whether they ran the same kernel is unknown (and the difference can "
+                    "be the kernel, not the board)"}
         if len(ks) != 1:
             return {**out, "verdict": "INCONCLUSIVE", "why": "wrong on some GPUs and right on others, but they ran "
                     "different kernels, so the difference can be the kernel and not the board"}

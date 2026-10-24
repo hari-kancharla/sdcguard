@@ -103,3 +103,42 @@ def test_the_known_issue_report_reads_the_gpu_only_once_cuda_is_in_use(monkeypat
     assert calls == [] and env["gpu"] is None
     known_issues.environment("cuda:0")
     assert calls == ["properties"]
+
+
+def _fresh(code: str, **env):
+    """code in a new Python process with no logging set up (as a vLLM process is, for any logger but vLLM's own)."""
+    import subprocess
+    import sys
+    e = {k: v for k, v in os.environ.items() if not k.startswith("SDCGUARD")}
+    e.update(PYTHONPATH=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"), **env)
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=e, timeout=120)
+
+
+def test_sdcguards_own_lines_show_where_nothing_set_up_logging():
+    """In a vLLM server nothing printed sdcguard's INFO lines (vLLM sets up only its "vllm" logger), so a server
+    whose every layer was checked said nothing about it, and on an FP8 server the line that would have shown its
+    linear layers unchecked never appeared (October 24, 2026)."""
+    p = _fresh("from sdcguard import vllm_plugin as vp; vp._setup_logging(); vp._setup_logging(); "
+               "vp.log.info('sdcguard: checking 3 layers'); vp.log.debug('sdcguard: not shown'); "
+               "print(len(vp.log.handlers))")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == "1"                                   # once, however often register() runs
+    lines = [ln for ln in p.stderr.splitlines() if "sdcguard:" in ln]
+    assert len(lines) == 1 and lines[0].startswith("INFO ") and lines[0].endswith("sdcguard: checking 3 layers")
+
+
+def test_sdcguard_log_level_sets_what_shows():
+    code = ("from sdcguard import vllm_plugin as vp; vp._setup_logging(); "
+            "vp.log.info('sdcguard: info'); vp.log.warning('sdcguard: warning')")
+    p = _fresh(code, SDCGUARD_LOG_LEVEL="warning")
+    assert "sdcguard: warning" in p.stderr and "sdcguard: info" not in p.stderr
+    p = _fresh(code, SDCGUARD_LOG_LEVEL="loud")                       # not a level: INFO
+    assert "sdcguard: warning" in p.stderr and "sdcguard: info" in p.stderr
+
+
+def test_a_logging_setup_of_the_users_is_left_alone():
+    p = _fresh("import logging; logging.basicConfig(format='USER %(message)s'); "
+               "from sdcguard import vllm_plugin as vp; vp._setup_logging(); vp.log.warning('sdcguard: here'); "
+               "print(len(vp.log.handlers), vp.log.propagate)")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.strip() == "0 True" and "USER sdcguard: here" in p.stderr

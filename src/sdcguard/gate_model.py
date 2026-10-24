@@ -407,12 +407,23 @@ def check_trace(ref_path: str, out: str, model: Optional[str] = None, extra: Opt
     if llm is None:
         llm = _llm(model or ref["model"], ref.get("dtype") or "bfloat16", ref.get("max_len") or 2048,
                    {**extra, "enable_trace_replay": True})
-    sps = [SamplingParams(temperature=0.0, logprobs=TOP, trace_decode_token_ids=list(r["completion_ids"]))
-           for r in ref["records"]]
-    outs = llm.generate([TokensPrompt(prompt_token_ids=r["prompt_ids"]) for r in ref["records"]], sps,
-                        use_tqdm=False)
+    # as many tokens as the trace, and on past an end-of-sequence token in it (the default max_tokens is 16: the
+    # first runs stopped there, so no trace matched and no position was scored). vLLM refuses an empty trace: a
+    # record without completion tokens has no position to score and isn't sent.
+    recs = ref["records"]
+    sent = [i for i, r in enumerate(recs) if r["completion_ids"]]
+    sps = [SamplingParams(temperature=0.0, logprobs=TOP, trace_decode_token_ids=list(recs[i]["completion_ids"]),
+                          max_tokens=len(recs[i]["completion_ids"]), ignore_eos=True, **NEUTRAL) for i in sent]
+    got = llm.generate([TokensPrompt(prompt_token_ids=recs[i]["prompt_ids"]) for i in sent], sps,
+                       use_tqdm=False) if sent else []
+    outs = [None] * len(recs)
+    for i, o in zip(sent, got):
+        outs[i] = o
     cand = []
-    for r, o in zip(ref["records"], outs):
+    for r, o in zip(recs, outs):
+        if o is None:
+            cand.append(None)
+            continue
         c = o.outputs[0]
         if list(c.token_ids) != list(r["completion_ids"]):
             cand.append(None)                    # the trace wasn't what ran: none of its positions are scored

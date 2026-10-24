@@ -77,6 +77,12 @@ def dtype_consts(dtype: torch.dtype) -> tuple:
     return 2.0 ** -8, 1e-37, float(torch.finfo(torch.float32).max)
 
 
+def pick(t: torch.Tensor, i: torch.Tensor) -> torch.Tensor:
+    """t[i] for a 0-d index tensor i, without reading i on the CPU: t[i] calls i.item(), a host sync, which stalls
+    the step and invalidates a CUDA graph capture. The checks' PyTorch versions use this for every 0-d index."""
+    return t.index_select(0, i.reshape(1)).squeeze(0)
+
+
 def _f32(bits: int) -> float:
     return struct.unpack("<f", struct.pack("<I", int(bits) & M32))[0]
 
@@ -109,7 +115,7 @@ def norm_check_torch(inp: torch.Tensor, out: torch.Tensor, w_ref: torch.Tensor, 
     z = torch.where(judged, torch.nan_to_num(z, nan=float("inf"), posinf=float("inf")), torch.zeros_like(z))
     zmax, arg = z.reshape(-1).max(0)
     row, col = arg // h, arg % h
-    yv, rv = y.reshape(-1)[arg], ref.reshape(-1)[arg]
+    yv, rv = pick(y.reshape(-1), arg), pick(ref.reshape(-1), arg)
     bits = lambda v: v.reshape(1).view(torch.int32).to(torch.int64).reshape(()) & M32  # noqa: E731
     zb = bits(zmax) << 32
     raw = stepbuf.reshape(-1)[0]
@@ -120,8 +126,8 @@ def norm_check_torch(inp: torch.Tensor, out: torch.Tensor, w_ref: torch.Tensor, 
     srow[C_ROWS] += m
     srow[C_UNJ] += (~judged).sum()
     take = (zmax > line) & (cap_meta[slot, 0] == 0)
-    cap_in[slot, :h] = torch.where(take, x[row], cap_in[slot, :h])
-    cap_out[slot, :h] = torch.where(take, y[row], cap_out[slot, :h])
+    cap_in[slot, :h] = torch.where(take, pick(x, row), cap_in[slot, :h])
+    cap_out[slot, :h] = torch.where(take, pick(y, row), cap_out[slot, :h])
     rec = torch.stack([torch.ones_like(row), row, raw & M32, zb >> 32]).to(cap_meta.dtype)
     cap_meta[slot] = torch.where(take, rec, cap_meta[slot])
 

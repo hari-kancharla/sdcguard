@@ -35,6 +35,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
+from .serve_norm import pick
 
 try:
     import triton
@@ -170,10 +171,10 @@ def route_check_torch(logits: torch.Tensor, topk_w: torch.Tensor, topk_ids: torc
     bad = sb | wb
     jb = bad.to(torch.int64).argmax()
     take = bad.any() & (cap_meta[slot, 0] == 0)
-    cap_lg[slot, :e] = torch.where(take, lf[jb], cap_lg[slot, :e])
-    cap_ids[slot, :k] = torch.where(take, kid[jb], cap_ids[slot, :k])
-    cap_w[slot, :k] = torch.where(take, kw[jb], cap_w[slot, :k])
-    meta = torch.stack([one, rows[jb], step, kind[jb], e * one, DTYPE_CODE.get(logits.dtype, 0) * one])
+    cap_lg[slot, :e] = torch.where(take, pick(lf, jb), cap_lg[slot, :e])
+    cap_ids[slot, :k] = torch.where(take, pick(kid, jb), cap_ids[slot, :k])
+    cap_w[slot, :k] = torch.where(take, pick(kw, jb), cap_w[slot, :k])
+    meta = torch.stack([one, pick(rows, jb), step, pick(kind, jb), e * one, DTYPE_CODE.get(logits.dtype, 0) * one])
     cap_meta[slot] = torch.where(take, meta, cap_meta[slot])
 
 
@@ -331,7 +332,10 @@ if HAVE_TRITON:
                 tl.atomic_max(base + 4, worst.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF)
                 if set_bad | w_bad:
                     mp = cap_meta + slot * 6
-                    if tl.atomic_cas(mp, 0, 1) == 0:          # the first bad row since the last read is kept
+                    # the first bad row since the last read is kept (compare and swap in the flag's own int64:
+                    # Triton's compiler rejects int32 literals on an int64 pointer, its interpreter doesn't)
+                    zero = tl.full((), 0, tl.int64)
+                    if tl.atomic_cas(mp, zero, zero + 1) == 0:
                         tl.store(cap_lg + slot * CAPE + offs, lg, mask=em)
                         tl.store(cap_ids + slot * CAPK + ko, kid.to(tl.int64), mask=km)
                         tl.store(cap_w + slot * CAPK + ko, kw, mask=km)

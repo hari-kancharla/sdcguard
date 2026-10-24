@@ -19,9 +19,9 @@ def install_trace_vllm(monkeypatch, table, decode_table=None, drop=False):
 
     class SamplingParams:
         def __init__(self, temperature=0.0, max_tokens=16, logprobs=None, prompt_logprobs=None, ignore_eos=False,
-                     trace_decode_token_ids=None):
+                     trace_decode_token_ids=None, **sampling):
             self.max_tokens, self.logprobs, self.prompt_logprobs = max_tokens, logprobs, prompt_logprobs
-            self.trace = trace_decode_token_ids
+            self.trace, self.ignore_eos = trace_decode_token_ids, ignore_eos
 
     class LLM(base):
         def generate(self, prompts, sps, use_tqdm=False):
@@ -32,7 +32,7 @@ def install_trace_vllm(monkeypatch, table, decode_table=None, drop=False):
             for p, sp in zip(prompts, sps):
                 ids = list(p["prompt_token_ids"])
                 prev, lps, toks = ids[-1], [], []
-                for t in sp.trace:
+                for t in sp.trace[:sp.max_tokens]:          # vLLM stops at max_tokens (16 by default)
                     lps.append(_top(dec[prev], t))
                     toks.append(t)
                     prev = t
@@ -47,8 +47,9 @@ def test_trace_replay_scores_the_decode_path(monkeypatch, tmp_path):
     t = _table()
     install_trace_vllm(monkeypatch, t)
     ref = str(tmp_path / "ref.json")
-    gm.make_ref("fake/model", ref, tokens=16)
+    gm.make_ref("fake/model", ref, tokens=24)                  # longer than vLLM's default of 16 tokens
     same = gm.check_trace(ref, str(tmp_path / "same.json"))
+    assert same["summary"]["positions"] == same["summary"]["expected_positions"] > 0
     assert same["verdict"]["verdict"] == "PASS" and same["summary"]["mean_kl"] < 1e-12
     assert same["stack"]["via"] == "trace"
     # a fault only the decode path shows: the prefill check passes it, the trace check doesn't

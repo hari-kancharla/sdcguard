@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -364,11 +365,53 @@ def tested_conditions(out: str, name: str, a=None) -> dict:
     return t
 
 
-def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict:
+OWN_FILES = ("ref.json", "RUNS.json", "QUALIFY.json", "REPORT.md")
+OWN_PER_RUN = re.compile(r"^(?P<n>.+)_(alerts\.jsonl|evidence|server\.log|quality\.json|isolation\.json|"
+                         r"consistency\.json|perf\.json|metrics\d+\.txt)$")
+
+
+def set_aside_earlier(out: str, names: list) -> Optional[str]:
+    """Move the files an earlier qualify left in `out` for these runs (the baseline, again and each candidate named:
+    their results, logs, decisions and repro folders, and the reference and reports) into out/earlier_<time>/, so
+    that this run decides only from what it measured: a candidate that doesn't start now can't be decided from an
+    earlier run's results, and a check that fails to write now can't be read from an earlier one. Nothing is deleted,
+    and other files (a policy or prompts kept there, say) stay where they are. Returns where the files went, or None
+    when there were none."""
+    runs = set(names) | {"baseline", "again"}
+    mine = []
+    for n in sorted(os.listdir(out)):
+        m = OWN_PER_RUN.match(n)
+        if n in OWN_FILES or (m and m.group("n") in runs) or \
+                any(n in (f"decision_{r}.json", f"decision_{r}.txt", f"repro_{r}") for r in runs):
+            mine.append(n)
+    if not mine:
+        return None
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    dest, k = os.path.join(out, f"earlier_{stamp}"), 1
+    while os.path.exists(dest):
+        dest, k = os.path.join(out, f"earlier_{stamp}_{k}"), k + 1
+    os.makedirs(dest)
+    for n in mine:
+        os.rename(os.path.join(out, n), os.path.join(dest, n))
+    return dest
+
+
+def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool, runs: Optional[dict] = None) -> dict:
+    """A decision per candidate from what this run measured. With `runs`, a candidate that didn't start in this run
+    (or whose baseline didn't) is NOT DECIDED, whatever files are on disk."""
     from . import decide as dc
     base_perf = _load(os.path.join(out, "baseline_perf.json"))
     rows = {}
     for name in names:
+        if runs is not None and not ((runs.get(name) or {}).get("ready") and (runs.get("baseline") or {}).get("ready")):
+            why = (runs.get(name) or {}).get("skipped") or ("the baseline didn't start in this run"
+                                                             if not (runs.get("baseline") or {}).get("ready") else
+                                                             "the candidate didn't start in this run")
+            rows[name] = {"decision": "NOT DECIDED", "arithmetic": None, "weights": None, "approximation": None,
+                          "quality_check": None, "quantization": None, "isolation": None, "consistency": None,
+                          "performance": None, "performance_required": False, "throughput_change": None,
+                          "why": [f"no evidence from this run: {why}"]}
+            continue
         alerts, cov = None, None
         if plugin:
             path = os.path.join(out, f"{name}_alerts.jsonl")
@@ -404,10 +447,10 @@ def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
              "|---|---|---|---|---|---|---|---|---|"]
     for name, r in rows.items():
         tp = "" if r["throughput_change"] is None else f"{r['throughput_change']:+.1%}"
-        q = r["approximation"] + (f" ({r['quality_check']})" if r.get("quality_check") else "")
-        lines.append(f"| {name} | {r['decision']} | {r['arithmetic']} | {r.get('weights') or ''} | {q} | "
-                     f"{r['isolation']} | "
-                     f"{r.get('consistency', '')} | {r['performance']} | {tp} |")
+        q = (r.get("approximation") or "") + (f" ({r['quality_check']})" if r.get("quality_check") else "")
+        lines.append(f"| {name} | {r['decision']} | {r.get('arithmetic') or ''} | {r.get('weights') or ''} | {q} | "
+                     f"{r.get('isolation') or ''} | "
+                     f"{r.get('consistency') or ''} | {r.get('performance') or ''} | {tp} |")
     lines.append("")
     for name, r in rows.items():
         lines.append(f"- **{name}** (`vllm serve {configs[name]}`): {r['decision']}: " + "; ".join(r["why"]))
@@ -473,7 +516,12 @@ def main(argv=None) -> int:
         if name in configs or name == "again":
             p.error(f"two configurations are named {name}")
         configs[name] = cfg
+    if a.policy and not os.path.isfile(a.policy):
+        p.error(f"--policy {a.policy}: no such file (decide's default policy would be used in its place)")
     pol = _load(a.policy)
+    moved = set_aside_earlier(a.out, list(configs))
+    if moved:
+        print(f"sdcguard qualify: {a.out} held an earlier run's files; moved them to {moved}", file=sys.stderr)
     ref = os.path.join(a.out, "ref.json")
     runs = {"baseline": run_one("baseline", "baseline", a.baseline, a, a.out, ref, None)}
     noise = None
@@ -488,7 +536,7 @@ def main(argv=None) -> int:
             continue
         runs[name] = run_one("candidate", name, configs[name], a, a.out, ref, noise)
     _write(os.path.join(a.out, "RUNS.json"), {"configs": configs, "runs": runs})
-    rows = decide_all(a.out, names, pol, not a.no_plugin)
+    rows = decide_all(a.out, names, pol, not a.no_plugin, runs)
     for name, row in rows.items():
         if row["decision"] != "ACCEPT" and (runs.get(name) or {}).get("ready"):
             try:

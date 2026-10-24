@@ -48,6 +48,22 @@ def _alerts(path: str) -> list:
     return out
 
 
+def _metric(out: str, name: str, metric: str):
+    """The largest value of a metric over a server's metrics pages (None when none has it)."""
+    vals = []
+    for i in range(16):
+        path = os.path.join(out, f"{name}_metrics{i}.txt")
+        if not os.path.exists(path):
+            continue
+        for line in open(path):
+            if line.startswith(metric + " "):
+                try:
+                    vals.append(float(line.split()[1]))
+                except (IndexError, ValueError):
+                    pass
+    return max(vals) if vals else None
+
+
 def run(out: str, port: int, metrics_port: int) -> dict:
     os.makedirs(out, exist_ok=True)
     pol = os.path.join(out, "policy.json")
@@ -74,6 +90,10 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             "moe_layers": sorted({(a.get("detail") or {}).get("where") for a in al
                                   if "(expert inputs)" in str((a.get("detail") or {}).get("where"))}),
             "implicated": [(a.get("detail") or {}).get("directly_implicated") for a in al[:5]]}
+    # reported, not criteria: how many FP8 layers each server's check took, and the quantizations it judged
+    res["fp8_coverage"] = {name: {"layers": _metric(out, name, "sdcguard_fp8_layers_checked"),
+                                  "calls_judged": _metric(out, name, "sdcguard_fp8_calls_judged_total")}
+                           for name in ("baseline", *CANDIDATES)}
     rp = (res["decisions"].get("fp8pt") or {}).get("repro")
     if rp and os.path.exists(os.path.join(rp, "rerun.sh")):
         r = subprocess.run(["sh", os.path.join(rp, "rerun.sh")], capture_output=True, text=True, timeout=1500,
@@ -113,7 +133,8 @@ def judge(res: dict) -> tuple:
          "fp8_alerts": {n: {"count": v["count"], "findings": v["findings"]} for n, v in fa.items()},
          "fp8pc": {"started": (runs.get("fp8pc") or {}).get("ready"), "fp8_alerts": (fa.get("fp8pc") or {}).get("count"),
                    "isolation": (dec.get("fp8pc") or {}).get("isolation")},
-         "repro": {k: rp.get(k) for k in ("isolation", "fp8_alerts", "exit_code")}}
+         "repro": {k: rp.get(k) for k in ("isolation", "fp8_alerts", "exit_code")},
+         "fp8_coverage": res.get("fp8_coverage")}
     return not fails, fails, s
 
 

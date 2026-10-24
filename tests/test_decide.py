@@ -214,3 +214,16 @@ def test_fp8_quantization_findings_are_their_own_section_and_reject():
     none = dc.decide(None, alerts=[], plugin={**cov, "workers": [{**cov["workers"][0], "fp8_calls_judged": None}]})
     assert none["quantization"]["verdict"] == "UNMEASURED"
     assert "1b. FP8 quantization" in dc.render(r)
+
+
+def test_a_latency_limit_without_its_measurement_is_never_met():
+    pol = {"performance": {"required": True, "max_ttft_p99_increase": 0.1}}
+    after = _perf(1000)
+    after["median"]["ttft_p99_ms"] = None
+    for rd in after["rounds"]:
+        rd["ttft_p99_ms"] = None
+    r = dc.decide(pol, quality=_quality(), alerts=[], plugin=COV, perf_before=_perf(1000), perf_after=after)
+    assert r["performance"]["verdict"] == "UNMEASURED" and "ttft_p99_ms" in r["performance"]["why"]
+    assert r["decision"] == "NOT DECIDED"
+    ok = dc.decide(pol, quality=_quality(), alerts=[], plugin=COV, perf_before=_perf(1000), perf_after=_perf(1000))
+    assert ok["performance"]["verdict"] == "MEETS" and ok["decision"] == "ACCEPT"

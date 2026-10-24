@@ -434,3 +434,32 @@ def test_the_moe_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, caps
     monkeypatch.setattr(runner, "moe", _remote("moe: exit code 1 in 28.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("moe")
+
+
+def test_the_graphs_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "graphs", _remote("graphs: exit code 0 in 9.0 minutes"))
+    runner.main("graphs")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "graphs", _remote("graphs: exit code 1 in 9.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("graphs")
+
+
+def test_the_graphs_run_makes_a_missing_gpu_a_failure_and_records_its_status(runner, monkeypatch):
+    seen = {}
+
+    def tee(cmd, log_path, env=None, **_):
+        seen["cmd"], seen["env"] = cmd, env
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(log_path).write_text("fixture\n")
+        return 0
+
+    monkeypatch.setattr(runner, "_tee", tee)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(
+        device_count=lambda: 1, get_device_name=lambda i: "NVIDIA L4")))
+    msg = runner.graphs()
+    assert msg.startswith("graphs: exit code 0 ")
+    assert seen["env"]["SDCGUARD_GPU_TESTS"] == "1" and "tests/test_gpu_graphs.py" in seen["cmd"]
+    status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
+    assert status["passed"] is True and status["gpus"] == ["NVIDIA L4"]

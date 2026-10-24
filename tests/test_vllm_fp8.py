@@ -82,6 +82,28 @@ def test_clean_steps_are_quiet_and_every_layer_is_checked(monkeypatch, tmp_path,
     assert cov["layers_checked"] == 2 and cov["calls"] == 8 and cov["recipes"] == ["dynamic_token"]
 
 
+def test_the_layer_summary_says_how_many_fp8_layers_are_checked(monkeypatch, tmp_path, caplog):
+    vp, runner, smk, tm = _setup(monkeypatch, tmp_path, Model)
+    with caplog.at_level(logging.INFO, logger="sdcguard"):
+        runner.execute_model(_so(_x(4), {"a": 4}))
+    lines = [r.getMessage() for r in caplog.records if "linear layers" in r.getMessage()]
+    assert lines and "FP8 input quantization checked on 2 layers (SDCGUARD_FP8=1)" in lines[0], lines
+    assert "is (SDCGUARD_FP8=1)" not in lines[0]
+
+
+def test_a_missing_fp8_kernel_module_is_said_out_loud(monkeypatch, tmp_path, caplog):
+    UL, GM = install_fake_vllm(monkeypatch.setitem)
+    fs.install(monkeypatch.setitem)
+    import sys
+    monkeypatch.delitem(sys.modules, "vllm.model_executor.kernels.linear.scaled_mm.ScaledMMLinearKernel")
+    vp = plugin_env(monkeypatch, tmp_path, SDCGUARD_FP8="1")
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):
+        vp.register()
+    assert "FP8ScaledMMLinearKernel" not in vp._STATE["fp8_classes"]
+    assert "not found" in (vp._STATE.get("fp8_why") or "")
+    assert any("not checking the FP8 quantization of linear layers" in r.getMessage() for r in caplog.records)
+
+
 def test_a_per_tensor_scale_from_padding_rows_is_named_with_its_request(monkeypatch, tmp_path):
     vp, runner, smk, tm = _setup(monkeypatch, tmp_path, lambda: Model(per_token=False))
     x = _x(8)

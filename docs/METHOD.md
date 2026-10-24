@@ -2030,6 +2030,21 @@ checks those layers there. Fixed before the rerun: fused MoE layers the MoE chec
 SDCGUARD_REQUIRE (their weights still don't count as checked by checksums in the weight share decide reads), and
 nomoe runs without SDCGUARD_REQUIRE. The criteria stand.
 
+Result of the rerun (October 24, on 63f01f5): failed M1 and M2, for two bugs of ours, both in the routing check.
+Its Triton kernel didn't compile on the H100 (a compare-and-swap on the int64 kept-row flag with int32 literals,
+which Triton's compiler rejects and its interpreter, where the CPU tests ran it, accepts), so it fell back to its
+PyTorch version, which read a GPU value on the CPU; inside the compiled server's CUDA graph capture that is an error
+("operation not permitted when stream is capturing"), the capture was invalidated and guarded didn't start, so M2
+and the cost couldn't be measured. Everything else asked of the eager server was met: its 24 MoE layers checked with
+the MoE Triton kernels (they passed their first-use comparison), no alert in clean traffic (worst clean score
+0.26, under 2), all 6 wrong kernels caught by an alert naming the layer (in 1 or 2 rounds, each rechecked as
+output_wrong), and both wrong routers caught by an alert naming the router with the matching finding (wrong_experts
+in 1 round, wrong_weights in 2, each with an alert rechecked as output_wrong), with the routing check on its PyTorch
+version. nomoe started. Fixed since: the flag's compare-and-swap is typed int64; every Triton kernel of the serving
+checks is compiled for the A100, L4 and H100 in the CPU tests, with no GPU (`tests/test_triton_compiles.py`; the old
+routing kernel fails it); no check's PyTorch version reads a GPU value (see the FP8 result below). The criteria stand
+for the rerun.
+
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 
 Two new parts are tried on a real, open vLLM bug at once. The plugin's FP8 quantization check
@@ -2076,6 +2091,48 @@ measured, and this run can't measure it (every FP8 server has the check on). So 
 eligible; it becomes on by default only once a run measures it costing at most 3% of throughput at 16 requests at
 once on an FP8 server, and stays opt-in until then.
 
+Result of the first run (October 24, on 63f01f5): failed F1, F2, F3 and F6, for two bugs of ours. fp8pt and fp8pc
+didn't start: vLLM's engine failed while capturing its CUDA graphs ("operation failed due to a previous error during
+capture"). The FP8 check, run inside vLLM's MoE op at capture, indexed a tensor with a 0-d GPU tensor (`rows[i]`),
+which PyTorch turns into `.item()`, a host sync, and a host sync invalidates a capture. The bf16 baseline and the
+eager candidate started (no FP8 check under capture in either). Looking for the same mistake everywhere: the MoE,
+norm and routing checks had it in their PyTorch versions, which run only when their Triton kernel isn't used (on
+GPUs the kernels pass their first-use comparison: the norm run's servers used the Triton kernel and started). The run showed
+a second bug: on real vLLM the FP8 check never took the FP8 linear layers (`sdcguard_fp8_layers_checked` was 24,
+the MoE layers alone; there are 48 FP8 linear layers), because vLLM's scaled_mm package exports the
+ScaledMMLinearKernel class under the name of the module the plugin imported, and our stand-in for vLLM had the
+module there; the plugin's line saying so was at INFO, which nothing in a vLLM server prints. Reported from the
+eager candidate: 347,040 MoE input quantizations judged, no FP8 alert, NO LEAK SEEN; REJECT on quality (mean KL
+3.43e-2) and on consistency (a cached answer differed from a cold one by 0.337 nats); throughput -41.9% against
+the compiled bf16 baseline.
+
+Fixed since: every 0-d index in the checks' PyTorch versions reads through index_select (no host read), and
+`tests/test_serve_no_sync.py` runs each check's PyTorch version on fake tensors, where any host read raises (it fails
+on the old code); the plugin imports the scaled-mm module itself, says so at WARNING when it can't, and the stand-in
+exports the class as vLLM does (the old plugin fails it); sdcguard's own log lines now show in vLLM's output
+(SDCGUARD_LOG_LEVEL), and the layer summary gives the number of FP8 layers checked. The criteria stand as written for
+the rerun. Reported in the rerun: the FP8 layers each server checks (72 expected on fp8pt: 48 linear, whose inputs
+vLLM quantizes per token on CUTLASS, and 24 MoE layers, per tensor).
+
+### Every check inside a captured CUDA graph (written October 24, before any run)
+
+A check that is right on the CPU can still fail where vLLM runs it: inside a CUDA graph capture, where a host read
+invalidates the capture, and in replays, where a value baked in at capture instead of read from a buffer would make
+the check judge the wrong step. `tests/test_gpu_graphs.py` captures each serving check (linear, FP8 quantization,
+MoE, routing, norms; their PyTorch versions and their Triton kernels) in a CUDA graph and replays it.
+`modal run scripts/modal_vllm.py --phase graphs` runs it, the fake-tensor test and the two GPU tests of the linear
+check already in `tests/test_serve.py`, on one L4 with vLLM 0.32's PyTorch and Triton (about 5 to 15 minutes, $0.15
+to $0.40).
+
+Criteria (all on the L4):
+- G1: every capture succeeds.
+- G2: each replay leaves exactly the state (and the kept-row flag) an eager call leaves, clean and wrong.
+- G3: a wrong value is found inside the replayed graph for every check, and a clean one isn't.
+- G4: a step marked between replays is read at replay (no real rows, nothing judged; FP8: every row real, the right
+  scale passes).
+- G5: no test skipped (a missing GPU fails under SDCGUARD_GPU_TESTS=1).
+Not claimed: other GPUs, or vLLM's own capture of these checks, which the server runs show.
+
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 
 vLLM issue #54035, open on the current release: with an FP8 KV cache on Hopper, FlashAttention 3 tiles decode and
@@ -2104,6 +2161,20 @@ verdicts (whether FlashInfer's FP8 path shows the same), the prefix-cache probe 
 Without batch-invariant mode, the baseline's own decode-vs-prefill gaps include batch-shape effects; if they are
 large enough that K2 fails, the probe can't judge this bug in vLLM's default setting, and that is the finding. Not
 claimed whatever the outcome: other models, head sizes, GPUs or FP8 attention paths.
+
+Result (October 24, on 63f01f5): K1, K2 and K3 met as written, but not by the probe they were written for. fp8kv was
+REJECT, INCONSISTENT and OUTSIDE on quality (mean KL 1.01e-2, top-1 agreement 98.97%). The INCONSISTENT came from
+the prefix-cache probe, narrowly: in one of its cases a token the cold answer was sure of changed when the prefix
+came from the cache (the reference token's probability fell by 0.5145, the line is 0.5; the two cold answers were
+identical and the cache hits confirmed). The decode-vs-prefill probe, the one aimed at #54035, did not call it: the
+FP8 cache's largest gap per prompt was 0.297, 0.533, 0.399 and 0.278 nats (at 99, 168, 129 and 134 tokens of KV),
+the baseline's 0.118, 0.189, 0.102 and 0.117, so the largest was 2.8 times the baseline's, under the 4-times line.
+Every FP8 peak came after 96 tokens of KV, as the issue describes, and its mean gaps were 2 to 4 times the
+baseline's; that is consistent with #54035, not a demonstration of it. fp8kv_fi didn't start (FlashInfer isn't
+installed in the image: reported only). Throughput -1.0%. What this run shows: qualify rejected an FP8 KV cache on
+an H100 with reasons a reader can check; it doesn't show the decode-vs-prefill probe catching this bug in vLLM's
+default setting. Since then the probe keeps every position's gap and reports gaps up to 96 tokens of KV and past
+them separately, for a future run to judge on (CPU-tested).
 
 ### The upgrade gate on cuBLAS issue 6862950
 

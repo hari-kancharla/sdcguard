@@ -72,3 +72,17 @@ def test_the_qualify_command_has_the_check_on_and_the_policy(monkeypatch, tmp_pa
     assert pol["isolation"]["required"] and pol["quality"]["accept_warn"]
     assert "fp8_per_tensor" in vf.CANDIDATES["fp8pt"] and "--enforce-eager" in vf.CANDIDATES["eager"]
     assert "fp8_per_channel" in vf.CANDIDATES["fp8pc"] and "cudagraph_capture_sizes" in vf.BASE
+
+
+def test_each_servers_fp8_coverage_is_read_from_its_metrics(tmp_path):
+    out = str(tmp_path)
+    with open(os.path.join(out, "fp8pt_metrics0.txt"), "w") as f:
+        f.write("# HELP sdcguard_fp8_layers_checked x\nsdcguard_fp8_layers_checked 72.0\n"
+                "sdcguard_fp8_calls_judged_total 1234.0\n")
+    assert vf._metric(out, "fp8pt", "sdcguard_fp8_layers_checked") == 72.0
+    assert vf._metric(out, "fp8pt", "sdcguard_fp8_calls_judged_total") == 1234.0
+    assert vf._metric(out, "baseline", "sdcguard_fp8_layers_checked") is None
+    r = copy.deepcopy(GOOD)
+    r["fp8_coverage"] = {"fp8pt": {"layers": 72.0, "calls_judged": 1234.0}}
+    ok, fails, s = vf.judge(r)
+    assert ok and s["fp8_coverage"]["fp8pt"]["layers"] == 72.0

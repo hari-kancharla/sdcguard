@@ -144,7 +144,8 @@ def install(setitem):
     """The FP8 modules under vllm.* (on top of tests/_vllm_standins.install_fake_vllm)."""
     smk = types.ModuleType("vllm.model_executor.kernels.linear.scaled_mm.ScaledMMLinearKernel")
     # fresh classes each time: the plugin patches them, and one test's patch mustn't reach the next
-    base = type("FP8ScaledMMLinearKernel", (FP8ScaledMMLinearKernel,),
+    smk.ScaledMMLinearKernel = type("ScaledMMLinearKernel", (), {})
+    base = type("FP8ScaledMMLinearKernel", (FP8ScaledMMLinearKernel, smk.ScaledMMLinearKernel),
                 {"apply_weights": FP8ScaledMMLinearKernel.apply_weights})
     smk.FP8ScaledMMLinearKernel = base
     smk.CutlassFP8ScaledMMLinearKernel = type("CutlassFP8ScaledMMLinearKernel", (base,),
@@ -165,7 +166,13 @@ def install(setitem):
     re_ = types.ModuleType("vllm.model_executor.layers.fused_moe.routed_experts")
     re_.RoutedExperts = type("RoutedExperts", (RoutedExperts,), {"forward_modular": RoutedExperts.forward_modular})
     setitem(sys.modules, re_.__name__, re_)
-    sys.modules["vllm.model_executor.kernels.linear.scaled_mm"].ScaledMMLinearKernel = smk
+    # as vLLM's scaled_mm/__init__.py: the package exports the kernel classes, and under the name of the module
+    # ScaledMMLinearKernel.py, the ScaledMMLinearKernel class (so `from ...scaled_mm import ScaledMMLinearKernel`
+    # gives the class, not the module)
+    pkg = sys.modules["vllm.model_executor.kernels.linear.scaled_mm"]
+    setitem(pkg.__dict__, "ScaledMMLinearKernel", smk.ScaledMMLinearKernel)
+    setitem(pkg.__dict__, "FP8ScaledMMLinearKernel", smk.FP8ScaledMMLinearKernel)
+    setitem(pkg.__dict__, "CutlassFP8ScaledMMLinearKernel", smk.CutlassFP8ScaledMMLinearKernel)
     sys.modules["vllm.model_executor.layers.fused_moe"].utils = utils
     return smk, utils, tm
 

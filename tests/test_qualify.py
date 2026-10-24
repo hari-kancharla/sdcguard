@@ -6,6 +6,8 @@ import os
 import socket
 import sys
 
+import pytest
+
 from sdcguard import qualify
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -145,3 +147,56 @@ def test_your_own_prompts_make_the_quality_reference(tmp_path):
         "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8", "--startup-timeout", "30"])
     ref = json.load(open(os.path.join(out, "ref.json")))
     assert len(ref["records"]) == 3
+
+
+def _common(out):
+    return ["--out", out, "--baseline", "fake/m",
+            "--serve-cmd", f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}", "--tokens", "8",
+            "--concurrency", "2", "--max-tokens", "8", "--rounds", "2", "--startup-timeout", "30", "--no-isolation",
+            "--no-consistency"]
+
+
+def test_a_rerun_into_the_same_folder_never_decides_from_the_earlier_runs_files(tmp_path):
+    """A candidate that doesn't start in this run is NOT DECIDED even when the folder holds an earlier run's passing
+    results for it (they're moved to earlier_<time>/, nothing deleted); a policy kept in the folder stays put."""
+    out = str(tmp_path / "q")
+    os.makedirs(out)
+    pol = os.path.join(out, "policy.json")
+    with open(pol, "w") as f:
+        json.dump({"isolation": {"required": False}}, f)
+    common = _common(out) + ["--policy", pol]
+    code = qualify.main(common + ["--candidate", "same=fake/m", "--port", str(_free()), "--metrics-port", str(_free())])
+    assert code == 0 and json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]["same"]["decision"] == "ACCEPT"
+    code = qualify.main(common + ["--candidate", "same=fake/m --fail", "--port", str(_free()),
+                                  "--metrics-port", str(_free())])
+    rows = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]
+    assert code == 2 and rows["same"]["decision"] == "NOT DECIDED" and "this run" in rows["same"]["why"][0]
+    earlier = [n for n in os.listdir(out) if n.startswith("earlier_")]
+    assert len(earlier) == 1 and os.path.exists(os.path.join(out, earlier[0], "same_quality.json"))
+    assert os.path.exists(os.path.join(out, earlier[0], "decision_same.json"))
+    assert not os.path.exists(os.path.join(out, "same_quality.json"))
+    assert os.path.exists(pol) and not os.path.exists(os.path.join(out, earlier[0], "policy.json"))
+    assert "| same | NOT DECIDED |" in open(os.path.join(out, "REPORT.md")).read()
+
+
+def test_only_qualifys_own_files_are_set_aside(tmp_path):
+    out = str(tmp_path)
+    for n in ("ref.json", "REPORT.md", "baseline_perf.json", "same_server.log", "same_metrics0.txt",
+              "decision_same.txt", "other_quality.json", "policy.json", "notes.txt", "same_notes.txt"):
+        open(os.path.join(out, n), "w").close()
+    os.makedirs(os.path.join(out, "repro_same"))
+    os.makedirs(os.path.join(out, "same_evidence"))
+    dest = qualify.set_aside_earlier(out, ["baseline", "same"])
+    moved = sorted(os.listdir(dest))
+    assert moved == sorted(["ref.json", "REPORT.md", "baseline_perf.json", "same_server.log", "same_metrics0.txt",
+                            "decision_same.txt", "repro_same", "same_evidence"])
+    assert sorted(n for n in os.listdir(out) if not n.startswith("earlier_")) == \
+        ["notes.txt", "other_quality.json", "policy.json", "same_notes.txt"]
+    assert qualify.set_aside_earlier(out, ["baseline", "same"]) is None        # nothing of ours left: no new folder
+
+
+def test_a_policy_file_that_isnt_there_is_an_error_not_the_default_policy(tmp_path, capsys):
+    out = str(tmp_path / "q")
+    with pytest.raises(SystemExit):
+        qualify.main(_common(out) + ["--candidate", "same=fake/m", "--policy", str(tmp_path / "missing.json")])
+    assert "no such file" in capsys.readouterr().err

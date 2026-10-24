@@ -80,3 +80,15 @@ def test_right_everywhere_is_not_reproduced_and_mismatched_conditions_are_inconc
     r = iv.investigate(c, devices=["cuda:0"], runner=_runner(lambda e, d: _res(0, error="boom")))
     assert r["verdict"] == "INCONCLUSIVE"
     assert iv.investigate(c, devices=[], runner=_runner(lambda e, d: _res(0)))["verdict"] == "INCONCLUSIVE"
+
+
+def test_missing_kernel_logs_never_make_it_the_gpu(tmp_path):
+    """Wrong on one GPU and right on another with no kernel logged on either: an unknown kernel isn't the same
+    kernel, so the board isn't blamed."""
+    r = iv.investigate(_case(tmp_path), devices=["cuda:0", "cuda:1"],
+                       runner=_runner(lambda env, d: _res(20 if d == "cuda:1" else 0, kernels={})))
+    assert r["verdict"] == "INCONCLUSIVE" and "kernel log" in r["why"]
+    r = iv.investigate(_case(tmp_path), devices=["cuda:0", "cuda:1"],
+                       runner=_runner(lambda env, d: _res(20 if d == "cuda:1" else 0, kernels=K66 if d == "cuda:1"
+                                                          else {})))
+    assert r["verdict"] == "INCONCLUSIVE"
