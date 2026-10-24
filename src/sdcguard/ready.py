@@ -11,16 +11,21 @@ worker it was told to expect:
     --layers, a share of the weights of at least --min-weights, when given);
   - the alarm line is at most --max-z (default 6: a server set to alert at z=1000 never alerts);
   - checks have run and their results have been read back at least once;
-  - each worker is on its own GPU, and none restarted between the two reads;
+  - each worker is on its own GPU (with --gpus, exactly the GPUs given: the answer is then bound to this
+    server's workers, not to whatever process exports metrics on those ports), and none restarted between the
+    two reads;
   - every worker's executed checks went up between the two reads, or vLLM's own metrics (--vllm, the API
     server's /metrics) show it produced no tokens in between (idle). If vLLM produced tokens and a worker's checks
     didn't go up, that worker is serving unchecked. Without --vllm, checks that didn't go up can mean an idle
     server or stopped checks, so the answer is INCONCLUSIVE: pass --vllm for a definite one.
 
 Exit codes: 0 PROTECTED, 1 NOT PROTECTED, 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
-restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a Kubernetes readiness probe any nonzero code keeps traffic away, so the
-probe's timeoutSeconds must be longer than --window. Only the Python standard library is used, so the check
-runs in a small sidecar as well as in the server's own image.
+restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a
+Kubernetes readiness probe any nonzero code keeps traffic away, so the probe's timeoutSeconds must be longer than
+--window. Only the Python standard library is used, so the check runs in a small sidecar as well as in the
+server's own image. PROTECTED means the configured checks are running and their results are being read, on every
+expected worker; it doesn't mean every answer is right (see what the checks cover, and SDCGUARD_SHARE: a share
+checks the same subset of layers every step).
 
     sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics
     sdcguard ready --url http://10.0.0.5:9400/metrics --url http://10.0.0.5:9401/metrics --json
@@ -85,7 +90,8 @@ def _num(text) -> Optional[float]:
 
 
 def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Optional[dict], *,
-          max_z: float = 6.0, layers: Optional[int] = None, min_weights: Optional[float] = None) -> dict:
+          max_z: float = 6.0, layers: Optional[int] = None, min_weights: Optional[float] = None,
+          gpus: Optional[list] = None) -> dict:
     """first, second: per worker (url, values, info, error) from the two reads; vllm_*: vLLM's values or None.
     Returns {"verdict", "problems", "unsure", "notes", "workers"}."""
     problems, unsure, notes, workers = [], [], [], []
@@ -125,10 +131,16 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
                               f"{ib.get('pid')}): restarted")
             if not (b.get("sdcguard_reads_total", 0.0) > 0 and b.get("sdcguard_checks_executed_total", 0.0) > 0):
                 unsure.append(f"{url}: no check results read back yet (still warming up?)")
-    gpus = [w["gpu"] for w in workers if w["gpu"]]
-    if len(gpus) != len(set(gpus)):
-        problems.append(f"two workers report the same GPU ({', '.join(sorted(set(g for g in gpus if gpus.count(g) > 1)))}): "
+    reported = [w["gpu"] for w in workers if w["gpu"]]
+    if len(reported) != len(set(reported)):
+        twice = sorted({g for g in reported if reported.count(g) > 1})
+        problems.append(f"two workers report the same GPU ({', '.join(twice)}): "
                         "a worker is missing or answering twice")
+    if gpus is not None:
+        seen = set(reported)
+        if seen != set(gpus):
+            problems.append(f"the workers report GPUs {sorted(seen)}, not the server's {sorted(set(gpus))}: these "
+                            "metrics may come from another process")
     counts = {w["layers_checked"] for w in workers if w["layers_checked"] is not None}
     if len(counts) > 1:
         problems.append(f"workers check different numbers of layers: {sorted(counts)}")
@@ -165,6 +177,8 @@ def main(argv=None) -> int:
     p.add_argument("--max-z", type=float, default=6.0, help="highest alarm line accepted (default 6)")
     p.add_argument("--layers", type=int, help="layers each worker must check")
     p.add_argument("--min-weights", type=float, help="lowest share of the model's linear-layer weights checked")
+    p.add_argument("--gpus", help="the GPUs this server must run on (UUIDs, comma-separated, as nvidia-smi -L "
+                   "prints them): binds the answer to this server's workers, not any process exporting metrics")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -184,7 +198,9 @@ def main(argv=None) -> int:
             print(f"sdcguard ready: vLLM metrics at {a.vllm} not read ({v1[2] or v2[2]})", file=sys.stderr)
         else:
             vllm_first, vllm_second = v1[0], v2[0]
-    r = judge(first, second, vllm_first, vllm_second, max_z=a.max_z, layers=a.layers, min_weights=a.min_weights)
+    gpus = [g.strip() for g in a.gpus.split(",") if g.strip()] if a.gpus else None
+    r = judge(first, second, vllm_first, vllm_second, max_z=a.max_z, layers=a.layers, min_weights=a.min_weights,
+              gpus=gpus)
     if a.vllm and vllm_first is None:
         r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read")
         if r["verdict"] == "PROTECTED":

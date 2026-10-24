@@ -104,6 +104,12 @@ memory) and rechecks them in float64 on the CPU, so the alert tells you whether 
 Those evidence files hold real rows of your inputs and of the layer's weights: treat them like your data, and
 don't attach them to a public issue unless you're fine sharing them.
 
+Each alert also says which requests it concerns, in three parts kept apart: the request directly implicated (the
+one that held the row the check alarmed on, in that model step), the requests potentially exposed (every request in
+the steps that read covered, and every request since the layer's last clean read, which a persistent fault such as
+a changed weight concerns), and what neither covers (prefix-cache blocks reused later, and what isn't checked).
+Tokens already streamed to a client can't be taken back; the alert tells you which responses to distrust.
+
 If the plugin fails to load, vLLM serves without it, and the plugin can't report its own absence. So check from
 outside. Give each GPU worker a metrics port, then ask:
 

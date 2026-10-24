@@ -69,7 +69,10 @@ patches and turns itself off (with a log line) if something is missing.
 from __future__ import annotations
 
 import atexit
+import bisect
+import collections
 import hashlib
+import itertools
 import logging
 import math
 import os
@@ -83,7 +86,7 @@ import torch
 log = logging.getLogger("sdcguard")
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
-          "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None}
+          "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -197,6 +200,7 @@ def _guard(device: Optional[torch.device] = None):
             log.warning("sdcguard: webhook setup failed (%s); alerts still go to the log", e)
             g = ServeGuard(**kw)
         _STATE["guard"] = g
+        g.attribute = _attribute
         if metrics is not None:               # who and how, for `sdcguard ready` (checks from outside)
             try:
                 from .events import device_identity
@@ -468,6 +472,111 @@ def _flush_at_exit() -> None:
             hook.flush(hook.timeout)
         except Exception:  # noqa: BLE001
             pass
+
+
+# Which requests an alert concerns. Each model step, the plugin keeps which request held which rows (tokens) of the
+# batch, from the scheduler's output and the runner's order of requests: (step, request ids in batch order, the
+# end row of each), the last SDCGUARD_STEP_LOG steps (default 4096). A captured row carries its step
+# (ServeGuard.mark_step), so the request is named exactly; without a captured row, every request in the steps the
+# read covered is named. vLLM's internal ids are the client's id plus "-" and 8 characters: alerts give the client's.
+_INTERNAL_SUFFIX = re.compile(r"-[0-9a-f]{8}$")
+
+
+def _external(rid: str) -> str:
+    return _INTERNAL_SUFFIX.sub("", str(rid))
+
+
+def _batch_rows(runner, args, kwargs) -> Optional[tuple]:
+    """(request ids in batch order, the end row of each) of the step the runner just ran, or None when they can't
+    be read (then alerts say attribution is unavailable). Rows past the last end are CUDA-graph padding."""
+    so = args[0] if args else kwargs.get("scheduler_output")
+    counts = getattr(so, "num_scheduled_tokens", None)
+    if not isinstance(counts, dict) or not counts:
+        return None
+    ems = getattr(runner, "execute_model_state", None)                  # the V2 runner: this step's batch
+    ids = getattr(getattr(ems, "input_batch", None), "req_ids", None)
+    if not ids:
+        ids = getattr(getattr(runner, "input_batch", None), "req_ids", None)   # the V1 runner (reused list)
+    if not ids:
+        return None
+    ids = [r for r in ids if r is not None]
+    if len(ids) != len(counts) or set(ids) != set(counts):   # the runner's order doesn't cover this step's requests
+        return None
+    try:
+        ends = list(itertools.accumulate(int(counts[r]) for r in ids))
+    except (TypeError, ValueError):
+        return None
+    return tuple(ids), ends
+
+
+def _rows_split(runner) -> Optional[str]:
+    """Why a step's rows don't map to its requests one to one (microbatching, sequence parallelism), or None."""
+    if getattr(getattr(runner, "parallel_config", None), "enable_dbo", False):
+        return "rows are split into microbatches (dual-batch overlap)"
+    pc = getattr(getattr(runner, "compilation_config", None), "pass_config", None)
+    if getattr(pc, "enable_sequence_parallelism", False):
+        return "rows are split across tensor-parallel ranks (sequence parallelism)"
+    return None
+
+
+def _record_batch(runner, step: int, args, kwargs) -> None:
+    if _STATE.get("step_log") is None:
+        _STATE["step_log"] = collections.deque(maxlen=max(16, int(os.environ.get("SDCGUARD_STEP_LOG", "4096"))))
+    split = _rows_split(runner)
+    rows = None if split else _batch_rows(runner, args, kwargs)
+    _STATE["step_log"].append((step, rows[0], rows[1]) if rows else
+                              (step, None, split or "the step's batch couldn't be read"))
+
+
+def _attribute(ev) -> None:
+    """Add to an alert which requests it concerns (ServeGuard.attribute), in three parts kept apart:
+      directly_implicated   the request that held the row the check alarmed on, in the step it alarmed (from the
+                            captured row): [id], [] for a CUDA-graph padding row, None when it can't be told
+      potentially_exposed   every request in the steps the read covered ("read_window"), and every request since
+                            the layer's last clean read ("since_last_clean_read": a fault that persists, like a
+                            changed weight, concerns them all); a conservative window, not a proof of harm
+      unknown_impact        what neither covers (state that outlives the window, layers not checked)
+    Ids are the client's (vLLM's internal suffix removed); "attribution" says how they were found."""
+    d = ev.detail
+    steps = {s: (ids, ends) for s, ids, ends in (_STATE.get("step_log") or ())}
+    cap = d.get("captured") or {}
+    st, row = cap.get("step"), cap.get("row")
+    exposed: dict = {}
+    d["unknown_impact"] = [
+        "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
+        "the plugin checks linear layers only; attention, norms, MoE experts, the KV cache and sampling aren't checked"]
+    if _share(os.environ.get("SDCGUARD_SHARE", "1")) < 1:
+        d["unknown_impact"].append("SDCGUARD_SHARE checks the same subset of layers every step; the others aren't seen")
+    d["potentially_exposed"] = exposed
+    if not steps:
+        d["directly_implicated"], d["attribution"] = None, "unavailable: no model step was recorded"
+        return
+    if st is not None and row is not None and st in steps:
+        ids, ends = steps[st]
+        if ids is None:
+            d["directly_implicated"], d["attribution"] = None, f"unavailable for step {st}: {ends}"
+        elif row < ends[-1]:
+            d["directly_implicated"] = [_external(ids[bisect.bisect_right(ends, row)])]
+            d["attribution"] = f"exact: row {row} of step {st}, where the check alarmed, belonged to this request"
+        else:
+            d["directly_implicated"] = []
+            d["attribution"] = f"row {row} of step {st} is CUDA-graph padding (the step had {ends[-1]} tokens)"
+    elif d.get("read_window_steps"):
+        d["directly_implicated"] = None
+        d["attribution"] = "no row was captured for this alert, so only the read's window can be named"
+    else:
+        d["directly_implicated"], d["attribution"] = None, "unavailable: the alert has no step to look up"
+    if d.get("read_window_steps"):
+        a, b = d["read_window_steps"]
+        named = [steps[s][0] for s in range(a, b + 1) if s in steps and steps[s][0] is not None]
+        exposed["read_window"] = {"steps": [a, b], "requests": sorted({_external(r) for ids in named for r in ids}),
+                                  "complete": len(named) == b - a + 1}
+    clean = d.get("last_clean_read_steps")
+    end = (d.get("read_window_steps") or [None, None])[1]
+    if clean and end is not None:
+        since = sorted({_external(r) for s, (ids, _) in steps.items() if clean[1] < s <= end and ids for r in ids})
+        exposed["since_last_clean_read"] = {"steps": [clean[1] + 1, end], "count": len(since),
+                                            "requests": since[:1000], "complete": min(steps) <= clean[1] + 1}
 
 
 def _on_alert(ev) -> None:
@@ -989,7 +1098,18 @@ def register() -> None:
                     raise                              # SDCGUARD_REQUIRE: refuse to serve unchecked
                 except Exception as e:  # noqa: BLE001  (never break serving, unless SDCGUARD_REQUIRE asks)
                     _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
+            step = _STATE["steps"] + 1
+            g0 = _STATE["guard"]
+            if g0 is not None:
+                try:
+                    g0.mark_step(step)           # before the step's work is queued, outside its CUDA graph
+                except Exception as e:  # noqa: BLE001  (attribution only; never break serving)
+                    log.debug("sdcguard: mark_step failed: %s", e)
             out = orig_exec(self, *args, **kwargs)
+            try:
+                _record_batch(self, step, args, kwargs)
+            except Exception as e:  # noqa: BLE001
+                log.debug("sdcguard: couldn't record the step's batch: %s", e)
             _STATE["steps"] += 1
             now = time.monotonic()
             # read results every poll_every model steps without waiting (that read reports the previous one),

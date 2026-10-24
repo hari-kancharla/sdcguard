@@ -30,9 +30,16 @@ FlashAttention), and processes whose environment the logging variables don't rea
 nv-hostengine, so the variables must be set where that process starts). Under CUDA graphs cuBLAS is called when a
 graph is captured, not when it is replayed, so a server's inventory comes from its warm-up and capture plus the
 calls it makes outside graphs; the counts are calls logged, not kernel launches. The log's format is NVIDIA's and
-undocumented line by line; lines this can't read are counted, not guessed. The method of reading which kernel ran
-from cuBLASLt's log follows Sangho Yeo's public reproduction of issue 6862950
-(github.com/Yeosangho/mps-cublaslt-fp16-corruption-repro, October 2, 2026) and sdcguard's own gate.
+undocumented line by line; lines this can't read are counted, not guessed.
+
+Prior art, credited: reading which kernel ran from cuBLASLt's log follows Sangho Yeo's public reproduction of
+issue 6862950 (github.com/Yeosangho/mps-cublaslt-fp16-corruption-repro, October 2, 2026). cudaprof
+(github.com/tmc/lib, nvidia/x/cmd/cudaprof) records the same cuBLASLt calls through the logger's callback, joins
+each to the kernels it launched (not inside CUDA graphs), and compares two captures' algorithm and kernel choices,
+for performance work. What this module adds is the correctness side: the kernel conditions of NVIDIA's listed
+wrong-result issues, and the coverage of a workload's kernels by a test. An inventory says which kernels were
+observed; it doesn't say they were checked (that is the job of the checks and the gate), nor that a fault in them
+would be caught.
 """
 from __future__ import annotations
 

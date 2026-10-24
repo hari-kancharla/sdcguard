@@ -135,3 +135,10 @@ def test_the_metrics_page_has_the_info_series():
     m.identify("GPU-q", 6.0, 0.125)
     values, info = ready.parse(generate_latest(m.registry).decode())
     assert info["UUID"] == "GPU-q" and info["z"] == "6" and info["share"] == "0.125" and info["pid"].isdigit()
+
+
+def test_gpus_bind_the_answer_to_the_servers_workers(close):
+    a = _srv(close, _page(), _page(executed=150))
+    assert _run([a], extra=("--gpus", "GPU-a")) == 0
+    b = _srv(close, _page(), _page(executed=150))
+    assert _run([b], extra=("--gpus", "GPU-other")) == 1

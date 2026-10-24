@@ -80,6 +80,12 @@ CAPTURE_SLOTS = 4
 CAP_REC = 6
 CAP_HEAD = 2
 CAP_FLAGS = CAP_HEAD + (CAPTURE_SLOTS + 1) * CAP_REC
+# The epoch field (cap_meta[1], which the checks copy into each record as it is when they run) holds the read
+# epoch in its high 32 bits and, when the server marks its model steps (ServeGuard.mark_step, before each step and
+# outside any CUDA graph: the vLLM plugin does), the step's number in its low 32 bits. A captured row then says
+# which step it came from, and the request that held that row in that step can be named.
+EPOCH_SHIFT = 32
+STEP_MASK = (1 << 32) - 1
 OP_SCHEMA = 2           # the check op's arguments (vllm_plugin keys its compile cache on it); 2: capture buffers
 
 
@@ -556,6 +562,13 @@ class ServeGuard:
         self._cap_w = max(128, int(block))         # values of y a captured block can hold
         self._epoch: dict = {}                     # device -> reads of its state so far (captures carry theirs)
         self._captures: list = []                  # captured rows read back before the alert they belong to
+        self._marked_step: Optional[int] = None    # the last step mark_step was told (None: steps aren't marked)
+        self._epoch_steps: dict = {}               # device -> {epoch: [first step, last step]} it covered
+        self._last_clean: dict = {}                # layer name -> [first, last] step of its last clean read
+        self._alerted: set = set()                 # layers that alerted before
+        # attribute(event): called with each alert before it is logged and sent on (the vLLM plugin names the
+        # requests the alert may concern); an exception in it is counted, never raised
+        self.attribute: Optional[Callable[[SDCEvent], None]] = None
         self._dropped = 0                          # rows the capture buffer had no room for, at the last read
         # exact_reductions: like the training guard, keep bf16/fp16 split-K partial sums in fp32 while
         # attached (the noise model assumes one rounding per output; PyTorch's default lets cuBLAS add
@@ -885,6 +898,10 @@ class ServeGuard:
             self._host.clear()
             self._cap.clear()
             self._epoch.clear()
+            self._epoch_steps.clear()
+            self._last_clean.clear()
+            self._alerted.clear()
+            self._marked_step = None
             self._captures.clear()
             self.worst_seen.clear()
             self.checks_seen.clear()
@@ -980,6 +997,23 @@ class ServeGuard:
                 self._host[dev] = (buf, ev, epoch)
         return events
 
+    def mark_step(self, step: int) -> None:
+        """The model step the work queued next belongs to: call it before each step, outside any CUDA graph (a
+        fill on each device's capture buffer, queued like the step's own work). Rows captured in that step carry
+        its number (EPOCH_SHIFT), and each read knows the steps it covers."""
+        step = int(step) & STEP_MASK
+        self._marked_step = step
+        for dev in set(self._state) | set(self._cap):
+            e = self._epoch.get(dev, 0)
+            cap = self._cap.get(dev)
+            if cap is not None:
+                cap[0][1:2].fill_((e << EPOCH_SHIFT) | step)
+            win = self._epoch_steps.setdefault(dev, {})
+            w = win.setdefault(e, [step, step])
+            w[1] = step
+            while len(win) > 256:
+                del win[min(win)]
+
     def _next_epoch(self, dev: torch.device, n: int) -> int:
         """After a read of a device's state: the epoch that read covers, which the rows captured during it carry.
         On the device, queued after the read like the state's reset: the epoch moves on, and every layer may
@@ -987,7 +1021,7 @@ class ServeGuard:
         e = self._epoch.get(dev, 0)
         cap = self._cap.get(dev)
         if cap is not None:
-            cap[0][1:2].add_(1)
+            cap[0][1:2].add_(1 << EPOCH_SHIFT)
             cap[0][CAP_FLAGS:CAP_FLAGS + n].zero_()
         self._epoch[dev] = e + 1
         return e
@@ -1007,8 +1041,10 @@ class ServeGuard:
         if not claimed:
             return mine
         data = cd[:kept].to("cpu") if kept else None
-        for i, (tag, row, blk, flat, zbits, epoch) in enumerate(
+        for i, (tag, row, blk, flat, zbits, raw) in enumerate(
                 head[CAP_HEAD:CAP_FLAGS].view(CAPTURE_SLOTS + 1, CAP_REC)[:kept].tolist()):
+            epoch = raw >> EPOCH_SHIFT
+            step = (raw & STEP_MASK) if self._marked_step is not None else None
             slot = tag // 2 - 1
             if not 0 <= slot < len(self.layers) or self.layers[slot]["device"] != dev:
                 continue
@@ -1018,7 +1054,7 @@ class ServeGuard:
             import struct
             mine.append({"device": dev, "slot": slot, "with_bias": bool(tag % 2), "row": row, "col_block": blk,
                          "flat": flat, "z": struct.unpack("<f", struct.pack("<I", zbits & 0xFFFFFFFF))[0],
-                         "epoch": epoch, "y": data[i, :self._cap_w].clone(),
+                         "epoch": epoch, "step": step, "y": data[i, :self._cap_w].clone(),
                          "x": data[i, self._cap_w:self._cap_w + cs.k].clone()})
         self.stats["captures_dropped"] += claimed - kept
         self._dropped = claimed - kept
@@ -1165,12 +1201,15 @@ class ServeGuard:
     def _report_rows(self, dev: torch.device, rows: list, out: list, epoch: Optional[int] = None) -> list[SDCEvent]:
         unreadable = None                         # slots whose weights can't be read back (for the first alert)
         caps = None                               # rows the checks captured (read at the first alert)
+        window = self._epoch_steps.get(dev, {}).get(epoch) if epoch is not None else None
         for slot, (zv, flat, noise) in enumerate(rows[:len(self.layers)]):
             lay = self.layers[slot]
             if lay["device"] == dev:
                 prev = self.worst_seen.get(lay["name"], 0.0)
                 self.worst_seen[lay["name"]] = zv if (zv != zv or zv > prev) else prev
             if not (zv > self.z):                 # also true for inf
+                if lay["device"] == dev and window is not None and zv == zv:
+                    self._last_clean[lay["name"]] = list(window)
                 continue
             cs = lay["cs"]
             blk_flat = int(flat) // 2
@@ -1218,6 +1257,8 @@ class ServeGuard:
                 self.stats["captured"] += 1
                 cap_info = {"row": cap["row"], "col_block": cap["col_block"], "with_bias": cap["with_bias"],
                             "z": cap["z"]}
+                if cap.get("step") is not None:
+                    cap_info["step"] = cap["step"]
                 try:
                     recheck = self._recheck(slot, cap, changed, unreadable.get(slot), rewritten)
                 except Exception as e:  # noqa: BLE001
@@ -1264,9 +1305,18 @@ class ServeGuard:
                                   "capture_missing": (None if cap is not None else
                                                       f"the capture buffer was full ({self._dropped} rows not kept)"
                                                       if self._dropped else "no row was captured for this alert"),
-                                  "reading": reading},
+                                  "reading": reading,
+                                  "read_window_steps": list(window) if window is not None else None,
+                                  "last_clean_read_steps": self._last_clean.get(lay["name"]),
+                                  "first_alert_for_layer": lay["name"] not in self._alerted},
                           identity=dict(self._identity[key]))
+            self._alerted.add(lay["name"])
             self.stats["alerts"] += 1
+            if self.attribute is not None:
+                try:
+                    self.attribute(ev)
+                except Exception:  # noqa: BLE001  (naming requests is extra; the alert itself goes out)
+                    self.stats["attribution_errors"] = self.stats.get("attribution_errors", 0) + 1
             self.log.add(ev)
             out.append(ev)
         if caps:

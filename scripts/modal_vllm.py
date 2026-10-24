@@ -13,6 +13,7 @@
                                                       # H100s, 0.31 on 1, at once: about 15 min each, about $5
     modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
     modal run scripts/modal_vllm.py --phase serve_tp2  # the 2-GPU server check alone: about 10 min, about $1.60
+    modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 40 min, $3-4
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -419,6 +420,33 @@ def serve031(force: bool = False, source: Optional[dict] = None) -> str:
     return _serve("serve031", 1, force, source, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=60 * 60)
+def ready_attrib(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_ready_attrib_check.py: `sdcguard ready`'s verdicts and the requests alerts name, on a real
+    `vllm serve` (vLLM 0.32, one H100)."""
+    t0 = time.monotonic()
+    tag = "ready_attrib"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_ready_attrib_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=55 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 # INT4 on another GPU than the H100: on an L4 (sm89) vLLM has no Machete and runs Marlin by itself, with other
 # shapes of its kernels than the H100's
 QUANT_L4_RUNS = (
@@ -488,6 +516,9 @@ ESTIMATES = {
                  "limit, at most about $7.30)",
     "quant_l4": "INT4 on Marlin on 1 L4, two 1.5B models: about 20 minutes, roughly $0.50 (60-minute limit, at most "
                 "about $1.50)",
+    "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, three server "
+                    "starts): about 35 to 45 minutes, roughly $3 to $4 (60-minute limit, at most about $4.90 at "
+                    "requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -548,6 +579,11 @@ def main(phase: str = "vllm", force: bool = False):
                     failures.append(str(message))
         elif phase == "serve_tp2":
             message = serve032_tp2.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "ready_attrib":
+            message = ready_attrib.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

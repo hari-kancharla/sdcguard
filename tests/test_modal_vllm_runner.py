@@ -311,3 +311,13 @@ def test_the_2_gpu_server_check_runs_alone_and_fails_on_a_nonzero_exit(runner, m
     monkeypatch.setattr(runner, "serve032_tp2", _remote("serve032_tp2: exit code 1 in 4.8 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("serve_tp2")
+
+
+def test_the_readiness_and_attribution_check_runs_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "ready_attrib", _remote("ready_attrib: exit code 0 in 41.0 minutes"))
+    runner.main("ready_attrib")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "ready_attrib", _remote("ready_attrib: exit code 1 in 39.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("ready_attrib")

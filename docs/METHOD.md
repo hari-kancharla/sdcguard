@@ -1540,6 +1540,46 @@ $1.50.
   on the H100) the fixed cost of each check is a large share of the step, so these step times are an upper end,
   not what a large model pays. The default check runs every 10th step unless told otherwise.
 
+### Verifiable protection status and the requests an alert concerns (written October 24, before any run)
+
+Two things the vLLM plugin couldn't show until now. First, whether a server is protected right now, asked from
+outside: the plugin's SDCGUARD_REQUIRE can't report its own absence when it never loads (vLLM's loader logs and
+skips a plugin that fails to import). `sdcguard ready` reads every GPU worker's sdcguard metrics twice, a few
+seconds apart, and says PROTECTED, NOT PROTECTED or INCONCLUSIVE (its docstring has the rules; it says
+INCONCLUSIVE when checks didn't go up and there are no vLLM metrics to show the server was idle). Second, which
+requests an alert concerns: before each model step the plugin writes the step's number into the capture
+buffer's epoch field (`ServeGuard.mark_step`; the check kernels copy that field into a captured row as it is when
+they run, so no kernel changed), and after each step it keeps the step's request ids in batch order with the rows
+each held. An alert keeps three answers apart: the directly implicated request (the one that held the captured
+row in its step; none for a CUDA-graph padding row, unknown without a captured row); the potentially exposed ones
+(every request in the steps its read covered, and every request since the layer's last clean read, which a
+persistent fault such as a changed weight concerns; a conservative window, not a proof of harm); and what neither
+covers (state that outlives the window, such as prefix-cache blocks, and what the checks don't cover).
+
+`experiments/vllm_ready_attrib_check.py` (`modal run scripts/modal_vllm.py --phase ready_attrib`, vLLM 0.32.0,
+Qwen2.5-1.5B-Instruct, one H100, three server starts, about 40 minutes and $3 to $4) runs the scenarios in its
+docstring. Criteria:
+1. `sdcguard ready`, 3 times each: PROTECTED while the guarded server serves (with --vllm) and while it is idle
+   (with --vllm); INCONCLUSIVE when it is idle without --vllm; NOT PROTECTED when its result reads have stopped
+   while it serves, when vLLM never loaded the plugin (VLLM_PLUGINS naming no installed plugin, with SDCGUARD=1
+   and SDCGUARD_REQUIRE=1 set), when SDCGUARD=0, and after the server stopped. 21 of 21 as expected, and no
+   PROTECTED in any of the 15 asked where the server wasn't protected or that couldn't be told.
+2. Five times, each in its own layer: one request alone, a weight bit flipped during its decoding and flipped
+   back: at least one alert for that layer gives exactly that request as directly implicated, with exact
+   attribution, none gives another request (an alert on a CUDA-graph padding row gives none and says so), and the
+   requests since the layer's last clean read include it. 5 of 5.
+3. A bit flipped while 32 requests run 8 at a time, flipped back after them: at least one alert; every request an
+   alert gives as directly implicated is one of the 32; the requests since the last clean read include all 32.
+4. The 64 one-at-a-time completions of the guarded server, before any flip, are identical to the SDCGUARD=0
+   server's.
+This is narrower than the rule the October 24 plan wrote (at least ten injected row-level faults at known steps and
+rows): a fault in one row of one step can't be placed from outside a server whose model runs in CUDA graphs. A
+request alone in the batch-of-1 graph is the case where the true request is known without trusting the mapping
+under test; the mapping itself (rows to requests by the scheduler's token counts, in the runner's batch order) is
+tested on stand-ins on the CPU (`tests/test_request_attribution.py`). Not covered by this run: microbatching
+(dual-batch overlap) and sequence parallelism, where the plugin says attribution is unavailable, and speculative
+decoding.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in
