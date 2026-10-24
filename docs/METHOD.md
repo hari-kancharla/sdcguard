@@ -1465,6 +1465,24 @@ with other shapes of its kernels. About 20 minutes, about $0.50.
   serving: vLLM 0.32 reduces across GPUs with FlashInfer's fused all-reduce, which JIT-compiles with nvcc, and the
   image (vLLM installed with pip) has none. The image now sets VLLM_ALLREDUCE_USE_FLASHINFER=0 (vLLM's own
   all-reduce), and `--phase serve_tp2` reruns this one under the same criteria.
+- vLLM 0.32.0 on two H100s again, with VLLM_ALLREDUCE_USE_FLASHINFER=0 (code fingerprint f1664ae2b079, commit
+  1143f4d, 6.4 minutes, about $1.03 of function time; the first attempt's results are kept as
+  `serve032_tp2_before_20261023_201503`): every criterion met. The guarded server started and served under
+  SDCGUARD_REQUIRE=1; 64 of 64 one-at-a-time completions the same as the plain server's; 112 layers checked on
+  each of the two workers, none never checked, results read back; no alert in clean traffic; the alert naming
+  `model.layers.10.mlp.down_proj` came from both workers (the bit was flipped in each worker's shard) while the
+  requests after the flip were still being sent, and the metrics counted it; the servers exited in 4.1 s (plain)
+  and 0.6 s (guarded) after SIGINT. Reported, against the plain server, every layer checked:
+
+  | requests at a time | output tokens/s | request latency p50 / p99 | time to first token p50 |
+  |---|---|---|---|
+  | 1 | -35.7% | +55.4% / +51.4% | +12.3% |
+  | 16 | -34.5% | +52.8% / +51.4% | -7.3% |
+  | 256 | -16.7% | +28.3% / +21.0% | +0.1% |
+
+  At 256 requests at a time the cost is larger than on one GPU (-10.1%): each worker's matmuls are half as large
+  with two GPUs, while the check's fixed cost per layer (the serving kernel section) stays the same, so it is a
+  larger share of each step. That explanation fits the numbers but wasn't measured separately.
 - INT4 on an L4 (17.2 minutes, about $0.41): criteria 1 to 5 met on both 1.5B models, on Marlin (vLLM's own
   choice there): 112 layers ran checks, 64 of 64 completions the same as the baseline and as untouched vLLM, no
   clean alert (worst 2.37), the flipped scale named. Every layer cost 12% to 15% of throughput at 256 requests at a
@@ -1491,6 +1509,36 @@ experimental; if not, it stays experimental and the result is written here.
 Then the paired comparison written on October 19 ("The default check and precise mode on the same matmuls"),
 unchanged, which hasn't run yet: `modal run scripts/modal_mode_compare.py`, an H100, an A100 and an L4, about
 $1.50.
+
+**What the runs found (October 23).** Code fingerprint 9c9e05a04892 (commit cffa950),
+[results/fused_soak](../results/fused_soak), [results/mode_compare](../results/mode_compare).
+
+- The long clean run: every criterion met on both GPUs. H100: 46,149 training steps in 40 minutes, 4,568,751
+  fused checks, no alarm, none unjudged, a score read back for every one, all in the fused kernel (no fallback),
+  worst clean score 2.67 (the alarm line is 6). L4: 6,196 steps, 613,404 fused checks, the same zeros, worst 3.32.
+  Scores, H100: 3,674,400 below 0.5, 753,823 from 0.5 to 1, 132,385 from 1 to 1.5, 7,698 from 1.5 to 2, 431 from
+  2 to 2.5, 14 from 2.5 to 3, none from 3. L4: 508,777, 50,162, 42,370, 10,130, 1,869, 92, and 4 from 3 to 3.5.
+  About $2.93 (H100) and $0.83 (L4) of function time. As written above, the fused check is now supported for
+  training on this record (5.2 million clean checks on two GPU types, one model shape), no longer experimental.
+  Its cost per step was not measured by this run.
+- The paired comparison (mode_compare's own code digest 17c41a10c789; its "precise mode" is `precise=True`, the
+  PyTorch fp32 path, not the fused kernel): reported as fixed on October 19, with no pass line. 594 corrupted
+  matmuls per error size on each GPU, 198 clean ones.
+
+  | | H100 | A100 80GB | L4 |
+  |---|---|---|---|
+  | error size flagged half the time: default / precise | 29% / 0.71% | 29% / 0.92% | 29% / 0.92% |
+  | flagged 9 times in 10: default / precise | 78% / 2.4% | 78% / 2.4% | 78% / 2.4% |
+  | clean false alarms, default / precise (worst score) | 0 (2.27) / 0 (0.52) | 0 (2.11) / 0 (0.73) | 0 (2.13) / 0 (0.25) |
+  | unjudged checks | 0 | 0 | 0 |
+  | step time unchecked; default check / precise mode, every step | 0.0282 s; +58.5% / +525.9% | 0.0558 s; +31.4% / +337.6% | 0.268 s; +8.1% / +258.4% |
+
+  Error sizes are relative to a typical output of the 128-column block, added before rounding to bf16; among
+  errors that changed the bf16 output the crossings are the same to two digits. Below about 0.1% most injected
+  errors didn't change the bf16 output at all (39% to 43% did at 0.1%). The default check needs an error of about
+  30% of a typical output to flag it half the time; precise mode about 1%. On this small model (0.03 s per step
+  on the H100) the fixed cost of each check is a large share of the step, so these step times are an upper end,
+  not what a large model pays. The default check runs every 10th step unless told otherwise.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

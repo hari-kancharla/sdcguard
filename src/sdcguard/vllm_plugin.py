@@ -197,6 +197,14 @@ def _guard(device: Optional[torch.device] = None):
             log.warning("sdcguard: webhook setup failed (%s); alerts still go to the log", e)
             g = ServeGuard(**kw)
         _STATE["guard"] = g
+        if metrics is not None:               # who and how, for `sdcguard ready` (checks from outside)
+            try:
+                from .events import device_identity
+                uuid = device_identity(device).get("gpu_uuid") if device is not None and device.type == "cuda" \
+                    else None
+                metrics.identify(uuid, kw["z"], _share(os.environ.get("SDCGUARD_SHARE", "1")))
+            except Exception as e:  # noqa: BLE001
+                log.warning("sdcguard: couldn't publish sdcguard_protection_info (%s)", e)
         _exit_hooks()
         # NVIDIA's listed cuBLAS issues that apply to this GPU: logged here, with the first layer's weights on the
         # worker's own GPU, not in register(). register() also runs in vLLM's front-end process, where initializing

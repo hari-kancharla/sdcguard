@@ -8,8 +8,12 @@ the fingerprint alone does not identify its cause. This can expose differences
 in any covered op (norms, attention, MoE routing), not just matmuls. Same idea as phase 1 of
 ByteDance's SDCHunter (OSDI '26).
 
-Some GPU kernels aren't bit-for-bit deterministic, so comparisons use a relative
-tolerance (`tol`, 0 = exact).
+With `tol=0` (the default) each layer call's fingerprint is of its output's raw bits: the three
+position-weighted sums of `recompute.fingerprint`, with the output's dtype and shape. Two outputs that differ in
+one value always disagree, and so do swapped values and changes that add up to zero (but for a coincidence of
+about 2^-48 per sum). Some GPU kernels aren't bit-for-bit deterministic; for them `tol` > 0 compares the sum and
+the sum of |values| of each output within that relative tolerance instead, which can't see swapped values or
+changes that cancel in both sums.
 """
 from __future__ import annotations
 
@@ -19,6 +23,31 @@ import torch
 import torch.distributed as dist
 
 from .events import suspect_event
+
+# dtypes in a fixed order, for the fingerprint's dtype column (a dtype not listed gets -1, still compared)
+_DTYPES = (torch.float32, torch.float16, torch.bfloat16, torch.float64, torch.int64, torch.int32, torch.int16,
+           torch.int8, torch.uint8, torch.bool, torch.complex64, torch.complex128)
+_PAD = torch.iinfo(torch.int64).min      # a missing layer call in an exact fingerprint (no real row has it)
+_MASK = (1 << 64) - 1
+
+
+def _shape_code(shape) -> int:
+    """The shape folded into one signed 64-bit integer (splitmix64's mixing after each dimension)."""
+    z = 0x9E3779B97F4A7C15 * (len(shape) + 1) & _MASK
+    for d in shape:
+        z = (z ^ (int(d) + 0x632BE59BD9B4E019)) & _MASK
+        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & _MASK
+        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & _MASK
+        z ^= z >> 31
+    return z - (1 << 64) if z >= 1 << 63 else z
+
+
+def exact_row(t: torch.Tensor) -> torch.Tensor:
+    """(6,) int64 on the CPU: the three raw-bit sums of recompute.fingerprint, the dtype's place in _DTYPES (-1 if
+    not there), the number of elements and the shape's code."""
+    from .recompute import fingerprint
+    meta = [_DTYPES.index(t.dtype) if t.dtype in _DTYPES else -1, t.numel(), _shape_code(t.shape)]
+    return torch.cat([fingerprint(t).cpu(), torch.tensor(meta, dtype=torch.int64)])
 
 
 class Canary:
@@ -34,16 +63,21 @@ class Canary:
 
     @torch.no_grad()
     def fingerprints(self, batch) -> torch.Tensor:
-        """(layer calls, 2) float64: [sum, sum of |x|] of each layer's output, in execution order."""
+        """One row per layer call, in execution order. tol 0: (calls, 6) int64, exact_row of each layer's output.
+        tol > 0: (calls, 2) float64, [sum, sum of |x|]."""
         rows, names = [], []
         hooks = []
+        exact = self.tol == 0
         for name, mod in self.modules:
             def hook(_m, _inp, out, name=name):
                 t = out[0] if isinstance(out, (tuple, list)) else out
                 if isinstance(t, torch.Tensor):
-                    acc = torch.float32 if t.device.type == "mps" else torch.float64  # no fp64 on Apple GPUs
-                    tt = t.detach().to(acc)
-                    rows.append(torch.stack([tt.sum(), tt.abs().sum()]).double().cpu())
+                    if exact:
+                        rows.append(exact_row(t.detach()))
+                    else:
+                        acc = torch.float32 if t.device.type == "mps" else torch.float64  # no fp64 on Apple GPUs
+                        tt = t.detach().to(acc)
+                        rows.append(torch.stack([tt.sum(), tt.abs().sum()]).double().cpu())
                     names.append(name)
             hooks.append(mod.register_forward_hook(hook))
         # A model can deliberately mix training and eval modules (frozen BatchNorm, teacher branches).
@@ -58,9 +92,13 @@ class Canary:
             for h in hooks:
                 h.remove()
         self.last_names = names
-        return torch.stack(rows) if rows else torch.empty(0, 2, dtype=torch.float64)
+        if rows:
+            return torch.stack(rows)
+        return torch.empty(0, 6, dtype=torch.int64) if exact else torch.empty(0, 2, dtype=torch.float64)
 
     def _agree(self, a: torch.Tensor, b: torch.Tensor) -> bool:
+        if not a.is_floating_point() or not b.is_floating_point():   # exact fingerprints: every word equal
+            return a.dtype == b.dtype and a.shape == b.shape and bool((a == b).all())
         both_nan = torch.isnan(a) & torch.isnan(b)
         if bool(((a == b) | both_nan).all()):
             return True
@@ -84,7 +122,8 @@ class Canary:
         dist.all_reduce(n, op=dist.ReduceOp.MAX, group=group)
         n = int(n)
         if fp.shape[0] < n:   # a rank whose model took a different path: pad, the rows will disagree
-            fp = torch.cat([fp, torch.full((n - fp.shape[0], 2), float("inf"), dtype=fp.dtype)])
+            pad = _PAD if not fp.is_floating_point() else float("inf")
+            fp = torch.cat([fp, torch.full((n - fp.shape[0], fp.shape[1]), pad, dtype=fp.dtype)])
         fp = fp.to(comm_dev)
         world = dist.get_world_size(group)
         gathered = [torch.empty_like(fp) for _ in range(world)]

@@ -34,7 +34,8 @@ Costs assume requested resources. Higher CPU/memory usage, startup/idle time and
 charges; the roughly $6 of requested resources for a run that uses the whole limit is not a spending cap.
 
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
-hard time limit, and a phase won't start again within an hour of its last start unless you pass --force.
+hard time limit, and a phase won't start again within an hour and a half of its last start unless you pass
+--force.
 A new run never deletes an earlier one: the earlier folder is renamed vllm_before_<time>. STATUS.json records the
 code fingerprint the run used, its exit codes, its measured minutes and the cost those minutes imply at the rates
 above (Modal's usage page has the billed amount).

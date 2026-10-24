@@ -121,7 +121,8 @@ def test_canary_includes_a_root_leaf_layer():
     layer = torch.nn.Linear(8, 4, bias=False)
     canary = Canary(layer)
     result = canary.fingerprints(torch.ones(2, 8))
-    assert result.shape == (1, 2) and canary.last_names == ["Linear"]
+    assert result.shape == (1, 6) and result.dtype == torch.int64 and canary.last_names == ["Linear"]
+    assert Canary(layer, tol=1e-3).fingerprints(torch.ones(2, 8)).shape == (1, 2)
 
 
 @pytest.mark.parametrize("raise_in_forward", [False, True])

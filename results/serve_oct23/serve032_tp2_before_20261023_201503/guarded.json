@@ -1,0 +1,13 @@
+{
+ "role": "guarded",
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "tp": 2,
+ "ready": false,
+ "ready_s": 183.1,
+ "exit_code": 1,
+ "stop": {
+  "exited_in_s": 0.0,
+  "killed": false,
+  "code": 1
+ }
+}

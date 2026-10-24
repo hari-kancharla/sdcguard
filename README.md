@@ -104,6 +104,17 @@ memory) and rechecks them in float64 on the CPU, so the alert tells you whether 
 Those evidence files hold real rows of your inputs and of the layer's weights: treat them like your data, and
 don't attach them to a public issue unless you're fine sharing them.
 
+If the plugin fails to load, vLLM serves without it, and the plugin can't report its own absence. So check from
+outside. Give each GPU worker a metrics port, then ask:
+
+```bash
+SDCGUARD=1 SDCGUARD_REQUIRE=1 SDCGUARD_METRICS_PORT=9400 vllm serve Qwen/Qwen2.5-7B-Instruct --tensor-parallel-size 2
+sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics
+```
+
+It says PROTECTED only if every worker answers, checks its layers, has read results back, and ran checks while
+vLLM produced tokens. It works as a Kubernetes readiness probe (give the probe more time than its 5-second window).
+
 For any other PyTorch model there's `ServeGuard().attach(model, share=0.125)`.
 
 ## Across a fleet

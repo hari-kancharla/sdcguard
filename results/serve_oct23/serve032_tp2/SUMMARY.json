@@ -1,16 +1,104 @@
 {
  "model": "Qwen/Qwen2.5-1.5B-Instruct",
  "tp": 2,
- "same_one_at_a_time": "None/64",
- "layers_checked_per_worker": [],
+ "same_one_at_a_time": "64/64",
+ "layers_checked_per_worker": [
+  112.0,
+  112.0
+ ],
  "alerts_clean": 0,
- "alert_after_flip_s": null,
- "flip": null,
- "load": [],
+ "alert_after_flip_s": 0.0,
+ "flip": {
+  "status": 200,
+  "results": [
+   "model.layers.10.mlp.down_proj",
+   "model.layers.10.mlp.down_proj"
+  ]
+ },
+ "load": [
+  {
+   "at_once": 1,
+   "requests": 16,
+   "plain": {
+    "output_tokens_per_s": 480.7,
+    "ttft_p50_ms": 10.6,
+    "ttft_p90_ms": 11.3,
+    "ttft_p99_ms": 24.5,
+    "latency_p50_ms": 266.8,
+    "latency_p90_ms": 267.3,
+    "latency_p99_ms": 276.2
+   },
+   "guarded": {
+    "output_tokens_per_s": 309.0,
+    "ttft_p50_ms": 11.9,
+    "ttft_p90_ms": 12.8,
+    "ttft_p99_ms": 19.7,
+    "latency_p50_ms": 414.6,
+    "latency_p90_ms": 415.6,
+    "latency_p99_ms": 418.1
+   },
+   "throughput_change_pct": -35.72,
+   "latency_p50_change_pct": 55.4,
+   "latency_p99_change_pct": 51.38,
+   "ttft_p50_change_pct": 12.26,
+   "ttft_p99_change_pct": -19.59
+  },
+  {
+   "at_once": 16,
+   "requests": 128,
+   "plain": {
+    "output_tokens_per_s": 6544.5,
+    "ttft_p50_ms": 28.9,
+    "ttft_p90_ms": 35.6,
+    "ttft_p99_ms": 37.3,
+    "latency_p50_ms": 311.9,
+    "latency_p90_ms": 318.4,
+    "latency_p99_ms": 320.8
+   },
+   "guarded": {
+    "output_tokens_per_s": 4289.9,
+    "ttft_p50_ms": 26.8,
+    "ttft_p90_ms": 35.3,
+    "ttft_p99_ms": 39.3,
+    "latency_p50_ms": 476.6,
+    "latency_p90_ms": 481.4,
+    "latency_p99_ms": 485.8
+   },
+   "throughput_change_pct": -34.45,
+   "latency_p50_change_pct": 52.81,
+   "latency_p99_change_pct": 51.43,
+   "ttft_p50_change_pct": -7.27,
+   "ttft_p99_change_pct": 5.36
+  },
+  {
+   "at_once": 256,
+   "requests": 256,
+   "plain": {
+    "output_tokens_per_s": 19954.7,
+    "ttft_p50_ms": 385.9,
+    "ttft_p90_ms": 1162.2,
+    "ttft_p99_ms": 1206.0,
+    "latency_p50_ms": 1087.4,
+    "latency_p90_ms": 1499.4,
+    "latency_p99_ms": 1510.9
+   },
+   "guarded": {
+    "output_tokens_per_s": 16629.8,
+    "ttft_p50_ms": 386.1,
+    "ttft_p90_ms": 1356.3,
+    "ttft_p99_ms": 1385.1,
+    "latency_p50_ms": 1395.0,
+    "latency_p90_ms": 1593.4,
+    "latency_p99_ms": 1827.4
+   },
+   "throughput_change_pct": -16.66,
+   "latency_p50_change_pct": 28.29,
+   "latency_p99_change_pct": 20.95,
+   "ttft_p50_change_pct": 0.05,
+   "ttft_p99_change_pct": 14.85
+  }
+ ],
  "vllm": "0.32.0",
- "passed": false,
- "failures": [
-  "1: the guarded server didn't start (exit code 1)",
-  "the plain server didn't start (exit code 1)"
- ]
+ "passed": true,
+ "failures": []
 }

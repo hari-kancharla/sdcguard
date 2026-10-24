@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import threading
 import time
 import urllib.request
@@ -196,6 +197,8 @@ class Metrics:
     sdcguard_unjudged_checksums_total       checksums that couldn't be judged (not evidence of a clean result)
     sdcguard_reads_total                    times results were read back
     sdcguard_last_read_timestamp_seconds    when (a stale value means checks stopped being read)
+    sdcguard_protection_info{UUID,pid,version,z,share}  1: which GPU and process this is, and how it checks
+                                            (for `sdcguard ready`, which checks the server from outside)
     """
 
     def __init__(self, port: Optional[int] = None, registry=None, addr: str = "0.0.0.0"):
@@ -223,10 +226,22 @@ class Metrics:
         self.unjudged = Counter("sdcguard_unjudged_checksums", "Checksums that couldn't be judged", registry=r)
         self._seen: dict = {}                     # id(guard) -> (checks executed, unjudged) already exported
         self.last = Gauge("sdcguard_last_read_timestamp_seconds", "When results were last read back", registry=r)
+        self.info = Gauge("sdcguard_protection_info", "Which GPU and process this is, and how it checks (value 1)",
+                          ["UUID", "pid", "version", "z", "share"], registry=r)
         self.port = None
         if port is not None:
             start_http_server(int(port), addr=addr, registry=r)
             self.port = int(port)
+
+    def identify(self, uuid: Optional[str], z: float, share: float) -> None:
+        """Set sdcguard_protection_info (once per process: a second call replaces the first)."""
+        from . import __version__
+        try:
+            self.info.clear()
+        except AttributeError:
+            pass
+        self.info.labels(UUID=str(uuid or ""), pid=str(os.getpid()), version=__version__, z=f"{float(z):g}",
+                         share=f"{float(share):g}").set(1)
 
     def layer_report(self, report: dict) -> None:
         """The vLLM plugin's count of its model's linear layers (vllm_plugin.layer_report)."""

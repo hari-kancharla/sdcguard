@@ -1,0 +1,1226 @@
+{
+  "label": "a100_80gb",
+  "sizes": [
+    1e-06,
+    3e-06,
+    1e-05,
+    3e-05,
+    0.0001,
+    0.0003,
+    0.001,
+    0.003,
+    0.01,
+    0.03,
+    0.1,
+    0.3,
+    1.0
+  ],
+  "trials": [
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594,
+    594
+  ],
+  "matmuls": 198,
+  "matmuls_not_2d": 0,
+  "matmuls_capped": 0,
+  "trials_skipped_scale": 0,
+  "changed_trials": [
+    2,
+    2,
+    4,
+    15,
+    50,
+    106,
+    245,
+    438,
+    585,
+    594,
+    594,
+    594,
+    594
+  ],
+  "changed_bf16_output": [
+    0.003367003367003367,
+    0.003367003367003367,
+    0.006734006734006734,
+    0.025252525252525252,
+    0.08417508417508418,
+    0.17845117845117844,
+    0.41245791245791247,
+    0.7373737373737373,
+    0.9848484848484849,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+  ],
+  "clean": {
+    "default": {
+      "checks": 198,
+      "false_alarms": 0,
+      "unjudged": 0,
+      "worst_z": 2.1138691902160645
+    },
+    "precise": {
+      "checks": 198,
+      "false_alarms": 0,
+      "unjudged": 0,
+      "worst_z": 0.7305991053581238
+    }
+  },
+  "dtype": "bfloat16",
+  "config": {
+    "vocab": 32000,
+    "layers": 8,
+    "width": 1024,
+    "heads": 16,
+    "seq": 512,
+    "batch": 8,
+    "seed": 11,
+    "steps": 2,
+    "trials": 3
+  },
+  "seconds_sensitivity": 34.0,
+  "guard_stats": {
+    "matmuls_seen": 198,
+    "checked": 198,
+    "checked_fp32": 198,
+    "unjudged": 0,
+    "skipped_dtype": 0,
+    "skipped_oom": 0,
+    "alerts": 0,
+    "attention_checked": 0,
+    "attention_skipped": 0,
+    "recompute_compared": 0,
+    "recompute_mismatches": 0,
+    "recompute_steps_without_blocks": 0,
+    "replica_checks": 0,
+    "replica_mismatches": 0,
+    "replica_skipped": 0
+  },
+  "default": {
+    "flagged": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.5185185185185185,
+      1.0
+    ],
+    "flagged_count": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      308,
+      594
+    ],
+    "flagged_changed_count": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      308,
+      594
+    ],
+    "flagged_ci95": [
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.4783,
+        0.5585
+      ],
+      [
+        0.9936,
+        1.0
+      ]
+    ],
+    "flagged_among_changed": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.5185185185185185,
+      1.0
+    ],
+    "flagged_among_changed_ci95": [
+      [
+        0.0,
+        0.6576
+      ],
+      [
+        0.0,
+        0.6576
+      ],
+      [
+        0.0,
+        0.4899
+      ],
+      [
+        0.0,
+        0.2039
+      ],
+      [
+        0.0,
+        0.0714
+      ],
+      [
+        0.0,
+        0.035
+      ],
+      [
+        0.0,
+        0.0154
+      ],
+      [
+        0.0,
+        0.0087
+      ],
+      [
+        0.0,
+        0.0065
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.4783,
+        0.5585
+      ],
+      [
+        0.9936,
+        1.0
+      ]
+    ],
+    "unjudged": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "half_caught_at": 0.29,
+    "most_caught_at": 0.78,
+    "half_caught_at_among_changed": 0.29,
+    "most_caught_at_among_changed": 0.78
+  },
+  "precise": {
+    "flagged": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.04377104377104377,
+      0.5336700336700336,
+      0.98989898989899,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "flagged_count": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      26,
+      317,
+      588,
+      594,
+      594,
+      594
+    ],
+    "flagged_changed_count": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      17,
+      311,
+      588,
+      594,
+      594,
+      594
+    ],
+    "flagged_ci95": [
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.0,
+        0.0064
+      ],
+      [
+        0.03,
+        0.0634
+      ],
+      [
+        0.4935,
+        0.5734
+      ],
+      [
+        0.9781,
+        0.9954
+      ],
+      [
+        0.9936,
+        1.0
+      ],
+      [
+        0.9936,
+        1.0
+      ],
+      [
+        0.9936,
+        1.0
+      ]
+    ],
+    "flagged_among_changed": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.03881278538812785,
+      0.5316239316239316,
+      0.98989898989899,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "flagged_among_changed_ci95": [
+      [
+        0.0,
+        0.6576
+      ],
+      [
+        0.0,
+        0.6576
+      ],
+      [
+        0.0,
+        0.4899
+      ],
+      [
+        0.0,
+        0.2039
+      ],
+      [
+        0.0,
+        0.0714
+      ],
+      [
+        0.0,
+        0.035
+      ],
+      [
+        0.0,
+        0.0154
+      ],
+      [
+        0.0244,
+        0.0613
+      ],
+      [
+        0.4911,
+        0.5717
+      ],
+      [
+        0.9781,
+        0.9954
+      ],
+      [
+        0.9936,
+        1.0
+      ],
+      [
+        0.9936,
+        1.0
+      ],
+      [
+        0.9936,
+        1.0
+      ]
+    ],
+    "unjudged": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "half_caught_at": 0.0092,
+    "most_caught_at": 0.024,
+    "half_caught_at_among_changed": 0.0093,
+    "most_caught_at_among_changed": 0.024
+  },
+  "by_layer_and_pass": {
+    "down backward dW": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.22916666666666666,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "down backward dX": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.6666666666666666,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0625,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "down forward": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.22916666666666666,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head backward dW": {
+      "trials": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3333333333333333,
+        0.8333333333333334,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head backward dX": {
+      "trials": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "head forward": {
+      "trials": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3333333333333333,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "proj backward dW": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3958333333333333,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1875,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "proj backward dX": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.75,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.125,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "proj forward": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.7291666666666666,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.14583333333333334,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "qkv backward dW": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.375,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.2708333333333333,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "qkv backward dX": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.5625,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9166666666666666,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "qkv forward": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.75,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.041666666666666664,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "up backward dW": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3333333333333333,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "up backward dX": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.3541666666666667,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    "up forward": {
+      "trials": [
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48,
+        48
+      ],
+      "default": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.7916666666666666,
+        1.0
+      ],
+      "precise": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.08333333333333333,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ]
+    }
+  },
+  "complete": true,
+  "incomplete_reasons": [],
+  "interval_scope": "Nominal 95% Wilson intervals for sampled positions in these fixed matmuls. Matmuls have different detection probabilities; these are not uncertainty bounds for new training runs, models, hardware faults or the whole sensitivity curve.",
+  "device": "cuda",
+  "torch": "2.14.1+cu130",
+  "code_sha256": "17c41a10c789d1d04f366c556f25cc59d8fe1d8bb2e76a57d1ae5e6c6bf79b15",
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "cc": [
+    8,
+    0
+  ],
+  "overhead_status": "complete",
+  "overhead": {
+    "seconds_per_step": {
+      "unchecked": 0.0558,
+      "default check, every step": 0.0733,
+      "precise mode, every step": 0.2442
+    },
+    "overhead_pct": {
+      "default check, every step": 31.4,
+      "precise mode, every step": 337.6
+    }
+  },
+  "markdown": "# Default check vs precise mode, same matmuls (NVIDIA A100-SXM4-80GB)\n\nCode 17c41a10c789, torch 2.14.1+cu130. 198 linear-layer matmuls (forward, dX, dW) of 2 training steps, 3 random outputs each, so 594 corrupted matmuls per error size. An error is relative to a typical output of its 128-column block, added before rounding to bfloat16.\n\n| error size | default check flags | precise mode flags | changed the bfloat16 output |\n|---|---|---|---|\n| 0.0001% | 0% | 0% | 0% |\n| 0.0003% | 0% | 0% | 0% |\n| 0.001% | 0% | 0% | 1% |\n| 0.003% | 0% | 0% | 3% |\n| 0.01% | 0% | 0% | 8% |\n| 0.03% | 0% | 0% | 18% |\n| 0.1% | 0% | 0% | 41% |\n| 0.3% | 0% | 4% | 74% |\n| 1% | 0% | 53% | 98% |\n| 3% | 0% | 99% | 100% |\n| 10% | 0% | 100% | 100% |\n| 30% | 52% | 100% | 100% |\n| 100% | 100% | 100% | 100% |\n\nNominal 95% Wilson intervals for sampled positions in these fixed matmuls. Matmuls have different detection probabilities; these are not uncertainty bounds for new training runs, models, hardware faults or the whole sensitivity curve.\nIntervals across error sizes share the same injected positions and do not form a simultaneous band.\n| error size | trials | changed trials | default 95% | precise 95% | default 95%, changed | precise 95%, changed |\n|---|---|---|---|---|---|---|\n| 0.0001% | 594 | 2 | [0%, 1%] | [0%, 1%] | [0%, 66%] | [0%, 66%] |\n| 0.0003% | 594 | 2 | [0%, 1%] | [0%, 1%] | [0%, 66%] | [0%, 66%] |\n| 0.001% | 594 | 4 | [0%, 1%] | [0%, 1%] | [0%, 49%] | [0%, 49%] |\n| 0.003% | 594 | 15 | [0%, 1%] | [0%, 1%] | [0%, 20%] | [0%, 20%] |\n| 0.01% | 594 | 50 | [0%, 1%] | [0%, 1%] | [0%, 7%] | [0%, 7%] |\n| 0.03% | 594 | 106 | [0%, 1%] | [0%, 1%] | [0%, 4%] | [0%, 4%] |\n| 0.1% | 594 | 245 | [0%, 1%] | [0%, 1%] | [0%, 2%] | [0%, 2%] |\n| 0.3% | 594 | 438 | [0%, 1%] | [3%, 6%] | [0%, 1%] | [2%, 6%] |\n| 1% | 594 | 585 | [0%, 1%] | [49%, 57%] | [0%, 1%] | [49%, 57%] |\n| 3% | 594 | 594 | [0%, 1%] | [98%, 100%] | [0%, 1%] | [98%, 100%] |\n| 10% | 594 | 594 | [0%, 1%] | [99%, 100%] | [0%, 1%] | [99%, 100%] |\n| 30% | 594 | 594 | [48%, 56%] | [99%, 100%] | [48%, 56%] | [99%, 100%] |\n| 100% | 594 | 594 | [99%, 100%] | [99%, 100%] | [99%, 100%] | [99%, 100%] |\n\nDescriptive 50% crossings: 29% (default) and 0.92% (precise); 90% crossings: 78% and 2.4%.\nAmong errors that changed the bfloat16 output (the ones the model sees): 50% crossings: 29% (default) and 0.93% (precise); 90% crossings: 78% and 2.4%.\nCrossings describe this sampled curve with log-linear interpolation. A crossing at the smallest tested size is an upper bound on the crossing size; detection need not increase monotonically.\nClean matmuls: default 0 false alarms in 198 (worst score 2.11), precise 0 in 198 (worst 0.73); the alarm is at 6.\nUnjudged clean checks: default 0, precise 0. Unjudged injected checks by size: default [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], precise [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]. Positions with unavailable block scale: 0.\n\n| per training step | seconds | vs unchecked |\n|---|---|---|\n| unchecked | 0.0558 |  |\n| default check, every step | 0.0733 | +31.4% |\n| precise mode, every step | 0.2442 | +337.6% |\n",
+  "output": "step 0: 99 matmuls, 3861 corrupted checks of each kind\nstep 1: 198 matmuls, 7722 corrupted checks of each kind\n# Default check vs precise mode, same matmuls (NVIDIA A100-SXM4-80GB)\n\nCode 17c41a10c789, torch 2.14.1+cu130. 198 linear-layer matmuls (forward, dX, dW) of 2 training steps, 3 random outputs each, so 594 corrupted matmuls per error size. An error is relative to a typical output of its 128-column block, added before rounding to bfloat16.\n\n| error size | default check flags | precise mode flags | changed the bfloat16 output |\n|---|---|---|---|\n| 0.0001% | 0% | 0% | 0% |\n| 0.0003% | 0% | 0% | 0% |\n| 0.001% | 0% | 0% | 1% |\n| 0.003% | 0% | 0% | 3% |\n| 0.01% | 0% | 0% | 8% |\n| 0.03% | 0% | 0% | 18% |\n| 0.1% | 0% | 0% | 41% |\n| 0.3% | 0% | 4% | 74% |\n| 1% | 0% | 53% | 98% |\n| 3% | 0% | 99% | 100% |\n| 10% | 0% | 100% | 100% |\n| 30% | 52% | 100% | 100% |\n| 100% | 100% | 100% | 100% |\n\nNominal 95% Wilson intervals for sampled positions in these fixed matmuls. Matmuls have different detection probabilities; these are not uncertainty bounds for new training runs, models, hardware faults or the whole sensitivity curve.\nIntervals across error sizes share the same injected positions and do not form a simultaneous band.\n| error size | trials | changed trials | default 95% | precise 95% | default 95%, changed | precise 95%, changed |\n|---|---|---|---|---|---|---|\n| 0.0001% | 594 | 2 | [0%, 1%] | [0%, 1%] | [0%, 66%] | [0%, 66%] |\n| 0.0003% | 594 | 2 | [0%, 1%] | [0%, 1%] | [0%, 66%] | [0%, 66%] |\n| 0.001% | 594 | 4 | [0%, 1%] | [0%, 1%] | [0%, 49%] | [0%, 49%] |\n| 0.003% | 594 | 15 | [0%, 1%] | [0%, 1%] | [0%, 20%] | [0%, 20%] |\n| 0.01% | 594 | 50 | [0%, 1%] | [0%, 1%] | [0%, 7%] | [0%, 7%] |\n| 0.03% | 594 | 106 | [0%, 1%] | [0%, 1%] | [0%, 4%] | [0%, 4%] |\n| 0.1% | 594 | 245 | [0%, 1%] | [0%, 1%] | [0%, 2%] | [0%, 2%] |\n| 0.3% | 594 | 438 | [0%, 1%] | [3%, 6%] | [0%, 1%] | [2%, 6%] |\n| 1% | 594 | 585 | [0%, 1%] | [49%, 57%] | [0%, 1%] | [49%, 57%] |\n| 3% | 594 | 594 | [0%, 1%] | [98%, 100%] | [0%, 1%] | [98%, 100%] |\n| 10% | 594 | 594 | [0%, 1%] | [99%, 100%] | [0%, 1%] | [99%, 100%] |\n| 30% | 594 | 594 | [48%, 56%] | [99%, 100%] | [48%, 56%] | [99%, 100%] |\n| 100% | 594 | 594 | [99%, 100%] | [99%, 100%] | [99%, 100%] | [99%, 100%] |\n\nDescriptive 50% crossings: 29% (default) and 0.92% (precise); 90% crossings: 78% and 2.4%.\nAmong errors that changed the bfloat16 output (the ones the model sees): 50% crossings: 29% (default) and 0.93% (precise); 90% crossings: 78% and 2.4%.\nCrossings describe this sampled curve with log-linear interpolation. A crossing at the smallest tested size is an upper bound on the crossing size; detection need not increase monotonically.\nClean matmuls: default 0 false alarms in 198 (worst score 2.11), precise 0 in 198 (worst 0.73); the alarm is at 6.\nUnjudged clean checks: default 0, precise 0. Unjudged injected checks by size: default [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], precise [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]. Positions with unavailable block scale: 0.\n\n| per training step | seconds | vs unchecked |\n|---|---|---|\n| unchecked | 0.0558 |  |\n| default check, every step | 0.0733 | +31.4% |\n| precise mode, every step | 0.2442 | +337.6% |\n\n",
+  "seconds": 94.1,
+  "source": {
+    "sha256": "9c9e05a04892908a784070e195e39527c02753e9c05dbd63b2a5ef7e47687929",
+    "files": 186
+  }
+}
