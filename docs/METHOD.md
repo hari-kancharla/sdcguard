@@ -1612,6 +1612,12 @@ a captured row names exactly the marked request (an alert without a captured row
 against it). Eager mode is not the default compiled mode: the mapping of rows to requests is the same code in both,
 and the CUDA-graph padding case is criterion 2's.
 
+Result of the second run (October 24, on 54c3a69): every criterion met. 30 of 30 verdicts as expected (R1 and R3p
+PROTECTED, R2 INCONCLUSIVE, R3 and R4n IDLE, R4, R4i, R5, R6 and R7 NOT PROTECTED, 3 times each), PROTECTED in none of
+the 21 where it shouldn't be; 5 of 5 single requests named exactly; 8 alerts during the 32 requests, all 8 naming one
+of them and none another; 5 of 5 exact attributions under 32 concurrent requests; completions identical to the
+SDCGUARD=0 server's.
+
 ### The cuBLAS bug inside the real server (written October 24, before any run)
 
 Every catch of cuBLAS issue 6862950 so far came from the offline check, the gate and single synthetic layers; the
@@ -1738,6 +1744,13 @@ triggers the bug. Not claimed whatever the outcome:
 anything about other models, GPUs or serving settings, or that NO LEAK SEEN means a server is isolated beyond these
 prompts.
 
+Result (October 24, on 54c3a69, run on vLLM 0.31.0 and 0.32.0 at once): every criterion met on both. fp8pt LEAK: 20
+of 192 primer answers changed with the request before them on 0.31.0, 55 of 180 on 0.32.0 (the bug is still there in
+0.32.0); bf16 and eager 0 of 192 on both; no canary held another request's code; bf16 -> fp8pt REJECT with the
+isolation reason. Reported: bf16 -> eager came out REJECT, not the expected NOT DECIDED, on its quality check alone
+(top-1 agreement under 97%), from the server-reference bug written up under "Qualify on a real server"; its
+isolation was NO LEAK SEEN.
+
 ### Bit flips in a served model's weights (written October 24, before any run)
 
 Every sensitivity number so far is from training matmuls (one wrong value in an output: the default check flagged
@@ -1782,6 +1795,15 @@ layer (at the 99.9th percentile), an FP8 check can use the current noise model w
 6 or more, the check needs an accumulation term fitted to these numbers, and catches correspondingly less than the
 bf16 check (the run gives the size). Either way, no FP8 check is called supported until one meets criteria of its
 own on a real server (same answers as plain vLLM, no clean alert, a flipped weight caught).
+
+Result (October 24, on 54c3a69, torch 2.13 on an H100, 148 tokens per layer): the second case. With fast
+accumulation (vLLM's CUTLASS kernel, and torch._scaled_mm with it on, which gave the same numbers) block scores reached
+29.7 at worst and 25.0 at the 99th percentile on the worst layer (model.layers.27.mlp.down_proj, K = 8960), and 9.6 to
+12.8 on others; without it they stayed at 6.4 at worst and 4.1 at the 99th percentile. The error grows with the
+inner dimension and with outliers in the inputs. So an FP8 check needs an accumulation term that grows with K (and
+the inputs' sizes) and would catch less than the bf16 check; none is built, and FP8 matmul arithmetic stays
+unchecked. What the plugin checks for FP8 layers is their input quantization (SDCGUARD_FP8=1, "An FP8 MoE bug from
+detection to remedy").
 
 ### Norm checks in serving (written October 24, before any run)
 
@@ -1830,6 +1852,15 @@ norm checks pass and cost at most 5% at 16 at once, they become on by default; i
 opt-in. Not claimed whatever the outcome: rates
 for hardware faults in norm arithmetic (only weights are flipped here, and output corruption in eager mode), norms
 fused into other kernels, or models with other norms (each run's log lists the norm layers it doesn't check).
+
+Result (October 24, on 54c3a69): failed N2, met the rest. With norm checks on, 5 of Qwen2.5-1.5B's 64 greedy
+completions differed from plain vLLM's in the compiled server (Qwen3-1.7B's 64 were identical). The likely cause, not
+yet shown: the check's op after each norm changes what Inductor fuses around the norm, so the norm's reduction runs
+in another order and a few near-tie tokens flip; the checks themselves were right. Every flip of bits 2 to 15 of a
+nonzero norm weight was caught (32 of 32), bits 1 and 0 weren't (8 trials, no answer changed); no clean alert (worst
+clean scores 2.65 compiled, 1.00 eager, 2.52 on Qwen3); the 5 exact-naming trials each named the marked request; the
+4 Qwen3 q/k norm flips were caught. Cost: 7.2% fewer output tokens per second at 16 requests at once, 10.4% at 256.
+Norm checks stay opt-in, for the cost and because they can change a compiled server's answers.
 
 ### Qualify on a real server (written October 24, before any run)
 
@@ -1985,6 +2016,11 @@ and the baseline (what each fix costs), and which requests the FP8 alerts name. 
 FP8 quantization check becomes on by default for FP8 layers; if F3 fails while F2 passes, the check misses the
 mechanism it was built for and stays off until it's understood. Not claimed whatever the outcome: FP8 recipes other
 than these (block scales), the FP8 GEMMs' arithmetic (a separate check), other GPUs or MoE kernels.
+
+Amendment (October 24, before the run): the rule above would turn the check on by default without its cost being
+measured, and this run can't measure it (every FP8 server has the check on). So passing F1 to F5 makes the check
+eligible; it becomes on by default only once a run measures it costing at most 3% of throughput at 16 requests at
+once on an FP8 server, and stays opt-in until then.
 
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 

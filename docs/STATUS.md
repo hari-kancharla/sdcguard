@@ -31,13 +31,16 @@ library bug (cuBLAS 6862950). No naturally defective GPU has been tested. Nobody
 |---|---|---|
 | The plugin in vLLM 0.31 and 0.32, bf16, one layer in eight or every layer | GPU-validated | 64 of 64 completions the same as plain vLLM, no clean alert (highest 2.82), a flipped weight bit caught and named (Qwen2.5 1.5B and 7B, H100, Oct 20 to 23); real `vllm serve` over HTTP on one and two H100s (Oct 23) |
 | INT4 layers (Marlin, Machete) | GPU-validated | all criteria met on five INT4 runs, the 7B AWQ on Machete included (H100, Oct 23) and on Marlin on an L4 (Oct 23) |
-| FP8 layers, fused MoE experts | Planned | not checked: a decision on an FP8 change gets no arithmetic source from the plugin |
+| Fused MoE experts (SDCGUARD_MOE=1: one layer a step recomputes 2 rows) and their routing (one router a step) | CPU-tested | the first GPU run (Oct 24) didn't start its checked servers: SDCGUARD_REQUIRE didn't know the MoE check (fixed); rerun with 2 routing trials written ("MoE checks in serving", amendment) |
+| FP8 layers' input quantization (SDCGUARD_FP8=1) | CPU-tested | GPU run on vLLM #62124 written Oct 24 ("An FP8 MoE bug from detection to remedy") |
+| FP8 matmul arithmetic | Planned | measured, not built: Hopper's FP8 fast accumulation moves block sums up to 29.7 bf16-noise units on a K = 8960 layer, 6.4 without it (H100, Oct 24); a check needs a K-dependent term |
+| RMSNorm checks (SDCGUARD_NORMS=1) | Ran on a GPU, limits | 32 of 32 weight flips of bits 2 to 15 caught and named, no clean alert, 5 of 5 exact namings, Qwen3 q/k norms caught; but 5 of 64 compiled Qwen2.5 completions differed from plain vLLM, and the cost is 7% to 10%, so opt-in (H100, Oct 24) |
 | Cost | GPU-validated, as measured | throughput lower by: every layer, 11% (1.5B) and 20% (7B) at 256 requests at a time, 33% (1.5B) and 22% (7B) at 16; one layer in eight (the same layers every step), 2.5% to 7% (H100, Oct 22). Real `vllm serve`, 1.5B, every layer: 34% at 1 request at a time, 10% at 256 (Oct 23). INT4 7B: requests took 45% longer with every layer, 1% with one in eight (Oct 23) |
 | The alert's row kept and rechecked in float64 | GPU-validated | captured inside CUDA graphs (Oct 21, 22) |
-| `sdcguard ready` (protection status from outside) | GPU-validated, then changed | 21 of 21 verdicts as expected on real `vllm serve`, never PROTECTED when it wasn't (H100, vLLM 0.32, Oct 24); that run didn't test stopped checks on an idle server, so idle is now IDLE and `--probe` shows the checks running (CPU-tested; second GPU run written Oct 24) |
-| The requests an alert concerns | GPU-validated, narrow | 5 of 5 single requests named exactly; with 32 requests sent 8 at a time, 7 of 7 alerts named one of the 32 (membership only: which of them held the failing row wasn't checked independently); dual-batch overlap, sequence parallelism and speculative decoding not covered |
+| `sdcguard ready` (protection status from outside) | GPU-validated | second run on real `vllm serve`, with IDLE and `--probe`: 30 of 30 verdicts as expected, never PROTECTED in the 21 cases where it shouldn't be (H100, vLLM 0.32, Oct 24) |
+| The requests an alert concerns | GPU-validated, narrow | 5 of 5 single requests named exactly; with 32 requests at once, the request owning the corrupted row named exactly in 5 of 5 trials (eager mode, Oct 24); dual-batch overlap, sequence parallelism and speculative decoding not covered |
 | The real cuBLAS bug caught inside the server | CPU-tested | GPU run R2 written Oct 24 ("The cuBLAS bug inside the real server") |
-| `sdcguard isolation` (one request's answer depending on another's) | CPU-tested | GPU run R4 on vLLM issue #62124 written Oct 24 ("Answers that depend on the request before") |
+| `sdcguard isolation` (one request's answer depending on another's) | GPU-validated | vLLM issue #62124 (FP8 per-tensor MoE with CUDA graphs) on an L4: LEAK on vLLM 0.31.0 (20 of 192 answers changed with the request before them) and 0.32.0 (55 of 180); the bf16 and eager controls 0 of 192 (Oct 24) |
 
 ## Deciding on a change
 
@@ -45,12 +48,14 @@ library bug (cuBLAS 6862950). No naturally defective GPU has been tested. Nobody
 |---|---|---|
 | `sdcguard gate` (cases, compare, workaround, pin) on cuBLAS 6862950 | GPU-validated | all six expectations in the second H200 run: wrong in every run without the pin, right in 50 of 50 with it (Oct 22) |
 | `gate model-check` (teacher-forced next-token distributions) | GPU-validated, offline | PASS for batching and Triton attention, FAIL for rms_norm_eps 1.0 with the matmul checks quiet, and FAIL for the AWQ model, which measures AWQ's intended approximation against the default thresholds (starting points from published numbers, not calibrated per model), not a defect (H100, Oct 23) |
-| `gate model-check --url` (against a running server) | CPU-tested | used in R3 and R4 |
+| `gate model-check --url` (against a running server) | CPU-tested, fixed after a GPU run | the first server runs (Oct 24) found our bug: vLLM applies a model's generation_config (a repetition penalty) to requests that don't set it, so the reference wasn't greedy and identical servers agreed on only 88% to 95% of top tokens; the reference is now recorded with neutral sampling settings and top-1 is measured against its own top token; reruns pending |
+| `sdcguard qualify` (one command: baseline and candidates, every check, a decision each, repro folders) | CPU-tested | first GPU run failed on the bug above (Oct 24); rerun pending |
+| `sdcguard consistency` (prefix-cache and decode-vs-prefill probes) | CPU-tested | GPU run on vLLM #54035 written Oct 24 ("An FP8 KV-cache decode bug through qualify") |
 | `gate model-check --trace-replay` (vLLM's Trace Replay, the decode path) | CPU-tested | used in R3 and R4, reported only |
 | `sdcguard kernels` (inventory, coverage, diff, known-issue match) | CPU-tested | first real server inventory in R2 |
 | `sdcguard kernels test` (rerun every inventoried call, judged) | CPU-tested | first GPU run in R2, reported only |
 | `sdcguard perf` | CPU-tested | used in R3 |
-| `sdcguard decide` (arithmetic, approximation, performance, isolation, scope) | CPU-tested | GPU run R3 (four changes on a 7B server) and R4, written Oct 24 |
+| `sdcguard decide` (arithmetic, approximation, performance, isolation, consistency, FP8 quantization, scope) | CPU-tested | first GPU run (four changes on a 7B server, Oct 24) failed: the quality bug above, and one layer in eight checked the same 15 layers, not the faulted one; rerun on every layer pending |
 | Telling a bad GPU from a library bug (`investigate`) | Planned | |
 
 ## Whole machines
