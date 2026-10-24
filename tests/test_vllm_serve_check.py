@@ -1,4 +1,4 @@
-"""experiments/vllm_serve_check.py without a GPU: the request client against a stand-in OpenAI server, the metrics
+"""experiments/vllm_serve_check.py without a GPU: the request client against a stand-in completions server, the metrics
 parser, and the criteria (docs/METHOD.md) as the run judges them."""
 import http.server
 import json

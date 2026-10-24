@@ -11,6 +11,7 @@ and compares two runs to say what an upgrade changed:
     sdcguard gate run gates/ --out after.json
     sdcguard gate compare before.json after.json                       # a verdict per case
     sdcguard gate workaround gates/<case> --env KEY=VALUE ...          # does a workaround fix it, here?
+    sdcguard gate investigate gates/<case>                             # does it follow a GPU, a condition, the software?
     sdcguard gate pin gates/<case> --out pin.csv                       # a TunableOp file that pins the workaround
                                                                        # (PyTorch reads it as pin0.csv on GPU 0)
     sdcguard gate model-ref --model M --out ref.json                   # the model's outputs, on a trusted stack
@@ -844,6 +845,10 @@ def main(argv=None) -> int:
     cm.add_argument("baseline")
     cm.add_argument("candidate")
     cm.add_argument("--json", default=None, help="also write the verdicts here")
+    iv = sub.add_parser("investigate", help="does a case's failure follow a GPU, a condition or the software path?")
+    iv.add_argument("case")
+    iv.add_argument("--repeats", type=int, default=20)
+    iv.add_argument("--json", default=None)
     w = sub.add_parser("workaround", help="does a workaround fix a case here?")
     w.add_argument("case")
     w.add_argument("--env", action="append", required=True, help="KEY=VALUE the workaround sets (repeatable)")
@@ -884,6 +889,18 @@ def main(argv=None) -> int:
             with open(a.json, "w") as f:
                 json.dump(vs, f, indent=1, default=str)
         return _print_verdicts(vs)
+    if a.cmd == "investigate":
+        from .investigate import investigate
+        v = investigate(a.case, a.repeats)
+        if a.json:
+            with open(a.json, "w") as f:
+                json.dump(v, f, indent=1, default=str)
+        print(f"{v['verdict']}: {v['why']}")
+        for r in v["runs"]:
+            print(f"  {r['label']:<36} {r['device']}: " + (f"could not run: {r['error']}" if "error" in r else
+                                                           f"wrong in {r['wrong']} of {r['runs']}, {r['kernels']}"))
+        return {"DEVICE": 1, "CONDITION": 1, "SOFTWARE PATH": 1, "NOT ONE GPU": 1, "NOT REPRODUCED": 0}.get(
+            v["verdict"], 2)
     if a.cmd == "workaround":
         v = workaround(a.case, _env_pairs(a.env), a.repeats, a.expect_kernel)
         if a.json:

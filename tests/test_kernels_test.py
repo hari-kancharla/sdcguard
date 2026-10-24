@@ -90,3 +90,9 @@ def test_the_worker_on_the_cpu_judges_every_output_against_float64(tmp_path):
     assert res["gpu"] == "cpu" and len(res["results"]) == 2
     for r in res["results"]:
         assert len(r["runs"]) == 2 and all(x["wrong"] == 0 for x in r["runs"])
+
+
+def test_outputs_too_large_for_the_reference_are_not_run(tmp_path):
+    r = kernels.test_calls(_inv(), log_dir=str(tmp_path), runner=_runner(), max_elements=1000)
+    big = [x for x in r["not_run"] if "too large" in x["why"]]
+    assert len(big) == 2 and r["counts"]["PASSED"] == 0

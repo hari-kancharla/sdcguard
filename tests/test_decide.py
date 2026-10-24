@@ -172,3 +172,19 @@ def test_changed_weights_are_a_fault_without_a_kept_row():
     ev = [{"step": None, "detail": {"where": "x", "weights_changed_since_load": False, "captured": {"step": 9}}}]
     r = dc.decide(quality=_quality(), alerts=ev, plugin=COV)
     assert r["decision"] == "NOT DECIDED" and "at step 9" in r["arithmetic"]["unresolved"][0]
+
+
+def test_a_leak_between_requests_rejects_even_with_right_arithmetic():
+    leak = {"verdict": "LEAK", "why": ["primer dependence: 88 of 114 probe answers changed"],
+            "primer": {"pairs": 114, "pairs_differing": 88}, "canary": {"answered": 48, "leaks": []}}
+    r = dc.decide(quality=_quality(), alerts=[], plugin=COV, isolation=leak)
+    assert r["decision"] == "REJECT" and r["why"][0].startswith("isolation") and r["arithmetic"]["verdict"] == \
+        "NO FAULT OBSERVED"
+    assert "4. Isolation" in dc.render(r)
+    clean = {"verdict": "NO LEAK SEEN", "why": ["ok"]}
+    assert dc.decide(quality=_quality(), alerts=[], plugin=COV, isolation=clean)["decision"] == "ACCEPT"
+    r = dc.decide({"isolation": {"required": True}}, quality=_quality(), alerts=[], plugin=COV)
+    assert r["decision"] == "NOT DECIDED" and "isolation" in r["why"][0]
+    r = dc.decide({"isolation": {"required": True}}, quality=_quality(), alerts=[], plugin=COV,
+                  isolation={"verdict": "INCONCLUSIVE", "why": ["a control disagreed"]})
+    assert r["decision"] == "NOT DECIDED"

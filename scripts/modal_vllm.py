@@ -13,9 +13,10 @@
                                                       # H100s, 0.31 on 1, at once: about 15 min each, about $5
     modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
     modal run scripts/modal_vllm.py --phase serve_tp2  # the 2-GPU server check alone: about 10 min, about $1.60
-    modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 40 min, $3-4
+    modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 15 min, about $1.20
     modal run scripts/modal_vllm.py --phase live_catch     # cuBLAS 6862950 live in vllm serve on an H200: about $5-6.50
-    modal run scripts/modal_vllm.py --phase decisions      # `sdcguard decide` on four server changes: about $3-4
+    modal run scripts/modal_vllm.py --phase decisions      # `sdcguard decide` on four server changes: about $4.40-5.70
+    modal run scripts/modal_vllm.py --phase isolation      # vLLM #62124 and controls on 0.31 and 0.32, 2 L4s: under $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -449,7 +450,7 @@ def ready_attrib(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=70 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=90 * 60)
 def decisions(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_change_decisions.py: `sdcguard decide` on four changes to a real `vllm serve` (vLLM 0.32,
     Qwen2.5-7B-Instruct, one H100)."""
@@ -465,7 +466,7 @@ def decisions(force: bool = False, source: Optional[dict] = None) -> str:
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_change_decisions.py", "--out", out], f"{out}.txt",
-                    cwd="/root", timeout=65 * 60)
+                    cwd="/root", timeout=85 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -474,6 +475,42 @@ def decisions(force: bool = False, source: Optional[dict] = None) -> str:
                        **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
         vol.commit()
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+def _isolation(version: str, force: bool, source: Optional[dict]) -> str:
+    t0 = time.monotonic()
+    tag = f"isolation{version.replace('.', '')}"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_isolation_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=40 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source, "vllm": version,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=45 * 60)
+def isolation031(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_isolation_check.py on vLLM 0.31.0 (the version vLLM issue #62124 was reported on), one L4."""
+    return _isolation("0.31.0", force, source)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=45 * 60)
+def isolation032(force: bool = False, source: Optional[dict] = None) -> str:
+    """The same on vLLM 0.32.0: whether #62124 is still there is reported as found."""
+    return _isolation("0.32.0", force, source)
 
 
 RATE_H200 = 4.54 + 8 * 0.0472 + 64 * 0.008             # H200 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
@@ -594,16 +631,20 @@ ESTIMATES = {
                  "limit, at most about $7.30)",
     "quant_l4": "INT4 on Marlin on 1 L4, two 1.5B models: about 20 minutes, roughly $0.50 (60-minute limit, at most "
                 "about $1.50)",
-    "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, three server "
-                    "starts): about 35 to 45 minutes, roughly $3 to $4 (60-minute limit, at most about $4.90 at "
-                    "requested resources, not a spending cap)",
+    "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, three server starts): "
+                    "about 12 to 18 minutes, roughly $1 to $1.50 (60-minute limit, at most about $4.90 at requested "
+                    "resources, not a spending cap)",
     "live_catch": "cuBLAS issue 6862950 inside real `vllm serve` on 1 H200 as an MPS client (100% and 40%, then "
                   "40% with the pinned workaround), with replays at the alert's real shape and `kernels test` on "
                   "both inventories: about 55 to 70 minutes, roughly $5 to $6.50 (90-minute limit, at most about "
                   "$8 at requested resources, not a spending cap)",
-    "decisions": "`sdcguard decide` on four changes to a real `vllm serve` of Qwen2.5-7B-Instruct on 1 H100 (5 server "
-                 "launches: about 35 to 50 minutes, roughly $3 to $4; 70-minute limit, at most about $5.70 at "
-                 "requested resources, not a spending cap)",
+    "decisions": "`sdcguard decide` on four changes to a real `vllm serve` of Qwen2.5-7B-Instruct on 1 H100, then "
+                 "vLLM's Trace Replay offline on three of them (6 server launches, 3 engine loads: about 55 to 70 "
+                 "minutes, roughly $4.40 to $5.70; 90-minute limit, at most about $7.30 at requested resources, not a "
+                 "spending cap)",
+    "isolation": "`sdcguard isolation` on vLLM issue #62124 and two controls, on vLLM 0.31.0 and 0.32.0 at once (2 L4s, "
+                 "3 server launches each: about 15 to 25 minutes, roughly $0.40 to $0.70 together; 45-minute limit, "
+                 "at most about $1.80 at requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -672,6 +713,17 @@ def main(phase: str = "vllm", force: bool = False):
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))
+        elif phase == "isolation":
+            calls = {"isolation031": isolation031.spawn(force, src), "isolation032": isolation032.spawn(force, src)}
+            for tag, call in calls.items():
+                try:
+                    message = call.get()
+                except Exception as e:  # noqa: BLE001
+                    message = f"{tag} did not complete: {type(e).__name__}: {e}"
+                print(message, flush=True)
+                # 0.32.0 is reported as found (the bug may be fixed there); 0.31.0 carries the criteria
+                if tag == "isolation031" and "exit code 0 " not in str(message):
+                    failures.append(str(message))
         elif phase == "decisions":
             message = decisions.remote(force, src)
             print(message, flush=True)

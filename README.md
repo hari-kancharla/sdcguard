@@ -95,9 +95,12 @@ trainer = Trainer(..., callbacks=[SDCGuardCallback(every=20, stop_on_alert=True)
 SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
 ```
 
-This checks one linear layer in eight. On Qwen2.5-7B on an H100 it cost at most about 4% of throughput, the
-answers were word for word the same as plain vLLM, and a weight bit I flipped on purpose was caught and the
-layer named. Checking every layer costs about 30% on the 7B model for now. I'm working on making that cheaper.
+This checks one linear layer in eight: the same layers on every step, so the other seven in eight are never
+checked on this server (give replicas different `SDCGUARD_OFFSET`s and between them they check every layer once).
+On an H100 (October 22, Qwen2.5 1.5B and 7B, 16 and 256 requests at a time) it lowered throughput by 2.5% to 7%,
+the answers were word for word the same as plain vLLM, and a weight bit I flipped on purpose was caught and the
+layer named. Checking every layer lowered throughput by 20% to 22% on the 7B model and by 11% (256 at a time) to
+33% (16 at a time) on the 1.5B. I'm working on making that cheaper.
 
 When a check fires, sdcguard keeps the exact numbers that failed (copied on the GPU before vLLM reuses the
 memory) and rechecks them in float64 on the CPU, so the alert tells you whether the output was really wrong.
@@ -115,11 +118,17 @@ outside. Give each GPU worker a metrics port, then ask:
 
 ```bash
 SDCGUARD=1 SDCGUARD_REQUIRE=1 SDCGUARD_METRICS_PORT=9400 vllm serve Qwen/Qwen2.5-7B-Instruct --tensor-parallel-size 2
-sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics
+sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics --probe http://127.0.0.1:8000
 ```
 
 It says PROTECTED only if every worker answers, checks its layers, has read results back, and ran checks while
 vLLM produced tokens. It works as a Kubernetes readiness probe (give the probe more time than its 5-second window).
+On a real `vllm serve` (H100, vLLM 0.32, October 24) it gave the expected answer 21 times out of 21 and never said
+PROTECTED when the plugin wasn't loaded, was turned off, had stopped reading its results while serving, or the
+server was gone. An idle server can't show its checks running, so it says IDLE; add `--probe http://127.0.0.1:8000`
+and it sends two short requests to find out. Request naming: one request alone was named exactly in 5 of 5
+trials; with 32 requests sent 8 at a time, every alert named one of the 32 (which one held the row wasn't checked
+independently).
 
 For any other PyTorch model there's `ServeGuard().attach(model, share=0.125)`.
 
@@ -148,11 +157,16 @@ as Triton kernels.
 
 ## What it can't do yet
 
-- Small errors. Anything under about 1% of a block slips through. ByteDance found its real incidents with
-  fp32 checksums, not bf16 ones. The fp32 check (`precise="fused"`) is still experimental.
+- Small errors. With one wrong value in a matmul's output, the default check flagged half of them only once the
+  error reached about 29% of a typical output in its block, and none of 594 at 10% (H100, A100 and L4, October 23,
+  training matmuls); precise mode (`precise=True`) flagged half at 0.71% to 0.92% on the same matmuls. These are
+  detection rates for injected errors in training, not a measured curve for the vLLM plugin. ByteDance found its
+  real incidents with fp32 checksums, not bf16 ones. The fused fp32 check (`precise="fused"`) matched precise
+  mode's sensitivity on October 20 and 21 and passed 40 minutes of clean training on an H100 and an L4.
 - Anything outside the checked matmuls: attention internals, norms, the optimizer. The experimental
   `recompute=True` check covers activation-checkpointed blocks in training.
-- Quantized layers (FP8, AWQ, GPTQ) and fused MoE experts in vLLM.
+- FP8 layers and fused MoE experts in vLLM. INT4 and INT8 weight-only layers (GPTQ, AWQ on vLLM's Marlin and
+  Machete kernels) are checked.
 - AMD GPUs.
 - It hasn't caught a naturally bad GPU yet. So far the evidence is injected faults and the cuBLAS bug above.
 

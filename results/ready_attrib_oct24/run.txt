@@ -1,0 +1,52 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "R1": [
+   "PROTECTED",
+   "PROTECTED",
+   "PROTECTED"
+  ],
+  "R2": [
+   "INCONCLUSIVE",
+   "INCONCLUSIVE",
+   "INCONCLUSIVE"
+  ],
+  "R3": [
+   "PROTECTED",
+   "PROTECTED",
+   "PROTECTED"
+  ],
+  "R4": [
+   "NOT PROTECTED",
+   "NOT PROTECTED",
+   "NOT PROTECTED"
+  ],
+  "R5": [
+   "NOT PROTECTED",
+   "NOT PROTECTED",
+   "NOT PROTECTED"
+  ],
+  "R6": [
+   "NOT PROTECTED",
+   "NOT PROTECTED",
+   "NOT PROTECTED"
+  ],
+  "R7_after_guarded": [
+   "NOT PROTECTED",
+   "NOT PROTECTED",
+   "NOT PROTECTED"
+  ],
+  "protected_when_not": 0,
+  "single_exact": "5/5",
+  "concurrent": {
+   "alerts": 7,
+   "named": 7,
+   "named_wrong": 0,
+   "since_missing": 0
+  },
+  "identity": true
+ }
+}
+
+[exit code 0]

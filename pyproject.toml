@@ -9,7 +9,7 @@ description = "Catch GPUs that give wrong answers without crashing, in PyTorch t
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "licenses/*"]
 authors = [{ name = "Hari Krishna Kancharla" }]
 keywords = ["pytorch", "vllm", "gpu", "cuda", "silent data corruption", "sdc", "abft", "reliability"]
 classifiers = [

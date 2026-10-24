@@ -340,8 +340,11 @@ def _run_worker(todo: list, repeats: int, log_dir: str, cpu_reference: bool) -> 
     return res, read_logs(sorted(glob.glob(os.path.join(log_dir, "cublaslt.*.log"))))
 
 
+MAX_ELEMENTS = 4e8         # outputs larger than this aren't rerun (each float64 copy of the reference is 3.2 GB)
+
+
 def test_calls(inv: dict, repeats: int = 3, log_dir: str = "test_logs", max_shapes: int = 500,
-            cpu_reference: bool = False, runner=None) -> dict:
+               cpu_reference: bool = False, runner=None, max_elements: float = MAX_ELEMENTS) -> dict:
     """Run every inventoried linear-layer call again here, at its shape, and judge it. Per call: PASSED when every
     run was right and cuBLASLt ran here the same kernel the inventory shows for it (algorithm and configuration, data
     types, epilogue); WRONG when any output was wrong or never written; OTHER KERNEL when the runs were right but
@@ -353,6 +356,8 @@ def test_calls(inv: dict, repeats: int = 3, log_dir: str = "test_logs", max_shap
     for kern in inv["kernels"]:
         for s in kern["shapes"]:
             why = rerunnable(kern, s)
+            if not why and s["m"] * s["n"] > max_elements:
+                why = f"an output of {s['m'] * s['n']:,} values, too large for the float64 reference here"
             if why:
                 skipped.append({"call": s["key"], "calls_in_workload": s["calls"], "why": why})
                 continue

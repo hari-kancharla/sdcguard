@@ -1580,6 +1580,31 @@ tested on stand-ins on the CPU (`tests/test_request_attribution.py`). Not covere
 (dual-batch overlap) and sequence parallelism, where the plugin says attribution is unavailable, and speculative
 decoding.
 
+**What the run found (October 24, 2026): every criterion met.** One H100, vLLM 0.32.0, code fingerprint
+a7096a98ba9e, 9.7 minutes (`results/ready_attrib_oct24/`). 1: all 21 verdicts as expected (PROTECTED 3 of 3 while
+serving and 3 of 3 while idle with --vllm; INCONCLUSIVE 3 of 3 idle without it; NOT PROTECTED 3 of 3 each with the
+reads stopped while vLLM served, with the plugin never loaded, with SDCGUARD=0, and after the server stopped), and
+PROTECTED in none of the 15 where it wasn't protected or couldn't be told. 2: 5 of 5 single requests named exactly
+as directly implicated (in the first trial all 7 of its alerts named it). 3: 7 alerts while 32 requests ran, 7 of 7
+naming a request that was one of the 32, none another, and every alert's requests since the last clean read held
+all 32. 4: the 64 completions identical to the SDCGUARD=0 server's.
+
+**An idle server, and the second run (written October 24, after the run above, before the second).** The run
+above met its criteria, but criterion 1 had `sdcguard ready` say PROTECTED for an idle server on the strength of
+counters from before it went idle, and an idle server whose checks had stopped would have shown the same counters:
+the run stopped the reads only while traffic flowed. So `sdcguard ready` now says IDLE when vLLM produced no tokens
+between its reads (exit code 0, so a readiness probe on an idle server still passes; nothing was served
+unchecked, and nothing shows the next request would be checked), and `--probe URL` sends two short requests 2.5
+seconds apart when the server is idle and reads again: PROTECTED if every worker's checks went up for them, NOT
+PROTECTED if vLLM counted their tokens and a worker's checks didn't. The second run (same script and server)
+expects, 3 times each: R1 PROTECTED; R2 INCONCLUSIVE; R3 (idle, --vllm) IDLE; R3p (idle, --vllm --probe)
+PROTECTED; R4 (reads stopped, serving) NOT PROTECTED; R4n (reads stopped, idle, --vllm) IDLE, the limit without a
+probe; R4i (reads stopped, idle, --vllm --probe) NOT PROTECTED; R5, R6 and R7 NOT PROTECTED. Criteria: 30 of 30 as
+expected, and no PROTECTED in any of the 21 asked where the server wasn't protected, couldn't be told, or wasn't
+shown checking (R2, R4, R4n, R4i, R5, R6, R7); criteria 2 to 4 as above. Criterion 3 is about membership: the
+requests are sent 8 at a time, and the run checks that every request an alert names is one of the 32, not which of
+them held the failing row; only the single-request trials (criterion 2) test exact attribution.
+
 ### The cuBLAS bug inside the real server (written October 24, before any run)
 
 Every catch of cuBLAS issue 6862950 so far came from the offline check, the gate and single synthetic layers; the
@@ -1605,7 +1630,8 @@ BF16). If none does, that is the result, written here as found, and criteria 3 t
 5. Reported, deciding nothing: how many of the 64 completions at 40% differ from 100%; and the pinned run: alerts,
    completions differing from 100%, and whether the flagged kernel still ran (whether TunableOp's pins reach
    vLLM's compiled GEMMs is itself unknown before the run). Also each replayed case run at 40% with the pin file
-   (`gate workaround`, 20 runs): the fix checked on the very call the server got wrong.
+   (`gate workaround`, 20 runs): the fix checked on the very call the server got wrong; and each server's speed
+   under the same load (64 requests, 16 at a time): what the pin costs.
 6. Reported, deciding nothing, the first GPU run of `sdcguard kernels test`: on each server's inventory at that
    server's share, every logged bf16 linear-layer call run again on its own (random inputs, 3 runs, float64
    reference). Expected: at 40%, the calls flagged for 6862950 WRONG and no other call WRONG; at 100%, no call
@@ -1626,9 +1652,10 @@ model's outputs stay inside a quality budget (`gate model-check` against the tru
 running server with `--url`), whether the change is as fast as it has to be (`sdcguard perf`, the same load on both
 sides, a change inside the spread between rounds counted as noise), and where the answer holds. It has only run on
 files made by hand. `experiments/vllm_change_decisions.py` (`modal run scripts/modal_vllm.py --phase decisions`, one
-H100, vLLM 0.32.0, about 35 to 50 minutes and $3 to $4) runs it on a real `vllm serve` of Qwen2.5-7B-Instruct with
-sdcguard on as deployed (one layer in eight per step), five server launches: the trusted stack (`base`: the
-reference and the baseline's speed), the same stack started again (`same`), Triton attention (`triton`), the AWQ
+H100, vLLM 0.32.0, about 55 to 70 minutes and $4.40 to $5.70) runs it on a real `vllm serve` of Qwen2.5-7B-Instruct with
+sdcguard on as deployed (one layer in eight per step), six server launches: the trusted stack (`base`: the
+reference and the baseline's speed), the same stack without sdcguard (`plain`: speed only, for what sdcguard at
+one layer in eight costs, reported), the same stack started again (`same`), Triton attention (`triton`), the AWQ
 INT4 model on Machete (`awq`), and the trusted stack with one weight of model.layers.10.mlp.down_proj multiplied by
 2^8 after start (`fault`: what flipping bit 10 of a bf16 weight does when that bit is 0). Each change is decided
 against `base` under two policies: `hold` (no quality loss: model-check PASS; throughput no lower, within the noise)
@@ -1636,17 +1663,63 @@ and `speed` (at least 10% more throughput; model-check WARN accepted). The decis
 time, 128 tokens each, 3 rounds; one request at a time is reported only.
 
 Criteria:
-1. All five servers start and serve with SDCGUARD_REQUIRE=1.
+1. All six servers start and serve (the five with sdcguard under SDCGUARD_REQUIRE=1).
 2. `same` under `hold` is ACCEPT; `fault` is REJECT under both policies.
 3. The rejection of `fault` gives the arithmetic reason and names model.layers.10.mlp.down_proj.
-4. No arithmetic FAULT on `same`, `triton` or `awq`.
+4. No arithmetic FAULT on `same`, `triton` or `awq`, and no isolation LEAK on any role (`sdcguard isolation` runs on
+   each and no policy here requires it: none of these changes is expected to make one request depend on another).
 5. Every decision has its arithmetic, approximation and performance sections.
 
-Reported as found, deciding nothing: every other decision (`triton` and `awq` under both policies, `same` under
+Reported as found, deciding nothing: what sdcguard costs (`base` against `plain`: throughput and latency at both
+loads, and the KV cache vLLM reports at startup), the seconds from the fault's injection to its first alert, every
+other decision (`triton` and `awq` under both policies, `same` under
 `speed`, where no gain is expected), the speed changes, and the model-check verdict on `fault`: whether a quality
-check alone would have passed the faulty server. Not claimed whatever the outcome: anything about other models,
+check alone would have passed the faulty server. Also reported, after the servers: vLLM's own Trace Replay (vLLM
+0.32's feature for comparing configurations along a fixed token sequence, through the decode path) run offline on
+the recorded completions for the trusted stack (its noise), the same weight fault and the AWQ model, through the
+quality check's metrics and verdict lines: whether that tool, used as documented, would have seen the fault. Not
+claimed whatever the outcome: anything about other models,
 GPUs, loads or vLLM versions; and a decision covers the prompts and load it ran, the plugin's checked layers and
 nothing else (attention, norms and sampling only through the quality check).
+
+### Answers that depend on the request before (written October 24, before any run)
+
+A server can compute every matmul right and still answer one request with another's data. vLLM issue #62124
+(reported October 17, 2026, open, fix PR #62138 open) says that with FP8 per-tensor MoE quantization and CUDA graphs,
+a short prompt's greedy answer changes with the request before it: the reporter's [1, 2, 4, 8] capture sizes made 88
+of 114 probe pairs differ on an L40S, and 0 of 114 with --enforce-eager. The reported cause is padding rows of the
+graph's batch carrying stale data into the per-tensor activation scale. No matmul checksum sees this, because each
+matmul is right for the numbers it was given. `sdcguard isolation` runs two probes against a server: the primer
+probe (a short probe prompt run alone right after a primer request run alone, every request with its own
+cache_salt; the probe's tokens and log-probabilities must not depend on the primer; the probe after the same primer
+twice is the control and must agree exactly, or its case isn't judged), and canaries (64 requests with shared
+document prefixes and a random code each, 32 at a time, a quarter cancelled after their first chunk; no answer may
+hold another request's code). It has run only against stand-ins.
+
+`experiments/vllm_isolation_check.py` (`modal run scripts/modal_vllm.py --phase isolation`, one L4 per vLLM version,
+0.31.0 and 0.32.0 at once, about 15 to 25 minutes and $0.40 to $0.70 together) serves
+ibm-granite/granite-3.1-1b-a400m-instruct with the reporter's compilation settings (capture sizes [1, 2, 4, 8],
+FULL_AND_PIECEWISE) three ways: bf16 (the trusted stack), `--quantization fp8_per_tensor --moe-backend triton` (the
+reported configuration) and the same with `--enforce-eager`. Each gets `sdcguard isolation` and `gate model-check
+--url` against bf16's reference, then `sdcguard decide` on bf16 -> fp8pt and bf16 -> eager with a policy that
+requires the isolation check and accepts a model-check WARN. An L4 is sm_89 like the reporter's L40S; that the bug
+shows on an L4 is itself untested.
+
+Criteria, on vLLM 0.31.0 (the reported version):
+1. All three servers start and serve.
+2. fp8pt: the primer probe says LEAK.
+3. eager and bf16: NO LEAK SEEN (both probes judged).
+4. No canary holds another request's code on any role.
+5. The decision on bf16 -> fp8pt is REJECT, with the isolation reason.
+On vLLM 0.32.0 the same is reported as found: whether the bug is still there decides nothing. Also reported:
+how many primer pairs differ and at which token, the model-check verdicts, and the decision on bf16 -> eager (its
+arithmetic has no source here, so NOT DECIDED is the expected honest answer), and vLLM's own Trace Replay run offline
+on bf16's recorded completions under each configuration (bf16 as its noise), as its documentation suggests for
+comparing quantization schemes. Expected there, not a criterion: fp8pt and eager score about the same, because a
+comparison along a fixed token sequence measures the approximation and doesn't run the request order that
+triggers the bug. Not claimed whatever the outcome:
+anything about other models, GPUs or serving settings, or that NO LEAK SEEN means a server is isolated beyond these
+prompts.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

@@ -1,4 +1,4 @@
-"""How fast a running vLLM server (or any OpenAI-compatible one) serves a fixed load, measured the same way on
+"""How fast a running vLLM server (or any server with the same completions API) serves a fixed load, measured the same way on
 each side of a change:
 
     sdcguard perf --url http://127.0.0.1:8000 --out before.json      # the stack you run now
@@ -16,7 +16,8 @@ their median.
 
 A comparison says how the candidate's medians differ from the baseline's, and calls a difference noise when it is
 smaller than the spread between rounds on either side. Two runs with another load (prompts, concurrency, tokens)
-or another model aren't compared. Stdlib only.
+aren't compared; another model is (a quantized model is one of the changes this measures), and both are named.
+Stdlib only.
 """
 from __future__ import annotations
 
@@ -202,12 +203,11 @@ def compare(base: dict, cand: dict) -> dict:
     why = []
     if base.get("load") != cand.get("load"):
         why.append("the two runs didn't send the same load (prompts, concurrency, tokens or rounds)")
-    if base.get("model") != cand.get("model"):
-        why.append(f"another model ({base.get('model')} against {cand.get('model')})")
     for side, r in (("baseline", base), ("candidate", cand)):
         if not r.get("complete"):
             why.append(f"the {side} run had failed or missing requests")
-    out: dict = {"comparable": not why, "why": why, "metrics": {}}
+    out: dict = {"comparable": not why, "why": why, "metrics": {},
+                 "models": [base.get("model"), cand.get("model")]}   # another model (a quantized one) is a change too
     if why:
         return out
     for m in METRICS:

@@ -9,8 +9,11 @@ Servers, one after another, on one GPU (Qwen2.5-1.5B-Instruct, vLLM's default co
 Each `sdcguard ready` verdict below is asked 3 times (a fresh process each, --window 5):
   R1 guarded, while requests are being served, with --vllm                     expected PROTECTED
   R2 guarded, idle, without --vllm                                              expected INCONCLUSIVE
-  R3 guarded, idle, with --vllm                                                 expected PROTECTED
+  R3 guarded, idle, with --vllm                                                 expected IDLE
+  R3p guarded, idle, with --vllm --probe                                        expected PROTECTED
   R4 guarded, its result reads stopped (sdcguard_test_stop_reads), serving, --vllm   expected NOT PROTECTED
+  R4n the same, idle, with --vllm (stopped checks look like an idle server's)   expected IDLE
+  R4i the same, idle, with --vllm --probe                                       expected NOT PROTECTED
   R5 excluded, serving, with --vllm                                             expected NOT PROTECTED
   R6 disabled, serving, with --vllm                                             expected NOT PROTECTED
   R7 any server stopped (SIGINT), with --vllm                                   expected NOT PROTECTED
@@ -56,11 +59,13 @@ def _complete(port: int, prompt: str, tokens: int = 32) -> dict:
     return {"id": r["id"], "text": r["choices"][0]["text"], "t": time.time()}
 
 
-def _ready(metrics_port: int, vllm_port, window: float = 5.0) -> dict:
+def _ready(metrics_port: int, vllm_port, window: float = 5.0, probe: bool = False) -> dict:
     cmd = [sys.executable, "-m", "sdcguard", "ready", "--port", str(metrics_port), "--workers", "1",
            "--window", str(window), "--json"]
     if vllm_port is not None:
         cmd += ["--vllm", f"http://127.0.0.1:{vllm_port}/metrics"]
+        if probe:
+            cmd += ["--probe", f"http://127.0.0.1:{vllm_port}"]
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     try:
         r = json.loads(p.stdout)
@@ -86,14 +91,14 @@ def _background_load(port: int, stop: threading.Event) -> threading.Thread:
     return t
 
 
-def _verdicts(metrics_port: int, vllm_port, serving_port=None) -> list:
+def _verdicts(metrics_port: int, vllm_port, serving_port=None, probe: bool = False) -> list:
     out = []
     for _ in range(REPEATS):
         stop = threading.Event()
         threads = [_background_load(serving_port, stop) for _ in range(4)] if serving_port else []
         if threads:
             time.sleep(3)
-        out.append(_ready(metrics_port, vllm_port))
+        out.append(_ready(metrics_port, vllm_port, probe=probe))
         stop.set()
         for t in threads:
             t.join(timeout=120)
@@ -249,9 +254,14 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             time.sleep(8)
             res["R2"] = _verdicts(metrics_port, None)
             res["R3"] = _verdicts(metrics_port, port)
+            res["R3p"] = _verdicts(metrics_port, port, probe=True)
+            time.sleep(8)
             res["attribution"] = attribution(port, log_path)
             res["stop_reads"] = _rpc(port, "sdcguard_test_stop_reads")
             res["R4"] = _verdicts(metrics_port, port, serving_port=port)
+            time.sleep(8)
+            res["R4n"] = _verdicts(metrics_port, port)
+            res["R4i"] = _verdicts(metrics_port, port, probe=True)
             res["alerts_total"] = len(sink.bodies)
     finally:
         res["guarded_stop"] = vs.stop(proc)
@@ -277,8 +287,9 @@ def run(out: str, port: int, metrics_port: int) -> dict:
     return res
 
 
-EXPECT = {"R1": "PROTECTED", "R2": "INCONCLUSIVE", "R3": "PROTECTED", "R4": "NOT PROTECTED", "R5": "NOT PROTECTED",
-          "R6": "NOT PROTECTED", "R7_after_guarded": "NOT PROTECTED"}
+EXPECT = {"R1": "PROTECTED", "R2": "INCONCLUSIVE", "R3": "IDLE", "R3p": "PROTECTED", "R4": "NOT PROTECTED",
+          "R4n": "IDLE", "R4i": "NOT PROTECTED", "R5": "NOT PROTECTED", "R6": "NOT PROTECTED",
+          "R7_after_guarded": "NOT PROTECTED"}
 
 
 def judge(res: dict) -> tuple:
@@ -288,7 +299,7 @@ def judge(res: dict) -> tuple:
         summary[k] = got
         if len(got) != REPEATS or any(g != want for g in got):
             fails.append(f"{k}: expected {want} {REPEATS} times, got {got}")
-    protected_wrongly = sum(g == "PROTECTED" for k in ("R2", "R4", "R5", "R6", "R7_after_guarded")
+    protected_wrongly = sum(g == "PROTECTED" for k in ("R2", "R4", "R4n", "R4i", "R5", "R6", "R7_after_guarded")
                             for g in summary.get(k, []))
     summary["protected_when_not"] = protected_wrongly
     a = res.get("attribution") or {}

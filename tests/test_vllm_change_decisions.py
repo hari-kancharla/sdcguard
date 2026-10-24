@@ -38,7 +38,7 @@ FAULT_ALERT = {"step": 40, "detail": {"where": cd.FAULT_LAYER, "recheck": {"verd
 
 def _run(tmp_path, **over):
     out = str(tmp_path)
-    roles = {"base": {}, "same": {}, "triton": {"tps": 900.0}, "awq": {"quality": "WARN", "tps": 1250.0},
+    roles = {"base": {}, "plain": {}, "same": {}, "triton": {"tps": 900.0}, "awq": {"quality": "WARN", "tps": 1250.0},
              "fault": {"alerts": [FAULT_ALERT]}}
     roles.update(over)
     for r, kw in roles.items():
@@ -75,3 +75,15 @@ def test_a_false_alarm_on_a_clean_role_fails_the_criteria(tmp_path):
 def test_a_server_that_didnt_start_fails_first():
     ok, fails, _ = cd.judge({"base": {"ready": True}, "same": {"ready": False}})
     assert not ok and fails[0].startswith("1:")
+
+
+def test_cost_compares_base_with_plain_and_times_the_first_alert(tmp_path):
+    res, out = _run(tmp_path)
+    open(os.path.join(out, "base_server.log"), "w").write("INFO GPU KV cache size: 1,000,000 tokens\n")
+    open(os.path.join(out, "plain_server.log"), "w").write("INFO GPU KV cache size: 1,050,000 tokens\n")
+    res["fault"] = {"fault": {"injected_at": 100.0}}
+    with open(os.path.join(out, "fault_alerts.jsonl"), "w") as f:
+        f.write(json.dumps(dict(FAULT_ALERT, time=103.5)) + "\n")
+    c = cd.cost(res, out)
+    assert c["kv_cache_tokens"] == {"plain": 1050000, "base": 1000000} and c["fault_seconds_to_first_alert"] == 3.5
+    assert c["perf16"]["output_tokens_per_s"]["change"] == 0.0

@@ -378,6 +378,10 @@ def _judge(res: dict) -> tuple:
     if not reps or good == 0:
         fails.append("4: no replay at the alert's real shape was wrong in at least 19 of 20 runs at 40%, clean in 20 "
                      "of 20 at 100%, on the server's kernel")
+    # the speed of each server under the same load (64 requests, 16 at a time): what the pin costs at 40%
+    s["speed"] = {role: {k: ((res.get(role) or {}).get("load") or {}).get(k)
+                         for k in ("output_tokens_per_s", "ttft_p50_ms", "ttft_p99_ms", "latency_p99_ms")}
+                  for role in ("ref100", "mps40", "pinned40") if res.get(role)}
     for role in ("ref100", "mps40"):
         c = (res.get(role) or {}).get("kernel_test")
         if c is not None:

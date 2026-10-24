@@ -364,6 +364,37 @@ def check(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[
                    noise_path, _stack())
 
 
+def check_trace(ref_path: str, out: str, model: Optional[str] = None, extra: Optional[dict] = None,
+                noise_path: Optional[str] = None, llm=None) -> dict:
+    """model-check through vLLM's own Trace Replay (vLLM 0.32 and later, model runner V2): the engine is made to emit
+    the recorded completion token by token through its decode path, CUDA graphs and all, while the log-probabilities
+    come from the real logits at each step. The default check scores the same tokens through the prefill path
+    (prompt_logprobs); a fault that only shows in decode is seen here and not there. `llm` is an engine already made
+    (with enable_trace_replay=True), for a caller that changes it first."""
+    from vllm import SamplingParams
+    from vllm.inputs import TokensPrompt
+    ref = json.load(open(ref_path))
+    if ref.get("schema") != REF_SCHEMA:
+        raise ValueError(f"{ref_path} isn't a {REF_SCHEMA} file")
+    extra = dict(extra if extra is not None else ref.get("extra") or {})
+    if llm is None:
+        llm = _llm(model or ref["model"], ref.get("dtype") or "bfloat16", ref.get("max_len") or 2048,
+                   {**extra, "enable_trace_replay": True})
+    sps = [SamplingParams(temperature=0.0, logprobs=TOP, trace_decode_token_ids=list(r["completion_ids"]))
+           for r in ref["records"]]
+    outs = llm.generate([TokensPrompt(prompt_token_ids=r["prompt_ids"]) for r in ref["records"]], sps,
+                        use_tqdm=False)
+    cand = []
+    for r, o in zip(ref["records"], outs):
+        c = o.outputs[0]
+        if list(c.token_ids) != list(r["completion_ids"]):
+            cand.append(None)                    # the trace wasn't what ran: none of its positions are scored
+            continue
+        cand.append([None] * len(r["prompt_ids"]) + [dict(pos) for pos in (c.logprobs or [])])
+    run = _finish(ref, ref_path, cand, out, model or ref["model"], extra, noise_path, {**_stack(), "via": "trace"})
+    return run
+
+
 def _finish(ref: dict, ref_path: str, cand: list, out: str, model: str, extra, noise_path: Optional[str],
             stack: dict) -> dict:
     res = compare(ref, cand)
@@ -432,6 +463,8 @@ def main(argv) -> int:
     c.add_argument("--noise", default=None, help="a model-check file from the reference's own stack")
     c.add_argument("--vllm-arg", action="append", help="KEY=VALUE passed to vllm.LLM (JSON values allowed)")
     c.add_argument("--url", default=None, help="score on this running vLLM server instead of loading the model here")
+    c.add_argument("--trace-replay", action="store_true",
+                   help="score through vLLM's Trace Replay (the decode path) instead of prompt_logprobs (prefill)")
     c.add_argument("--stack", action="append", help="KEY=VALUE recorded as part of the server's stack (gpu, say)")
     a = p.parse_args(argv)
     if a.cmd == "model-ref":
@@ -444,6 +477,8 @@ def main(argv) -> int:
         return 0
     if a.url:
         run = check_url(a.ref, a.out, a.url, a.model, a.noise, _extra(a.stack))
+    elif a.trace_replay:
+        run = check_trace(a.ref, a.out, a.model, _extra(a.vllm_arg) if a.vllm_arg else None, a.noise)
     else:
         run = check(a.ref, a.out, a.model, _extra(a.vllm_arg) if a.vllm_arg else None, a.noise)
     print(json.dumps({"summary": run["summary"], "verdict": run["verdict"]}, indent=1))

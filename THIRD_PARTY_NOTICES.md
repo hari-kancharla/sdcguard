@@ -1,0 +1,12 @@
+# Third-party notices
+
+sdcguard is MIT licensed (LICENSE). It contains code from these projects, under their licenses:
+
+## vLLM
+
+`src/sdcguard/vllm_plugin.py`, function `machete_apply_weights`, is a modified copy of
+`MacheteLinearKernel.apply_weights` from vLLM 0.31.0 and 0.32.0
+(`vllm/model_executor/kernels/linear/mixed_precision/machete.py`), Copyright contributors to the vLLM project,
+licensed under the Apache License, Version 2.0. The change: its call to `machete_mm` is replaced with sdcguard's
+op, which runs the same GEMM and sdcguard's check together. The license text is in
+`licenses/vLLM-Apache-2.0.txt`.

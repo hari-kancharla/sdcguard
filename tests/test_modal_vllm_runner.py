@@ -341,3 +341,28 @@ def test_the_decisions_run_alone_and_fail_on_a_nonzero_exit(runner, monkeypatch,
     monkeypatch.setattr(runner, "decisions", _remote("decisions: exit code 1 in 40.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("decisions")
+
+
+def test_the_isolation_runs_both_versions_and_only_031_decides(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+
+    class _Call:
+        def __init__(self, m):
+            self.m = m
+
+        def get(self):
+            return self.m
+
+    class _Fn:
+        def __init__(self, m):
+            self.m = m
+
+        def spawn(self, *a):
+            return _Call(self.m)
+    monkeypatch.setattr(runner, "isolation031", _Fn("isolation0310: exit code 0 in 18.0 minutes"))
+    monkeypatch.setattr(runner, "isolation032", _Fn("isolation0320: exit code 1 in 17.0 minutes"))
+    runner.main("isolation")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "isolation031", _Fn("isolation0310: exit code 1 in 18.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("isolation")

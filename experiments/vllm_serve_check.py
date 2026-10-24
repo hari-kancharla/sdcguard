@@ -1,4 +1,4 @@
-"""sdcguard in a real `vllm serve`: the OpenAI-compatible server, with its engine and GPU workers in processes of
+"""sdcguard in a real `vllm serve`: the HTTP server, with its engine and GPU workers in processes of
 their own, as people deploy it. experiments/vllm_check.py runs the offline API with the engine in one process;
 this runs the server twice, plain and guarded, and talks to it over HTTP only.
 

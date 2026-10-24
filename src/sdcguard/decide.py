@@ -10,6 +10,7 @@ kernel backend, a parallelism or batching setting), with its four questions kept
         --alerts alerts.jsonl                    # the vLLM plugin's alerts while the candidate served
         --plugin-metrics w0.txt w1.txt           # each worker's sdcguard /metrics at the end: what it checked
         --perf before_perf.json after_perf.json  # `sdcguard perf` against each
+        --isolation iso.json                     # `sdcguard isolation` of the candidate
     sdcguard decide --applies decision.json      # does that decision still apply to the stack installed here?
 
 1. Arithmetic: did the operations that were checked compute correctly? Against float64, never against the old
@@ -26,11 +27,14 @@ kernel backend, a parallelism or batching setting), with its four questions kept
 3. Performance: does the change buy what it is for? From two `sdcguard perf` runs of the same load:
      MEETS, MISSES (a required gain not reached, a latency limit passed, or the gain within the noise between rounds)
      or UNMEASURED.
-4. Scope: where the answer holds: the stacks (from the sources' own records), the kernels the change added and
+4. Isolation: does one request's answer depend on another request? From `sdcguard isolation` (primer dependence
+   and canaries): LEAK, NO LEAK SEEN or UNMEASURED. A matmul check can't see this: the arithmetic can be right on
+   another request's data.
+5. Scope: where the answer holds: the stacks (from the sources' own records), the kernels the change added and
    dropped, added kernels that match a known cuBLAS issue, added kernels no test ran, and what no source checks.
 
-The decision: REJECT when the arithmetic shows a FAULT, the approximation is OUTSIDE, or a required performance
-target MISSES; ACCEPT when the arithmetic shows NO FAULT OBSERVED, the approximation is WITHIN, and performance MEETS
+The decision: REJECT when the arithmetic shows a FAULT, the approximation is OUTSIDE, the isolation check shows a
+LEAK, or a required performance target MISSES; ACCEPT when the arithmetic shows NO FAULT OBSERVED, the approximation is WITHIN, and performance MEETS
 (or isn't required); otherwise NOT DECIDED, with what is missing. ACCEPT means no reason to reject was found within
 the scope listed, not that the stack is correct everywhere.
 
@@ -38,7 +42,8 @@ Policy (JSON), with these defaults:
     {"arithmetic": {"min_weights_checked": 0.5},
      "quality": {"accept_warn": false, "max_mean_kl": null, "min_top1": null},
      "performance": {"required": false, "min_throughput_gain": 0.0, "max_ttft_p99_increase": null,
-                     "max_itl_p99_increase": null}}
+                     "max_itl_p99_increase": null},
+     "isolation": {"required": false}}
 Stdlib only: this runs anywhere the files are.
 """
 from __future__ import annotations
@@ -55,7 +60,8 @@ SCHEMA = "sdcguard.decision/1"
 DEFAULT_POLICY = {"arithmetic": {"min_weights_checked": 0.5},
                   "quality": {"accept_warn": False, "max_mean_kl": None, "min_top1": None},
                   "performance": {"required": False, "min_throughput_gain": 0.0, "max_ttft_p99_increase": None,
-                                  "max_itl_p99_increase": None}}
+                                  "max_itl_p99_increase": None},
+                  "isolation": {"required": False}}
 # what none of the sources can see, whatever they say (the plugin checks linear layers; the cases and the kernel test
 # rerun GEMMs; the quality check sees the model's output distributions)
 NOT_CHECKED = ("attention, normalization, sampling and other non-GEMM kernels: only through the quality check",
@@ -220,6 +226,22 @@ def performance(base: Optional[dict], cand: Optional[dict], pol: dict) -> dict:
     return {"verdict": "MISSES" if misses else "MEETS", "required": p["required"], "misses": misses, "metrics": m}
 
 
+# ---------------------------------------------------------------- 5. isolation
+def isolation_section(iso: Optional[dict], pol: dict) -> dict:
+    req = pol["isolation"]["required"]
+    if iso is None:
+        return {"verdict": "UNMEASURED", "required": req, "why": "no isolation check was given"}
+    v = iso.get("verdict")
+    if v not in ("LEAK", "NO LEAK SEEN"):
+        return {"verdict": "UNMEASURED", "required": req, "why": f"the isolation check was {v}: "
+                + "; ".join(iso.get("why") or [])}
+    return {"verdict": v, "required": req, "why": "; ".join(iso.get("why") or []),
+            "primer_pairs": (iso.get("primer") or {}).get("pairs"),
+            "primer_pairs_differing": (iso.get("primer") or {}).get("pairs_differing"),
+            "canary_answers": (iso.get("canary") or {}).get("answered"),
+            "canary_leaks": len((iso.get("canary") or {}).get("leaks") or [])}
+
+
 # ---------------------------------------------------------------- 4. scope
 def scope(kernels_before: Optional[dict], kernels_after: Optional[dict], kernel_test: Optional[dict],
           stacks: dict) -> dict:
@@ -265,11 +287,12 @@ def still_applies(decision: dict, stack_now: dict) -> dict:
 
 # ---------------------------------------------------------------- the decision
 def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=None, kernels_after=None,
-           kernel_test=None, alerts=None, perf_before=None, perf_after=None, plugin=None) -> dict:
+           kernel_test=None, alerts=None, perf_before=None, perf_after=None, plugin=None, isolation=None) -> dict:
     pol = policy_with_defaults(pol)
     a = arithmetic(alerts, gate, kernel_test, plugin, pol["arithmetic"]["min_weights_checked"])
     q = approximation(quality, pol)
     p = performance(perf_before, perf_after, pol)
+    iso = isolation_section(isolation, pol)
     stacks = {"baseline": (quality or {}).get("ref_stack"), "candidate": (quality or {}).get("stack")}
     s = scope(kernels_before, kernels_after, kernel_test, stacks)
     reject, missing = [], []
@@ -280,12 +303,16 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
         reject.append("approximation: " + (q.get("why") or "outside the budget"))
     if p["verdict"] == "MISSES" and p["required"]:
         reject.append("performance: " + "; ".join(p["misses"]))
+    if iso["verdict"] == "LEAK":
+        reject.append("isolation: " + iso["why"])
     if a["verdict"] != "NO FAULT OBSERVED" and a["verdict"] != "FAULT":
         missing.append("arithmetic: " + "; ".join(a["unresolved"][:3]))
     if q["verdict"] == "UNMEASURED":
         missing.append("approximation: " + q["why"])
     if p["required"] and p["verdict"] == "UNMEASURED":
         missing.append("performance: " + p["why"])
+    if iso["required"] and iso["verdict"] == "UNMEASURED":
+        missing.append("isolation: " + iso["why"])
     if reject:
         d, why = "REJECT", reject
     elif missing:
@@ -293,7 +320,7 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
     else:
         d, why = "ACCEPT", ["no reason to reject was found within the scope listed"]
     return {"schema": SCHEMA, "decision": d, "why": why, "arithmetic": a, "approximation": q, "performance": p,
-            "scope": s, "policy": pol, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+            "isolation": iso, "scope": s, "policy": pol, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def render(r: dict) -> str:
@@ -318,7 +345,12 @@ def render(r: dict) -> str:
                          + (", within noise" if x["noise"] else "") + ")")
     if not p.get("metrics") and p.get("why"):
         lines.append(f"   {p['why']}")
-    lines.append(f"4. Scope (stack fingerprint {s['fingerprint']})")
+    iso = r.get("isolation") or {}
+    lines.append(f"4. Isolation (does one request's answer depend on another's?): {iso.get('verdict')}"
+                 + (" (required)" if iso.get("required") else " (not required)"))
+    if iso.get("why"):
+        lines.append(f"   {iso['why']}")
+    lines.append(f"5. Scope (stack fingerprint {s['fingerprint']})")
     for side in ("baseline", "candidate"):
         st = (s.get("stacks") or {}).get(side)
         if st:
@@ -360,6 +392,7 @@ def main(argv=None) -> int:
     p.add_argument("--plugin-metrics", nargs="+", metavar="METRICS",
                    help="each worker's sdcguard /metrics text, read at the end of the candidate's run")
     p.add_argument("--perf", nargs=2, metavar=("BEFORE", "AFTER"))
+    p.add_argument("--isolation", help="`sdcguard isolation` of the candidate")
     p.add_argument("--out")
     p.add_argument("--json", action="store_true")
     p.add_argument("--applies", metavar="DECISION", help="does this decision apply to the stack installed here?")
@@ -373,7 +406,8 @@ def main(argv=None) -> int:
     r = decide(ld(a.policy), ld(a.quality), ld(a.gate), *(map(ld, a.kernels) if a.kernels else (None, None)),
                ld(a.kernel_test), _read_jsonl(a.alerts) if a.alerts else None,
                *(map(ld, a.perf) if a.perf else (None, None)),
-               plugin_coverage([open(x).read() for x in a.plugin_metrics]) if a.plugin_metrics else None)
+               plugin_coverage([open(x).read() for x in a.plugin_metrics]) if a.plugin_metrics else None,
+               ld(a.isolation))
     if a.out:
         with open(a.out, "w") as f:
             json.dump(r, f, indent=1, default=str)

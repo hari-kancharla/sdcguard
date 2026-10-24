@@ -14,12 +14,16 @@ worker it was told to expect:
   - each worker is on its own GPU (with --gpus, exactly the GPUs given: the answer is then bound to this
     server's workers, not to whatever process exports metrics on those ports), and none restarted between the
     two reads;
-  - every worker's executed checks went up between the two reads, or vLLM's own metrics (--vllm, the API
-    server's /metrics) show it produced no tokens in between (idle). If vLLM produced tokens and a worker's checks
-    didn't go up, that worker is serving unchecked. Without --vllm, checks that didn't go up can mean an idle
-    server or stopped checks, so the answer is INCONCLUSIVE: pass --vllm for a definite one.
+  - every worker's executed checks went up between the two reads. If vLLM's own metrics (--vllm, the API
+    server's /metrics) show it produced tokens and a worker's checks didn't go up, that worker is serving
+    unchecked. If they show no tokens in between, the server is idle and the answer is IDLE: everything else
+    holds, but nothing shows the checks would run for the next request (stopped checks look the same on an idle
+    server); --probe sends two short requests and reads again, which turns IDLE into PROTECTED or NOT PROTECTED.
+    Without --vllm, checks that didn't go up can mean an idle server or stopped checks, so the answer is
+    INCONCLUSIVE: pass --vllm (and --probe) for a definite one.
 
-Exit codes: 0 PROTECTED, 1 NOT PROTECTED, 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
+Exit codes: 0 PROTECTED or IDLE (a readiness probe on an idle server must pass, or no traffic ever reaches it;
+use --probe to have IDLE checked), 1 NOT PROTECTED, 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
 restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a
 Kubernetes readiness probe any nonzero code keeps traffic away, so the probe's timeoutSeconds must be longer than
 --window. Only the Python standard library is used, so the check runs in a small sidecar as well as in the
@@ -27,7 +31,7 @@ server's own image. PROTECTED means the configured checks are running and their 
 expected worker; it doesn't mean every answer is right (see what the checks cover, and SDCGUARD_SHARE: a share
 checks the same subset of layers every step).
 
-    sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics
+    sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics --probe http://127.0.0.1:8000
     sdcguard ready --url http://10.0.0.5:9400/metrics --url http://10.0.0.5:9401/metrics --json
 """
 from __future__ import annotations
@@ -95,6 +99,7 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
     """first, second: per worker (url, values, info, error) from the two reads; vllm_*: vLLM's values or None.
     Returns {"verdict", "problems", "unsure", "notes", "workers"}."""
     problems, unsure, notes, workers = [], [], [], []
+    idle = False
     for (url, a, ia, ea), (_u, b, ib, eb) in zip(first, second):
         w = {"url": url, "gpu": ia.get("UUID") or None, "pid": ia.get("pid") or None,
              "layers_checked": a.get("sdcguard_layers_checked"),
@@ -157,12 +162,43 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
                     problems.append(f"{w['url']}: vLLM produced {t2 - t1:g} tokens between the reads but this "
                                     "worker's executed checks didn't go up: it is serving unchecked")
         else:
-            notes.append("idle: vLLM produced no tokens between the reads")
+            idle = True
+            notes.append("idle: vLLM produced no tokens between the reads, so the checks weren't shown running now "
+                         "(--probe sends a short request to show it)")
     elif not all(grew):
         unsure.append("executed checks didn't go up between the reads on every worker: the server is idle, or its "
                       "checks stopped, and without --vllm these can't be told apart")
-    verdict = "NOT PROTECTED" if problems else ("INCONCLUSIVE" if unsure else "PROTECTED")
+    verdict = "NOT PROTECTED" if problems else ("INCONCLUSIVE" if unsure else ("IDLE" if idle else "PROTECTED"))
     return {"verdict": verdict, "problems": problems, "unsure": unsure, "notes": notes, "workers": workers}
+
+
+def probe(base: str, model: Optional[str] = None, timeout: float = 60.0) -> Optional[str]:
+    """Two short greedy completions 2.5 s apart (the plugin reads its results back at the first step after 2 s
+    idle), so the checks have to run, and be read, for this request. None when they were answered, else why not."""
+    import http.client
+    from urllib.parse import urlparse
+    u = urlparse(base if "://" in base else "http://" + base)
+    try:
+        if model is None:
+            with urllib.request.urlopen(f"{u.scheme}://{u.netloc}/v1/models", timeout=timeout) as r:
+                model = json.loads(r.read())["data"][0]["id"]
+        for i in range(2):
+            c = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=timeout)
+            try:
+                c.request("POST", "/v1/completions", headers={"Content-Type": "application/json"},
+                          body=json.dumps({"model": model, "prompt": "sdcguard readiness probe", "max_tokens": 8,
+                                           "temperature": 0.0, "ignore_eos": True}))
+                r = c.getresponse()
+                r.read()
+                if r.status != 200:
+                    return f"the probe request got HTTP {r.status}"
+            finally:
+                c.close()
+            if i == 0:
+                time.sleep(2.5)
+    except (OSError, ValueError, KeyError, IndexError) as e:
+        return f"the probe request failed: {type(e).__name__}: {e}"
+    return None
 
 
 def main(argv=None) -> int:
@@ -179,6 +215,9 @@ def main(argv=None) -> int:
     p.add_argument("--min-weights", type=float, help="lowest share of the model's linear-layer weights checked")
     p.add_argument("--gpus", help="the GPUs this server must run on (UUIDs, comma-separated, as nvidia-smi -L "
                    "prints them): binds the answer to this server's workers, not any process exporting metrics")
+    p.add_argument("--probe", metavar="URL", help="vLLM's API base (http://host:8000): when the server is idle, send "
+                   "two short requests and read again, so the checks are shown running now (PROTECTED) or not "
+                   "(NOT PROTECTED) instead of IDLE")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -203,8 +242,28 @@ def main(argv=None) -> int:
               gpus=gpus)
     if a.vllm and vllm_first is None:
         r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read")
-        if r["verdict"] == "PROTECTED":
+        if r["verdict"] in ("PROTECTED", "IDLE"):
             r["verdict"] = "INCONCLUSIVE"
+    if r["verdict"] == "IDLE" and a.probe:
+        why = probe(a.probe)
+        if why:
+            r["unsure"].append(why)
+            r["verdict"] = "INCONCLUSIVE"
+        else:
+            time.sleep(1.0)
+            third = [(u, *scrape(u)) for u in urls]
+            v3 = scrape(a.vllm)
+            if v3[2]:
+                r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read after the probe")
+                r["verdict"] = "INCONCLUSIVE"
+            else:
+                r2 = judge(second, third, vllm_second, v3[0], max_z=a.max_z, layers=a.layers,
+                           min_weights=a.min_weights, gpus=gpus)
+                r2["notes"].insert(0, "probed: two short requests were sent because the server was idle")
+                if r2["verdict"] == "IDLE":   # vLLM counted no tokens for the probe: it can't show anything
+                    r2["verdict"] = "INCONCLUSIVE"
+                    r2["unsure"].append("vLLM counted no tokens for the probe requests")
+                r = r2
     if a.json:
         print(json.dumps(r, indent=1))
     else:
@@ -215,7 +274,7 @@ def main(argv=None) -> int:
             print(f"  unsure: {line}")
         for line in r["notes"]:
             print(f"  note: {line}")
-    return {"PROTECTED": 0, "NOT PROTECTED": 1}.get(r["verdict"], 2)
+    return {"PROTECTED": 0, "IDLE": 0, "NOT PROTECTED": 1}.get(r["verdict"], 2)
 
 
 if __name__ == "__main__":

@@ -40,6 +40,7 @@ which record their own GPUs. Most runs since October 19 also record the code fin
 | `outputs_oct23/` | October 23: the gate's output check: PASS for batching and Triton attention, FAIL for the AWQ model and for rms_norm_eps 1.0 (the matmul checks quiet), as expected | each check's JSON |
 | `fused_soak/` | October 23: the fused precise check on 40 minutes of clean training on an H100 (4,568,751 checks, worst 2.67) and an L4 (613,404, worst 3.32): no alarm, every criterion met | each GPU's JSON |
 | `mode_compare/` | October 23: the default check and precise mode on the same corrupted matmuls on an H100, an A100 and an L4: half of the errors flagged from 29% (default) and 0.71% to 0.92% (precise), with step times | `SUMMARY.md` |
+| `ready_attrib_oct24/` | October 24: `sdcguard ready` and the requests an alert concerns on real `vllm serve` (vLLM 0.32, one H100): every criterion met (21 of 21 verdicts, 5 of 5 single requests named exactly, 7 of 7 alerts under 32 requests sent 8 at a time naming one of them) | `SUMMARY.json`, and `docs/METHOD.md` |
 
 In the demo folders, `baseline/` is the run without sdcguard and `sdcguard/` the run with it, and
 `faults_rank2_attempt*.json` is the fault simulator's log for each attempt. In the first demo run the

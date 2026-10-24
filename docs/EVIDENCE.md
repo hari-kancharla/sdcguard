@@ -52,6 +52,7 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 | INT4 on Marlin on an L4, and the gate's output check | Oct 23, Modal L4, H100 | INT4: every criterion met on both 1.5B models. Output check: PASS for batching and Triton attention, FAIL for the AWQ model and for rms_norm_eps 1.0 while the matmul checks stayed quiet, as expected | met | [results/quant_l4_oct23](../results/quant_l4_oct23), [results/outputs_oct23](../results/outputs_oct23) |
 | The fused precise check on 40 minutes of clean training | Oct 23, Modal H100, L4 | 4,568,751 checks (H100, worst 2.67) and 613,404 (L4, worst 3.32): no alarm, none unjudged, no fallback; now supported for training, as the rule written before the run says | met | [results/fused_soak](../results/fused_soak) |
 | The default check and precise mode (`precise=True`) on the same corrupted matmuls | Oct 23, Modal H100, A100, L4 | half the errors flagged from about 29% of a typical output (default) and 0.71% to 0.92% (precise), 9 in 10 from 78% and 2.4%; no clean false alarm; every step checked on the small model: default +8% to +59%, precise +258% to +526% | reported, no pass line | [results/mode_compare](../results/mode_compare/SUMMARY.md) |
+| `sdcguard ready` and the requests an alert concerns, on real `vllm serve` | Oct 24, Modal H100, vLLM 0.32.0 | every criterion met: 21 of 21 readiness verdicts as expected, PROTECTED in none of the 15 cases that weren't protected or couldn't be told; 5 of 5 single requests named exactly; with 32 requests sent 8 at a time, 7 of 7 alerts named one of the 32 (membership, not exact ownership); completions identical to SDCGUARD=0. Not tested: stopped checks on an idle server (a second run is written) | met (injected weight flips) | [METHOD.md](METHOD.md#verifiable-protection-status-and-the-requests-an-alert-concerns-written-october-24-before-any-run), [results](../results/ready_attrib_oct24) |
 | A naturally defective GPU | never | none has been found or tested | gap | |
 | Real users or production incidents | never | none yet | gap | |
 
@@ -59,6 +60,8 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 
 | Experiment | Written | Where |
 |---|---|---|
-| Default check vs precise mode on the same matmuls | Oct 19 | [METHOD.md](METHOD.md#the-default-check-and-precise-mode-on-the-same-matmuls-written-october-19-2026-before-any-gpu-run) |
+| The cuBLAS bug caught inside `vllm serve`, its replay, the pinned fix and `sdcguard kernels test` (H200 under MPS) | Oct 24 | [METHOD.md](METHOD.md#the-cublas-bug-inside-the-real-server-written-october-24-before-any-run) |
+| `sdcguard decide` on four changes to a 7B `vllm serve`, with vLLM's Trace Replay beside it (H100) | Oct 24 | [METHOD.md](METHOD.md#decisions-on-four-changes-to-a-vllm-server-written-october-24-before-any-run) |
+| `sdcguard isolation` on vLLM issue #62124 and two controls (L4, vLLM 0.31 and 0.32) | Oct 24 | [METHOD.md](METHOD.md#answers-that-depend-on-the-request-before-written-october-24-before-any-run) |
 
 When a run finishes, its row moves to section 2 with its result, whatever it is.

@@ -69,9 +69,11 @@ def test_two_workers_checking_while_vllm_serves_are_protected(close):
     assert _run([a, b], v) == 0
 
 
-def test_an_idle_server_is_protected_only_when_vllm_says_it_is_idle(close, capsys):
+def test_an_idle_server_is_idle_not_protected_when_vllm_says_it_is_idle(close, capsys):
     v = _srv(close, "vllm:generation_tokens_total 10\n")          # no tokens between the reads
-    assert _run([_srv(close, _page())], v) == 0 and "idle" in capsys.readouterr().out
+    assert _run([_srv(close, _page())], v) == 0
+    out = capsys.readouterr().out
+    assert '"verdict": "IDLE"' in out and "--probe" in out
     # without vLLM's metrics, checks that didn't move can't be told from stopped checks
     assert _run([_srv(close, _page())]) == 2 and "can't be told apart" in capsys.readouterr().out
 
@@ -142,3 +144,71 @@ def test_gpus_bind_the_answer_to_the_servers_workers(close):
     assert _run([a], extra=("--gpus", "GPU-a")) == 0
     b = _srv(close, _page(), _page(executed=150))
     assert _run([b], extra=("--gpus", "GPU-other")) == 1
+
+
+class _Api:
+    """A stand-in vLLM API: /v1/models and /v1/completions, counting the completions."""
+
+    def __init__(self, status=200):
+        self.n, outer = 0, self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = b'{"data": [{"id": "m"}]}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                outer.n += 1
+                body = b'{"choices": [{"text": "ok"}]}'
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def test_probe_turns_idle_into_protected_when_the_checks_run_for_it(close, monkeypatch):
+    monkeypatch.setattr(ready.time, "sleep", lambda s: None)
+    api = _Api()
+    close(api)
+    w = _srv(close, _page(), _page(), _page(executed=180))        # idle, idle, then the probe's checks
+    v = _srv(close, "vllm:generation_tokens_total 10\n", "vllm:generation_tokens_total 10\n",
+             "vllm:generation_tokens_total 26\n")
+    assert _run([w], v, ["--probe", api.url]) == 0 and api.n == 2
+
+
+def test_probe_finds_checks_stopped_on_an_idle_server(close, monkeypatch, capsys):
+    monkeypatch.setattr(ready.time, "sleep", lambda s: None)
+    api = _Api()
+    close(api)
+    w = _srv(close, _page())                                      # the counters never move: the checks stopped
+    v = _srv(close, "vllm:generation_tokens_total 10\n", "vllm:generation_tokens_total 10\n",
+             "vllm:generation_tokens_total 26\n")
+    assert _run([w], v, ["--probe", api.url]) == 1
+    out = capsys.readouterr().out
+    assert '"verdict": "NOT PROTECTED"' in out and "serving unchecked" in out and "probed" in out
+
+
+def test_a_probe_that_fails_or_counts_no_tokens_is_inconclusive(close, monkeypatch):
+    monkeypatch.setattr(ready.time, "sleep", lambda s: None)
+    bad = _Api(status=500)
+    close(bad)
+    v = _srv(close, "vllm:generation_tokens_total 10\n")
+    assert _run([_srv(close, _page())], v, ["--probe", bad.url]) == 2
+    api = _Api()
+    close(api)
+    v = _srv(close, "vllm:generation_tokens_total 10\n")          # vLLM never counts the probe's tokens
+    assert _run([_srv(close, _page())], v, ["--probe", api.url]) == 2
