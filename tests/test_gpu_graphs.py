@@ -13,6 +13,7 @@ import torch
 import _fp8_standins as fs
 from _vllm_standins import install_fake_moe, vllm_topk
 from sdcguard import _serve_fast
+from sdcguard import serve_attn as sa
 from sdcguard import serve_fp8 as sf
 from sdcguard import serve_moe as sm
 from sdcguard import serve_norm as sn
@@ -269,3 +270,66 @@ def test_the_linear_check_in_a_replayed_graph(path):
         close_counts(eager, replayed, slice(2, None), lambda t: _serve_fast.decode(*t[0].tolist())[0], rel=2e-2)
         z = _serve_fast.decode(*replayed[0].tolist())[0]
         assert (z > 6.0) == wrong, z
+
+
+# ------------------------------------------------------------------------------------------------------ attention
+@pytest.mark.parametrize("path", ["torch", "triton"])
+def test_the_attention_check_in_a_replayed_graph(path):
+    """As vLLM's FULL CUDA graphs run it: captured once, replayed with the next steps' batches written into the same
+    tensors (queries, outputs, cache, query_start_loc, seq_lens, block table, slots). A replay leaves the state an
+    eager call on that batch leaves, a wrong output is found, and inactive steps and other layers' turns count
+    nothing."""
+    if path == "triton":
+        ok, why = sa.verify_kernel(DEV, torch.bfloat16)
+        assert ok, why
+    fn = sa.attn_check_torch if path == "torch" else sa.attn_check_triton
+    lens = ((300, 1), (40, 1), (64, 12), (0, 0))
+    c = sa.make_case(DEV, torch.bfloat16, D=128, Hq=8, Hkv=2, lens=lens, NB=40, padded_rows=4, seed=1)
+    b = sa.buffers(DEV, 2, 128, 512, torch.bfloat16)
+    st, cm = b["state"], b["capm"]
+    counts = [sa.C_CALLS, sa.C_SAMPLES, sa.C_SKIP, sa.C_UNJ, sa.C_BADBLK, sa.C_KEYS, sa.C_WN, sa.C_WBAD, sa.C_WSLOT]
+    z_of = lambda t: sa._f32(int(t[1, sa.C_ZT]) >> 32)  # noqa: E731
+    o = c["o"].clone()
+
+    def call():
+        args = (c["q"], o, c["kv"], c["key"], c["val"], c["qsl"], c["seq_lens"], c["bt"], c["slots"], st, 1,
+                b["ctrl"], 2, 1, c["scale"], -1, sa.ATTN_Z, cm, b["capq"], b["capo"])
+        if path == "torch":
+            fn(*args, True)
+        else:
+            fn(*args, b["capkv"], b["capkvm"], b["ws"], True, True)
+
+    b["ctrl"][0], b["ctrl"][1] = 3, 1                   # step 3: the turn of the layer with index 1 of 2
+    for wrong in (False, True):
+        o.copy_(c["o"])
+        if wrong:
+            o[:, :, 3] += 1.0                           # every output wrong at dimension 3
+        (e_st, e_cm), (r_st, r_cm), graph = eager_and_replayed(call, st, cm)
+        close_counts(e_st, r_st, counts, z_of)
+        assert int(r_st[1, sa.C_CALLS]) == 1 and int(r_st[1, sa.C_SAMPLES]) == sa.SAMPLES
+        assert (z_of(r_st) > sa.ATTN_Z) == wrong and int(r_cm[1, 0]) == int(wrong), z_of(r_st)
+        assert int(r_st[1, sa.C_WN]) == sa.SAMPLES and int(r_st[1, sa.C_WBAD]) == 0 and r_st[0].abs().sum() == 0
+    # the next batch in the same tensors: other lengths, cache, queries, outputs and slots, read at replay
+    nxt = sa.make_case(DEV, torch.bfloat16, D=128, Hq=8, Hkv=2, lens=((301, 1), (41, 1), (66, 12), (0, 0)), NB=40,
+                       padded_rows=4, seed=2)
+    for k in ("q", "o", "kv", "key", "val", "qsl", "seq_lens", "bt", "slots"):
+        assert c[k].shape == nxt[k].shape, k
+        c[k].copy_(nxt[k])
+    o.copy_(nxt["o"])
+    b["ctrl"][0] = 5
+    st.zero_()
+    cm.zero_()
+    graph.replay()
+    torch.cuda.synchronize()
+    replayed = st.clone()
+    st.zero_()
+    call()
+    torch.cuda.synchronize()
+    close_counts(st.clone(), replayed, counts, z_of)
+    assert z_of(replayed) <= 1.0 and int(replayed[1, sa.C_KEYS]) == int(st[1, sa.C_KEYS])
+    for step, active in ((4, 1), (5, 0)):               # another layer's turn; outside a model step
+        b["ctrl"][0], b["ctrl"][1] = step, active
+        st.zero_()
+        graph.replay()
+        torch.cuda.synchronize()
+        assert int(st.abs().sum()) == 0

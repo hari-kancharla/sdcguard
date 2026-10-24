@@ -21,6 +21,11 @@ nothing). What it does, in every vLLM process:
     and compares (serve_moe.py: wrong experts, rows, scaling and non-finite values; vLLM's Triton MoE backend only),
     and one router (they take turns too) recomputes its routing policy for 2 rows from its logits (serve_route.py:
     the experts chosen and their weights; vLLM's top-k, grouped top-k and biased top-k routers);
+  - with SDCGUARD_ATTN=1 (off by default for now), at each model step one attention layer (they take turns)
+    recomputes 4 of its outputs (one query head of one token each) from the KV cache through the block table, and
+    checks that those tokens' own KV-cache writes went where attention reads them (serve_attn.py: vLLM's
+    FlashAttention and Triton backends, decoder attention with a 16-bit KV cache; SDCGUARD_ATTN_Z sets its line,
+    default 4);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -70,8 +75,9 @@ layer's checksums after its kernel repacked the weights: it turns that layer's c
 
 Not checked: FP8 and other quantized layers outside Marlin's and Machete's INT4/INT8 weight-only kernels (and on
 Marlin, layers with one scale per output, which it applies after accumulating), fused MoE experts, router gates that
-vLLM computes with its own GEMM (GateLinear with a bf16 weight and fp32 output), attention (including MLA's decode
-path, whose matmuls use copies of kv_b_proj's weight, so kv_b_proj is checked in prefill only), the LM head, norms
+vLLM computes with its own GEMM (GateLinear with a bf16 weight and fp32 output), attention outside SDCGUARD_ATTN's
+sampled recompute (and MLA's decode path, whose matmuls use copies of kv_b_proj's weight, so kv_b_proj is checked in
+prefill only), the KV cache's contents beyond the sampled tokens' own writes, the LM head, norms
 other than RMSNorm and GemmaRMSNorm (each run's log lists them), the residual adds fused into norms.
 Tested against vLLM 0.31 (V1 engine); vLLM's internal APIs change, so the plugin checks what it
 patches and turns itself off (with a log line) if something is missing.
@@ -118,7 +124,8 @@ def _setup_logging() -> None:
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
           "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
-          "norm_classes": [], "norms_stale": False, "moe_classes": [], "fp8_classes": [], "route_classes": []}
+          "norm_classes": [], "norms_stale": False, "moe_classes": [], "fp8_classes": [], "route_classes": [],
+          "attn_classes": [], "token_steps": 0, "dummy_runs": 0, "dummy_after": None, "in_dummy": 0}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -420,6 +427,11 @@ def _summary(r: dict) -> str:
             msg += f", not on {len(f['not_checked'])}"
         if _STATE.get("fp8_why"):
             msg += f"; FP8 linear layers' quantization not checked: {_STATE['fp8_why']}"
+    if _STATE.get("attn_classes"):
+        a = _STATE.get("attn") or {}
+        msg += f"; attention checked by a sampled recompute on {a.get('checked', 0)} layers (SDCGUARD_ATTN=1)"
+        if a.get("not_checked"):
+            msg += f", not on {len(a['not_checked'])}"
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -597,14 +609,18 @@ def _attribute(ev) -> None:
     cap = d.get("captured") or {}
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
+    attn = bool(_STATE.get("attn_classes"))
     parts = ["linear layers"] + (["RMSNorm layers"] if _STATE.get("norm_classes") else []) + \
         (["sampled rows of MoE experts and their routing"] if _STATE.get("moe_classes") else []) + \
-        (["FP8 input quantization"] if _STATE.get("fp8_classes") else [])
+        (["FP8 input quantization"] if _STATE.get("fp8_classes") else []) + \
+        (["sampled attention outputs and those tokens' KV writes"] if attn else [])
     rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
+    unchecked = (["attention outputs not sampled", *rest, "the rest of the KV cache", "sampling"] if attn else
+                 ["attention", *rest, "the KV cache", "sampling"])
     d["unknown_impact"] = [
         "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
         f"the plugin checks {' and '.join(parts) if len(parts) < 3 else ', '.join(parts[:-1]) + ' and ' + parts[-1]}"
-        + ("" if len(parts) > 1 else " only") + "; " + ", ".join(["attention", *rest, "the KV cache", "sampling"]) +
+        + ("" if len(parts) > 1 else " only") + "; " + ", ".join(unchecked) +
         " and communication between GPUs (all-reduce, all-to-all) aren't checked: a wrong collective result is an "
         "input the checked layers accept"]
     if _share(os.environ.get("SDCGUARD_SHARE", "1")) < 1:
@@ -613,7 +629,13 @@ def _attribute(ev) -> None:
     if not steps:
         d["directly_implicated"], d["attribution"] = None, "unavailable: no model step was recorded"
         return
-    if st is not None and row is not None and st in steps:
+    always_on = getattr(ev, "detector", None) not in ("serve_attn", "serve_route", "serve_fp8")  # (step-only)
+    if st is not None and row is not None and always_on and st in set(_STATE.get("dummy_after") or ()):
+        d["directly_implicated"] = None
+        d["attribution"] = (f"unavailable: row {row} carries step {st}, but vLLM ran a dummy batch (no request's "
+                            f"tokens: warm-up, CUDA-graph capture or a data-parallel rank with nothing scheduled) "
+                            f"after step {st}, before the next, and the row may be from it")
+    elif st is not None and row is not None and st in steps:
         ids, ends = steps[st]
         if ids is None:
             d["directly_implicated"], d["attribution"] = None, f"unavailable for step {st}: {ends}"
@@ -665,6 +687,25 @@ def _on_alert(ev) -> None:
                     d.get("calls_scale_from_outside_rows"), d.get("sampled_rows_with_wrong_values"),
                     d.get("scale_ratio"))
         return
+    if ev.detector == "serve_attn":
+        c = d.get("captured") or {}
+        if d.get("finding") == "kv_write_wrong":
+            log.warning("sdcguard ALERT: KV-cache write of %s on %s (%s, PCI %s, host %s): %s of %s sampled writes "
+                        "with wrong content, %s to another slot than their block names (latest: step %s row %s)",
+                        d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
+                        d.get("writes_with_wrong_content"), d.get("writes_checked"), d.get("writes_to_another_slot"),
+                        c.get("step"), c.get("row"))
+        elif d.get("finding") == "block_table_out_of_range":
+            log.warning("sdcguard ALERT: attention %s on %s (%s, PCI %s, host %s): %s sampled requests' block tables "
+                        "point outside the KV cache", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
+                        i.get("pci_bus_id"), i.get("host"), d.get("samples"))
+        else:
+            log.warning("sdcguard ALERT: attention %s on %s (%s, PCI %s, host %s) z=%s (row %s, head %s, dim %s, "
+                        "position %s: %s, expected %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
+                        i.get("pci_bus_id"), i.get("host"), d.get("max_z"), d.get("row"), d.get("head"),
+                        d.get("dim"), d.get("position"), d.get("output"), d.get("expected"),
+                        (d.get("recheck") or {}).get("verdict"))
+        return
     if ev.detector == "serve_route":
         c = d.get("captured") or {}
         log.warning("sdcguard ALERT: MoE routing of %s on %s (%s, PCI %s, host %s): %s (%s of %s sampled rows with "
@@ -708,7 +749,54 @@ def _rearm() -> None:
     layer's check off: quantized layers, weights cast to fp32), not only to what was checked at start-up."""
     _STATE["reported"] = False
     _STATE["rechecked"] = None
-    _STATE["norms_stale"] = True          # norm and MoE layers take their current weights at the next model step
+    _STATE["norms_stale"] = True          # norm and MoE layers take their current weights before the next batch
+
+
+def _take_new_weights(g) -> None:
+    """After weights changed (_rearm): norm and MoE layers compare with the current weights from here on. Called
+    before each model step and each dummy batch, so neither is judged against the old weights; never inside a
+    CUDA-graph capture (it waits for the next call outside one)."""
+    if g is None or not _STATE.get("norms_stale"):
+        return
+    try:
+        import torch
+        if torch.cuda.is_available() and torch.cuda.is_current_stream_capturing():
+            return
+    except Exception:  # noqa: BLE001
+        pass
+    _STATE["norms_stale"] = False
+    for part in (g.norms, g.moe):
+        if part is not None:
+            try:
+                part.refresh()
+            except Exception as e:  # noqa: BLE001
+                log.warning("sdcguard: couldn't take the new weights of norm or MoE layers: %s", e)
+
+
+def _dummy_seen() -> None:
+    """vLLM is about to run a dummy batch: one with no request's tokens (memory profiling, compile warm-up, the
+    sampler's warm-up, a data-parallel rank with nothing scheduled, and the V1 runner's CUDA-graph captures). The V1
+    runner makes these without execute_model, the V2 runner through it (dummy_run=True; its CUDA-graph captures call
+    the model directly, outside both). Not a model step: no step is marked or counted
+    and nothing is read, so the checks that judge model steps (attention, routing, FP8 quantization) stay off, as the
+    last end_step left them. The checks that always run (linear, norm and MoE layers) check it too, and a row they
+    capture there carries the last model step's number, so that step is noted: an alert on such a row doesn't name
+    the step's requests as the ones it concerns."""
+    _STATE["dummy_runs"] = _STATE.get("dummy_runs", 0) + 1
+    d = _STATE.get("dummy_after")
+    if d is None:
+        d = _STATE["dummy_after"] = collections.deque(maxlen=max(16, int(os.environ.get("SDCGUARD_STEP_LOG",
+                                                                                          "4096"))))
+    if not d or d[-1] != _STATE["steps"]:
+        d.append(_STATE["steps"])
+    _take_new_weights(_STATE["guard"])
+
+
+def _note_dummy() -> None:
+    try:
+        _dummy_seen()
+    except Exception as e:  # noqa: BLE001  (bookkeeping only: never break vLLM's warm-up or a dummy batch)
+        log.debug("sdcguard: couldn't note a dummy batch: %s", e)
 
 
 def _exact_reductions() -> None:
@@ -1139,6 +1227,121 @@ def _norm_failed(mod, e: Exception) -> None:
     log.warning("sdcguard: a norm check failed (%s: %s); that layer isn't checked from now on", type(e).__name__, e)
 
 
+def _attn_line() -> float:
+    """SDCGUARD_ATTN_Z, the attention check's line in multiples of its rounding bound (default 4). A correct output
+    scores at most 1, so a line below 1.5 (or one that isn't a number) uses 4, with a warning."""
+    from .serve_attn import ATTN_Z, MIN_LINE
+    text = os.environ.get("SDCGUARD_ATTN_Z", "")
+    if not text:
+        return ATTN_Z
+    v = _z_from(text)
+    if v is None or v < MIN_LINE:
+        log.warning("sdcguard: SDCGUARD_ATTN_Z=%r isn't a line of at least %s; using %s", text, MIN_LINE, ATTN_Z)
+        return ATTN_Z
+    return v
+
+
+ATTN_BACKENDS = (("vllm.v1.attention.backends.flash_attn", "FlashAttentionImpl"),
+                 ("vllm.v1.attention.backends.triton_attn", "TritonAttentionImpl"))
+
+
+def _patch_attn() -> list:
+    """vLLM's FlashAttention and Triton attention backends: after a registered layer's attention ran, its check
+    (serve_attn.check_call). vLLM calls the backend's forward inside an opaque op of its own (eagerly, and while CUDA
+    graphs are captured). Returns the classes patched."""
+    import importlib
+    from .serve_attn import check_call
+    done = []
+    for mod_name, cname in ATTN_BACKENDS:
+        try:
+            cls = getattr(importlib.import_module(mod_name), cname)
+            orig = vars(cls)["forward"]
+        except Exception as e:  # noqa: BLE001
+            log.warning("sdcguard: vLLM's %s not found (%s: %s); its attention isn't checked", cname,
+                        type(e).__name__, e)
+            continue
+        if getattr(cls, "_sdcguard_attn_orig", None) is not None:
+            done.append(cname)
+            continue
+
+        def forward(self, layer, query, key, value, kv_cache, attn_metadata, *args, _orig=orig, **kwargs):
+            out = _orig(self, layer, query, key, value, kv_cache, attn_metadata, *args, **kwargs)
+            a = getattr(layer, "_sdcguard_attn", None)
+            if a is not None and attn_metadata is not None:
+                output = kwargs.get("output", args[0] if args else None)
+                scale = kwargs.get("output_scale", args[1] if len(args) > 1 else None)
+                try:
+                    check_call(a, self, query, key, value, kv_cache, attn_metadata, output, scale)
+                except Exception as e:  # noqa: BLE001  (never break serving: this layer goes unchecked)
+                    _attn_failed(layer, e)
+            return out
+
+        forward.__doc__ = orig.__doc__
+        cls._sdcguard_attn_orig = orig
+        cls.forward = forward
+        done.append(cname)
+    return done
+
+
+def _attn_failed(layer, e: Exception) -> None:
+    layer.__dict__.pop("_sdcguard_attn", None)
+    g = _STATE["guard"]
+    if g is not None:
+        g.stats["attn_check_errors"] = g.stats.get("attn_check_errors", 0) + 1
+    log.warning("sdcguard: an attention check failed (%s: %s); that layer isn't checked from now on",
+                type(e).__name__, e)
+
+
+def _register_attn(runner) -> Optional[dict]:
+    """After vLLM loaded the model and before it captures CUDA graphs: register its attention layers with the guard
+    (once per process), and log how many are checked and why the others aren't."""
+    if not _STATE.get("attn_classes") or _STATE.get("attn_registered"):
+        return None
+    _STATE["attn_registered"] = True
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        log.warning("sdcguard: couldn't find the model to register its attention layers; attention isn't checked")
+        return None
+    found = [(n, m) for n, m in model.named_modules() if hasattr(m, "impl") and hasattr(m, "layer_name")]
+    if not found:
+        log.info("sdcguard: no attention layers found in this model")
+        _STATE["attn"] = {"checked": 0, "not_checked": {}}
+        return None
+    if getattr(getattr(runner, "parallel_config", None), "enable_dbo", False):
+        # microbatches run on their own streams at once, and the layers' checks share their buffers on a device
+        why = "dual-batch overlap runs microbatches concurrently"
+        log.warning("sdcguard: attention isn't checked: %s", why)
+        _STATE["attn"] = {"checked": 0, "not_checked": {str(getattr(m, "layer_name", n)): why for n, m in found}}
+        return None
+    mc = getattr(runner, "model_config", None)
+    dt = getattr(mc, "dtype", None)
+    dev = getattr(runner, "device", None)
+    if not isinstance(dev, torch.device):
+        dev = next((p.device for p in model.parameters()), None) or torch.device("cuda")
+    g = _guard(dev)
+    ac = g.attn_checks(_attn_line())
+    for name, m in found:
+        ac.add(m, m.impl, str(getattr(m, "layer_name", "") or name or type(m).__name__), dev, dt)
+    max_len = int(getattr(mc, "max_model_len", 0) or 0) or 32768
+    ac.finalize(max_len=max_len, dtypes=(dt,) if dt in (torch.bfloat16, torch.float16) else (torch.bfloat16,))
+    status = ac.kernel_status()
+    how = "the Triton kernels" if status and all(v[0] for v in status.values()) else \
+        "the PyTorch check outside CUDA graphs only (" + "; ".join(f"{k}: {v[1]}" for k, v in status.items()
+                                                                if not v[0]) + ")"
+    rest: dict = {}
+    for why in ac.unsupported.values():
+        rest[why] = rest.get(why, 0) + 1
+    from .serve_attn import SAMPLES
+    log.info("sdcguard: checking %d of %d attention layers (one layer a step, %d outputs each) with %s, line %g%s",
+             len(ac.layers), len(found), SAMPLES, how, ac.line,
+             "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
+    _STATE["attn"] = {"checked": len(ac.layers), "not_checked": dict(ac.unsupported), "kernel": status}
+    return _STATE["attn"]
+
+
 def _patch_moe() -> list:
     """vLLM's RoutedExperts (fused MoE): after its experts ran (forward_modular: routing chosen, output finalized),
     the sampled recompute of a registered layer (serve_moe.check_call). vLLM runs MoE inside an opaque op of its own,
@@ -1480,7 +1683,8 @@ def _publish_stack(runner) -> Optional[dict]:
     checks = {"share": f"{_share(os.environ.get('SDCGUARD_SHARE', '1')):g}", "z": f"{_STATE.get('z') or 6:g}",
               "norms": "on" if _STATE.get("norm_classes") else "off",
               "moe": "on" if _STATE.get("moe_classes") else "off",
-              "fp8": "on" if _STATE.get("fp8_classes") else "off"}
+              "fp8": "on" if _STATE.get("fp8_classes") else "off",
+              "attention": "on" if _STATE.get("attn_classes") else "off"}
     info = collect(runner, model, checks)
     _STATE["stack"] = info
     g = _STATE["guard"]
@@ -1646,6 +1850,8 @@ def register() -> None:
             _STATE["route_classes"] = _patch_route()
     if os.environ.get("SDCGUARD_FP8", "0") == "1":
         _STATE["fp8_classes"] = _patch_fp8()
+    if os.environ.get("SDCGUARD_ATTN", "0") == "1":
+        _STATE["attn_classes"] = _patch_attn()
     if os.environ.get("SDCGUARD_QUANT", "1") != "0":
         _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
@@ -1667,7 +1873,8 @@ def register() -> None:
         if orig_load is not None:
             def load_model(self, *args, **kwargs):
                 out = orig_load(self, *args, **kwargs)
-                for what, fn in (("norm", _register_norms), ("MoE", _register_moe), ("FP8", _register_fp8)):
+                for what, fn in (("norm", _register_norms), ("MoE", _register_moe), ("FP8", _register_fp8),
+                                 ("attention", _register_attn)):
                     try:
                         fn(self)
                     except Exception as e:  # noqa: BLE001  (never break model loading)
@@ -1690,19 +1897,19 @@ def register() -> None:
                     raise                              # SDCGUARD_REQUIRE: refuse to serve unchecked
                 except Exception as e:  # noqa: BLE001  (never break serving, unless SDCGUARD_REQUIRE asks)
                     _refuse_if_required(f"couldn't count the checked layers ({type(e).__name__}: {e})")
-            step = _STATE["steps"] + 1
             g0 = _STATE["guard"]
-            if g0 is not None and _STATE.get("norms_stale"):
-                _STATE["norms_stale"] = False
-                for part in (g0.norms, g0.moe):  # the weights were reloaded: compare with the new ones
-                    if part is not None:
-                        try:
-                            part.refresh()
-                        except Exception as e:  # noqa: BLE001
-                            log.warning("sdcguard: couldn't take the new weights of norm or MoE layers: %s", e)
+            _take_new_weights(g0)
+            if kwargs.get("dummy_run"):
+                # the V2 runner's dummy batches come through here, from _dummy_run (hooked below, which noted it)
+                if not _STATE.get("in_dummy"):
+                    _note_dummy()
+                return orig_exec(self, *args, **kwargs)
+            step = _STATE["steps"] + 1
             if g0 is not None:
                 try:
                     rows = None if _rows_split(self) else _step_rows(args, kwargs)
+                    if rows:                     # (steps with tokens: what each checks one attention layer in)
+                        _STATE["token_steps"] = _STATE.get("token_steps", 0) + 1
                     g0.mark_step(step, rows)     # before the step's work is queued, outside its CUDA graph
                 except Exception as e:  # noqa: BLE001  (attribution only; never break serving)
                     log.debug("sdcguard: mark_step failed: %s", e)
@@ -1755,6 +1962,17 @@ def register() -> None:
             return out
 
         GM.execute_model = execute_model
+        orig_dummy = getattr(GM, "_dummy_run", None)
+        if orig_dummy is not None:
+            def _dummy_run(self, *args, **kwargs):
+                _STATE["in_dummy"] = _STATE.get("in_dummy", 0) + 1
+                try:
+                    _note_dummy()
+                    return orig_dummy(self, *args, **kwargs)
+                finally:
+                    _STATE["in_dummy"] -= 1
+
+            GM._dummy_run = _dummy_run
         GM._sdcguard = True
         return True
 

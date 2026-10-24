@@ -49,7 +49,7 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k in ("SDCGUARD_REQUIRE", "SDCGUARD_SHARE", "SDCGUARD_OFFSET", "SDCGUARD_WEBHOOK", "SDCGUARD_METRICS_PORT",
               "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z",
-              "SDCGUARD_MOE", "SDCGUARD_FP8"):
+              "SDCGUARD_MOE", "SDCGUARD_FP8", "SDCGUARD_ATTN", "SDCGUARD_ATTN_Z", "SDCGUARD_ATTN_KEEP_KV"):
         monkeypatch.delenv(k, raising=False)
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
@@ -57,7 +57,8 @@ def plugin_env(monkeypatch, tmp_path, **extra):
                  ("rechecked", None), ("z", None), ("hooked", False), ("step_log", None), ("norm_classes", []),
                  ("norms_stale", False), ("norms_registered", False), ("moe_classes", []), ("moe_registered", False),
                  ("stack", None), ("fp8_classes", []), ("fp8_registered", False), ("route_classes", []),
-                 ("fp8", None), ("fp8_why", None)):
+                 ("fp8", None), ("fp8_why", None), ("attn_classes", []), ("attn_registered", False), ("attn", None),
+                 ("token_steps", 0), ("dummy_runs", 0), ("dummy_after", None), ("in_dummy", 0)):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin
 
@@ -523,3 +524,147 @@ class RoutedMoEDecoder(nn.Module):
                                                topk_indices_dtype=None, input_ids=None)
             x = run.routed_experts.forward_modular(x=x, topk_weights=w, topk_ids=ids)
         return x
+
+
+# ------------------------------------------------------------------------------------------------------ attention
+FORWARD_CONTEXT = {"metadata": None}       # vLLM's forward context: the step's attention metadata
+
+
+def install_fake_attention(setitem):
+    """vllm.v1.attention.backends.flash_attn.FlashAttentionImpl and triton_attn.TritonAttentionImpl as vLLM 0.32
+    has them where the plugin touches them: their attributes (the window as (w - 1, 0), soft cap 0 for none),
+    forward(layer, query, key, value, kv_cache, attn_metadata, output, output_scale, output_block_scale) over the
+    paged KV cache [blocks, kv heads, block size, 2 * head size] through the block table (here exactly: float64,
+    rounded once), a profiling run's None metadata, and do_kv_cache_update writing each token's key and value at its
+    slot."""
+    mods = {}
+    for n in ("vllm", "vllm.v1", "vllm.v1.attention", "vllm.v1.attention.backends"):
+        if n not in sys.modules:
+            setitem(sys.modules, n, types.ModuleType(n))
+
+    class _Impl:
+        def __init__(self, num_heads, head_size, scale, num_kv_heads, alibi_slopes=None, sliding_window=None,
+                     kv_cache_dtype="auto", logits_soft_cap=None, attn_type="decoder",
+                     kv_sharing_target_layer_name=None, sinks=None):
+            self.num_heads, self.head_size, self.scale, self.num_kv_heads = num_heads, head_size, float(scale), \
+                num_kv_heads
+            self.alibi_slopes = alibi_slopes
+            self.sliding_window = (-1, -1) if sliding_window is None else (sliding_window - 1, 0)
+            self.kv_cache_dtype, self.attn_type, self.sinks = kv_cache_dtype, attn_type, sinks
+            self.logits_soft_cap = 0 if logits_soft_cap is None else logits_soft_cap
+            self.kv_sharing_target_layer_name = kv_sharing_target_layer_name
+            self.num_queries_per_kv = num_heads // num_kv_heads
+            self.calls = 0
+
+        def forward(self, layer, query, key, value, kv_cache, attn_metadata, output, output_scale=None,
+                    output_block_scale=None):
+            if attn_metadata is None:
+                return output.fill_(0)
+            self.calls += 1
+            md = attn_metadata
+            N, D = kv_cache.shape[2], self.head_size
+            qsl, sls = md.query_start_loc.tolist(), md.seq_lens.tolist()
+            for r in range(len(sls)):
+                ql = qsl[r + 1] - qsl[r]
+                for jj in range(ql):
+                    i, pos = qsl[r] + jj, sls[r] - ql + jj
+                    for h in range(self.num_heads):
+                        hk = h // self.num_queries_per_kv
+                        rows = torch.stack([kv_cache[int(md.block_table[r, t // N]), hk, t % N]
+                                            for t in range(pos + 1)]).double()
+                        s = (rows[:, :D] @ query[i, h].double()) * self.scale
+                        output[i, h] = (torch.softmax(s, 0) @ rows[:, D:]).to(output.dtype)
+            return output
+
+        def do_kv_cache_update(self, layer, key, value, kv_cache, slot_mapping):
+            N, D = kv_cache.shape[2], self.head_size
+            for i, s in enumerate(slot_mapping.tolist()):
+                if s >= 0:
+                    kv_cache[s // N, :, s % N, :D] = key[i]
+                    kv_cache[s // N, :, s % N, D:] = value[i]
+
+    for mod_name, cname in (("vllm.v1.attention.backends.flash_attn", "FlashAttentionImpl"),
+                            ("vllm.v1.attention.backends.triton_attn", "TritonAttentionImpl")):
+        m = types.ModuleType(mod_name)
+        cls = type(cname, (_Impl,), {"forward": _Impl.forward})
+        setattr(m, cname, cls)
+        setitem(sys.modules, mod_name, m)
+        setattr(sys.modules["vllm.v1.attention.backends"], mod_name.rsplit(".", 1)[1], m)
+        mods[cname] = cls
+    return mods
+
+
+class Attention(nn.Module):
+    """vLLM's Attention layer: its impl, layer_name and KV cache; forward writes the step's keys and values (the
+    unified_kv_cache_update op) and runs the impl into a fresh output (unified_attention_with_output)."""
+
+    def __init__(self, impl, layer_name, kv_cache):
+        super().__init__()
+        self.impl, self.layer_name, self.kv_cache = impl, layer_name, kv_cache
+        self.num_heads, self.head_size, self.head_size_v = impl.num_heads, impl.head_size, impl.head_size
+
+    def forward(self, query, key, value):
+        md = FORWARD_CONTEXT["metadata"]
+        out = torch.empty_like(query)
+        if md is not None and self.impl.kv_sharing_target_layer_name is None:
+            self.impl.do_kv_cache_update(self, key, value, self.kv_cache, md.slot_mapping)
+        self.impl.forward(self, query, key, value, self.kv_cache, md, output=out)
+        return out
+
+
+class AttnMeta:
+    """FlashAttentionMetadata's fields the check reads."""
+
+    def __init__(self, qsl, seq_lens, block_table, slot_mapping, rows):
+        self.query_start_loc, self.seq_lens, self.block_table = qsl, seq_lens, block_table
+        self.slot_mapping, self.num_actual_tokens, self.causal, self.max_query_len = slot_mapping, rows, True, 0
+
+
+class AttnDecoder(nn.Module):
+    """Attention layers fed from the step's batch (a dict of per-layer q, k, v and the metadata)."""
+
+    def __init__(self, impls, blocks=16, block_size=16, dtype=torch.bfloat16):
+        super().__init__()
+        self.scale_param = nn.Parameter(torch.ones(1), requires_grad=False)        # (where the model lives)
+        self.attn = nn.ModuleList([
+            Attention(im, f"model.layers.{i}.self_attn.attn",
+                      torch.zeros(blocks, im.num_kv_heads, block_size, 2 * im.head_size, dtype=dtype))
+            for i, im in enumerate(impls)])
+
+    def forward(self, batch):
+        FORWARD_CONTEXT["metadata"] = batch["meta"]
+        try:
+            return [a(*batch["qkv"][i]) for i, a in enumerate(self.attn)]
+        finally:
+            FORWARD_CONTEXT["metadata"] = None
+
+
+def attn_batches(heads, kv_heads, head_size, layers, steps, dtype=torch.bfloat16, block_size=16, seed=0):
+    """A prefill of two requests (19 and 7 tokens) and then decode steps of both, as vLLM schedules them: each
+    step's per-layer q, k, v and metadata (block tables: request 0 blocks 3, 5, 8, ..., request 1 blocks 1, 2)."""
+    g = torch.Generator().manual_seed(seed)
+    bt = torch.tensor([[3, 5, 8, 9], [1, 2, 0, 0]], dtype=torch.int32)
+    lens = [19, 7]
+    out = []
+    for step in range(steps):
+        ql = lens if step == 0 else [1, 1]
+        sl = lens if step == 0 else [lens[0] + step, lens[1] + step]
+        qsl = torch.tensor([0, ql[0], ql[0] + ql[1]], dtype=torch.int32)
+        T = ql[0] + ql[1]
+        slots = []
+        for r in range(2):
+            for jj in range(ql[r]):
+                pos = sl[r] - ql[r] + jj
+                slots.append(int(bt[r, pos // block_size]) * block_size + pos % block_size)
+        meta = AttnMeta(qsl, torch.tensor(sl, dtype=torch.int32), bt, torch.tensor(slots, dtype=torch.int64), T)
+        qkv = [((torch.randn(T, heads, head_size, generator=g) * 0.5).to(dtype),
+                (torch.randn(T, kv_heads, head_size, generator=g)).to(dtype),
+                (torch.randn(T, kv_heads, head_size, generator=g)).to(dtype)) for _ in range(layers)]
+        b = AttnBatch(qkv=qkv, meta=meta)
+        b.total_num_scheduled_tokens = T          # (what the plugin reads of vLLM's scheduler output)
+        out.append(b)
+    return out
+
+
+class AttnBatch(dict):
+    """A step's batch for AttnDecoder, carrying its scheduled-token count as vLLM's SchedulerOutput does."""

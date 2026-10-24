@@ -83,6 +83,20 @@ def pick(t: torch.Tensor, i: torch.Tensor) -> torch.Tensor:
     return t.index_select(0, i.reshape(1)).squeeze(0)
 
 
+S31 = 0x7FFFFFFF          # a step kept in a key's top bits: 31 bits, so the int64 key stays positive for atomic max
+
+
+def unwrap31(s31: int, marked: Optional[int]) -> int:
+    """The step whose low 31 bits are s31, at or before the step marked last (steps are 32-bit)."""
+    s31 = int(s31) & S31
+    if marked is None:
+        return s31
+    s = (int(marked) & ~S31 & M32) | s31
+    if s > int(marked):
+        s -= 1 << 31
+    return s if s >= 0 else s31
+
+
 def _f32(bits: int) -> float:
     return struct.unpack("<f", struct.pack("<I", int(bits) & M32))[0]
 

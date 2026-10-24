@@ -35,7 +35,7 @@ def main():
                 for step, case in ((4, "clean"), (7, "wrong"), (5, "inactive")):
                     yy = y.clone()
                     if case == "wrong":
-                        rows = sm.sample_rows(torch.tensor(step), M, "cpu")
+                        rows = sm.sample_rows(torch.tensor(step), M, "cpu", 3)
                         yy[int(rows[-1]), H - 1] = yy[int(rows[-1]), H - 1] * 8 + 3
                     a = run(sm.moe_check_torch, x, yy, w, ids, ww13, ww2, emap, step)
                     b = run(sm.moe_check_triton, x, yy, w, ids, ww13, ww2, emap, step)

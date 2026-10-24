@@ -33,7 +33,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
-from .serve_norm import pick
+from .serve_norm import S31, pick, unwrap31
 
 FP8_MAX = 448.0
 MIN_SCALE = 1.0 / (448.0 * 512.0)
@@ -45,7 +45,8 @@ ROW_A, ROW_B = 7919, 104729
 M32 = 0xFFFFFFFF
 COLS = 8
 # calls judged, calls with a wrong scale, of them taken from outside rows, sampled rows with a value 2+ steps off,
-# values one step off, last bad event (step << 32 | kind << 24 | row), worst scale ratio bits, static scale changed
+# values one step off, last bad event ((step & S31) << 32 | kind << 24 | row), worst scale ratio bits, static scale
+# changed
 C_CALLS, C_SCALE, C_OUTSIDE, C_VALUES, C_ONE, C_LAST, C_RATIO, C_STATIC = range(COLS)
 KIND_SCALE, KIND_OUTSIDE, KIND_VALUES, KIND_STATIC = 1, 2, 3, 4
 
@@ -149,7 +150,7 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
                                                torch.where(static_bad & armed if static_bad is not None else
                                                            torch.zeros_like(armed), KIND_STATIC * one, zero))))
     bad_row = pick(rows, vb.to(torch.int64).argmax()) if rows.numel() else zero
-    rec = (step << 32) | (kind << 24) | (bad_row & 0xFFFFFF)
+    rec = ((step & S31) << 32) | (kind << 24) | (bad_row & 0xFFFFFF)
     srow[C_LAST] = torch.where(kind > 0, torch.maximum(srow[C_LAST], rec), srow[C_LAST])
     rb = _bits(ratio.abs().clamp(max=3e38)) if ratio.numel() == 1 else zero
     srow[C_RATIO] = torch.where(sb, torch.maximum(srow[C_RATIO], rb), srow[C_RATIO])
@@ -235,6 +236,7 @@ class Fp8Checks:
     reads."""
 
     def __init__(self, guard):
+        self._marked: Optional[int] = None    # the step marked last (the packed steps' top bits)
         self.guard = guard
         self.layers: list = []
         self.unsupported: dict = {}
@@ -288,6 +290,7 @@ class Fp8Checks:
         return (lay["recipe"], lay["static_ref"], self._rows[dev], self._step[dev], self._state[dev], lay["slot"])
 
     def mark_step(self, step: int, rows: Optional[int] = None) -> None:
+        self._marked = int(step) & M32
         for dev in self._state:
             self._step[dev].fill_(int(step) & M32)
             self._rows[dev].fill_(int(rows) if rows is not None else 0)
@@ -365,7 +368,7 @@ class Fp8Checks:
     def _alert(self, dev, lay, k) -> SDCEvent:
         g = self.guard
         last = k[C_LAST]
-        step, kind, row = (last >> 32) & M32, (last >> 24) & 0xFF, last & 0xFFFFFF
+        step, kind, row = unwrap31(last >> 32, self._marked), (last >> 24) & 0xFF, last & 0xFFFFFF
         what = {KIND_OUTSIDE: "scale_from_outside_rows", KIND_SCALE: "scale_wrong", KIND_VALUES: "values_wrong",
                 KIND_STATIC: "static_scale_changed"}.get(kind, "unknown")
         reading = {

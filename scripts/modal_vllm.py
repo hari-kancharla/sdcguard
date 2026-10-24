@@ -24,6 +24,8 @@
     modal run scripts/modal_vllm.py --phase moe            # MoE checks in vllm serve, 1 H100: about $2 to $3
     modal run scripts/modal_vllm.py --phase graphs         # every check inside a captured CUDA graph, 1 L4: about $0.25
     modal run scripts/modal_vllm.py --phase fp8mm_cal      # FP8 GEMM block sums for an FP8 matmul check, H100 + L4: about $1.50
+    modal run scripts/modal_vllm.py --phase attn           # attention checks in vllm serve, H100 + L4: $4.50 to $7
+    modal run scripts/modal_vllm.py --phase screen_ops     # exact operator tests for screening GPUs, L4 + H100: under $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -686,6 +688,80 @@ def fp8mm_cal_l4(force: bool = False, source: Optional[dict] = None) -> str:
     return _fp8mm_cal("fp8mm_cal_l4", "1.5b", RATE_L4, "L4, 8 cores, 32 GiB", source, force)
 
 
+def _attn(tag: str, roles: str, rate: float, what: str, minutes: int, source: Optional[dict], force: bool) -> str:
+    t0 = time.monotonic()
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_attn_check.py", "--out", out, "--roles", roles],
+                    f"{out}.txt", cwd="/root", timeout=minutes * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source, "roles": roles,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, rate, what)}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=95 * 60)
+def attn_h100(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_attn_check.py on an H100 (FlashAttention 3, and vLLM's Triton attention): the plugin's
+    attention checks in real `vllm serve` (Qwen2.5-1.5B): coverage, identical answers, clean scores against the bound,
+    checks inside CUDA graphs, faults caught in eager mode, and the cost."""
+    return _attn("attn_h100", "plain,guarded,noattn,eager,tplain,tguarded", RATE_PER_HOUR, "H100, 8 cores, 64 GiB",
+                 90, source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=50 * 60)
+def attn_l4(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_attn_check.py on an L4 (FlashAttention 2): plain and guarded only."""
+    return _attn("attn_l4", "plain,guarded", RATE_L4, "L4, 8 cores, 32 GiB", 45, source, force)
+
+
+def _screen_ops(tag: str, rate: float, what: str, source: Optional[dict], force: bool) -> str:
+    t0 = time.monotonic()
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/screen_ops_check.py", "--out", out, "--minutes", "5"],
+                    f"{out}.txt", cwd="/root", timeout=20 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, rate, what)}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=25 * 60)
+def screen_ops_h100(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/screen_ops_check.py on an H100: sdcguard.screen_ops clean for 5 minutes, then each test with one
+    value made wrong in software."""
+    return _screen_ops("screen_ops_h100", RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=25 * 60)
+def screen_ops_l4(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/screen_ops_check.py on an L4."""
+    return _screen_ops("screen_ops_l4", RATE_L4, "L4, 8 cores, 32 GiB", source, force)
+
+
 GRAPH_TESTS = ("tests/test_gpu_graphs.py", "tests/test_serve_no_sync.py",
                "tests/test_serve.py::test_gpu_fast_serving_check_agrees_and_is_used",
                "tests/test_serve.py::test_gpu_compiled_cuda_graphs_catch_a_flip")
@@ -695,7 +771,7 @@ GRAPH_TESTS = ("tests/test_gpu_graphs.py", "tests/test_serve_no_sync.py",
 def graphs(force: bool = False, source: Optional[dict] = None) -> str:
     """tests/test_gpu_graphs.py and the serving checks' other GPU tests on one L4, with vLLM 0.32's PyTorch and
     Triton: every check (linear, FP8 quantization, MoE, routing, norms; PyTorch and Triton versions) inside a captured
-    CUDA graph. SDCGUARD_GPU_TESTS=1 makes a missing GPU a failure, not a skip."""
+    CUDA graph (attention too). SDCGUARD_GPU_TESTS=1 makes a missing GPU a failure, not a skip."""
     t0 = time.monotonic()
     tag = "graphs"
     msg = _locked(tag, force)
@@ -963,6 +1039,15 @@ ESTIMATES = {
                  "(Qwen2.5-1.5B and 7B) and 1 L4 (1.5B) at once: about 10 to 20 minutes each, roughly $0.80 to $1.60 "
                  "plus $0.25 to $0.50 (45-minute limits, at most about $3.60 and $1.10 at requested resources, not a "
                  "spending cap)",
+    "attn": "the plugin's attention checks in real `vllm serve` (Qwen2.5-1.5B) on 1 H100 (FlashAttention 3 and "
+            "vLLM's Triton attention: 6 servers, with fault trials in eager mode) and 1 L4 (FlashAttention 2: plain "
+            "and guarded) at once: about 45 to 75 minutes and 20 to 35 minutes, roughly $3.60 to $6 plus $0.50 to "
+            "$0.85 (90- and 45-minute limits, at most about $7.30 and $1.10 at requested resources, not a spending "
+            "cap)",
+    "screen_ops": "sdcguard.screen_ops (exact FP64, FP32, TF32, BF16, FP16 and FP8 matmuls, CUDA-core FMAs, SM "
+                  "consistency and a memory test) clean for 5 minutes and then with one value made wrong per test, on "
+                  "1 H100 and 1 L4 at once: about 8 to 12 minutes each, roughly $0.65 to $1 plus $0.20 to $0.30 "
+                  "(25-minute limits, at most about $2 and $0.60 at requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -1062,8 +1147,13 @@ def main(phase: str = "vllm", force: bool = False):
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))
-        elif phase == "fp8mm_cal":
-            calls = {"fp8mm_cal_h100": fp8mm_cal_h100.spawn(force, src), "fp8mm_cal_l4": fp8mm_cal_l4.spawn(force, src)}
+        elif phase in ("fp8mm_cal", "attn", "screen_ops"):
+            calls = ({"fp8mm_cal_h100": fp8mm_cal_h100.spawn(force, src),
+                      "fp8mm_cal_l4": fp8mm_cal_l4.spawn(force, src)} if phase == "fp8mm_cal" else
+                     {"attn_h100": attn_h100.spawn(force, src), "attn_l4": attn_l4.spawn(force, src)}
+                     if phase == "attn" else
+                     {"screen_ops_h100": screen_ops_h100.spawn(force, src),
+                      "screen_ops_l4": screen_ops_l4.spawn(force, src)})
             for tag, call in calls.items():
                 try:
                     message = call.get()

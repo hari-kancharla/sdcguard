@@ -80,7 +80,7 @@ def _runner_module(monkeypatch, plan, padded=False):
         def __init__(self, model):
             self.model, self.execute_model_state = model, None
 
-        def execute_model(self, scheduler_output):
+        def execute_model(self, scheduler_output, dummy_run=False, **kwargs):
             ids = sorted(scheduler_output.num_scheduled_tokens)          # vLLM sorts the batch
             self.execute_model_state = types.SimpleNamespace(input_batch=types.SimpleNamespace(req_ids=ids))
             if padded:
@@ -88,6 +88,9 @@ def _runner_module(monkeypatch, plan, padded=False):
                     sum(scheduler_output.num_scheduled_tokens.values()) + 2
             rows = sum(scheduler_output.num_scheduled_tokens.values())
             return self.model(torch.randn(rows + 2, 256).to(torch.bfloat16))    # + 2 rows of graph padding
+
+        def _dummy_run(self, num_tokens, **kwargs):     # V2: a batch of made-up requests through execute_model
+            return self.execute_model(_Sched({f"_dummy_req_{i}": 1 for i in range(num_tokens)}), dummy_run=True)
     mod.GPUModelRunner = GPUModelRunner
     for n in ("vllm.v1.worker.gpu",):
         monkeypatch.setitem(sys.modules, n, types.ModuleType(n))
@@ -172,3 +175,63 @@ def test_the_step_rows_with_padding_come_from_vllms_batch(monkeypatch, tmp_path)
     r.execute_model(_Sched({"q-00000000": 3}))
     (ev,) = plugin.poll(wait=True)
     assert ev.detail["step_rows"] == {"tokens": 3, "with_padding": 5} and ev.detail["directly_implicated"] == ["q"]
+
+
+def test_a_row_captured_in_a_dummy_batch_doesnt_name_the_last_steps_requests(monkeypatch, tmp_path):
+    """vLLM's dummy batches (no request's tokens) aren't model steps; the linear checks still check them, and a row
+    they capture there carries the last step's number, so its alert names no request as the one it concerns."""
+    M, _ = install_fake_vllm(monkeypatch.setitem)
+    Runner = _runner_module(monkeypatch, None)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    model = load(nn.Sequential(Lin(M, 256, 256, "model.layers.0.proj")))
+    r = Runner(model)
+    reqs = {"chat-a-1a2b3c4d": 3}
+    r.execute_model(_Sched(reqs))
+    r.execute_model(_Sched(reqs))
+    assert plugin.poll(wait=True) == []
+    _faulty_linear(monkeypatch, {1: 1})            # the dummy batch's linear call, row 1
+    r._dummy_run(4)
+    assert plugin._STATE["steps"] == 2 and plugin._STATE["dummy_runs"] == 1
+    assert list(plugin._STATE["dummy_after"]) == [2] and [e[0] for e in plugin._STATE["step_log"]] == [1, 2]
+    r.execute_model(_Sched(reqs))
+    (ev,) = plugin.poll(wait=True)
+    d = ev.detail
+    assert d["captured"]["step"] == 2 and d["directly_implicated"] is None
+    assert "dummy batch" in d["attribution"] and "may be from it" in d["attribution"]
+    # the checks that judge model steps only (attention, routing, FP8) never run in a dummy batch: exact as before
+    ev2 = types.SimpleNamespace(detector="serve_attn", detail={"captured": {"step": 2, "row": 1}})
+    plugin._attribute(ev2)
+    assert ev2.detail["directly_implicated"] == ["chat-a"] and ev2.detail["attribution"].startswith("exact")
+
+
+def test_the_v1_runners_dummy_batches_are_seen_too(monkeypatch, tmp_path):
+    """The V1 runner makes its dummy batches (and CUDA-graph captures) in _dummy_run without execute_model."""
+    M, GM = install_fake_vllm(monkeypatch.setitem)
+    monkeypatch.setattr(GM, "_dummy_run", lambda self, n: self.model(torch.randn(n, 256).to(torch.bfloat16)),
+                        raising=False)
+    plugin = plugin_env(monkeypatch, tmp_path)
+    plugin.register()
+    model = load(nn.Sequential(Lin(M, 256, 256, "model.layers.0.proj")))
+    r = GM(model)
+    r.execute_model(torch.randn(4, 256).to(torch.bfloat16))
+    r._dummy_run(8)
+    r._dummy_run(8)
+    assert plugin._STATE["steps"] == 1 and plugin._STATE["dummy_runs"] == 2 and list(plugin._STATE["dummy_after"]) == [1]
+
+
+def test_new_weights_are_taken_before_a_dummy_batch_but_never_inside_a_capture(monkeypatch, tmp_path):
+    plugin = plugin_env(monkeypatch, tmp_path)
+    refreshed = []
+    norms = types.SimpleNamespace(refresh=lambda: refreshed.append("norms"))
+    monkeypatch.setitem(plugin._STATE, "guard", types.SimpleNamespace(norms=norms, moe=None))
+    monkeypatch.setitem(plugin._STATE, "norms_stale", True)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
+    plugin._dummy_seen()                            # inside a capture: later
+    assert refreshed == [] and plugin._STATE["norms_stale"] is True
+    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: False)
+    plugin._dummy_seen()
+    assert refreshed == ["norms"] and plugin._STATE["norms_stale"] is False
+    plugin._dummy_seen()
+    assert refreshed == ["norms"] and plugin._STATE["dummy_runs"] == 3

@@ -1,4 +1,5 @@
-"""A vLLM worker extension for experiments/vllm_serve_check.py and experiments/vllm_ready_attrib_check.py, test use
+"""A vLLM worker extension for experiments/vllm_serve_check.py, vllm_ready_attrib_check.py and the other server
+experiments (vllm_norm_check.py, vllm_moe_check.py, vllm_attn_check.py), test use
 only: `vllm serve ... --worker-extension-cls sdcguard_test_ext.FaultInjection` adds these methods to every GPU
 worker, and with VLLM_SERVER_DEV_MODE=1 the server's /collective_rpc endpoint calls them in each one."""
 
@@ -297,6 +298,104 @@ class FaultInjection:
             qm.apply = orig
             n += 1
         self._sdcguard_moe_faults = []
+        return n
+
+    def sdcguard_test_attn_stats(self) -> dict:
+        """The plugin's attention checks in this worker: layers checked and not, backends, kernels, calls, samples,
+        worst scores, writes checked, calls not checked by why."""
+        from sdcguard import vllm_plugin
+        g = vllm_plugin._STATE.get("guard")
+        ac = getattr(g, "attn", None)
+        if ac is None:
+            return {"layers": 0}
+        worst = sorted(ac.worst_seen.items(), key=lambda kv: -kv[1])
+        return {"layers": len(ac.layers), "names": [lay["name"] for lay in ac.layers], "line": ac.line,
+                "backends": sorted({lay["backend"] for lay in ac.layers}), "kernel": ac.kernel_status(),
+                "not_checked": dict(ac.unsupported), "calls_not_checked": dict(ac.not_checked_calls),
+                "stats": dict(ac.stats), "coverage": ac.coverage(), "cap_rows": ac.cap_rows,
+                "worst": _num(worst[0][1]) if worst else None, "worst_layers": [[k, _num(v)] for k, v in worst[:5]]}
+
+    def sdcguard_test_steps(self) -> dict:
+        """The model steps the plugin has marked in this worker, and those with scheduled tokens."""
+        from sdcguard import vllm_plugin
+        return {"steps": int(vllm_plugin._STATE.get("steps") or 0),
+                "token_steps": int(vllm_plugin._STATE.get("token_steps") or 0)}
+
+    def sdcguard_test_corrupt_attn(self, name: str, mode: str) -> str:
+        """In eager mode (--enforce-eager): from now on, make the attention of the layer named `name` (vLLM's
+        layer_name) wrong before sdcguard's check sees it, in one of these ways:
+          "value"    every output at dimension 5 of every head 2 * x + 1 (a faulty unit on every row)
+          "head"     every output of query head 1 with bit 13 flipped (an exponent bit: 2^64 or 2^-64 times)
+          "other"    the backend computing with the block tables of the batch's first two requests swapped (the
+                     wrong request's keys and values, as a misplaced replay or table would give)
+          "short"    the backend computing with every seq_len one short (each query leaves out its newest key, as a
+                     stale length would)
+          "kv"       after the layer writes the step's keys and values, bit 12 of dimension 9 of KV head 0's key
+                     flipped at every slot written (a corrupted write)
+        The backend's real forward runs, then the fault, then the check, as the plugin runs them.
+        sdcguard_test_uncorrupt_attn undoes it. Returns the layer's name, or ""."""
+        import copy
+        import torch
+        from sdcguard.serve_attn import check_call
+        layer = next((m for _, m in self.get_model().named_modules() if getattr(m, "layer_name", None) == name
+                      and hasattr(m, "impl")), None)
+        if layer is None or mode not in ("value", "head", "other", "short", "kv"):
+            return ""
+        impl = layer.impl
+        cls = type(impl)
+        real = getattr(cls, "_sdcguard_attn_orig", None)
+        if real is None or "forward" in vars(impl) or "do_kv_cache_update" in vars(impl):
+            return ""
+
+        def forward(layer_, query, key, value, kv_cache, md, *args, **kwargs):
+            if md is None or mode == "kv":
+                out = real(impl, layer_, query, key, value, kv_cache, md, *args, **kwargs)
+            else:
+                md2 = md
+                if mode == "other" and md.block_table.shape[0] >= 2:
+                    md2 = copy.copy(md)
+                    md2.block_table = md.block_table.clone()
+                    md2.block_table[[0, 1]] = md.block_table[[1, 0]]
+                elif mode == "short":
+                    md2 = copy.copy(md)
+                    md2.seq_lens = (md.seq_lens - 1).clamp(min=0)
+                out = real(impl, layer_, query, key, value, kv_cache, md2, *args, **kwargs)
+                output = kwargs.get("output", args[0] if args else None)
+                if mode == "value":
+                    output[:, :, 5] = output[:, :, 5].float() * 2 + 1
+                elif mode == "head":
+                    output[:, 1].view(torch.int16).bitwise_xor_(1 << 13)
+            a = getattr(layer_, "_sdcguard_attn", None)
+            if a is not None and md is not None:
+                check_call(a, impl, query, key, value, kv_cache, md, kwargs.get("output", args[0] if args else None),
+                           kwargs.get("output_scale", args[1] if len(args) > 1 else None))
+            return out
+
+        impl.forward = forward
+        if mode == "kv":
+            write = cls.do_kv_cache_update
+
+            def do_kv_cache_update(layer_, key, value, kv_cache, slot_mapping):
+                write(impl, layer_, key, value, kv_cache, slot_mapping)
+                n = kv_cache.shape[2]
+                ok = slot_mapping >= 0
+                s = torch.where(ok, slot_mapping, torch.zeros_like(slot_mapping))
+                blk, off = s // n, s % n
+                cur = kv_cache[blk, 0, off, 9]
+                flipped = (cur.view(torch.int16) ^ (1 << 12)).view(cur.dtype)
+                kv_cache[blk, 0, off, 9] = torch.where(ok, flipped, cur)
+
+            impl.do_kv_cache_update = do_kv_cache_update
+        self._sdcguard_attn_faults = getattr(self, "_sdcguard_attn_faults", []) + [impl]
+        return name
+
+    def sdcguard_test_uncorrupt_attn(self) -> int:
+        n = 0
+        for impl in getattr(self, "_sdcguard_attn_faults", []):
+            vars(impl).pop("forward", None)
+            vars(impl).pop("do_kv_cache_update", None)
+            n += 1
+        self._sdcguard_attn_faults = []
         return n
 
     def sdcguard_test_stop_reads(self) -> bool:

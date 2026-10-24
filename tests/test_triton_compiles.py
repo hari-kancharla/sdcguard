@@ -4,7 +4,8 @@ launch code with the arguments it passes, specialized as Triton specializes a re
 routing kernel failed to compile on its first GPU (October 24, 2026) after passing every interpreted test, and its
 MoE server fell back to the PyTorch check. The variants cover what changes the compiled code: dtypes, policies,
 sizes like a real model's, a single row, a single expert per token, a router or layer other than the first, and
-the linear check's row tiles. (The Triton here may not be the one a deployment has: vLLM 0.32's image has 3.7.1.)"""
+the linear check's row tiles, and attention's head sizes and head counts, with and without the KV-write check.
+(The Triton here may not be the one a deployment has: vLLM 0.32's image has 3.7.1.)"""
 import pytest
 import torch
 
@@ -14,6 +15,7 @@ import _triton_aot  # noqa: E402
 from _triton_aot import compiling  # noqa: E402
 from _vllm_standins import install_fake_moe, vllm_grouped_topk, vllm_topk  # noqa: E402
 from sdcguard import _serve_fast  # noqa: E402
+from sdcguard import serve_attn as sa  # noqa: E402
 from sdcguard import serve_moe as sm  # noqa: E402
 from sdcguard import serve_norm as sn  # noqa: E402
 from sdcguard import serve_route as sr  # noqa: E402
@@ -154,3 +156,26 @@ def test_the_linear_check_kernels_compile(dtype, bias, m):
     with compiling() as done:
         _serve_fast.check(x, y, *cs.tensors(bias), st, 0, 6.0, 1e-20)
     assert done and {cc for _, cc in done} == {80, 89, 90}
+
+
+ATTN_SHAPES = {"llama-like": (128, 8, 2), "qwen2.5-1.5b": (128, 12, 2), "head size 64, MHA": (64, 4, 4),
+               "head size 80": (80, 4, 1), "head size 256": (256, 8, 4)}
+ATTN_CASES = [("qwen2.5-1.5b", torch.bfloat16), ("qwen2.5-1.5b", torch.float16), ("llama-like", torch.float16),
+              ("head size 64, MHA", torch.bfloat16), ("head size 80", torch.bfloat16),
+              ("head size 256", torch.bfloat16)]
+
+
+@pytest.mark.parametrize("shape,dtype", ATTN_CASES)
+def test_the_attention_kernels_compile(shape, dtype):
+    D, Hq, Hkv = ATTN_SHAPES[shape]
+    calls = [sa.make_case("cpu", dtype, D=D, Hq=Hq, Hkv=Hkv, lens=((40, 1), (17, 5), (0, 0)), NB=12),
+             sa.make_case("cpu", dtype, D=D, Hq=Hq, Hkv=Hkv, lens=((5, 1),), NB=2, padded_rows=0)]   # one row
+    b = sa.buffers("cpu", 2, D, 64, dtype)
+    with compiling() as done:
+        for c in calls:
+            for has_write, keep in ((True, True), (False, False)):
+                for slot in (0, 1):
+                    sa.run_case(sa.attn_check_triton, c, b, slot=slot, idx=slot, nl=2, has_write=has_write,
+                                keep_kv=keep)
+            sa.run_case(sa.attn_check_triton, c, b, left=8)
+    _compiled(done, "_attn_part", "_attn_judge")

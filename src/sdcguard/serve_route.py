@@ -35,7 +35,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
-from .serve_norm import pick
+from .serve_norm import S31, pick, unwrap31
 
 try:
     import triton
@@ -52,8 +52,8 @@ ROW_A, ROW_B = 7919, 104729
 M32 = 0xFFFFFFFF
 MAX_EXPERTS, MAX_K, MAX_GROUPS = 2048, 32, 64
 COLS = 6
-# calls judged, rows with a wrong expert set, rows with a wrong weight, last bad (step << 32 | kind << 24 | row),
-# worst weight difference bits, rows judged
+# calls judged, rows with a wrong expert set, rows with a wrong weight, last bad ((step & S31) << 32 | kind << 24 |
+# row), worst weight difference bits, rows judged
 C_CALLS, C_SET, C_WEIGHT, C_LAST, C_WDIFF, C_ROWS = range(COLS)
 KIND_SET, KIND_WEIGHT = 2, 1           # a wrong expert set outranks a wrong weight in the step's record
 SCORING = {"softmax": 0, "sigmoid": 1}
@@ -73,6 +73,13 @@ def unit_roundoff(dtype) -> float:
 def _tol(v: torch.Tensor, u: float) -> torch.Tensor:
     a = torch.nan_to_num(v.abs(), posinf=0.0)
     return TIE * a.clamp(min=1.0) + U_CHOICE * u * a
+
+
+def sample_rows(step: torch.Tensor, real: torch.Tensor, nlayers: int, device) -> torch.Tensor:
+    """The rows a router's check takes at a step, of the step's `real` rows: from the router's own turn count
+    (step // routers), so a steady batch has every row taken in turn."""
+    j = torch.arange(SAMPLES, device=device, dtype=torch.int64)
+    return (torch.div(step, max(int(nlayers), 1), rounding_mode="floor") * ROW_A + j * ROW_B) % real.clamp(min=1)
 
 
 CAP_COLS = 6
@@ -147,8 +154,7 @@ def route_check_torch(logits: torch.Tensor, topk_w: torch.Tensor, topk_ids: torc
     real = rows_buf.reshape(-1)[0].clamp(min=0, max=m)
     step = stepbuf.reshape(-1)[0] & M32
     live = (real > 0) & ((step % max(nlayers, 1)) == index)
-    j = torch.arange(SAMPLES, device=dev, dtype=torch.int64)
-    rows = (step * ROW_A + j * ROW_B) % real.clamp(min=1)
+    rows = sample_rows(step, real, nlayers, dev)
     lf = logits[rows].float()
     kid = topk_ids[rows].long()
     kw = topk_w[rows].float()
@@ -162,7 +168,7 @@ def route_check_torch(logits: torch.Tensor, topk_w: torch.Tensor, topk_ids: torc
     srow[C_WEIGHT] += wb.sum()
     one = torch.ones((), dtype=torch.int64, device=dev)
     kind = torch.where(sb, KIND_SET * one, torch.where(wb, KIND_WEIGHT * one, 0 * one))
-    rec = (step << 32) | (kind << 24) | (rows & 0xFFFFFF)
+    rec = ((step & S31) << 32) | (kind << 24) | (rows & 0xFFFFFF)
     rec = torch.where(kind > 0, rec, torch.zeros_like(rec)).amax()
     srow[C_LAST] = torch.maximum(srow[C_LAST], rec)
     worst = torch.where(judged.unsqueeze(-1), diff, torch.zeros_like(diff)).amax()
@@ -214,7 +220,7 @@ if HAVE_TRITON:
         step = tl.load(stepbuf) & 0xFFFFFFFF
         real = tl.load(rows_buf)
         if (real > 0) & ((step % nl) == idx):
-            row = ((step * 7919 + j * 104729) % real).to(tl.int64)
+            row = (((step // nl) * 7919 + j * 104729) % real).to(tl.int64)
             NEG = float("-inf")
             offs = tl.arange(0, BE)
             em = offs < E
@@ -324,10 +330,10 @@ if HAVE_TRITON:
                 tl.atomic_add(base + 5, 1)
                 if set_bad:
                     tl.atomic_add(base + 1, 1)
-                    tl.atomic_max(base + 3, (step << 32) | (2 << 24) | (row & 0xFFFFFF))
+                    tl.atomic_max(base + 3, ((step & 0x7FFFFFFF) << 32) | (2 << 24) | (row & 0xFFFFFF))
                 elif w_bad:
                     tl.atomic_add(base + 2, 1)
-                    tl.atomic_max(base + 3, (step << 32) | (1 << 24) | (row & 0xFFFFFF))
+                    tl.atomic_max(base + 3, ((step & 0x7FFFFFFF) << 32) | (1 << 24) | (row & 0xFFFFFF))
                 worst = tl.max(diff, 0)
                 tl.atomic_max(base + 4, worst.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF)
                 if set_bad | w_bad:
@@ -563,6 +569,7 @@ class RouteChecks:
     last, mark_step(step, rows) before each model step and end_step() after; poll() with the guard's reads."""
 
     def __init__(self, guard):
+        self._marked: Optional[int] = None    # the step marked last (the packed steps' top bits)
         self.guard = guard
         self.layers: list = []
         self.unsupported: dict = {}
@@ -611,6 +618,7 @@ class RouteChecks:
             self._arm(lay)
 
     def mark_step(self, step: int, rows: Optional[int] = None) -> None:
+        self._marked = int(step) & M32
         for dev in self._state:
             self._step[dev].fill_(int(step) & M32)
             self._rows[dev].fill_(int(rows) if rows is not None else 0)
@@ -676,6 +684,12 @@ class RouteChecks:
             self.stats["wrong_weights"] += k[C_WEIGHT]
             if k[C_SET] or k[C_WEIGHT]:
                 out.append(self._alert(dev, lay, k))
+        g = self.guard
+        if g is not None and getattr(g, "metrics", None) is not None and hasattr(g.metrics, "observe_route"):
+            try:
+                g.metrics.observe_route(self, out)
+            except Exception:  # noqa: BLE001  (metrics never break serving)
+                pass
         return out
 
     def _recheck(self, dev, lay) -> dict:
@@ -702,7 +716,7 @@ class RouteChecks:
     def _alert(self, dev, lay, k) -> SDCEvent:
         g = self.guard
         last = k[C_LAST]
-        step, kind, row = (last >> 32) & M32, (last >> 24) & 0xFF, last & 0xFFFFFF
+        step, kind, row = unwrap31(last >> 32, self._marked), (last >> 24) & 0xFF, last & 0xFFFFFF
         finding = "wrong_experts" if kind == KIND_SET else "wrong_weights"
         ident = g._identity if g is not None and hasattr(g, "_identity") else {}
         if str(dev) not in ident:

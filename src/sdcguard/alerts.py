@@ -314,6 +314,51 @@ class Metrics:
             self._fp8_calls.inc(n - prev)
         self._seen_fp8[id(fp8)] = max(n, prev)
 
+    def observe_route(self, route, events: list) -> None:
+        """After a read of a guard's MoE routing checks (serve_route.RouteChecks)."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_route_layers", None) is None:
+            self._route_layers = Gauge("sdcguard_route_routers_checked", "MoE routers whose routing this process "
+                                       "checks", registry=self.registry)
+            self._route_calls = Counter("sdcguard_route_calls_checked", "Router calls checked, counted on the GPU",
+                                        registry=self.registry)
+            self._seen_route = {}
+        self._route_layers.set(len(route.layers))
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        n = int(route.stats.get("calls", 0))
+        prev = self._seen_route.get(id(route), 0)
+        if n > prev:
+            self._route_calls.inc(n - prev)
+        self._seen_route[id(route)] = max(n, prev)
+
+    def observe_attn(self, attn, events: list, worst: float) -> None:
+        """After a read of a guard's attention checks (serve_attn.AttnChecks)."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_attn_layers", None) is None:
+            self._attn_layers = Gauge("sdcguard_attn_layers_checked", "Attention layers this process checks",
+                                      registry=self.registry)
+            self._attn_worst = Gauge("sdcguard_attn_worst_score", "Worst attention score at the last read (a correct "
+                                     "output scores at most 1)", registry=self.registry)
+            self._attn_calls = Counter("sdcguard_attn_calls_checked", "Attention layer calls checked, counted on the "
+                                       "GPU", registry=self.registry)
+            self._attn_writes = Counter("sdcguard_attn_kv_writes_checked", "Sampled tokens' KV-cache writes checked",
+                                        registry=self.registry)
+            self._seen_attn = {}
+        self._attn_layers.set(len(attn.layers))
+        self._attn_worst.set(float(worst) if worst == worst else 0.0)
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        calls, writes = int(attn.stats.get("calls_checked", 0)), int(attn.stats.get("writes_checked", 0))
+        pc, pw = self._seen_attn.get(id(attn), (0, 0))
+        if calls > pc:
+            self._attn_calls.inc(calls - pc)
+        if writes > pw:
+            self._attn_writes.inc(writes - pw)
+        self._seen_attn[id(attn)] = (max(calls, pc), max(writes, pw))
+
     def stack(self, info: dict) -> None:
         """Set sdcguard_stack_info (sdcguard.stack.collect()); a second call replaces the first."""
         from .stack import FIELDS

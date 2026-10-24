@@ -501,3 +501,45 @@ def test_the_fp8mm_calibration_runs_on_both_gpus_and_fails_if_either_does(runner
     monkeypatch.setattr(runner, "fp8mm_cal_l4", SimpleNamespace(spawn=lambda *a: Call("fp8mm_cal_l4: exit code 1 in 2.0 minutes")))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("fp8mm_cal")
+
+
+def test_the_attention_check_runs_on_both_gpus_and_fails_if_either_does(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+
+    class Call:
+        def __init__(self, msg):
+            self.msg = msg
+
+        def get(self):
+            return self.msg
+
+    def fn(msg):
+        return SimpleNamespace(spawn=lambda *a: Call(msg))
+
+    monkeypatch.setattr(runner, "attn_h100", fn("attn_h100: exit code 0 in 60.0 minutes"))
+    monkeypatch.setattr(runner, "attn_l4", fn("attn_l4: exit code 0 in 25.0 minutes"))
+    runner.main("attn")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "attn_h100", fn("attn_h100: exit code 1 in 9.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("attn")
+    assert "attn" in runner.ESTIMATES and "$" in runner.ESTIMATES["attn"]
+
+
+def test_the_operator_screen_runs_on_both_gpus(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+
+    class Call:
+        def __init__(self, msg):
+            self.msg = msg
+
+        def get(self):
+            return self.msg
+
+    monkeypatch.setattr(runner, "screen_ops_h100", SimpleNamespace(spawn=lambda *a: Call("screen_ops_h100: exit code 0 "
+                                                                                          "in 9.0 minutes")))
+    monkeypatch.setattr(runner, "screen_ops_l4", SimpleNamespace(spawn=lambda *a: Call("screen_ops_l4: exit code 1 in "
+                                                                                        "9.0 minutes")))
+    with pytest.raises(SystemExit, match="screen_ops_l4: exit code 1"):
+        runner.main("screen_ops")
+    assert "screen_ops_h100: exit code 0" in capsys.readouterr().out

@@ -51,7 +51,7 @@ COLS = 8                 # z|row, z|col, z|bits(y), z|bits(r), z|step, active ca
 C_ROW, C_COL, C_OUT, C_REF, C_STEP, C_CALLS, C_ROWS, C_UNJ = range(COLS)
 CAP_COLS = 4             # claimed, row, step, score bits
 M32 = 0xFFFFFFFF
-ROW_A, ROW_B = 7919, 104729       # sampled rows: (step * ROW_A + j * ROW_B) % rows
+ROW_A, ROW_B = 7919, 104729       # row j at a layer's k-th turn (k = step // layers): (k ROW_A + j ROW_B) % rows
 ACT = {"silu": 0, "gelu": 1}
 
 try:
@@ -83,9 +83,12 @@ def _dact(a: torch.Tensor, code: int) -> torch.Tensor:
     return 0.5 * (1.0 + torch.erf(a * 0.7071067811865476)) + a * torch.exp(-0.5 * a * a) * 0.3989422804014327
 
 
-def sample_rows(step: torch.Tensor, m: int, device) -> torch.Tensor:
+def sample_rows(step: torch.Tensor, m: int, device, nlayers: int = 1) -> torch.Tensor:
+    """The rows a layer's check takes at a step: from the layer's own turn count, so a steady batch has every row
+    taken in turn (from the step number itself, layers that take turns in a number of steps sharing a factor with
+    the batch's rows would only ever see a few of them)."""
     j = torch.arange(SAMPLES, device=device, dtype=torch.int64)
-    return (step * ROW_A + j * ROW_B) % max(m, 1)
+    return (torch.div(step, max(int(nlayers), 1), rounding_mode="floor") * ROW_A + j * ROW_B) % max(m, 1)
 
 
 def recompute(x_rows: torch.Tensor, ids: torch.Tensor, g: torch.Tensor, w13: torch.Tensor, w2: torch.Tensor,
@@ -157,7 +160,7 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     raw = stepbuf.reshape(-1)[0]
     step = raw & M32
     active = (step % max(nlayers, 1)) == index
-    rows = sample_rows(step, m, x.device)
+    rows = sample_rows(step, m, x.device, nlayers)
     xr = x.reshape(m, hdim)[rows]
     y = out.reshape(m, hdim)[rows].float()
     ids, g = topk_ids.reshape(m, -1)[rows], topk_w.reshape(m, -1)[rows]
@@ -211,8 +214,8 @@ if HAVE_TRITON:
         return step, (step % nl) == idx
 
     @triton.jit
-    def _moe_row(step, j, M):
-        return ((step * 7919 + j * 104729) % M).to(tl.int64)
+    def _moe_row(step, j, M, nl):
+        return (((step // nl) * 7919 + j * 104729) % M).to(tl.int64)
 
     @triton.jit
     def _moe_expert(ids, emap, row, k, K, HAS_MAP: tl.constexpr):
@@ -229,7 +232,7 @@ if HAVE_TRITON:
         step, live = _moe_live(stepbuf, nl, idx)
         if live:
             j, k = jk // K, jk % K
-            row = _moe_row(step, j, M)
+            row = _moe_row(step, j, M, nl)
             e = _moe_expert(ids, emap, row, k, K, HAS_MAP)
             n = tl.program_id(1) * BN + tl.arange(0, BN)
             nm = n < N2
@@ -254,7 +257,7 @@ if HAVE_TRITON:
         step, live = _moe_live(stepbuf, nl, idx)
         if live:
             j, k = jk // K, jk % K
-            row = _moe_row(step, j, M)
+            row = _moe_row(step, j, M, nl)
             e = _moe_expert(ids, emap, row, k, K, HAS_MAP)
             o = tl.program_id(1) * BO + tl.arange(0, BO)
             om = o < H
@@ -305,7 +308,7 @@ if HAVE_TRITON:
         j = tl.program_id(0)
         step, live = _moe_live(stepbuf, nl, idx)
         if live:
-            row = _moe_row(step, j, M)
+            row = _moe_row(step, j, M, nl)
             o = tl.program_id(1) * BO + tl.arange(0, BO)
             om = o < H
             r = tl.zeros([BO], dtype=tl.float32)
@@ -468,7 +471,7 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
                 y = _reference_layer(x, ids, g, w13m if use_map else w13, w2m if use_map else w2,
                                      emap if use_map else None, act, dtype)
                 if case == "wrong":
-                    rows = sample_rows(torch.tensor(step), M, "cpu")
+                    rows = sample_rows(torch.tensor(step), M, "cpu", 4)
                     y[int(rows[0]), 17] = y[int(rows[0]), 17] * 4 + 1
                 fn(x, y, g, ids, w13m if use_map else w13, w2m if use_map else w2, emap if use_map else None, act,
                    False, st, 0, sb, 4, 3, cm, cx, cy, ci, cg, MOE_Z)

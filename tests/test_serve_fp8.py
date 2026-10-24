@@ -194,3 +194,15 @@ def test_layers_past_the_first_64_and_earlier_moe_layers_still_report():
     ev = g.poll(wait=True)
     assert {e.detail["where"] for e in ev} == {"model.layers.0.x", "model.layers.71.x"}
     assert fc.stats["calls"] == 2
+
+
+def test_a_step_past_2_to_the_31_is_named_exactly():
+    g, fc, lay, a = _setup(_Quant(per_token=True))
+    x = _x()
+    q, s = vllm_per_token(x)
+    step = (1 << 31) + 9
+    fc.mark_step(step, rows=12)
+    sf.check_call(a, x, q, s * 1.5)
+    fc.end_step()
+    (ev,) = g.poll(wait=True)
+    assert ev.detail["finding"] == "scale_wrong" and ev.detail["captured"]["step"] == step

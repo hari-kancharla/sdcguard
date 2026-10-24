@@ -342,3 +342,33 @@ def test_a_failing_routing_check_turns_that_router_off_without_breaking_serving(
     assert out.shape == (6, 128)
     assert all(getattr(r.router, "_sdcguard_route", None) is None for r in runner.model.runners)
     assert any("routing check failed" in r.getMessage() for r in caplog.records)
+
+
+def test_each_router_takes_every_row_of_a_steady_batch_in_turn():
+    """Rows come from a router's own turn count: with 24 routers and 16 rows (rows drawn from the step number itself
+    would give each router only 2 of them), every router takes all 16."""
+    for idx in (0, 5, 23):
+        seen = set()
+        for k in range(16):
+            seen |= set(sr.sample_rows(torch.tensor(k * 24 + idx), torch.tensor(16), 24, "cpu").tolist())
+        assert seen == set(range(16)), (idx, seen)
+
+
+def test_a_step_past_2_to_the_31_is_named_exactly():
+    """The step is kept in 31 bits of an int64 key (so the key stays positive for an atomic maximum) and read back
+    against the last marked step (serve_norm.unwrap31)."""
+    from sdcguard.serve_norm import unwrap31
+    assert unwrap31(7, None) == 7 and unwrap31(7, 9) == 7
+    big = (1 << 31) + 5
+    assert unwrap31(big & sr.S31, big) == big and unwrap31((big - 2) & sr.S31, big) == big - 2
+    assert unwrap31(((1 << 31) - 2) & sr.S31, big) == (1 << 31) - 2      # from before the 31 bits wrapped
+    assert unwrap31(3, (1 << 32) + 3) == 3                                # beyond 32 bits: as the marks themselves
+    kw, cls, vllm = CASES["softmax top-k, renormalized"]
+    g, rc, a = _setup(_router(cls, **kw))
+    lg = _logits(seed=1)
+    w, ids = vllm(lg)
+    bad = ids.clone()
+    bad[:, -1] = lg.argmin(-1).to(bad.dtype)
+    _step(rc, a, big, lg, w, bad)
+    (ev,) = g.poll(wait=True)
+    assert ev.detail["captured"]["step"] == big and ev.detail["recheck"]["captured"]["step"] == big

@@ -611,6 +611,7 @@ class ServeGuard:
         self.moe = None                            # serve_moe.MoEChecks: fused MoE layers checked too (moe_checks())
         self.fp8 = None                            # serve_fp8.Fp8Checks: FP8 layers' quantization (fp8_checks())
         self.route = None                          # serve_route.RouteChecks: MoE routers (route_checks())
+        self.attn = None                           # serve_attn.AttnChecks: attention layers (attn_checks())
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -900,7 +901,7 @@ class ServeGuard:
             if self.layers:
                 self.poll(wait=True)
         finally:
-            for part in ("norms", "moe", "fp8", "route"):
+            for part in ("norms", "moe", "fp8", "route", "attn"):
                 if getattr(self, part) is not None:
                     try:
                         getattr(self, part).detach()
@@ -953,6 +954,14 @@ class ServeGuard:
             self.route = RouteChecks(self)
         return self.route
 
+    def attn_checks(self, line: Optional[float] = None):
+        """The attention layers this guard checks (serve_attn.AttnChecks), made at the first call: add() each layer and
+        finalize() once, before CUDA graph capture; poll(), mark_step(), end_step() and detach() take them along."""
+        if self.attn is None:
+            from .serve_attn import ATTN_Z, AttnChecks
+            self.attn = AttnChecks(self, ATTN_Z if line is None else line)
+        return self.attn
+
     def moe_checks(self, line: Optional[float] = None):
         """The fused MoE layers this guard checks too (serve_moe.MoEChecks), made at the first call: add() each MoE
         layer and finalize() once, before CUDA graph capture; poll(), mark_step() and detach() take them along."""
@@ -999,7 +1008,8 @@ class ServeGuard:
                 **({"norms": self.norms.coverage()} if self.norms is not None and self.norms.finalized else {}),
                 **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {}),
                 **({"fp8_quantization": self.fp8.coverage()} if self.fp8 is not None and self.fp8.layers else {}),
-                **({"moe_routing": self.route.coverage()} if self.route is not None and self.route.layers else {})}
+                **({"moe_routing": self.route.coverage()} if self.route is not None and self.route.layers else {}),
+                **({"attention": self.attn.coverage()} if self.attn is not None and self.attn.finalized else {})}
 
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
@@ -1050,7 +1060,7 @@ class ServeGuard:
                 ev = torch.cuda.Event()
                 ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (buf, ev, epoch)
-        for part in (self.norms, self.moe):
+        for part in (self.norms, self.moe, self.attn):
             if part is not None and part.finalized:
                 events += part.poll(wait=wait)
         for part in (self.fp8, self.route):
@@ -1061,7 +1071,7 @@ class ServeGuard:
     def end_step(self) -> None:
         """After a model step's work is queued: checks that judge only model steps stop judging (warm-up and graph
         capture runs in between aren't steps)."""
-        for part in (self.fp8, self.route):
+        for part in (self.fp8, self.route, self.attn):
             if part is not None:
                 part.end_step()
 
@@ -1081,7 +1091,7 @@ class ServeGuard:
             w[1] = step
             while len(win) > 256:
                 del win[min(win)]
-        for part in (self.norms, self.moe):
+        for part in (self.norms, self.moe, self.attn):
             if part is not None and part.finalized:
                 part.mark_step(step)
         for part in (self.fp8, self.route):

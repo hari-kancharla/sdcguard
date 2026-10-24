@@ -2085,6 +2085,13 @@ real launch (`tests/test_triton_compiles.py`, with Triton 3.8.0; the old routing
 fixed one compiles); no check's PyTorch version reads a GPU value (see the FP8 result below). The criteria stand
 for the rerun.
 
+Amendment (October 24, after the reruns above were handed over, before any run with it): the rows a layer's check
+takes were drawn from the step number, and the layers take turns by the same number; when the number of MoE layers
+shares a factor with a steady batch's rows, each layer then only ever sees a few of them (24 layers and 16 rows: 2
+rows a layer). The MoE and routing checks now draw rows from the layer's own turn count (the step number divided by
+the number of layers), so each takes every row of a steady batch in turn (CPU-tested). The rerun on the earlier code
+is judged as written; this changes which rows are sampled, not what a sample is judged against.
+
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 
 Two new parts are tried on a real, open vLLM bug at once. The plugin's FP8 quantization check
@@ -2182,6 +2189,130 @@ Where a check's state goes through cuBLAS (the MoE recompute and the linear chec
 counts and kept-row flags exactly and the same score to within 0.1% (2% for the linear check), on the same side of
 the line, because a replay may run another cuBLAS algorithm than the eager call.
 Not claimed: other GPUs, or vLLM's own capture of these checks, which the server runs show.
+
+Amendment (October 24, written after the graphs run on b1a560d was handed over and before any run that includes it):
+`tests/test_gpu_graphs.py` now also captures the attention check (below), its PyTorch version and its Triton
+kernels, and G1 to G5 apply to it in the next graphs run. G4 there: the next step's batch written into the same
+tensors (queries, outputs, KV cache, query_start_loc, seq_lens, block table, slots), as vLLM writes them before a
+replay, is read at replay (the replay leaves the state an eager call on that batch leaves), and a step outside a
+model step, or another layer's turn, counts nothing.
+
+### Attention checks in serving (written October 24, before any run)
+
+The vLLM plugin can now check attention (`src/sdcguard/serve_attn.py`, SDCGUARD_ATTN=1, off by default until this run
+says otherwise), on vLLM's FlashAttention and Triton backends. At each model step one attention layer (they take turns
+by step number) recomputes 4 of its outputs, each one query head of one token: two tokens of the step and the newest
+tokens of two requests (a decode's only token, so long-context decodes are sampled in batches that are mostly prefill),
+drawn from the layer's own turn count so that a steady batch has every (token, head) pair checked in turn. The recompute
+reads the query row, and the request's keys and values from the paged KV cache through its block-table row, using the
+same metadata tensors the backend reads (so CUDA-graph padding and replays are seen as the backend sees them), computes
+softmax(scale q.K) V in fp32, split among 32 programs per sample and combined, and compares each of the head's outputs
+against a bound written from how both backends round (vLLM 0.32's source, FlashAttention 2 and 3; FlashAttention 4,
+vLLM's choice on Blackwell, is listed as not checked): P rounded to the KV dtype before the P V product, the sum of P in
+fp32, the output rounded once, partial outputs rounded (slack: vLLM 0.32 has no cascade attention and keeps split-KV
+partials in fp32), and the fp32 errors of the scores, the exponential, the accumulation and the split-KV combine on
+either side. A correct output scores at most 1; the line is 4. The sampled token's own KV write is checked too: the slot
+vLLM wrote it to (slot_mapping) must be the slot its position's block names, and that slot must hold the key and value
+the layer computed for it, bit for bit, for every KV head. The first sample over the line in each layer is kept, with,
+once per read across layers, the keys and values it attended (up to 65,536 of them), and its alert rechecks it in
+float64. Two early-exit Triton kernels per layer call do the work: inside a CUDA graph every layer launches them and the
+step's layer is chosen on the GPU; in eager calls during a step only that layer's call launches them. A model step is
+one call of vLLM's execute_model with scheduled tokens; vLLM's dummy batches (memory profiling, warm-up, a data-parallel
+rank with nothing scheduled), which its V2 runner also makes through execute_model, are not steps: they aren't counted
+and the check stays off in them.
+
+On the CPU (`tests/test_serve_attn.py`, `tests/_serve_attn_compare.py`): against a model of the backends' rounding
+(tiles of 16 to 128 keys, 1 to 5 splits, partial outputs rounded or not, the sum of P taken before or after rounding;
+sharp and diffuse attention, values of one sign, cancelling, large and tiny, up to 4,000 keys, fp16 P values in its
+subnormal range), the worst score was 0.46 in bf16 and 0.63 in fp16; the Triton kernels and the PyTorch version gave the
+same counts, scores and locations in 69 cases in Triton's interpreter, each keeping a sample when it alarmed, and on an
+alarm the kept keys and values were the attended ones and the float64 recheck confirmed the wrong output; the kernels
+compile for the A100, L4 and H100 with Triton 3.8.0 and 3.7.1 (head sizes 64, 80, 128 and 256); wrong outputs, attention
+over another request's keys, attention a key short where that key carries the weight, NaN outputs, writes with the wrong
+content, writes to another slot and block ids outside the cache were all caught and located; CUDA-graph padding was
+never sampled. In bf16 the bound comes to about 1.6% of the attended values' size for ordinary logits (about 2.2% where
+scale times the sum of |q k| is 200), so an output must be off by more than about 6% of it (9% there) to be caught for
+sure: the check is for gross errors (a faulty unit, other keys than the metadata names, a length or schedule gone stale
+inside the kernel, non-finite values), not small ones. Not seen: metadata that is itself wrong (the check reads the
+same), and KV-cache contents that changed after their write (the kernel and the recompute read the same values).
+
+`experiments/vllm_attn_check.py` (`modal run scripts/modal_vllm.py --phase attn`, vLLM 0.32.0, Qwen2.5-1.5B-Instruct
+in bf16, 28 attention layers, max model length 4096). On one H100 (FlashAttention 3), one after another: plain
+(SDCGUARD=0, FLASH_ATTN), guarded (SDCGUARD_REQUIRE=1, SDCGUARD_ATTN=1, compiled with CUDA graphs, prefix caching on as
+by vLLM's default), noattn (guarded with SDCGUARD_ATTN=0), eager (guarded, --enforce-eager), tplain and tguarded (plain
+and guarded on vLLM's Triton attention, TRITON_ATTN). On one L4 (FlashAttention 2), at the same time: plain and
+guarded. Workload: 64 greedy completions of 32 tokens, and 8 long prompts (1,378 to 3,295 tokens, all starting with
+the same 1,024 tokens, so the later ones hit the prefix cache) answered with 64 tokens, on each plain and guarded
+server; the speed load (sdcguard.perf: 128 prompts, 128 tokens, 3 rounds, 16 and 256 requests at once) on plain,
+guarded and noattn. Faults can't be put into the attention kernel inside captured CUDA graphs from Python, so the
+compiled servers run clean and eager runs the trials: each makes one layer's attention wrong before the check sees
+it, then sends rounds of 4 requests at once until an alert names the layer, or 16 rounds: every output at one
+dimension made 2x + 1 ("value"); one query head's outputs with an exponent bit flipped ("head"); the backend computing
+with the first two requests' block tables swapped ("other"); the backend computing with every seq_len one short
+("short"); a bit of one key dimension flipped in the cache after every write of the layer ("kv"). About 45 to 75
+minutes on the H100 and 20 to 35 on the L4, roughly $4 to $7 in all.
+
+Criteria:
+- A1: every server starts; guarded, eager and tguarded (and the L4's guarded) check all 28 attention layers with the
+  Triton kernels (they passed their first-use comparison on the GPU), on the backend asked for (FlashAttentionImpl;
+  TritonAttentionImpl for tguarded).
+- A2: each guarded server's 64 completions and 8 long completions are identical to its plain server's (guarded to
+  plain and tguarded to tplain on the H100, guarded to plain on the L4).
+- A3: no alert with no fault on any guarded server (noattn included); on those checking attention, the worst clean
+  score read back is at most 1 (the bound: a higher one means the bound's model of the backend is wrong, whatever the
+  line); no wrong write, write to another slot, block id outside the cache or sample not judged; samples and writes
+  were checked; no call left unchecked for a reason.
+- A4: the "value", "head", "other" and "kv" faults are each caught by an alert naming the layer with the matching
+  finding (output_wrong_or_misread; kv_write_wrong for "kv") within 16 rounds, and no alert with a finite score names
+  another layer during the trials.
+- A5: among the alerts of the "value", "head" and "other" trials, at least one each is rechecked in float64 as
+  output_wrong from the keys and values the check kept.
+- A6: on the compiled servers (guarded and tguarded on the H100, guarded on the L4), the calls checked are at least 98%
+  of the model steps with scheduled tokens (one layer a step), which holds only if the check runs inside the CUDA
+  graphs vLLM replays for decode steps.
+
+Reported, not criteria: the "short" trial (how much a query's newest key moves its output depends on the attention,
+not on the check), rounds until each catch, worst clean scores, samples and keys recomputed, and the cost (output
+tokens per second with and without attention checks, at 16 and 256 requests at once). Decided now: if the attention
+check passes and costs at most 3% at 16 at once, it becomes on by default; if it costs more, it stays opt-in. Not
+claimed whatever the outcome: other models or backends (FlashInfer, MLA and the rest), FP8 KV caches, sliding windows,
+attention sinks, soft caps, small errors, and the KV cache's state beyond the sampled tokens' own writes.
+
+### Exact operator tests for screening GPUs (written October 24, before any run)
+
+`sdcguard screen` runs a checked transformer, but checks bf16 and fp16 tensor-core matmuls only, within a noise model.
+Defective GPUs in the field also compute wrong FP64 and FP32 results on their CUDA cores (in ByteDance's study of silent
+corruptions in the wild, OSDI '26, those units failed more often than the bf16 tensor cores), and wrong values in
+memory, and synthetic tests missed more than 60% of the faulty GPUs there. `src/sdcguard/screen_ops.py` (`python -m
+sdcguard.screen_ops`) adds tests whose every result is known exactly, so one wrong value is a finding with no noise
+model: matmuls in FP64, FP32 with TF32 off, TF32, BF16, FP16, FP8 (e4m3, with and without fast accumulation) and INT8 on
+integer-valued inputs small enough that every product and partial sum is exact in that arithmetic in any order of
+additions (BF16 and FP16 rounded once to their output, with PyTorch's reduced-precision split-K reductions off), each
+also scaled by powers of two across much of the exponent range and transposed, against float64 references computed on
+the CPU; x * y + z on the CUDA cores in FP32 and FP64 against the same in int64; exp, sin, tanh, rsqrt and log of the
+same values laid out in two orders (other SMs and lanes compute each), which must agree bit for bit; and a share of free
+memory filled with an address-dependent pattern and its complement and read back after every chunk is written. A wrong
+value is reported with its test, round, input set, scaling, element, value and expected value, with the GPU's identity
+and telemetry (UUID, serial, PCI, driver, VBIOS, ECC mode and counters, remapped rows, clocks, temperature, power)
+before and after. On the CPU (`tests/test_screen_ops.py`): the ranges keep every product and sum exact, every matmul set
+comes out exact scaled and transposed, a clean run passes, and one value made wrong in software in each test is found,
+located, and the only one found.
+
+`experiments/screen_ops_check.py` (`modal run scripts/modal_vllm.py --phase screen_ops`, one H100 and one L4 at once,
+about 10 minutes each, under $1.30 in all): a clean run of every test for 5 minutes, then a short run of each test
+with one value made wrong in software.
+
+Criteria (on each GPU):
+- S1: every test runs (the H100 and the L4, Ada, have FP8, TF32 and INT8, so none is skipped), each checks values in at
+  least one round, and the clean run finds no wrong value.
+- S2: with one value made wrong in a test, that test finds exactly one wrong value, at the element made wrong
+  (memory: at the changed address).
+
+Reported: values checked, rounds, telemetry. What this is for and isn't: Modal screens its GPUs, and a defective one
+is about one in a thousand (Meta, July 2025), so these runs check the tests themselves (no wrong value on healthy
+GPUs, a wrong value always found); finding a defective GPU means screening many, which needs an account on a GPU
+marketplace (consumer cards on Vast.ai or Salad cost cents an hour, so many can be screened), with criteria of its
+own before it runs. Not claimed: that these tests find every defective GPU, or any particular fault rate.
 
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 

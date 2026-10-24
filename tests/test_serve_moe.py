@@ -181,6 +181,13 @@ def test_the_sampled_rows_cover_the_batch_over_steps():
         seen |= set(sm.sample_rows(torch.tensor(step), 13, "cpu").tolist())
     assert seen == set(range(13))
     assert sm.sample_rows(torch.tensor(5), 1, "cpu").tolist() == [0] * sm.SAMPLES
+    # layers taking turns in a number of steps that shares factors with the batch: each layer still takes every row
+    # in turn (rows drawn from the step number itself would give layer 5 of 24 only 2 of 16 rows here)
+    for idx in (0, 5, 23):
+        seen = set()
+        for k in range(16):
+            seen |= set(sm.sample_rows(torch.tensor(k * 24 + idx), 16, "cpu", 24).tolist())
+        assert seen == set(range(16)), (idx, seen)
 
 
 def test_the_triton_kernels_match_the_pytorch_check():

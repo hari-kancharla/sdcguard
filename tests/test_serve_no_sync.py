@@ -1,4 +1,5 @@
-"""The serving checks that run inside a model step (the linear, FP8 quantization, MoE, routing and norm checks) must
+"""The serving checks that run inside a model step (the linear, FP8 quantization, MoE, routing, norm and attention
+checks) must
 never read a GPU value on the CPU: under CUDA graph capture that invalidates the capture and vLLM fails to start
 (an FP8 MoE model on an L4, October 24, 2026: `x[i]` with a 0-d tensor index `i` calls .item()); outside capture it
 stalls every step. Each check's PyTorch version runs here on fake tensors (shapes only, no data), where any operation
@@ -11,6 +12,7 @@ import torch
 import _fp8_standins as fs
 from _vllm_standins import install_fake_moe, vllm_grouped_topk, vllm_topk
 from sdcguard import _serve_fast
+from sdcguard import serve_attn as sa
 from sdcguard import serve_fp8 as sf
 from sdcguard import serve_moe as sm
 from sdcguard import serve_norm as sn
@@ -196,3 +198,16 @@ def test_the_norm_check(kind, dtype):
     y = (s * torch.rsqrt(s.pow(2).mean(-1, keepdim=True) + 1e-6) * nc.layers[0]["w_ref"]).to(dtype)
     nc.mark_step(0)
     on_fake_tensors(sn.norm_check_torch, x, y, *mod._sdcguard_norm)
+
+
+# ------------------------------------------------------------------------------------------------------ attention
+@pytest.mark.parametrize("has_write", [True, False])
+@pytest.mark.parametrize("left", [-1, 8])
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+def test_the_attention_check(has_write, left, dtype):
+    c = sa.make_case("cpu", dtype, lens=((40, 1), (17, 5), (0, 0)), NB=12)
+    b = sa.buffers("cpu", 2, 64, 64, dtype)
+    b["ctrl"][1] = 1
+    on_fake_tensors(sa.attn_check_torch, c["q"], c["o"], c["kv"], c["key"], c["val"], c["qsl"], c["seq_lens"],
+                    c["bt"], c["slots"], b["state"], 1, b["ctrl"], 2, 0, c["scale"], left, sa.ATTN_Z, b["capm"],
+                    b["capq"], b["capo"], has_write)
