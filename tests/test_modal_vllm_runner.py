@@ -406,6 +406,26 @@ def test_the_qualify_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, 
         runner.main("qualify")
 
 
+def test_the_fp8kv_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "fp8kv", _remote("fp8kv: exit code 0 in 41.0 minutes"))
+    runner.main("fp8kv")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "fp8kv", _remote("fp8kv: exit code 1 in 41.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("fp8kv")
+
+
+def test_the_fp8_moe_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "fp8_moe", _remote("fp8_moe: exit code 0 in 71.0 minutes"))
+    runner.main("fp8_moe")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "fp8_moe", _remote("fp8_moe: exit code 1 in 71.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("fp8_moe")
+
+
 def test_the_moe_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
     monkeypatch.setattr(runner, "bundle", _remote(_archive()))
     monkeypatch.setattr(runner, "moe", _remote("moe: exit code 0 in 28.0 minutes"))

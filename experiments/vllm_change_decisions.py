@@ -1,11 +1,13 @@
 """`sdcguard decide` on real changes to a real `vllm serve` (docs/METHOD.md, "Decisions on four changes to a vLLM
 server", written before the run).
 
-One H100, vLLM 0.32.0, Qwen2.5-7B-Instruct in bf16 as the trusted stack, sdcguard on in every server as deployed
-(SDCGUARD=1, one linear layer in eight per step, SDCGUARD_REQUIRE=1). Each role is one server launch:
+One H100, vLLM 0.32.0, Qwen2.5-7B-Instruct in bf16 as the trusted stack, sdcguard on in every server (SDCGUARD=1,
+SDCGUARD_REQUIRE=1) on every linear layer, as qualify runs it: a decision counts the plugin's silence only when it
+checks at least half the weights, and a share of 1/8 checks the same 15 layers every step (the first run's fault
+layer wasn't one of them; docs/METHOD.md, amendment). Each role is one server launch:
 
   base        the trusted stack: the quality reference (`gate model-ref --url`), the perf runs, the plugin's metrics
-  plain       the trusted stack without sdcguard: perf only, for what sdcguard costs (reported)
+  plain       the trusted stack without sdcguard: perf only, for what sdcguard on every layer costs (reported)
   same        the same stack started again: the control (and the quality check's noise run)
   triton      --attention-backend TRITON_ATTN
   awq         Qwen/Qwen2.5-7B-Instruct-AWQ (INT4 weights, vLLM's Machete kernels on Hopper)
@@ -77,7 +79,7 @@ def _start(role: str, out: str, port: int, metrics_port: int):
         for k in [k for k in env if k.startswith("SDCGUARD")]:
             del env[k]
     else:
-        env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_SHARE="0.125", SDCGUARD_METRICS_PORT=str(metrics_port),
+        env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_SHARE="1", SDCGUARD_METRICS_PORT=str(metrics_port),
                    SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
                    SDCGUARD_EVIDENCE_DIR=os.path.join(out, f"{role}_evidence"))
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", model, "--port", str(port),

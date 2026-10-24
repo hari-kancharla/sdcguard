@@ -49,14 +49,14 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k in ("SDCGUARD_REQUIRE", "SDCGUARD_SHARE", "SDCGUARD_OFFSET", "SDCGUARD_WEBHOOK", "SDCGUARD_METRICS_PORT",
               "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z",
-              "SDCGUARD_MOE"):
+              "SDCGUARD_MOE", "SDCGUARD_FP8"):
         monkeypatch.delenv(k, raising=False)
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
     for k, v in (("patched", False), ("guard", None), ("reported", False), ("layers", None), ("steps", 0),
                  ("rechecked", None), ("z", None), ("hooked", False), ("step_log", None), ("norm_classes", []),
                  ("norms_stale", False), ("norms_registered", False), ("moe_classes", []), ("moe_registered", False),
-                 ("stack", None)):
+                 ("stack", None), ("fp8_classes", []), ("fp8_registered", False), ("route_classes", [])):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin
 
@@ -393,4 +393,132 @@ class MoEDecoder(nn.Module):
             w, ids = torch.topk(p, ex.top_k, -1)
             w = w / w.sum(-1, keepdim=True)
             x = ex.forward_modular(x=x, topk_weights=w, topk_ids=ids.to(torch.int32))
+        return x
+
+
+def vllm_grouped_topk(gating_output, topk, renormalize, num_expert_group=0, topk_group=0, scoring_func="softmax",
+                      routed_scaling_factor=1.0, e_score_correction_bias=None):
+    """vLLM 0.32.0's grouped_topk, its PyTorch path (fused_moe/router/grouped_topk_router.py), transcribed."""
+    scores = torch.softmax(gating_output, dim=-1) if scoring_func == "softmax" else gating_output.sigmoid()
+    num_token = scores.size(0)
+    if e_score_correction_bias is not None:
+        original_scores = scores
+        scores = scores + e_score_correction_bias.unsqueeze(0)
+        group_scores = scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
+    else:
+        group_scores = scores.view(num_token, num_expert_group, -1).max(dim=-1).values
+    group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]
+    group_mask = torch.zeros_like(group_scores)
+    group_mask.scatter_(1, group_idx, 1)
+    score_mask = group_mask.unsqueeze(-1).expand(num_token, num_expert_group,
+                                                 scores.size(-1) // num_expert_group).reshape(num_token, -1)
+    tmp_scores = scores.masked_fill(~score_mask.bool(), float("-inf"))
+    if e_score_correction_bias is not None:
+        topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)[1]
+        topk_weights = original_scores.gather(1, topk_ids)
+    else:
+        topk_weights, topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)
+    if renormalize:
+        topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
+    if routed_scaling_factor != 1.0:
+        topk_weights = topk_weights * routed_scaling_factor
+    return topk_weights.to(torch.float32), topk_ids.to(torch.int32)
+
+
+def vllm_topk(gating_output, topk, renormalize, scoring_func="softmax"):
+    """vLLM's fused top-k (topk_softmax / topk_sigmoid kernels) in PyTorch: scores in fp32, top-k, renormalized."""
+    s = torch.softmax(gating_output.float(), -1) if scoring_func == "softmax" else gating_output.float().sigmoid()
+    w, ids = torch.topk(s, topk, -1)
+    if renormalize:
+        w = w / w.sum(-1, keepdim=True)
+    return w, ids.to(torch.int32)
+
+
+def install_fake_router(setitem):
+    """vllm.model_executor.layers.fused_moe.router.fused_moe_router.FusedMoERouter and two of its routers as vLLM 0.32
+    has them, as far as the plugin uses them: select_experts calling _select_experts (vLLM's MoE runner calls
+    select_experts with keywords), and the routers' attributes (top_k, global_num_experts, renormalize,
+    scoring_func, e_score_correction_bias, num_expert_group, topk_group, routed_scaling_factor, eplb_state)."""
+    for n in ["vllm", "vllm.model_executor", "vllm.model_executor.layers", "vllm.model_executor.layers.fused_moe",
+              "vllm.model_executor.layers.fused_moe.router"]:
+        if n not in sys.modules:
+            setitem(sys.modules, n, types.ModuleType(n))
+    mod = types.ModuleType("vllm.model_executor.layers.fused_moe.router.fused_moe_router")
+
+    class FusedMoERouter:
+        def __init__(self, eplb_state=None):
+            self.eplb_state = eplb_state
+            self.fault = None
+
+        def _select_experts(self, hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None):
+            raise NotImplementedError
+
+        def select_experts(self, hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None):
+            return self._select_experts(hidden_states, router_logits, topk_indices_dtype=topk_indices_dtype,
+                                        input_ids=input_ids)
+
+    class FusedTopKRouter(FusedMoERouter):
+        def __init__(self, top_k, global_num_experts, renormalize=True, scoring_func="softmax"):
+            super().__init__()
+            self.top_k, self.global_num_experts = top_k, global_num_experts
+            self.renormalize, self.scoring_func = renormalize, scoring_func
+
+        def _select_experts(self, hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None):
+            w, ids = vllm_topk(router_logits, self.top_k, self.renormalize, self.scoring_func)
+            return self.fault(w, ids) if self.fault is not None else (w, ids)
+
+    class GroupedTopKRouter(FusedMoERouter):
+        def __init__(self, top_k, global_num_experts, num_expert_group, topk_group, renormalize=True,
+                     scoring_func="sigmoid", routed_scaling_factor=1.0, e_score_correction_bias=None):
+            super().__init__()
+            self.top_k, self.global_num_experts = top_k, global_num_experts
+            self.num_expert_group, self.topk_group = num_expert_group, topk_group
+            self.renormalize, self.scoring_func = renormalize, scoring_func
+            self.routed_scaling_factor, self.e_score_correction_bias = routed_scaling_factor, e_score_correction_bias
+            self.num_fused_shared_experts = 0
+
+        def _select_experts(self, hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None):
+            w, ids = vllm_grouped_topk(router_logits, self.top_k, self.renormalize, self.num_expert_group,
+                                       self.topk_group, self.scoring_func, self.routed_scaling_factor,
+                                       self.e_score_correction_bias)
+            return self.fault(w, ids) if self.fault is not None else (w, ids)
+
+    for c in (FusedMoERouter, FusedTopKRouter, GroupedTopKRouter):
+        c.__module__ = mod.__name__
+        setattr(mod, c.__name__, c)
+    setitem(sys.modules, mod.__name__, mod)
+    sys.modules["vllm.model_executor.layers.fused_moe.router"].fused_moe_router = mod
+    return mod
+
+
+class MoERunnerLike(nn.Module):
+    """vLLM's MoERunner as far as the plugin sees it: a module holding `router` and `routed_experts`."""
+
+    def __init__(self, router, routed_experts):
+        super().__init__()
+        self.router = router
+        self.routed_experts = routed_experts
+
+
+class RoutedMoEDecoder(nn.Module):
+    """A decoder whose MoE blocks route through vLLM-like routers, called as vLLM's runner calls them (fp32 router
+    logits), then forward_modular."""
+
+    def __init__(self, moe_mod, router_mod, M, n_layers=3, hidden=128, experts=16, top_k=4, grouped=False):
+        super().__init__()
+        torch.manual_seed(0)
+        self.layers = nn.ModuleList([Lin(M, hidden, hidden, f"model.layers.{i}.proj") for i in range(n_layers)])
+        self.gates = [torch.randn(experts, hidden) * 0.1 for _ in range(n_layers)]
+        bias = torch.linspace(-0.05, 0.05, experts)
+        mk = (lambda: router_mod.GroupedTopKRouter(top_k, experts, 4, 2, True, "sigmoid", 2.5, bias)) if grouped \
+            else (lambda: router_mod.FusedTopKRouter(top_k, experts))
+        self.runners = nn.ModuleList([MoERunnerLike(mk(), moe_mod.RoutedExperts(experts, hidden, 64, top_k, seed=i))
+                                      for i in range(n_layers)])
+
+    def forward(self, x):
+        for lay, gate, run in zip(self.layers, self.gates, self.runners):
+            x = lay(x)
+            w, ids = run.router.select_experts(hidden_states=x, router_logits=x.float() @ gate.T,
+                                               topk_indices_dtype=None, input_ids=None)
+            x = run.routed_experts.forward_modular(x=x, topk_weights=w, topk_ids=ids)
         return x

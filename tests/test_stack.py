@@ -160,3 +160,34 @@ def test_the_plugin_publishes_the_stack_whenever_its_guard_is_made(monkeypatch, 
     monkeypatch.setenv("SDCGUARD_METRICS_PORT", str(_free()))
     back = stack.from_metrics(generate_latest(vp._guard(None).metrics.registry).decode())
     assert back and back["fingerprint"] == st["fingerprint"]
+
+
+def test_a_deployment_beyond_what_was_tested_is_named(tmp_path):
+    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "max_model_len": "32768"}
+    st["fingerprint"] = stack.fingerprint(st)
+    d = {"decision": "ACCEPT", "scope": {"stacks": {"candidate": {"deployed": st}},
+                                         "tested": {"max_prompt_tokens": 600, "max_context_tokens": 760,
+                                                    "prefix_cache_hit_tested": True}}}
+    p = tmp_path / "d.json"
+    p.write_text(json.dumps(d))
+    hist = "\n".join(f'vllm:request_prompt_tokens_bucket{{engine="0",le="{le}",model_name="m"}} {n}'
+                     for le, n in (("128.0", 10), ("512.0", 30), ("1024.0", 38), ("+Inf", 40)))
+    q = ready.qualified(str(p), [_page(st)], hist)
+    assert q["verdict"] is None
+    out = q["outside_tested"]
+    assert any("up to 32768 tokens" in x and "760" in x for x in out)
+    assert any("at least 2 of 40 requests" in x and "1024" in x for x in out)
+    assert ready.outside_tested({"max_context_tokens": 40000}, st, None) == []
+
+
+def test_qualify_records_what_each_candidate_was_tested_on(tmp_path):
+    out = str(tmp_path / "q")
+    serve = f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}"
+    qualify.main(["--out", out, "--baseline", "fake/m", "--candidate", "same=fake/m", "--no-isolation", "--no-perf",
+                  "--serve-cmd", serve, "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8",
+                  "--startup-timeout", "30"])
+    t = json.load(open(os.path.join(out, "decision_same.json")))["scope"]["tested"]
+    assert t["probes"] == ["quality", "consistency"] and t["prefix_cache_hit_tested"] is True
+    assert t["decode_past_128_tested"] is True and t["max_context_tokens"] > 160 and t["max_concurrency"] is None
+    rows = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]
+    assert rows["same"]["consistency"] == "CONSISTENT"

@@ -3,6 +3,7 @@ the patch at register() (SDCGUARD_MOE=1; off by default), registration right aft
 step by step, a wrong layer caught and named, a failing check turning its layer off without breaking serving."""
 import logging
 
+import pytest
 import torch
 
 from _vllm_standins import MoEDecoder, install_fake_moe, install_fake_vllm, load, plugin_env
@@ -74,3 +75,26 @@ def test_a_failing_moe_check_turns_that_layer_off_without_breaking_serving(monke
     assert out.shape == (6, 128) and "_sdcguard_moe" not in vars(bad)
     assert vp.guard().stats["moe_check_errors"] == 1
     assert sum("an MoE check failed" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_require_counts_the_moe_layers_the_moe_check_covers(monkeypatch, tmp_path):
+    """SDCGUARD_REQUIRE=1 with SDCGUARD_MOE=1: the fused MoE layers the MoE check registered aren't left over, so
+    vLLM serves (the first GPU run refused here: the requirement didn't know the MoE check)."""
+    vp, UL, GM, moe = _setup(monkeypatch, tmp_path, SDCGUARD_REQUIRE="1")
+    vp.register()
+    runner = GM(lambda: MoEDecoder(moe, UL))
+    runner.load_model()
+    out = runner.execute_model(_x())                  # the requirement is applied at the first step
+    assert out.shape == (6, 128)
+    r = vp._STATE["layers"]
+    assert r["moe_checked"] == 3 and not any("fused MoE" in k for k in r["unchecked_by_method"])
+    assert r["weight_share_checked"] < 0.5            # the experts' weights aren't counted as checksum-checked
+
+
+def test_require_refuses_moe_layers_nothing_checks(monkeypatch, tmp_path):
+    vp, UL, GM, moe = _setup(monkeypatch, tmp_path, SDCGUARD_MOE="0", SDCGUARD_REQUIRE="1")
+    vp.register()
+    runner = GM(lambda: MoEDecoder(moe, UL))
+    runner.load_model()
+    with pytest.raises(vp.RequirementNotMet, match="fused MoE experts"):
+        runner.execute_model(_x())

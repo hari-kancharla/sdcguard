@@ -9,9 +9,14 @@ import vllm_moe_check as vm  # noqa: E402
 NAMES = [f"model.layers.{i}.block_sparse_moe.experts" for i in range(24)]
 
 
+ROUTERS = [f"model.layers.{i}.block_sparse_moe.experts.router" for i in range(24)]
+
+
 def _stats(worst=0.3):
     return {"layers": 24, "names": NAMES, "kernel": {"cuda:0 bfloat16 act 0": [True, ""]}, "worst": worst,
-            "stats": {"active_calls": 900}, "backends": ["TRITON"], "experts": 32}
+            "stats": {"active_calls": 900}, "backends": ["TRITON"], "experts": 32,
+            "routing": {"routers": 24, "names": ROUTERS, "coverage": {"kernel": {"cuda:0 bfloat16": "Triton"}},
+                        "stats": {"calls": 900}}}
 
 
 def passing():
@@ -23,7 +28,11 @@ def passing():
             "nomoe": {"ready": True, "speed": speed(1000.0)},
             "eager": {"ready": True, "moe_at_start": _stats(), "moe_clean": _stats(0.2), "clean_alerts": 0,
                       "corrupt": [{"mode": m, "layer": NAMES[k], "mark": NAMES[k], "detected": True,
-                                   "rounds_to_detect": 1} for k, m in enumerate(vm.MODES)]}}
+                                   "rounds_to_detect": 1} for k, m in enumerate(vm.MODES)],
+                      "route_corrupt": [{"mode": m, "router": ROUTERS[k], "mark": ROUTERS[k], "detected": True,
+                                         "rounds_to_detect": 1, "findings": [f], "verdicts": ["output_wrong"]}
+                                        for k, (m, f) in enumerate((("experts", "wrong_experts"),
+                                                                    ("weights", "wrong_weights")))]}}
 
 
 def test_a_run_that_meets_every_criterion_passes():
@@ -59,6 +68,21 @@ def test_each_criterion_fails_on_its_own():
     r = passing()
     r["eager"]["corrupt"][2]["detected"] = False
     cases.append((r, "M4: wrong kernels caught in 5 of 6"))
+    r = passing()
+    r["guarded"]["moe_at_start"]["routing"]["routers"] = 0
+    cases.append((r, "M1 (guarded): the routing of 0 routers"))
+    r = passing()
+    r["eager"]["moe_clean"]["routing"]["coverage"]["kernel"] = {"cuda:0 bfloat16": "PyTorch (mismatch)"}
+    cases.append((r, "routing check's Triton kernel isn't in use"))
+    r = passing()
+    r["guarded"]["moe_clean"]["routing"]["stats"] = {"calls": 0}
+    cases.append((r, "M3 (guarded): no routing check ran"))
+    r = passing()
+    r["eager"]["route_corrupt"][1]["detected"] = False
+    cases.append((r, "M5: wrong routers caught in 1 of 2"))
+    r = passing()
+    r["eager"]["route_corrupt"][0]["findings"] = ["wrong_weights"]
+    cases.append((r, "M5"))
     for res, want in cases:
         ok, fails, _ = vm.judge(res)
         assert not ok and any(want in f for f in fails), (want, fails)

@@ -609,6 +609,8 @@ class ServeGuard:
         self.not_selected: list = []               # layers attach() left out by its share (checkable, sampled out)
         self.norms = None                          # serve_norm.NormChecks: norm layers checked too (norm_checks())
         self.moe = None                            # serve_moe.MoEChecks: fused MoE layers checked too (moe_checks())
+        self.fp8 = None                            # serve_fp8.Fp8Checks: FP8 layers' quantization (fp8_checks())
+        self.route = None                          # serve_route.RouteChecks: MoE routers (route_checks())
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -898,7 +900,7 @@ class ServeGuard:
             if self.layers:
                 self.poll(wait=True)
         finally:
-            for part in ("norms", "moe"):
+            for part in ("norms", "moe", "fp8", "route"):
                 if getattr(self, part) is not None:
                     try:
                         getattr(self, part).detach()
@@ -935,6 +937,21 @@ class ServeGuard:
             from .serve_norm import NORM_Z, NormChecks
             self.norms = NormChecks(self, NORM_Z if line is None else line)
         return self.norms
+
+    def fp8_checks(self):
+        """The FP8 layers whose input quantization this guard checks (serve_fp8.Fp8Checks), made at the first call:
+        add() each as its weights are processed; mark_step(step, rows) and end_step() bracket each model step."""
+        if self.fp8 is None:
+            from .serve_fp8 import Fp8Checks
+            self.fp8 = Fp8Checks(self)
+        return self.fp8
+
+    def route_checks(self):
+        """The MoE routers this guard checks (serve_route.RouteChecks), made at the first call."""
+        if self.route is None:
+            from .serve_route import RouteChecks
+            self.route = RouteChecks(self)
+        return self.route
 
     def moe_checks(self, line: Optional[float] = None):
         """The fused MoE layers this guard checks too (serve_moe.MoEChecks), made at the first call: add() each MoE
@@ -980,7 +997,9 @@ class ServeGuard:
                 "layers_with_unjudged": sorted(n for n, v in c.items() if v["unjudged"]),
                 "not_attached": dict(self.unsupported),
                 **({"norms": self.norms.coverage()} if self.norms is not None and self.norms.finalized else {}),
-                **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {})}
+                **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {}),
+                **({"fp8_quantization": self.fp8.coverage()} if self.fp8 is not None and self.fp8.layers else {}),
+                **({"moe_routing": self.route.coverage()} if self.route is not None and self.route.layers else {})}
 
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
@@ -1034,9 +1053,19 @@ class ServeGuard:
         for part in (self.norms, self.moe):
             if part is not None and part.finalized:
                 events += part.poll(wait=wait)
+        for part in (self.fp8, self.route):
+            if part is not None and part.layers:
+                events += part.poll(wait=wait)
         return events
 
-    def mark_step(self, step: int) -> None:
+    def end_step(self) -> None:
+        """After a model step's work is queued: checks that judge only model steps stop judging (warm-up and graph
+        capture runs in between aren't steps)."""
+        for part in (self.fp8, self.route):
+            if part is not None:
+                part.end_step()
+
+    def mark_step(self, step: int, rows: Optional[int] = None) -> None:
         """The model step the work queued next belongs to: call it before each step, outside any CUDA graph (a
         fill on each device's capture buffer, queued like the step's own work). Rows captured in that step carry
         its number (EPOCH_SHIFT), and each read knows the steps it covers."""
@@ -1055,6 +1084,9 @@ class ServeGuard:
         for part in (self.norms, self.moe):
             if part is not None and part.finalized:
                 part.mark_step(step)
+        for part in (self.fp8, self.route):
+            if part is not None:
+                part.mark_step(step, rows)
 
     def _next_epoch(self, dev: torch.device, n: int) -> int:
         """After a read of a device's state: the epoch that read covers, which the rows captured during it carry.

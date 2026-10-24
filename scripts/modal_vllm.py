@@ -618,6 +618,61 @@ def qualify(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=100 * 60)
+def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_fp8_moe_check.py: one `sdcguard qualify` on vLLM issue #62124 (FP8 per-tensor MoE with CUDA
+    graphs, granite-3.1-1b-a400m on one L4) and two remedies, with the FP8 quantization check on; then the rejected
+    candidate's repro folder run on its own."""
+    t0 = time.monotonic()
+    tag = "fp8_moe"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_fp8_moe_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=97 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)
+def fp8kv(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_fp8kv_check.py: one `sdcguard qualify` on vLLM issue #54035 (an FP8 KV cache's decode and
+    prefill differ on Hopper's FlashAttention 3; Qwen3-4B on one H100) and the same cache on FlashInfer."""
+    t0 = time.monotonic()
+    tag = "fp8kv"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_fp8kv_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=72 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 def _isolation(version: str, force: bool, source: Optional[dict]) -> str:
     t0 = time.monotonic()
     tag = f"isolation{version.replace('.', '')}"
@@ -803,6 +858,13 @@ ESTIMATES = {
     "moe": "the plugin's MoE checks in real `vllm serve` on 1 H100: granite-3.1-1b-a400m plain, guarded, without MoE "
            "checks and eager (4 server launches, 6 wrong-kernel trials, the cost): about 25 to 35 minutes, roughly $2 "
            "to $2.80 (50-minute limit, at most about $4 at requested resources, not a spending cap)",
+    "fp8_moe": "one `sdcguard qualify` on vLLM issue #62124 and two remedies on 1 L4 (granite-3.1-1b-a400m: bf16 "
+               "twice, FP8 per-tensor, the same eager, FP8 per-channel; 5 server launches, then the repro folder "
+               "once): about 60 to 85 minutes, roughly $1.45 to $2 (100-minute limit, at most about $2.40 at requested "
+               "resources, not a spending cap)",
+    "fp8kv": "one `sdcguard qualify` on vLLM issue #54035 on 1 H100 (Qwen3-4B: bf16 KV cache, FP8 KV cache, FP8 on "
+             "FlashInfer; 3 server launches): about 35 to 50 minutes, roughly $2.80 to $4 (75-minute limit, at most "
+             "about $6 at requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -894,6 +956,16 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
         elif phase == "qualify":
             message = qualify.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "fp8kv":
+            message = fp8kv.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "fp8_moe":
+            message = fp8_moe.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

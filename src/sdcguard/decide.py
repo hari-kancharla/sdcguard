@@ -1,5 +1,5 @@
 """One decision on one proposed change to a serving stack (a vLLM, PyTorch, CUDA or driver upgrade, a quantization, a
-kernel backend, a parallelism or batching setting), with its four questions kept apart:
+kernel backend, a parallelism or batching setting), with its questions kept apart:
 
     sdcguard decide --out decision.json \\
         --policy policy.json                     # what the team accepts (below; every key optional)
@@ -11,6 +11,7 @@ kernel backend, a parallelism or batching setting), with its four questions kept
         --plugin-metrics w0.txt w1.txt           # each worker's sdcguard /metrics at the end: what it checked
         --perf before_perf.json after_perf.json  # `sdcguard perf` against each
         --isolation iso.json                     # `sdcguard isolation` of the candidate
+        --consistency cons.json base_cons.json   # `sdcguard consistency` of the candidate (and of the baseline)
     sdcguard decide --applies decision.json      # does that decision still apply to the stack installed here?
 
 1. Arithmetic: did the operations that were checked compute correctly? Against float64, never against the old
@@ -20,6 +21,9 @@ kernel backend, a parallelism or batching setting), with its four questions kept
      NO FAULT OBSERVED  none of those, from at least one source; with what each source covered (the plugin's alerts
                         count only with its metrics showing checks ran on every worker)
      INCONCLUSIVE       an alert the recheck couldn't confirm or clear, a case INCONCLUSIVE, or no source
+1b. Quantization: were FP8 layers' inputs quantized from the step's own rows, by their recipe? From the plugin's FP8
+   quantization check (SDCGUARD_FP8=1): WRONG (a scale taken over rows outside the batch, a wrong scale, wrong FP8
+   values), RIGHT, or UNMEASURED. Kept apart from the arithmetic: the GEMM can be right on wrongly made operands.
 2. Approximation: is the change's effect on the model's outputs inside the team's budget? From `gate model-check`
    (teacher-forced next-token distributions against the trusted stack's):
      WITHIN, OUTSIDE or UNMEASURED (no check, or an INCONCLUSIVE one). WARN counts as WITHIN only when the policy says
@@ -30,20 +34,27 @@ kernel backend, a parallelism or batching setting), with its four questions kept
 4. Isolation: does one request's answer depend on another request? From `sdcguard isolation` (primer dependence
    and canaries): LEAK, NO LEAK SEEN or UNMEASURED. A matmul check can't see this: the arithmetic can be right on
    another request's data.
+4b. Consistency: does the candidate give the same answer along its serving paths (a prefix read from the prefix
+   cache vs computed; decode vs prefill)? From `sdcguard consistency` of the candidate, judged against the
+   baseline's own decode-vs-prefill gaps when given: CONSISTENT, INCONSISTENT or UNMEASURED. Like isolation, a
+   serving-state finding: the arithmetic can be right on each path.
 5. Scope: where the answer holds: the stacks (from the sources' own records), the kernels the change added and
    dropped, added kernels that match a known cuBLAS issue, added kernels no test ran, and what no source checks.
 
-The decision: REJECT when the arithmetic shows a FAULT, the approximation is OUTSIDE, the isolation check shows a
-LEAK, or a required performance target MISSES; ACCEPT when the arithmetic shows NO FAULT OBSERVED, the approximation is WITHIN, and performance MEETS
-(or isn't required); otherwise NOT DECIDED, with what is missing. ACCEPT means no reason to reject was found within
-the scope listed, not that the stack is correct everywhere.
+The decision: REJECT when the arithmetic shows a FAULT, the quantization is WRONG, the approximation is OUTSIDE,
+the isolation check shows a LEAK, the consistency check is INCONSISTENT, or a required performance target MISSES;
+ACCEPT when the arithmetic
+shows NO FAULT OBSERVED, the approximation is WITHIN, and performance MEETS (or isn't required); otherwise NOT
+DECIDED, with what is missing. ACCEPT means no reason to reject was found within the scope listed, not that the
+stack is correct everywhere.
 
 Policy (JSON), with these defaults:
     {"arithmetic": {"min_weights_checked": 0.5},
      "quality": {"accept_warn": false, "max_mean_kl": null, "min_top1": null},
      "performance": {"required": false, "min_throughput_gain": 0.0, "max_ttft_p99_increase": null,
                      "max_itl_p99_increase": null},
-     "isolation": {"required": false}}
+     "isolation": {"required": false},
+     "consistency": {"required": false}}
 Stdlib only: this runs anywhere the files are.
 """
 from __future__ import annotations
@@ -61,7 +72,8 @@ DEFAULT_POLICY = {"arithmetic": {"min_weights_checked": 0.5},
                   "quality": {"accept_warn": False, "max_mean_kl": None, "min_top1": None},
                   "performance": {"required": False, "min_throughput_gain": 0.0, "max_ttft_p99_increase": None,
                                   "max_itl_p99_increase": None},
-                  "isolation": {"required": False}}
+                  "isolation": {"required": False},
+                  "consistency": {"required": False}}
 # what none of the sources can see, whatever they say (the plugin checks linear layers; the cases and the kernel test
 # rerun GEMMs; the quality check sees the model's output distributions)
 NOT_CHECKED = ("attention, normalization, sampling and other non-GEMM kernels: only through the quality check",
@@ -95,6 +107,9 @@ def plugin_coverage(metrics: list) -> dict:
                         "weights_checked_ratio": v.get("sdcguard_weights_checked_ratio"),
                         "checks_executed": v.get("sdcguard_checks_executed_total", v.get("sdcguard_checks_executed")),
                         "reads": v.get("sdcguard_reads_total", v.get("sdcguard_reads")),
+                        "fp8_layers_checked": v.get("sdcguard_fp8_layers_checked"),
+                        "fp8_calls_judged": v.get("sdcguard_fp8_calls_judged_total",
+                                                  v.get("sdcguard_fp8_calls_judged")),
                         "share": info.get("share"), "gpu": info.get("UUID")})
     ratios = [w["weights_checked_ratio"] for w in workers]
     return {"workers": workers,
@@ -112,6 +127,9 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
         n = {"alerts": len(alerts), "confirmed_wrong": 0, "cleared": 0, "unconfirmed": 0,
              "coverage": plugin}
         for ev in alerts:
+            if ev.get("detector") == "serve_fp8":   # quantization findings: their own section (quantization)
+                n["alerts"] -= 1
+                continue
             d = ev.get("detail") or {}
             rv = (d.get("recheck") or {}).get("verdict")
             where = d.get("where") or d.get("layer") or "?"
@@ -242,6 +260,61 @@ def isolation_section(iso: Optional[dict], pol: dict) -> dict:
             "canary_leaks": len((iso.get("canary") or {}).get("leaks") or [])}
 
 
+# ---------------------------------------------------------------- 1b. quantization
+_QUANT_FINDINGS = {"scale_from_outside_rows": "the FP8 scale was taken over rows outside the batch (an earlier "
+                                              "request's data decided this batch's quantization)",
+                   "scale_wrong": "an FP8 scale differs from what its recipe gives for the step's rows",
+                   "values_wrong": "FP8 values the GEMM got are two or more steps from the input quantized",
+                   "static_scale_changed": "a static FP8 input scale changed since load"}
+
+
+def quantization_section(alerts: Optional[list], plugin: Optional[dict]) -> dict:
+    """FP8 layers: were their inputs quantized from the step's own rows by their recipe? From the plugin's FP8
+    quantization check (SDCGUARD_FP8=1): WRONG (a finding, whatever else), RIGHT (it judged calls on every worker
+    and found nothing), UNMEASURED (it didn't run: no FP8 layers, or the check off)."""
+    fp8 = [ev for ev in (alerts or []) if ev.get("detector") == "serve_fp8"]
+    findings: dict = {}
+    for ev in fp8:
+        d = ev.get("detail") or {}
+        f = d.get("finding") or "unknown"
+        findings.setdefault(f, []).append(d.get("where") or "?")
+    workers = (plugin or {}).get("workers") or []
+    judged = [w.get("fp8_calls_judged") for w in workers]
+    ran = bool(workers) and all((j or 0) > 0 for j in judged)
+    if findings:
+        why = "; ".join(f"{_QUANT_FINDINGS.get(f, f)}: {', '.join(sorted(set(w))[:3])}"
+                        + (f" and {len(set(w)) - 3} more layers" if len(set(w)) > 3 else "")
+                        for f, w in sorted(findings.items()))
+        return {"verdict": "WRONG", "findings": {f: sorted(set(w)) for f, w in findings.items()}, "why": why,
+                "alerts": len(fp8)}
+    if ran:
+        return {"verdict": "RIGHT", "calls_judged": sum(j or 0 for j in judged),
+                "why": f"the FP8 quantization check judged {sum(j or 0 for j in judged)} quantizations and found "
+                       "nothing"}
+    return {"verdict": "UNMEASURED", "why": "the FP8 quantization check didn't run (no FP8 layers, or SDCGUARD_FP8 "
+                                            "off)" if plugin is not None else "no plugin coverage was given"}
+
+
+# ---------------------------------------------------------------- 4b. consistency
+def consistency_section(cons: Optional[dict], base: Optional[dict], pol: dict) -> dict:
+    req = pol["consistency"]["required"]
+    if cons is None:
+        return {"verdict": "UNMEASURED", "required": req, "why": "no consistency check was given"}
+    from .consistency import judge_against
+    j = judge_against(cons, base)
+    v = j["verdict"]
+    detail = {"prefix_cache": j["prefix_cache"], "decode_prefill": j["decode_prefill"],
+              "decode_largest_gap": (cons.get("decode_prefill") or {}).get("largest_gap"),
+              "baseline_decode_largest_gap": ((base or {}).get("decode_prefill") or {}).get("largest_gap"),
+              "prefix_cache_hits_confirmed": (cons.get("prefix_cache") or {}).get("cache_hits_confirmed")}
+    if v not in ("CONSISTENT", "INCONSISTENT"):
+        return {"verdict": "UNMEASURED", "required": req, **detail,
+                "why": f"the consistency check was INCONCLUSIVE (prefix cache {j['prefix_cache']}, decode vs prefill "
+                       f"{j['decode_prefill']})"}
+    return {"verdict": v, "required": req, **detail,
+            "why": "; ".join(j["why"]) or "cached and cold answers agreed, and decode matched prefill"}
+
+
 # ---------------------------------------------------------------- 4. scope
 def scope(kernels_before: Optional[dict], kernels_after: Optional[dict], kernel_test: Optional[dict],
           stacks: dict) -> dict:
@@ -291,24 +364,31 @@ def still_applies(decision: dict, stack_now: dict) -> dict:
 
 # ---------------------------------------------------------------- the decision
 def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=None, kernels_after=None,
-           kernel_test=None, alerts=None, perf_before=None, perf_after=None, plugin=None, isolation=None) -> dict:
+           kernel_test=None, alerts=None, perf_before=None, perf_after=None, plugin=None, isolation=None,
+           consistency=None, consistency_baseline=None) -> dict:
     pol = policy_with_defaults(pol)
     a = arithmetic(alerts, gate, kernel_test, plugin, pol["arithmetic"]["min_weights_checked"])
+    qz = quantization_section(alerts, plugin)
     q = approximation(quality, pol)
     p = performance(perf_before, perf_after, pol)
     iso = isolation_section(isolation, pol)
+    con = consistency_section(consistency, consistency_baseline, pol)
     stacks = {"baseline": (quality or {}).get("ref_stack"), "candidate": (quality or {}).get("stack")}
     s = scope(kernels_before, kernels_after, kernel_test, stacks)
     reject, missing = [], []
     if a["verdict"] == "FAULT":
         reject.append("arithmetic: " + a["faults"][0] + (f" (and {len(a['faults']) - 1} more)" if len(a["faults"]) > 1
                                                           else ""))
+    if qz["verdict"] == "WRONG":
+        reject.append("quantization: " + qz["why"])
     if q["verdict"] == "OUTSIDE":
         reject.append("approximation: " + (q.get("why") or "outside the budget"))
     if p["verdict"] == "MISSES" and p["required"]:
         reject.append("performance: " + "; ".join(p["misses"]))
     if iso["verdict"] == "LEAK":
         reject.append("isolation: " + iso["why"])
+    if con["verdict"] == "INCONSISTENT":
+        reject.append("consistency: " + con["why"])
     if a["verdict"] != "NO FAULT OBSERVED" and a["verdict"] != "FAULT":
         missing.append("arithmetic: " + "; ".join(a["unresolved"][:3]))
     if q["verdict"] == "UNMEASURED":
@@ -317,14 +397,17 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
         missing.append("performance: " + p["why"])
     if iso["required"] and iso["verdict"] == "UNMEASURED":
         missing.append("isolation: " + iso["why"])
+    if con["required"] and con["verdict"] == "UNMEASURED":
+        missing.append("consistency: " + con["why"])
     if reject:
         d, why = "REJECT", reject
     elif missing:
         d, why = "NOT DECIDED", missing
     else:
         d, why = "ACCEPT", ["no reason to reject was found within the scope listed"]
-    return {"schema": SCHEMA, "decision": d, "why": why, "arithmetic": a, "approximation": q, "performance": p,
-            "isolation": iso, "scope": s, "policy": pol, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    return {"schema": SCHEMA, "decision": d, "why": why, "arithmetic": a, "quantization": qz, "approximation": q,
+            "performance": p,
+            "isolation": iso, "consistency": con, "scope": s, "policy": pol, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
 def render(r: dict) -> str:
@@ -336,6 +419,11 @@ def render(r: dict) -> str:
     lines += [f"   note: {n}" for n in a["notes"][:5]]
     for name, src in a["sources"].items():
         lines.append(f"   {name}: {json.dumps(src, default=str)}")
+    qz = r.get("quantization") or {}
+    if qz and qz.get("verdict") != "UNMEASURED":
+        lines.append(f"1b. FP8 quantization (inputs quantized from the step's own rows, by their recipe): "
+                     f"{qz['verdict']}")
+        lines.append(f"   {qz.get('why')}")
     lines.append(f"2. Approximation (model outputs against the trusted stack): {q['verdict']}"
                  + (f", model-check {q['check']}" if q.get("check") else ""))
     if q.get("why"):
@@ -354,6 +442,12 @@ def render(r: dict) -> str:
                  + (" (required)" if iso.get("required") else " (not required)"))
     if iso.get("why"):
         lines.append(f"   {iso['why']}")
+    con = r.get("consistency") or {}
+    if con:
+        lines.append(f"4b. Consistency (the same answer from the prefix cache and cold; decode and prefill): "
+                     f"{con.get('verdict')}" + (" (required)" if con.get("required") else " (not required)"))
+        if con.get("why"):
+            lines.append(f"   {con['why']}")
     lines.append(f"5. Scope (stack fingerprint {s['fingerprint']})")
     for side in ("baseline", "candidate"):
         st = (s.get("stacks") or {}).get(side)
@@ -397,6 +491,8 @@ def main(argv=None) -> int:
                    help="each worker's sdcguard /metrics text, read at the end of the candidate's run")
     p.add_argument("--perf", nargs=2, metavar=("BEFORE", "AFTER"))
     p.add_argument("--isolation", help="`sdcguard isolation` of the candidate")
+    p.add_argument("--consistency", nargs="+", metavar=("CANDIDATE", "BASELINE"),
+                   help="`sdcguard consistency` of the candidate (and of the baseline, to judge decode gaps against)")
     p.add_argument("--out")
     p.add_argument("--json", action="store_true")
     p.add_argument("--applies", metavar="DECISION", help="does this decision apply to the stack installed here?")
@@ -411,7 +507,8 @@ def main(argv=None) -> int:
                ld(a.kernel_test), _read_jsonl(a.alerts) if a.alerts else None,
                *(map(ld, a.perf) if a.perf else (None, None)),
                plugin_coverage([open(x).read() for x in a.plugin_metrics]) if a.plugin_metrics else None,
-               ld(a.isolation))
+               ld(a.isolation), ld(a.consistency[0]) if a.consistency else None,
+               ld(a.consistency[1]) if a.consistency and len(a.consistency) > 1 else None)
     if a.out:
         with open(a.out, "w") as f:
             json.dump(r, f, indent=1, default=str)

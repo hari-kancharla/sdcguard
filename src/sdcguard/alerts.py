@@ -207,6 +207,8 @@ class Metrics:
     sdcguard_moe_layers_checked             fused MoE layers this process checks (one a step, 2 rows each)
     sdcguard_moe_worst_score                worst MoE score at the last read (alarm line 6)
     sdcguard_moe_checks_executed_total      MoE layer calls checked (rows recomputed), counted on the GPU
+    sdcguard_fp8_layers_checked             FP8 layers whose input quantization is checked (SDCGUARD_FP8=1)
+    sdcguard_fp8_calls_judged_total         FP8 quantizations judged, counted on the GPU
     sdcguard_stack_info{model,...,fingerprint}  1: what this server runs, read from inside it (sdcguard.stack), for
                                             `sdcguard qualify` and `sdcguard ready --qualified`
     """
@@ -292,6 +294,25 @@ class Metrics:
         if ex > prev:
             self._moe_executed.inc(ex - prev)
         self._seen_moe[id(moe)] = max(ex, prev)
+
+    def observe_fp8(self, fp8, events: list) -> None:
+        """After a read of a guard's FP8 quantization checks (serve_fp8.Fp8Checks)."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_fp8_layers", None) is None:
+            self._fp8_layers = Gauge("sdcguard_fp8_layers_checked", "FP8 layers whose input quantization this process "
+                                     "checks", registry=self.registry)
+            self._fp8_calls = Counter("sdcguard_fp8_calls_judged", "FP8 quantizations judged, counted on the GPU",
+                                      registry=self.registry)
+            self._seen_fp8 = {}
+        self._fp8_layers.set(len(fp8.layers))
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        n = int(fp8.stats.get("calls", 0))
+        prev = self._seen_fp8.get(id(fp8), 0)
+        if n > prev:
+            self._fp8_calls.inc(n - prev)
+        self._seen_fp8[id(fp8)] = max(n, prev)
 
     def stack(self, info: dict) -> None:
         """Set sdcguard_stack_info (sdcguard.stack.collect()); a second call replaces the first."""

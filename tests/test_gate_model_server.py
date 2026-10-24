@@ -19,7 +19,10 @@ def _dist(prefix, shift):
     return {t: x - z for t, x in enumerate(logits)}
 
 
-def _server(shift=0.0):
+def _server(shift=0.0, default_penalty=1.0, honor_request=True):
+    """default_penalty: a repetition penalty the server applies to requests that don't set one, as vLLM applies a
+    model's generation_config.json (Qwen2.5-Instruct's has 1.05 or 1.1); honor_request=False ignores the request's own
+    setting too. The log-probabilities returned are the raw ones either way, as vLLM's are by default."""
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -50,9 +53,11 @@ def _server(shift=0.0):
                     plp.append({str(t): {"logprob": d[t], "rank": 1, "decoded_token": "x"} for t in keep})
                 return self._send({"choices": [{"index": 0, "text": "", "prompt_logprobs": plp}]})
             toks, tops, seq = [], [], list(ids)
+            pen = req.get("repetition_penalty", default_penalty) if honor_request else default_penalty
             for _ in range(req["max_tokens"]):
                 d = _dist(seq, shift)
-                best = max(d, key=lambda t: d[t])
+                chosen = {t: (v * pen if t in seq else v) for t, v in d.items()}     # log-probs are <= 0
+                best = max(chosen, key=lambda t: chosen[t])
                 top = sorted(d, key=lambda t: -d[t])[:req["logprobs"]]
                 tops.append({f"token_id:{t}": d[t] for t in top})
                 toks.append(best)
@@ -93,3 +98,24 @@ def test_a_server_that_stops_answering_leaves_the_check_inconclusive(tmp_path):
         s.shutdown()
     run = gm.check_url(str(ref), str(tmp_path / "x.json"), url.rsplit(":", 1)[0] + ":9", model="m")
     assert run["verdict"]["verdict"] == "INCONCLUSIVE"
+
+
+def test_a_servers_generation_config_defaults_dont_change_the_reference_or_the_top1_measure(tmp_path):
+    s, url = _server(default_penalty=2.5)
+    deaf, durl = _server(default_penalty=2.5, honor_request=False)
+    try:
+        ref = tmp_path / "ref.json"
+        gm.make_ref_url(url, str(ref), tokens=12)
+        assert json.loads(ref.read_text())["recorded_is_top1"] == 1.0       # the request turned the penalty off
+        same = gm.check_url(str(ref), str(tmp_path / "same.json"), url)
+        assert same["summary"]["top1_agreement"] == 1.0 and same["verdict"]["verdict"] == "PASS"
+        # a server that applies its penalty whatever the request says: the completion isn't the greedy one, and
+        # top-1 agreement, measured against the reference's own most likely token, still finds the same stack equal
+        ref2 = tmp_path / "ref2.json"
+        gm.make_ref_url(durl, str(ref2), tokens=12)
+        assert json.loads(ref2.read_text())["recorded_is_top1"] < 1.0
+        same2 = gm.check_url(str(ref2), str(tmp_path / "same2.json"), durl)
+        assert same2["summary"]["top1_agreement"] == 1.0 and same2["verdict"]["verdict"] == "PASS"
+    finally:
+        s.shutdown()
+        deaf.shutdown()

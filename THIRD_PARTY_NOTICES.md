@@ -8,5 +8,12 @@ sdcguard is MIT licensed (LICENSE). It contains code from these projects, under 
 `MacheteLinearKernel.apply_weights` from vLLM 0.31.0 and 0.32.0
 (`vllm/model_executor/kernels/linear/mixed_precision/machete.py`), Copyright contributors to the vLLM project,
 licensed under the Apache License, Version 2.0. The change: its call to `machete_mm` is replaced with sdcguard's
-op, which runs the same GEMM and sdcguard's check together. The license text is in
-`licenses/vLLM-Apache-2.0.txt`.
+op, which runs the same GEMM and sdcguard's check together.
+
+`src/sdcguard/vllm_plugin.py`, the `apply_weights` function in `_patch_fp8`, is a modified copy of
+`FP8ScaledMMLinearKernel.apply_weights` from vLLM 0.31.0 and 0.32.0
+(`vllm/model_executor/kernels/linear/scaled_mm/ScaledMMLinearKernel.py`), Copyright contributors to the vLLM project,
+licensed under the Apache License, Version 2.0. The changes: an input vLLM quantized before the layer goes to
+vLLM's own code unchanged, and after the input is quantized to FP8 sdcguard's quantization check is called.
+
+The license text is in `licenses/vLLM-Apache-2.0.txt`.

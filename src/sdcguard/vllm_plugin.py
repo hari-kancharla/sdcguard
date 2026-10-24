@@ -18,7 +18,9 @@ nothing). What it does, in every vLLM process:
     line in roundoffs, default 6);
   - with SDCGUARD_MOE=1 (off by default for now), at each model step one fused MoE layer (they take turns)
     recomputes the routed experts' output of 2 rows of its batch, with the rounding of vLLM's Triton MoE kernel,
-    and compares (serve_moe.py: wrong experts, rows, scaling and non-finite values; vLLM's Triton MoE backend only);
+    and compares (serve_moe.py: wrong experts, rows, scaling and non-finite values; vLLM's Triton MoE backend only),
+    and one router (they take turns too) recomputes its routing policy for 2 rows from its logits (serve_route.py:
+    the experts chosen and their weights; vLLM's top-k, grouped top-k and biased top-k routers);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -95,7 +97,7 @@ log = logging.getLogger("sdcguard")
 
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
           "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
-          "norm_classes": [], "norms_stale": False, "moe_classes": []}
+          "norm_classes": [], "norms_stale": False, "moe_classes": [], "fp8_classes": [], "route_classes": []}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -301,11 +303,13 @@ def layer_report(model, counts: Optional[dict] = None) -> dict:
     bf16/fp16 weights on a GPU, computed through vLLM's linear method). cant_check: layers of linear-layer work the
     plugin can't check yet (quantized methods, fused MoE experts, router gates computed by their own GEMM).
     unchecked_by_method: every layer not checked, by reason (also the LM head, other dtypes and the layers not
-    selected). weight_share_checked: the checked share of all those layers' weights."""
+    selected). weight_share_checked: the checked share of all those layers' weights. moe_checked: fused MoE layers
+    the MoE check (SDCGUARD_MOE=1) covers by its sampled recompute: not left over for SDCGUARD_REQUIRE, and their
+    weights stay out of weight_share_checked's checked part (a sampled check isn't every output's checksum)."""
     if counts is None:
         counts = _registered_counts()
     g = _STATE["guard"]
-    checked = selected = eligible = cant = quant = 0
+    checked = selected = eligible = cant = quant = moe_checked = 0
     unchecked: dict = {}
     never: list = []
     w_all = w_checked = 0
@@ -315,6 +319,10 @@ def layer_report(model, counts: Optional[dict] = None) -> dict:
             continue
         method = type(qm).__name__
         if any(isinstance(getattr(mod, a, None), torch.Tensor) for a in _MOE_WEIGHTS):
+            if getattr(mod, "_sdcguard_moe", None) is not None:      # registered with the MoE check
+                moe_checked += 1
+                w_all += _weights(mod)
+                continue
             why, kind = f"fused MoE experts ({method})", "quant"
         elif not hasattr(mod, "weight") and not hasattr(mod, "weight_packed") and not hasattr(mod, "qweight"):
             continue
@@ -360,7 +368,7 @@ def layer_report(model, counts: Optional[dict] = None) -> dict:
     total = checked + sum(unchecked.values())
     return {"checked": checked, "total": total, "share_checked": checked / total if total else 0.0,
             "unchecked_by_method": unchecked, "selected": selected, "eligible": eligible, "cant_check": cant,
-            "quantized_or_moe": quant, "never_checked": sorted(never),
+            "quantized_or_moe": quant, "never_checked": sorted(never), "moe_checked": moe_checked,
             "weight_share_checked": w_checked / w_all if w_all else 0.0}
 
 
@@ -377,11 +385,14 @@ def _model_of(runner):
 def _summary(r: dict) -> str:
     msg = (f"sdcguard: checking {r['checked']} of {r['total']} linear layers "
            f"({r['weight_share_checked']:.0%} of their weights)")
+    if r.get("moe_checked"):
+        msg += f"; {r['moe_checked']} fused MoE layers checked by the MoE check's sampled recompute"
     if r["unchecked_by_method"]:
         msg += "; not checked: " + ", ".join(f"{n} {why}" for why, n in sorted(r["unchecked_by_method"].items()))
     if r["quantized_or_moe"]:
-        msg += (" (fused MoE experts, FP8 layers and quantized layers outside Marlin's and Machete's INT4/INT8 kernels "
-                "aren't checked yet)")
+        msg += (" (the arithmetic of fused MoE experts, FP8 layers and quantized layers outside Marlin's and Machete's "
+                "INT4/INT8 kernels isn't checked yet" +
+                ("; FP8 layers' input quantization is (SDCGUARD_FP8=1)" if _STATE.get("fp8_classes") else "") + ")")
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -560,13 +571,15 @@ def _attribute(ev) -> None:
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
     parts = ["linear layers"] + (["RMSNorm layers"] if _STATE.get("norm_classes") else []) + \
-        (["sampled rows of MoE experts"] if _STATE.get("moe_classes") else [])
+        (["sampled rows of MoE experts and their routing"] if _STATE.get("moe_classes") else []) + \
+        (["FP8 input quantization"] if _STATE.get("fp8_classes") else [])
     rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
     d["unknown_impact"] = [
         "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
         f"the plugin checks {' and '.join(parts) if len(parts) < 3 else ', '.join(parts[:-1]) + ' and ' + parts[-1]}"
-        + ("" if len(parts) > 1 else " only") + "; " + ", ".join(["attention", *rest, "the KV cache"]) +
-        " and sampling aren't checked"]
+        + ("" if len(parts) > 1 else " only") + "; " + ", ".join(["attention", *rest, "the KV cache", "sampling"]) +
+        " and communication between GPUs (all-reduce, all-to-all) aren't checked: a wrong collective result is an "
+        "input the checked layers accept"]
     if _share(os.environ.get("SDCGUARD_SHARE", "1")) < 1:
         d["unknown_impact"].append("SDCGUARD_SHARE checks the same subset of layers every step; the others aren't seen")
     d["potentially_exposed"] = exposed
@@ -610,6 +623,28 @@ def _on_alert(ev) -> None:
                     d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
                     d.get("max_z"), d.get("row"), d.get("col"), d.get("output"), d.get("expected"),
                     (d.get("recheck") or {}).get("verdict"))
+        return
+    if ev.detector == "serve_moe":
+        log.warning("sdcguard ALERT: MoE experts %s on %s (%s, PCI %s, host %s) z=%s (row %s, column %s: %s, expected "
+                    "%s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
+                    i.get("host"), d.get("max_z"), d.get("row"), d.get("col"), d.get("output"), d.get("expected"),
+                    (d.get("recheck") or {}).get("verdict"))
+        return
+    if ev.detector == "serve_fp8":
+        log.warning("sdcguard ALERT: FP8 quantization of %s on %s (%s, PCI %s, host %s): %s (%s of %s calls with a "
+                    "wrong scale, %s from rows outside the batch; %s sampled rows with wrong values; scale ratio %s)",
+                    d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
+                    d.get("finding"), d.get("calls_with_wrong_scale"), d.get("calls_judged"),
+                    d.get("calls_scale_from_outside_rows"), d.get("sampled_rows_with_wrong_values"),
+                    d.get("scale_ratio"))
+        return
+    if ev.detector == "serve_route":
+        c = d.get("captured") or {}
+        log.warning("sdcguard ALERT: MoE routing of %s on %s (%s, PCI %s, host %s): %s (%s of %s sampled rows with "
+                    "wrong experts, %s with wrong weights; worst weight difference %s; step %s row %s)",
+                    d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
+                    d.get("finding"), d.get("rows_with_wrong_experts"), d.get("rows_judged"),
+                    d.get("rows_with_wrong_weights"), d.get("worst_weight_difference"), c.get("step"), c.get("row"))
         return
     log.warning("sdcguard ALERT: %s on %s (%s, PCI %s, host %s) z=%s (row %s, block %s, %s checksum)",
                 d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
@@ -1094,8 +1129,16 @@ def _patch_moe() -> list:
     from .serve_moe import check_call
 
     def forward_modular(self, x, topk_weights, topk_ids, shared_experts=None, shared_experts_input=None, _orig=orig):
-        out = _orig(self, x=x, topk_weights=topk_weights, topk_ids=topk_ids, shared_experts=shared_experts,
-                    shared_experts_input=shared_experts_input)
+        fp8 = getattr(self, "_sdcguard_fp8_moe", None) is not None and isinstance(x, torch.Tensor) and \
+            isinstance(topk_ids, torch.Tensor)
+        if fp8:                       # the FP8 check of its expert inputs' quantization needs their rows
+            _FP8_CTX.moe = (self, x.reshape(-1, x.shape[-1]).shape[0], int(topk_ids.shape[-1]))
+        try:
+            out = _orig(self, x=x, topk_weights=topk_weights, topk_ids=topk_ids, shared_experts=shared_experts,
+                        shared_experts_input=shared_experts_input)
+        finally:
+            if fp8:
+                _FP8_CTX.moe = None
         a = getattr(self, "_sdcguard_moe", None)
         if a is not None:
             try:
@@ -1113,6 +1156,39 @@ def _patch_moe() -> list:
     RoutedExperts._sdcguard_moe_orig = orig
     RoutedExperts.forward_modular = forward_modular
     return ["RoutedExperts"]
+
+
+def _patch_route() -> list:
+    """vLLM's MoE routers (FusedMoERouter.select_experts): after a router picks each token's experts and weights,
+    serve_route's check of that against the router's policy recomputed from its logits. Returns what was patched."""
+    try:
+        from vllm.model_executor.layers.fused_moe.router.fused_moe_router import FusedMoERouter
+    except Exception as e:  # noqa: BLE001
+        log.info("sdcguard: vLLM's MoE router not found (%s); routing isn't checked", e)
+        return []
+    if getattr(FusedMoERouter, "_sdcguard_route_orig", None) is not None:
+        return ["FusedMoERouter"]
+    orig = vars(FusedMoERouter).get("select_experts")
+    if orig is None:
+        return []
+    from .serve_route import check_call
+
+    def select_experts(self, hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None, _orig=orig):
+        w, ids = _orig(self, hidden_states, router_logits, topk_indices_dtype=topk_indices_dtype, input_ids=input_ids)
+        a = getattr(self, "_sdcguard_route", None)
+        if a is not None:
+            try:
+                check_call(a, router_logits, w, ids)
+            except Exception as e:  # noqa: BLE001  (never break serving: this router goes unchecked)
+                self.__dict__.pop("_sdcguard_route", None)
+                log.warning("sdcguard: a routing check failed (%s: %s); that router isn't checked from now on",
+                            type(e).__name__, e)
+        return w, ids
+
+    select_experts.__doc__ = orig.__doc__
+    FusedMoERouter._sdcguard_route_orig = orig
+    FusedMoERouter.select_experts = select_experts
+    return ["FusedMoERouter"]
 
 
 def _register_moe(runner) -> Optional[dict]:
@@ -1135,6 +1211,23 @@ def _register_moe(runner) -> Optional[dict]:
     for name, mod in found:
         mc.add(mod, name or type(mod).__name__)
     mc.finalize()
+    routers = None
+    if _STATE.get("route_classes"):               # their routers too: the experts' recompute takes routing as given
+        rc = g.route_checks()
+        seen = 0
+        for name, mod in model.named_modules():
+            r = getattr(mod, "router", None)
+            if r is not None and hasattr(r, "_select_experts") and getattr(r, "_sdcguard_route", None) is None:
+                seen += 1
+                rc.add(r, f"{name or type(mod).__name__}.router", dev if dev is not None else torch.device("cpu"))
+        rc.finalize()
+        why: dict = {}
+        for w in rc.unsupported.values():
+            why[w] = why.get(w, 0) + 1
+        log.info("sdcguard: checking the routing of %d of %d MoE routers (one router a step, %d rows each)%s",
+                 len(rc.layers), seen, rc_samples(), "; not checked: " + ", ".join(f"{n} {w}" for w, n in
+                                                                                  sorted(why.items())) if why else "")
+        routers = {"checked": len(rc.layers), "not_checked": dict(rc.unsupported)}
     from .serve_moe import SAMPLES, STATUS as MS
     kern = {f"{k[0]} {str(k[1]).replace('torch.', '')} act {k[2]}": v for k, v in MS.items()}
     rest: dict = {}
@@ -1143,7 +1236,196 @@ def _register_moe(runner) -> Optional[dict]:
     log.info("sdcguard: checking %d of %d MoE layers (one layer a step, %s rows each; kernels %s)%s", len(mc.layers),
              len(found), SAMPLES, kern or "none",
              "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
-    return {"checked": len(mc.layers), "not_checked": dict(mc.unsupported), "kernel": kern}
+    return {"checked": len(mc.layers), "not_checked": dict(mc.unsupported), "kernel": kern, "routers": routers}
+
+
+def rc_samples() -> int:
+    from .serve_route import SAMPLES
+    return SAMPLES
+
+
+_FP8_CTX = threading.local()          # the MoE layer whose experts run now (its input rows), for the FP8 check
+# FP8ScaledMMLinearKernel.apply_weights in vLLM 0.31.0, unchanged in 0.32.0 and on main (October 24, 2026), as
+# _quant.code_fingerprint reads it: _patch_fp8 runs a copy of that code, right only for it.
+FP8_APPLY_FINGERPRINTS = frozenset({"f998fdda14eb8c7d"})
+
+
+def _fp8_apply_ready(fn) -> Optional[str]:
+    """None when vLLM's FP8ScaledMMLinearKernel.apply_weights is the code _patch_fp8 runs in its place (vLLM 0.31.0
+    and 0.32.0), else why its layers' quantization isn't checked."""
+    from ._quant import code_fingerprint
+    fp = code_fingerprint(fn)
+    if fp is None:
+        return "FP8 apply_weights: its source couldn't be read"
+    return None if fp in FP8_APPLY_FINGERPRINTS else f"FP8 apply_weights of an unknown version (fingerprint {fp})"
+
+
+def _patch_fp8() -> list:
+    """vLLM's FP8 W8A8 linear layers (FP8ScaledMMLinearKernel: the CUTLASS, FlashInfer, torch._scaled_mm and Triton
+    scaled-mm kernels) and MoE layers with FP8 experts: right after vLLM quantizes a layer's input to FP8, its input,
+    the FP8 input and the scale go to serve_fp8's check. The linear layers' apply_weights runs vLLM's own code (the
+    same in vLLM 0.31 and 0.32, Apache-2.0; _fp8_apply_ready makes sure it is the code installed) with that call
+    added; the MoE layers' quantization is vLLM's moe_kernel_quantize_input with the check after it. Returns what was
+    patched."""
+    import sys as _sys
+    from .serve_fp8 import check_call
+    patched = []
+    try:
+        from vllm.model_executor.kernels.linear.scaled_mm import ScaledMMLinearKernel as smk
+        K = smk.FP8ScaledMMLinearKernel
+        orig = vars(K)["apply_weights"]
+    except Exception as e:  # noqa: BLE001
+        log.info("sdcguard: vLLM's FP8 scaled-mm kernels not found (%s); FP8 layers aren't checked", e)
+        K = orig = None
+    if K is not None and not getattr(K, "_sdcguard_fp8", False):
+        why = _fp8_apply_ready(orig)
+        if why:
+            log.warning("sdcguard: not checking FP8 quantization of linear layers: %s", why)
+            _STATE["fp8_why"] = why
+        else:
+            def apply_weights(self, layer, x, bias=None, _orig=orig, _smk=smk):
+                a = getattr(layer, "_sdcguard_fp8", None)
+                if a is None:
+                    return _orig(self, layer, x, bias)
+                fp8_dtype = self.fp8_dtype  # noqa: F841  (as vLLM's code)
+                maybe_out_dtype = self.config.out_dtype
+                w, w_s, x_s, x_s_ub = self._get_layer_params(layer)
+                if _smk.as_quantized_activation(x, self.input_quant_key()) is not None:
+                    return _orig(self, layer, x, bias)    # quantized before this layer: no input to compare with
+                x_2d = x.view(-1, x.shape[-1])
+                output_shape = [*x.shape[:-1], w.shape[1]]
+                out_dtype = x.dtype if maybe_out_dtype is None else maybe_out_dtype
+                x_2d_q, x_s = self.quant_fp8(x_2d, x_s, x_s_ub)
+                check_call(a, x_2d, x_2d_q, x_s, x_s_ub)
+                return self.apply_scaled_mm(A=x_2d_q, B=w, out_dtype=out_dtype, As=x_s, Bs=w_s, bias=bias,
+                                            output_shape=output_shape)
+
+            apply_weights.__doc__ = orig.__doc__
+            K.apply_weights = apply_weights
+            K._sdcguard_fp8 = True
+            patched.append("FP8ScaledMMLinearKernel")
+    elif K is not None:
+        patched.append("FP8ScaledMMLinearKernel")
+    try:
+        from vllm.model_executor.layers.fused_moe import utils as mu
+        qorig = getattr(mu, "_sdcguard_fp8_orig", None) or mu.moe_kernel_quantize_input
+    except Exception as e:  # noqa: BLE001
+        log.info("sdcguard: vLLM's MoE input quantization not found (%s); FP8 MoE layers aren't checked", e)
+        return patched
+
+    def moe_kernel_quantize_input(A, A_scale, quant_dtype, per_act_token_quant, block_shape=None, *args,
+                                  _orig=qorig, **kwargs):
+        out = _orig(A, A_scale, quant_dtype, per_act_token_quant, block_shape, *args, **kwargs)
+        ctx = getattr(_FP8_CTX, "moe", None)
+        try:
+            if ctx is not None and isinstance(out, tuple) and len(out) == 2 and block_shape is None and \
+                    not kwargs.get("quantization_emulation") and isinstance(out[0], torch.Tensor) and \
+                    out[0].dtype in (torch.float8_e4m3fn,) and isinstance(A, torch.Tensor) and A.dim() == 2:
+                layer, rows, top_k = ctx
+                a = (getattr(layer, "_sdcguard_fp8_moe", None) or {}).get("per_token" if per_act_token_quant
+                                                                         else "per_tensor")
+                if a is not None and A_scale is None:
+                    mult = 1 if A.shape[0] == rows else (top_k if A.shape[0] == rows * top_k else 0)
+                    if mult:
+                        check_call(a, A, out[0], out[1], None, mult)
+        except Exception as e:  # noqa: BLE001  (never break serving)
+            log.debug("sdcguard: FP8 MoE quantization check skipped: %s", e)
+        return out
+
+    n = 0
+    for name, mod in list(_sys.modules.items()):
+        # vLLM's own modules only, read through their __dict__: a lazy module elsewhere (transformers') imports on
+        # attribute access and can raise for a missing optional dependency
+        if mod is None or not (name == "vllm" or name.startswith("vllm.")):
+            continue
+        try:
+            held = vars(mod).get("moe_kernel_quantize_input")
+        except TypeError:
+            continue
+        if held is qorig:
+            try:
+                setattr(mod, "moe_kernel_quantize_input", moe_kernel_quantize_input)
+                n += 1
+            except Exception:  # noqa: BLE001
+                pass
+    mu._sdcguard_fp8_orig = qorig
+    if n:
+        patched.append(f"moe_kernel_quantize_input ({n} modules)")
+    return patched
+
+
+def _register_fp8(runner) -> Optional[dict]:
+    """After vLLM loaded the model, before it compiles it or captures CUDA graphs: register its FP8 linear layers and
+    FP8 MoE layers with the FP8 quantization check (once)."""
+    if not _STATE.get("fp8_classes") or _STATE.get("fp8_registered"):
+        return None
+    _STATE["fp8_registered"] = True
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        return None
+    from .serve_fp8 import RECIPES
+    fc, checked = None, 0
+    for name, mod in model.named_modules():
+        qm = getattr(mod, "quant_method", None)
+        kern = getattr(qm, "fp8_linear", None)
+        w = getattr(mod, "weight", None)
+        if kern is not None and isinstance(w, torch.Tensor) and getattr(type(kern), "_sdcguard_fp8", False):
+            if fc is None:
+                fc = _guard(w.device).fp8_checks()
+            if "apply_weights" in vars(type(kern)):
+                fc.unsupported[name] = f"{type(kern).__name__}: its own apply_weights"
+                continue
+            xs = getattr(mod, "input_scale", None)
+            if fc.add(mod, getattr(mod, "prefix", "") or name, getattr(kern, "quant_fp8", None),
+                      xs if isinstance(xs, torch.Tensor) else None, w.device) is not None:
+                checked += 1
+        elif type(mod).__name__ in ("RoutedExperts", "FusedMoE") and \
+                getattr(getattr(qm, "moe_quant_config", None), "use_fp8_w8a8", False):
+            # (vLLM's FusedMoEQuantConfig, set on the layer's method when its weights were processed)
+            w13 = getattr(mod, "w13_weight", None)
+            if not isinstance(w13, torch.Tensor):
+                continue
+            if fc is None:
+                fc = _guard(w13.device).fp8_checks()
+            q = qm.moe_quant_config
+            if getattr(q, "block_shape", None) is not None:
+                fc.unsupported[name] = "FP8 MoE with block scales"
+                continue
+            per_token = bool(getattr(q, "per_act_token_quant", False))
+            if getattr(q, "a1_scale", None) is not None:
+                fc.unsupported[name] = "FP8 MoE with static input scales"
+                continue
+            kind = "dynamic_token" if per_token else "dynamic_tensor"
+            quant = type("Q", (), {"static": False, "use_per_token_if_dynamic": per_token, "is_group_quant": False,
+                                   "group_shape": kind})()
+            a = fc.add(mod, name + " (expert inputs)", quant, None, w13.device)
+            if a is not None:
+                mod._sdcguard_fp8_moe = {"per_token" if per_token else "per_tensor": a}
+                checked += 1
+    if fc is None:
+        return None
+    log.info("sdcguard: checking the FP8 quantization of %d layers%s", checked,
+             "; not checked: " + ", ".join(f"{n} ({w})" for n, w in sorted(fc.unsupported.items())[:8])
+             if fc.unsupported else "")
+    return {"checked": checked, "not_checked": dict(fc.unsupported), "recipes": sorted(RECIPES)}
+
+
+def _step_rows(args, kwargs) -> Optional[int]:
+    """The rows this model step's input holds before padding (its scheduled tokens), or None when unknown."""
+    so = args[0] if args else kwargs.get("scheduler_output")
+    n = getattr(so, "total_num_scheduled_tokens", None)
+    if isinstance(n, int) and n > 0:
+        return n
+    counts = getattr(so, "num_scheduled_tokens", None)
+    if isinstance(counts, dict) and counts:
+        try:
+            return int(sum(int(v) for v in counts.values()))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _publish_stack(runner) -> Optional[dict]:
@@ -1155,7 +1437,8 @@ def _publish_stack(runner) -> Optional[dict]:
         model = _model_of(runner)
     checks = {"share": f"{_share(os.environ.get('SDCGUARD_SHARE', '1')):g}", "z": f"{_STATE.get('z') or 6:g}",
               "norms": "on" if _STATE.get("norm_classes") else "off",
-              "moe": "on" if _STATE.get("moe_classes") else "off"}
+              "moe": "on" if _STATE.get("moe_classes") else "off",
+              "fp8": "on" if _STATE.get("fp8_classes") else "off"}
     info = collect(runner, model, checks)
     _STATE["stack"] = info
     g = _STATE["guard"]
@@ -1313,8 +1596,13 @@ def register() -> None:
         from .serve_norm import norm_op
         norm_op()                             # registered here, in every process, before any graph is traced
         _STATE["norm_classes"] = _patch_norms()
-    if os.environ.get("SDCGUARD_MOE", "0") == "1":
-        _STATE["moe_classes"] = _patch_moe()
+    if os.environ.get("SDCGUARD_MOE", "0") == "1" or os.environ.get("SDCGUARD_FP8", "0") == "1":
+        moe = _patch_moe()                    # (also the FP8 check's view of which MoE layer runs)
+        _STATE["moe_classes"] = moe if os.environ.get("SDCGUARD_MOE", "0") == "1" else []
+        if _STATE["moe_classes"]:
+            _STATE["route_classes"] = _patch_route()
+    if os.environ.get("SDCGUARD_FP8", "0") == "1":
+        _STATE["fp8_classes"] = _patch_fp8()
     if os.environ.get("SDCGUARD_QUANT", "1") != "0":
         _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
@@ -1336,7 +1624,7 @@ def register() -> None:
         if orig_load is not None:
             def load_model(self, *args, **kwargs):
                 out = orig_load(self, *args, **kwargs)
-                for what, fn in (("norm", _register_norms), ("MoE", _register_moe)):
+                for what, fn in (("norm", _register_norms), ("MoE", _register_moe), ("FP8", _register_fp8)):
                     try:
                         fn(self)
                     except Exception as e:  # noqa: BLE001  (never break model loading)
@@ -1371,10 +1659,18 @@ def register() -> None:
                             log.warning("sdcguard: couldn't take the new weights of norm or MoE layers: %s", e)
             if g0 is not None:
                 try:
-                    g0.mark_step(step)           # before the step's work is queued, outside its CUDA graph
+                    rows = None if _rows_split(self) else _step_rows(args, kwargs)
+                    g0.mark_step(step, rows)     # before the step's work is queued, outside its CUDA graph
                 except Exception as e:  # noqa: BLE001  (attribution only; never break serving)
                     log.debug("sdcguard: mark_step failed: %s", e)
-            out = orig_exec(self, *args, **kwargs)
+            try:
+                out = orig_exec(self, *args, **kwargs)
+            finally:
+                if g0 is not None:
+                    try:
+                        g0.end_step()            # warm-up and capture runs after this aren't model steps
+                    except Exception as e:  # noqa: BLE001
+                        log.debug("sdcguard: end_step failed: %s", e)
             try:
                 _record_batch(self, step, args, kwargs)
             except Exception as e:  # noqa: BLE001

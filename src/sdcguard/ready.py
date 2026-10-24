@@ -27,7 +27,9 @@ server is the stack that decision accepted: every worker's sdcguard_stack_info (
 server: model, dtype, quantization, attention and MoE backends, compilation and CUDA graph modes, parallelism,
 versions, GPU, kernel-steering environment) against the stack recorded in the decision. A different stack is NOT
 THE QUALIFIED STACK, listing what differs; a decision that wasn't ACCEPT is NOT QUALIFIED; a server or decision with
-no stack recorded makes the answer INCONCLUSIVE.
+no stack recorded makes the answer INCONCLUSIVE. On the qualified stack it also says where the server goes beyond
+what the qualification exercised (the decision records it): contexts longer than any it tested, and with --vllm,
+requests served with longer prompts than it sent; notes, or INCONCLUSIVE with --strict-conditions.
 
 Exit codes: 0 PROTECTED or IDLE (a readiness probe on an idle server must pass, or no traffic ever reaches it;
 use --probe to have IDLE checked), 1 NOT PROTECTED (or, with --qualified, NOT THE QUALIFIED STACK or NOT QUALIFIED),
@@ -94,9 +96,50 @@ def scrape(url: str, timeout: float = 2.0) -> tuple:
     return values, info, None
 
 
-def qualified(decision_path: str, texts: list) -> dict:
+def _histogram(text: str, name: str) -> list:
+    """[(upper bound, cumulative count)] of a Prometheus histogram on a metrics page, summed over its label sets."""
+    out: dict = {}
+    for line in (text or "").splitlines():
+        if not line.startswith(name + "_bucket"):
+            continue
+        m = re.search(r'le="([^"]+)"', line)
+        try:
+            le = float("inf") if m.group(1) in ("+Inf", "Inf") else float(m.group(1))
+            out[le] = out.get(le, 0.0) + float(line.rsplit(None, 1)[-1])
+        except (AttributeError, ValueError):
+            continue
+    return sorted(out.items())
+
+
+def outside_tested(tested: dict, live: Optional[dict], vllm_text: Optional[str]) -> list:
+    """Where a deployment can go, or went, beyond what its qualification exercised."""
+    out = []
+    ctx = (tested or {}).get("max_context_tokens")
+    try:
+        allowed = int(float((live or {}).get("max_model_len") or 0))
+    except ValueError:
+        allowed = 0
+    if ctx and allowed > ctx:
+        out.append(f"this server accepts contexts up to {allowed} tokens; the qualification tested up to {ctx}")
+    pmax = (tested or {}).get("max_prompt_tokens")
+    if pmax and vllm_text:
+        h = _histogram(vllm_text, "vllm:request_prompt_tokens")
+        if h:
+            total = h[-1][1]
+            le = next(((b, c) for b, c in h if b >= pmax), None)
+            above = total - le[1] if le else 0
+            if above > 0:
+                out.append(f"at least {int(above)} of {int(total)} requests served had prompts longer than {le[0]:g} "
+                           f"tokens; the qualification's longest prompt was {pmax}")
+    if (tested or {}).get("prefix_cache_hit_tested") is False:
+        out.append("the qualification couldn't show a prefix-cache hit (prefix caching off then, or not hit)")
+    return out
+
+
+def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None) -> dict:
     """Is the server whose workers' metrics pages are `texts` the stack the decision at decision_path accepted?
-    {"verdict": None (it is) | "NOT THE QUALIFIED STACK" | "NOT QUALIFIED" | "INCONCLUSIVE", "why", "differences"}."""
+    {"verdict": None (it is) | "NOT THE QUALIFIED STACK" | "NOT QUALIFIED" | "INCONCLUSIVE", "why", "differences",
+    "outside_tested": where it goes beyond what the qualification exercised (vllm_text: vLLM's own metrics)}."""
     from .stack import compare, from_metrics
     try:
         with open(decision_path) as f:
@@ -125,7 +168,9 @@ def qualified(decision_path: str, texts: list) -> dict:
                 "why": f"{len(diffs)} difference(s) from the stack the decision accepted"}
     if unknown or not texts:
         return {"verdict": "INCONCLUSIVE", "differences": [], "why": "; ".join(unknown) or "no worker read"}
+    live = from_metrics(texts[0] or "") if texts else None
     return {"verdict": None, "differences": [], "fingerprint": was.get("fingerprint"),
+            "outside_tested": outside_tested((d.get("scope") or {}).get("tested") or {}, live, vllm_text),
             "why": f"the stack the decision accepted (fingerprint {was.get('fingerprint')}) on every worker"}
 
 
@@ -271,6 +316,8 @@ def main(argv=None) -> int:
                    "(NOT PROTECTED) instead of IDLE")
     p.add_argument("--qualified", metavar="DECISION", help="a decision file (decision_<name>.json from sdcguard "
                    "qualify): also require this server to be the stack it accepted")
+    p.add_argument("--strict-conditions", action="store_true", help="with --qualified: a server that goes beyond "
+                   "what the qualification tested (longer contexts, longer prompts) is INCONCLUSIVE, not a note")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -318,10 +365,17 @@ def main(argv=None) -> int:
                     r2["unsure"].append("vLLM counted no tokens for the probe requests")
                 r = r2
     if a.qualified:
-        q = qualified(a.qualified, [_raw(u) for u in urls])
+        q = qualified(a.qualified, [_raw(u) for u in urls], _raw(a.vllm) if a.vllm else None)
         r["qualified"] = q
         if q["verdict"] is None:
             r["notes"].append(q["why"])
+            for x in q.get("outside_tested") or []:
+                if a.strict_conditions:
+                    r["unsure"].append("outside what was qualified: " + x)
+                    if r["verdict"] in ("PROTECTED", "IDLE"):
+                        r["verdict"] = "INCONCLUSIVE"
+                else:
+                    r["notes"].append("outside what was qualified: " + x)
         elif q["verdict"] == "INCONCLUSIVE":
             r["unsure"].append(q["why"])
             if r["verdict"] in ("PROTECTED", "IDLE"):

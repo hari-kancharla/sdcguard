@@ -188,3 +188,19 @@ def test_a_leak_between_requests_rejects_even_with_right_arithmetic():
     r = dc.decide({"isolation": {"required": True}}, quality=_quality(), alerts=[], plugin=COV,
                   isolation={"verdict": "INCONCLUSIVE", "why": ["a control disagreed"]})
     assert r["decision"] == "NOT DECIDED"
+
+
+def test_fp8_quantization_findings_are_their_own_section_and_reject():
+    fp8 = {"detector": "serve_fp8", "step": None, "detail": {"where": "model.layers.3.mlp.experts (expert inputs)",
+                                                             "finding": "scale_from_outside_rows"}}
+    cov = {"workers": [{"layers_checked": 10, "checks_executed": 5, "fp8_calls_judged": 40}], "checked": True,
+           "min_weights_checked": 0.9}
+    r = dc.decide(None, quality=None, alerts=[fp8], plugin=cov)
+    assert r["decision"] == "REJECT" and r["quantization"]["verdict"] == "WRONG"
+    assert "outside the batch" in r["why"][0] and r["arithmetic"]["sources"]["plugin_alerts"]["alerts"] == 0
+    assert r["arithmetic"]["verdict"] == "NO FAULT OBSERVED"       # the GEMMs' own checks found nothing
+    clean = dc.decide(None, alerts=[], plugin=cov)
+    assert clean["quantization"]["verdict"] == "RIGHT"
+    none = dc.decide(None, alerts=[], plugin={**cov, "workers": [{**cov["workers"][0], "fp8_calls_judged": None}]})
+    assert none["quantization"]["verdict"] == "UNMEASURED"
+    assert "1b. FP8 quantization" in dc.render(r)

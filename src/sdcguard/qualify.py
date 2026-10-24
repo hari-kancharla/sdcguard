@@ -7,14 +7,17 @@ give one decision per candidate with its evidence.
         --candidate triton="Qwen/Qwen2.5-7B-Instruct --attention-backend TRITON_ATTN"
 
 Each configuration is what follows `vllm serve` (the model and its flags). One at a time, on the same GPUs and port,
-each is started with the sdcguard plugin on (SDCGUARD=1, SDCGUARD_REQUIRE=1, its metrics and alert log; --share,
-default 1: every layer, since a qualification run is a test and decide's default policy counts the plugin's silence
-only when it checks at least half the weights; --no-plugin leaves it off) and, once it answers:
+each is started with the sdcguard plugin on (SDCGUARD=1, its metrics and alert log; --share, default 1: every layer,
+since a qualification run is a test and decide's default policy counts the plugin's silence only when it checks at
+least half the weights; --no-plugin leaves it off) and, once it answers. The plugin doesn't refuse to serve a model
+whose layers it can't all check (no SDCGUARD_REQUIRE, unless --require): an FP8 or MoE candidate is still started
+and judged, and its decision says what wasn't checked (NOT DECIDED rather than ACCEPT when too little was).
 
   baseline     the quality reference (`gate model-ref --url`): greedy completions with their top-20 log-probabilities
   again        with --repeat-baseline, the baseline started a second time: its quality check is the noise floor
   candidates   the quality check against the reference (teacher-forced, `gate model-check --url`)
-  every one    `sdcguard isolation` (primer dependence and canaries), `sdcguard perf` (the same load each time), and
+  every one    `sdcguard isolation` (primer dependence and canaries), `sdcguard consistency` (prefix cache cold vs
+               hit, decode vs prefill), `sdcguard perf` (the same load each time), and
                each GPU worker's sdcguard metrics at the end (what the plugin checked), then the alerts it logged;
                with the plugin on, also the stack it read from inside the server (sdcguard.stack: attention and MoE
                backends, compilation and CUDA graph modes, versions, GPU, ...), recorded with the decision, so that
@@ -68,7 +71,7 @@ def _get(url: str, timeout: float = 5.0):
 
 class Server:
     def __init__(self, name: str, config: str, out: str, port: int, metrics_port: int, plugin: bool, share: str,
-                 serve_cmd: list, extra_env: dict):
+                 serve_cmd: list, extra_env: dict, require: Optional[str] = None):
         self.name, self.config, self.port, self.metrics_port = name, config, port, metrics_port
         self.args = shlex.split(config)
         self.workers = _tp(self.args)
@@ -77,8 +80,10 @@ class Server:
         env = {k: v for k, v in os.environ.items() if not k.startswith("SDCGUARD")}
         env.update(extra_env)
         if plugin:
-            env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_SHARE=share, SDCGUARD_METRICS_PORT=str(metrics_port),
+            env.update(SDCGUARD="1", SDCGUARD_SHARE=share, SDCGUARD_METRICS_PORT=str(metrics_port),
                        SDCGUARD_LOG=self.alerts, SDCGUARD_EVIDENCE_DIR=os.path.join(out, f"{name}_evidence"))
+            if require:
+                env["SDCGUARD_REQUIRE"] = require
         self.cmd = [*serve_cmd, *self.args, "--port", str(port)]
         self.log_path = os.path.join(out, f"{name}_server.log")
         self.log = open(self.log_path, "w")
@@ -131,9 +136,10 @@ def _write(path: str, obj) -> None:
 
 
 def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Optional[str]) -> dict:
-    from . import gate_model, isolation, perf
+    from . import consistency, gate_model, isolation, perf
     res: dict = {"name": name, "role": role, "config": config}
-    srv = Server(name, config, out, a.port, a.metrics_port, not a.no_plugin, a.share, a.serve_cmd, a.env_map)
+    srv = Server(name, config, out, a.port, a.metrics_port, not a.no_plugin, a.share, a.serve_cmd, a.env_map,
+                 a.require)
     res["command"] = srv.cmd
     try:
         t0 = time.monotonic()
@@ -169,6 +175,13 @@ def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Opt
                 res["isolation"] = iso["verdict"]
             except Exception as e:  # noqa: BLE001
                 res["isolation_error"] = f"{type(e).__name__}: {e}"[:500]
+        if not a.no_consistency:
+            try:
+                con = consistency.run(srv.url)
+                _write(os.path.join(out, f"{name}_consistency.json"), con)
+                res["consistency"] = con["verdict"]
+            except Exception as e:  # noqa: BLE001
+                res["consistency_error"] = f"{type(e).__name__}: {e}"[:500]
         if not a.no_perf:
             try:
                 texts = None
@@ -204,7 +217,8 @@ def _lines(path: Optional[str]) -> Optional[list]:
         return [line.rstrip("\n") for line in f if line.strip()]
 
 
-REPRO_FILES = ("decision_{n}.json", "decision_{n}.txt", "{n}_quality.json", "{n}_isolation.json", "{n}_alerts.jsonl",
+REPRO_FILES = ("decision_{n}.json", "decision_{n}.txt", "{n}_quality.json", "{n}_isolation.json",
+               "{n}_consistency.json", "baseline_consistency.json", "{n}_alerts.jsonl",
                "{n}_perf.json", "{n}_server.log", "ref.json", "again_quality.json", "baseline_perf.json")
 
 
@@ -230,11 +244,16 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
     base, cand = (runs.get("baseline") or {}).get("deployed_stack"), (runs.get(name) or {}).get("deployed_stack")
     diff = compare(base, cand) if base and cand else {"differences": [], "why": "no stack recorded for both"}
     serve = " ".join(shlex.quote(x) for x in a.serve_cmd)
-    env = {"SDCGUARD": "1", "SDCGUARD_REQUIRE": "1", "SDCGUARD_SHARE": a.share, **a.env_map} if not a.no_plugin \
+    req = getattr(a, "require", None)
+    env = {"SDCGUARD": "1", "SDCGUARD_SHARE": a.share, **({"SDCGUARD_REQUIRE": req} if req else {}),
+           **a.env_map} if not a.no_plugin \
         else dict(a.env_map)
     failing = {"approximation": row.get("approximation") == "OUTSIDE" or row.get("approximation") == "UNMEASURED",
                "isolation": row.get("isolation") in ("LEAK", "UNMEASURED") and not a.no_isolation,
+               "consistency": row.get("consistency") in ("INCONSISTENT", "UNMEASURED") and
+               not getattr(a, "no_consistency", False),
                "arithmetic": row.get("arithmetic") not in ("NO FAULT OBSERVED", None),
+               "quantization": row.get("quantization") == "WRONG",
                "performance": row.get("performance") == "MISSES" and bool(row.get("performance_required"))}
     steps = []
     if failing["approximation"]:
@@ -243,6 +262,8 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
                      f"{noise}")
     if failing["isolation"]:
         steps.append('"$PY" -m sdcguard isolation --url "$URL" --out "$HERE/rerun_isolation.json"')
+    if failing["consistency"]:
+        steps.append('"$PY" -m sdcguard consistency --url "$URL" --out "$HERE/rerun_consistency.json"')
     if failing["performance"]:
         load = f"--concurrency {a.concurrency} --max-tokens {a.max_tokens} --rounds {a.rounds}"
         if a.prompts_file and os.path.exists(a.prompts_file):
@@ -250,6 +271,10 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
             load += ' --prompts-file "$HERE/perf_prompts.txt"'
         steps.append(f'"$PY" -m sdcguard perf --url "$URL" {load} --out "$HERE/rerun_perf.json" && '
                      '"$PY" -m sdcguard perf --compare "$HERE/baseline_perf.json" "$HERE/rerun_perf.json"')
+    if failing["quantization"]:                 # the FP8 check fires on traffic: short requests one at a time
+        if not failing["isolation"]:
+            steps.append('"$PY" -m sdcguard isolation --url "$URL" --canaries 16 --out "$HERE/rerun_isolation.json"')
+        steps.append('grep -c serve_fp8 "$HERE/rerun_alerts.jsonl" 2>/dev/null | sed "s/^/FP8 quantization alerts: /"')
     if failing["arithmetic"]:
         steps.append('ls "$HERE/rerun_alerts.jsonl" 2>/dev/null && echo "alerts logged: $HERE/rerun_alerts.jsonl"')
         steps.append('for f in "$HERE"/evidence/*.pt; do [ -e "$f" ] && "$PY" -m sdcguard replay "$f"; done')
@@ -300,6 +325,44 @@ def _load(path: Optional[str]):
     return None
 
 
+def tested_conditions(out: str, name: str, a=None) -> dict:
+    """What a candidate's qualification exercised, for `sdcguard ready --qualified` to compare a deployment with: the
+    longest prompt and context the checks sent, the most requests at once, whether a prefix-cache hit and the decode
+    path past 128 tokens of KV were tested, and which probes ran."""
+    t: dict = {"probes": []}
+    prompts, contexts = [], []
+    ref = _load(os.path.join(out, "ref.json"))
+    if ref and _load(os.path.join(out, f"{name}_quality.json")):
+        recs = ref.get("records") or []
+        prompts += [len(r.get("prompt_ids") or []) for r in recs]
+        contexts += [len(r.get("prompt_ids") or []) + len(r.get("completion_ids") or []) for r in recs]
+        t["probes"].append("quality")
+    con = _load(os.path.join(out, f"{name}_consistency.json"))
+    if con:
+        for c in (con.get("decode_prefill") or {}).get("cases") or []:
+            prompts.append(c.get("prompt_tokens") or 0)
+            contexts.append((c.get("prompt_tokens") or 0) + (c.get("tokens") or 0))
+        for c in (con.get("prefix_cache") or {}).get("cases") or []:
+            prompts.append(c.get("prompt_tokens") or 0)
+            contexts.append((c.get("prompt_tokens") or 0) + len(c.get("cold_tokens") or []))
+        t["prefix_cache_hit_tested"] = (con.get("prefix_cache") or {}).get("cache_hits_confirmed")
+        t["decode_past_128_tested"] = any((c.get("prompt_tokens") or 0) + (c.get("tokens") or 0) > 128
+                                          for c in (con.get("decode_prefill") or {}).get("cases") or [])
+        t["probes"].append("consistency")
+    conc = []
+    if _load(os.path.join(out, f"{name}_isolation.json")):
+        conc.append(32)
+        t["probes"].append("isolation")
+    perf_ = _load(os.path.join(out, f"{name}_perf.json"))
+    if perf_:
+        conc.append(int((perf_.get("load") or {}).get("concurrency") or getattr(a, "concurrency", 0) or 0))
+        t["probes"].append("perf")
+    t["max_prompt_tokens"] = max(prompts) if prompts else None
+    t["max_context_tokens"] = max(contexts) if contexts else None
+    t["max_concurrency"] = max(conc) if conc else None
+    return t
+
+
 def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict:
     from . import decide as dc
     base_perf = _load(os.path.join(out, "baseline_perf.json"))
@@ -314,14 +377,19 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict
             cov = dc.plugin_coverage(texts) if texts and all(texts) else None
         d = dc.decide(pol, quality=_load(os.path.join(out, f"{name}_quality.json")), alerts=alerts,
                       perf_before=base_perf, perf_after=_load(os.path.join(out, f"{name}_perf.json")), plugin=cov,
-                      isolation=_load(os.path.join(out, f"{name}_isolation.json")))
+                      isolation=_load(os.path.join(out, f"{name}_isolation.json")),
+                      consistency=_load(os.path.join(out, f"{name}_consistency.json")),
+                      consistency_baseline=_load(os.path.join(out, "baseline_consistency.json")))
+        d["scope"]["tested"] = tested_conditions(out, name)
         _write(os.path.join(out, f"decision_{name}.json"), d)
         with open(os.path.join(out, f"decision_{name}.txt"), "w") as f:
             f.write(dc.render(d) + "\n")
         tp = ((d["performance"].get("metrics") or {}).get("output_tokens_per_s") or {}).get("change")
         rows[name] = {"decision": d["decision"], "arithmetic": d["arithmetic"]["verdict"],
                       "approximation": d["approximation"]["verdict"], "quality_check": d["approximation"].get("check"),
-                      "isolation": d["isolation"]["verdict"], "performance": d["performance"]["verdict"],
+                      "quantization": d["quantization"]["verdict"],
+                      "isolation": d["isolation"]["verdict"], "consistency": d["consistency"]["verdict"],
+                      "performance": d["performance"]["verdict"],
                       "performance_required": bool(d["performance"].get("required")),
                       "throughput_change": tp, "why": d["why"]}
     return rows
@@ -329,13 +397,13 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool) -> dict
 
 def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
     lines = ["# Qualification", "", f"Baseline: `vllm serve {configs['baseline']}`", "",
-             "| Candidate | Decision | Arithmetic | Approximation | Isolation | Performance | Throughput |",
-             "|---|---|---|---|---|---|---|"]
+             "| Candidate | Decision | Arithmetic | Approximation | Isolation | Consistency | Performance | Throughput |",
+             "|---|---|---|---|---|---|---|---|"]
     for name, r in rows.items():
         tp = "" if r["throughput_change"] is None else f"{r['throughput_change']:+.1%}"
         q = r["approximation"] + (f" ({r['quality_check']})" if r.get("quality_check") else "")
-        lines.append(f"| {name} | {r['decision']} | {r['arithmetic']} | {q} | {r['isolation']} | {r['performance']} "
-                     f"| {tp} |")
+        lines.append(f"| {name} | {r['decision']} | {r['arithmetic']} | {q} | {r['isolation']} | "
+                     f"{r.get('consistency', '')} | {r['performance']} | {tp} |")
     lines.append("")
     for name, r in rows.items():
         lines.append(f"- **{name}** (`vllm serve {configs[name]}`): {r['decision']}: " + "; ".join(r["why"]))
@@ -371,9 +439,12 @@ def main(argv=None) -> int:
     p.add_argument("--repeat-baseline", action="store_true", help="start the baseline twice: the noise floor")
     p.add_argument("--no-plugin", action="store_true", help="serve without the sdcguard plugin (no arithmetic source)")
     p.add_argument("--no-isolation", action="store_true")
+    p.add_argument("--no-consistency", action="store_true", help="skip `sdcguard consistency` on every server")
     p.add_argument("--no-perf", action="store_true")
     p.add_argument("--share", default="1", help="SDCGUARD_SHARE for every server (default 1: every layer; decide's "
                    "default policy counts the plugin's silence only when it checks at least half the weights)")
+    p.add_argument("--require", default=None, metavar="FLOOR",
+                   help="SDCGUARD_REQUIRE for every server: refuse to serve with less checked (default: not set)")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--metrics-port", type=int, default=9400)
     p.add_argument("--tokens", type=int, default=64, help="tokens per reference completion")

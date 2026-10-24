@@ -1660,7 +1660,7 @@ running server with `--url`), whether the change is as fast as it has to be (`sd
 sides, a change inside the spread between rounds counted as noise), and where the answer holds. It has only run on
 files made by hand. `experiments/vllm_change_decisions.py` (`modal run scripts/modal_vllm.py --phase decisions`, one
 H100, vLLM 0.32.0, about 55 to 70 minutes and $4.40 to $5.70) runs it on a real `vllm serve` of Qwen2.5-7B-Instruct with
-sdcguard on as deployed (one layer in eight per step), six server launches: the trusted stack (`base`: the
+sdcguard on as deployed (one layer in eight per step; amended below: every layer), six server launches: the trusted stack (`base`: the
 reference and the baseline's speed), the same stack without sdcguard (`plain`: speed only, for what sdcguard at
 one layer in eight costs, reported), the same stack started again (`same`), Triton attention (`triton`), the AWQ
 INT4 model on Machete (`awq`), and the trusted stack with one weight of model.layers.10.mlp.down_proj multiplied by
@@ -1688,6 +1688,16 @@ quality check's metrics and verdict lines: whether that tool, used as documented
 claimed whatever the outcome: anything about other models,
 GPUs, loads or vLLM versions; and a decision covers the prompts and load it ran, the plugin's checked layers and
 nothing else (attention, norms and sampling only through the quality check).
+
+Result of the first run (October 24, on 54c3a69): failed criteria 2 and 3, from two mistakes of ours. Every
+decision came out REJECT on quality with mean KL about 5e-4 and top-1 agreement 95.5% (the generation_config bug
+written up under "Qualify on a real server": Qwen2.5-7B-Instruct's repetition penalty of 1.05 made the server's
+reference not greedy), and every arithmetic section INCONCLUSIVE: "one layer in eight per step" above was wrong
+about the mechanism. A share of 1/8 checks the same layers every step (15 of 113 here, 13% of the weights), decide's
+default policy counts the plugin's silence only at half the weights or more, and model.layers.10.mlp.down_proj, where
+the fault went, wasn't among the 15, so the fault drew no alert. Amended before the rerun: sdcguard runs on every
+layer in each server with sdcguard (SDCGUARD_SHARE=1, as qualify does), and the cost reported (`base` against
+`plain`) is that of every layer. The criteria stand as written.
 
 ### Answers that depend on the request before (written October 24, before any run)
 
@@ -1853,6 +1863,16 @@ Reported, not a criterion: `triton`'s decision (expected ACCEPT from the H100 re
 isolation probes' details. Not claimed: anything about other models or GPUs, or about decisions under policies other
 than the default.
 
+Result of the first run (October 24, on 54c3a69): failed Q2, Q5 and Q6, from one bug of ours. `same`, `triton` and
+the repeated baseline all came out REJECT on quality with mean KL about 5e-4 (well inside the pass line) but top-1
+agreement 88%. vLLM applies a model's generation_config.json to requests that don't set a sampling parameter
+(the server logged Qwen2.5-1.5B-Instruct's repetition_penalty of 1.1), so the "greedy" reference recorded from the
+server wasn't greedy: its recorded token was its own most likely token at only 88.4% of the 2048 positions, and
+top-1 agreement was counted against the recorded token. Q5 and Q6 failed only because `same` wasn't accepted. Fixed
+before the next run: the reference is recorded with every sampling setting neutral in the request, keeps how often
+its recorded token was its own most likely one, and top-1 agreement is counted against the reference's most likely
+token (the consistency probe's requests are neutral too). The criteria stand as written for the rerun.
+
 ### MoE checks in serving (written October 24, before any run)
 
 The vLLM plugin can now check fused MoE layers (`src/sdcguard/serve_moe.py`, SDCGUARD_MOE=1, off by default until
@@ -1896,6 +1916,104 @@ Reported, not criteria: rounds until each catch, the MoE backend vLLM uses, and 
 second with and without MoE checks, at 16 and 256 requests at once). Decided now: if MoE checks pass and cost at most
 3% at 16 at once, they become on by default; if they cost more, they stay opt-in. Not claimed whatever the outcome:
 other MoE kernels or models, small errors, or faults in expert weights in memory.
+
+Amendment (October 24, written after a run of this experiment on the earlier code had started, before any run with
+it): SDCGUARD_MOE=1 now also turns on a routing check (`src/sdcguard/serve_route.py`), because the experts' recompute
+takes the routing as given and agrees with a router that picked the wrong experts. At each step one router (they
+take turns, as the MoE layers do) recomputes its policy in fp32 for 2 real rows from its own logits: softmax or
+sigmoid scores, the correction bias for choosing, DeepSeek's grouped top-k, renormalization and the routed scaling
+factor, for vLLM's top-k, grouped top-k and biased top-k routers (others are listed as not checked). An expert
+counts as chosen correctly when its score reaches the k-th best within a tolerance (1e-6 of the score for fp32
+logits, plus 4 unit roundoffs of a 16-bit logits dtype, because vLLM's grouped top-k kernel computes scores and adds
+the bias in that dtype; where groups near the cut are that close, the bounds that hold whichever group was taken);
+the weights are the chosen experts' scores renormalized and scaled, to 2e-5 plus 1e-4 of their size plus 6 unit
+roundoffs of a 16-bit dtype. The first bad row is kept and judged again in float64 on the CPU. One early-exit Triton
+kernel per router call does the work. On the CPU: 1,200 rows in each of 5 cases of routing rounded as vLLM's 16-bit
+kernels round (bf16 and fp16, sigmoid with a bias and softmax, ties broken at random) gave no alarm; the Triton
+kernel and the PyTorch version gave the same counts, records and kept rows in 84 cases. A run on the earlier code is
+judged on M1 to M4 as written. From this amendment on: M1 also asks that the guarded and eager servers check the
+routing of all 24 routers with the routing check's Triton kernel (passed its first-use comparison on the GPU); M3
+also asks that routing checks ran (their alerts already count in M3); and M5: 2 routers made wrong in eager mode
+(each row's last expert replaced by the next expert number; every weight 1.5 times too large) are both caught by an
+alert naming the router with the matching finding, within 16 rounds of 4 requests. The cost reported is now that of
+both checks.
+
+Result of the run on the earlier code (October 24, on 54c3a69): guarded, nomoe and eager didn't start, so nothing
+was measured. SDCGUARD_REQUIRE=1 counted the 24 fused MoE layers as left unchecked even with the MoE check on (a
+bug of ours: the requirement didn't know about the MoE check), and on nomoe it refuses by design, since nothing
+checks those layers there. Fixed before the rerun: fused MoE layers the MoE check registered aren't left over for
+SDCGUARD_REQUIRE (their weights still don't count as checked by checksums in the weight share decide reads), and
+nomoe runs without SDCGUARD_REQUIRE. The criteria stand.
+
+### An FP8 MoE bug from detection to remedy (written October 24, before any run)
+
+Two new parts are tried on a real, open vLLM bug at once. The plugin's FP8 quantization check
+(`src/sdcguard/serve_fp8.py`, SDCGUARD_FP8=1, off by default until this run says otherwise): right after vLLM
+quantizes a layer's input to FP8 (an FP8 linear layer's input; each MoE layer's expert inputs, before both expert
+matmuls, through vLLM's moe_kernel_quantize_input), it recomputes the recipe from the layer's input over the step's
+real rows only (the plugin publishes their number before each step and clears it after, so warm-up and capture runs
+aren't judged): a per-tensor dynamic scale against the scale the GEMM got (one that matches the maximum over every
+row, padding included, is reported as taken from outside the batch), per-token scales and the FP8 values of 2
+sampled real rows (two FP8 steps off is an alarm, one step is counted: vLLM's kernels use fast math). On the CPU
+against vLLM's quantization as its kernels do it, correct scales pass and a per-tensor scale taken over padding rows
+holding larger values is named with the request. And `sdcguard consistency` (cold vs prefix-cache-hit answers with
+the hit confirmed from vLLM's counters; decode log-probabilities against the same text in one prefill), which
+qualify now runs on every server.
+
+vLLM issue #62124 (reported October 17, 2026): FP8 per-tensor MoE with CUDA graphs carries an earlier request's data
+into a batch's activation scale through the graph's padding rows. `experiments/vllm_fp8_moe_check.py`
+(`modal run scripts/modal_vllm.py --phase fp8_moe`, one L4, vLLM 0.32.0, about 60 to 85 minutes and $1.45 to $2):
+one `sdcguard qualify` of ibm-granite/granite-3.1-1b-a400m-instruct with --moe-backend triton and the reporter's
+compilation settings (CUDA graphs for batches 1, 2, 4 and 8), the plugin with SDCGUARD_FP8=1 on every server, a
+policy that accepts a WARN (FP8 is an approximation) and requires the isolation check: the baseline in bf16 (twice),
+and the candidates fp8pt (--quantization fp8_per_tensor, the reported configuration), eager (the same with
+--enforce-eager: no padding rows) and fp8pc (--quantization fp8_per_channel: per-token activation scales, CUDA graphs
+kept). Then the repro folder qualify writes for fp8pt is run once on its own.
+
+Criteria:
+- F1: the baseline, fp8pt and eager start.
+- F2: fp8pt is REJECT, with its isolation check showing a LEAK (the defect is there with the checker on; the
+  isolation run without the plugin, "Answers that depend on the request before", shows it without).
+- F3: the FP8 check names at least one MoE layer's expert-input scale as taken from rows outside the batch on fp8pt.
+- F4: eager has no FP8 alert and its isolation check shows NO LEAK SEEN.
+- F5: the bf16 baseline has no FP8 alert.
+- F6: fp8pt's repro folder, run on its own, shows the leak again.
+
+Reported, not criteria: fp8pc (whether it starts, its FP8 alerts and isolation: a remedy we expect to work but
+haven't seen), every candidate's decision, quality and consistency verdicts, the remedies' throughput against fp8pt
+and the baseline (what each fix costs), and which requests the FP8 alerts name. Decided now: if F1 to F5 pass, the
+FP8 quantization check becomes on by default for FP8 layers; if F3 fails while F2 passes, the check misses the
+mechanism it was built for and stays off until it's understood. Not claimed whatever the outcome: FP8 recipes other
+than these (block scales), the FP8 GEMMs' arithmetic (a separate check), other GPUs or MoE kernels.
+
+### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
+
+vLLM issue #54035, open on the current release: with an FP8 KV cache on Hopper, FlashAttention 3 tiles decode and
+prefill differently (kBlockN 96 against 192 for head size 128), and from 97 tokens of KV on, a token's
+log-probability when decoded differs from the same token's when the text is scored in one prefill (the reporter, with
+VLLM_BATCH_INVARIANT=1 and eager mode: up to 0.5 nats on an H100 with Qwen3-4B, none with a bf16 cache; a proposed
+fix is open in vLLM's flash-attention fork). `gate model-check` scores prefill only, so it can't see this, and a
+bf16-vs-FP8 comparison differs anyway. `sdcguard consistency`'s decode-vs-prefill probe (4 chat prompts, 160 greedy
+tokens each, so decode runs past 128 tokens of KV) compares one server's two paths; qualify judges a candidate's
+largest gap against the baseline's own (INCONSISTENT above 4 times the baseline's and at least 0.1 nats).
+
+`experiments/vllm_fp8kv_check.py` (`modal run scripts/modal_vllm.py --phase fp8kv`, one H100, vLLM 0.32.0, about
+35 to 50 minutes and $2.80 to $4): one `sdcguard qualify` of Qwen/Qwen3-4B in bf16 with vLLM's defaults (CUDA
+graphs, prefix caching on, no batch-invariant mode: the setting a team would run), the plugin on, a policy that
+accepts a WARN: the baseline (bf16 KV cache) and the candidates fp8kv (--kv-cache-dtype fp8) and fp8kv_fi (the same
+on --attention-backend FLASHINFER).
+
+Criteria:
+- K1: the baseline and fp8kv start.
+- K2: the baseline's own consistency is CONSISTENT (its decode-vs-prefill gaps and its cached answers within the
+  lines), so a candidate can be judged against it.
+- K3: fp8kv's consistency is INCONSISTENT and its decision REJECT.
+
+Reported, not criteria: every gap, the KV length where each first passes 0.5 nats and where it peaks, fp8kv_fi's
+verdicts (whether FlashInfer's FP8 path shows the same), the prefix-cache probe on each, quality and throughput.
+Without batch-invariant mode, the baseline's own decode-vs-prefill gaps include batch-shape effects; if they are
+large enough that K2 fails, the probe can't judge this bug in vLLM's default setting, and that is the finding. Not
+claimed whatever the outcome: other models, head sizes, GPUs or FP8 attention paths.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

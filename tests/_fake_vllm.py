@@ -8,6 +8,11 @@ each request. Flags of its own change what it does:
   --slow S    S seconds per generated token
   --fault     log an alert with changed weights to SDCGUARD_LOG at the first request
   --fail      exit at once (a server that doesn't start)
+  --prefix-bug       a prompt whose prefix came from the prefix cache is answered as if from another context
+  --decode-gap X     decode log-probabilities X nats off once the KV holds 97 tokens or more (vLLM #54035's shape)
+
+Its prefix cache: a request's prompt shares 16-token blocks with earlier prompts under the same cache_salt;
+vllm:prefix_cache_hits_total on its own /metrics counts the tokens read from it.
 """
 import argparse
 import json
@@ -32,14 +37,33 @@ def main():
     ap.add_argument("--fail", action="store_true")
     ap.add_argument("--attention-backend", default="FLASH_ATTN")
     ap.add_argument("--quantization", default=None)
+    ap.add_argument("--prefix-bug", action="store_true")
+    ap.add_argument("--decode-gap", type=float, default=0.0)
+    ap.add_argument("--no-enable-prefix-caching", action="store_true")
     a, _ = ap.parse_known_args()
     if a.fail:
         sys.exit(3)
-    state = {"last": 0, "checks": 0, "reads": 0, "faulted": False}
+    state = {"last": 0, "checks": 0, "reads": 0, "faulted": False, "hits": 0, "cache": {}}
     lock = threading.Lock()
 
-    def dist(prefix):
+    def cached_tokens(ids, salt):
+        """Tokens of this prompt found in the prefix cache (whole 16-token blocks), and remember its blocks."""
+        if a.no_enable_prefix_caching:
+            return 0
+        with lock:
+            seen = state["cache"].setdefault(salt, set())
+            n = 0
+            while n + 16 <= len(ids) - 1 and tuple(ids[:n + 16]) in seen:
+                n += 16
+            for k in range(16, len(ids) + 1, 16):
+                seen.add(tuple(ids[:k]))
+            state["hits"] += n
+            return n
+
+    def dist(prefix, wrong=False):
         h = sum((i + 1) * t for i, t in enumerate(prefix[-4:])) % V
+        if wrong:
+            h = (h + 7) % V
         if a.leak and len(prefix) < 16:
             h = (h + state["last"] % 3) % V
         logits = [-(((t - h) % V) * 0.7) + (a.shift if t == (h + 1) % V else 0.0) for t in range(V)]
@@ -68,6 +92,14 @@ def main():
                 return self._send({"data": [{"id": a.model}]})
             if self.path == "/version":
                 return self._send({"version": "0.0.fake"})
+            if self.path == "/metrics":
+                body = f"vllm:prefix_cache_hits_total {float(state['hits'])}\n".encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self.send_response(404)
             self.end_headers()
 
@@ -87,19 +119,23 @@ def main():
                                                        "weights_changed_since_load": True}}) + "\n")
             p = req["prompt"]
             ids = tok(p) if isinstance(p, str) else list(p)
+            hit = cached_tokens(ids, req.get("cache_salt"))
+            wrong = a.prefix_bug and hit > 0
             if req.get("prompt_logprobs"):
                 plp = [None]
                 for j in range(1, len(ids)):
-                    d = dist(ids[:j])
+                    d = dist(ids[:j], wrong)
                     keep = set(sorted(d, key=lambda t: -d[t])[:req["prompt_logprobs"]]) | {ids[j]}
                     plp.append({str(t): {"logprob": d[t], "rank": 1, "decoded_token": "x"} for t in keep})
                 return self._send({"choices": [{"index": 0, "text": "", "prompt_logprobs": plp}]})
             n = req.get("max_tokens", 16)
             seq, toks, tops = list(ids), [], []
             for _ in range(n):
-                d = dist(seq)
+                d = dist(seq, wrong)
                 best = max(d, key=lambda t: d[t])
-                tops.append({f"token_id:{t}": d[t] for t in sorted(d, key=lambda t: -d[t])[:req.get("logprobs") or 1]})
+                off = a.decode_gap if len(seq) >= 97 else 0.0
+                tops.append({f"token_id:{t}": d[t] - off
+                             for t in sorted(d, key=lambda t: -d[t])[:req.get("logprobs") or 1]})
                 toks.append(best)
                 seq.append(best)
             if n <= 2:

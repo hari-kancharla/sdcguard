@@ -213,7 +213,54 @@ class FaultInjection:
                            for k, v in serve_moe.STATUS.items()},
                 "not_checked": dict(mc.unsupported), "stats": dict(mc.stats), "coverage": mc.coverage(),
                 "worst": _num(worst[0][1]) if worst else None, "worst_layers": [[k, _num(v)] for k, v in worst[:5]],
-                "backends": backends, "experts": int(mc.layers[0]["module"].w13_weight.shape[0]) if mc.layers else 0}
+                "backends": backends, "experts": int(mc.layers[0]["module"].w13_weight.shape[0]) if mc.layers else 0,
+                "routing": self.sdcguard_test_route_stats()}
+
+    def sdcguard_test_route_stats(self) -> dict:
+        """The plugin's routing checks in this worker: routers checked and not, kernel, calls, rows, alerts."""
+        from sdcguard import vllm_plugin
+        g = vllm_plugin._STATE.get("guard")
+        rc = getattr(g, "route", None)
+        if rc is None:
+            return {"routers": 0}
+        return {"routers": len(rc.layers), "names": [lay["name"] for lay in rc.layers], "coverage": rc.coverage(),
+                "stats": dict(rc.stats), "not_checked": dict(rc.unsupported)}
+
+    def sdcguard_test_corrupt_route(self, name: str, mode: str) -> str:
+        """In eager mode (--enforce-eager): from now on, make the MoE router named `name` (as the routing check names
+        it: its runner's module name and ".router") wrong before sdcguard's check sees its result: "experts" (each
+        row's last expert replaced by the next expert number) or "weights" (every routing weight 1.5 times what it
+        should be). sdcguard_test_uncorrupt_route undoes it. Returns the name, or ""."""
+        import torch
+        mod = dict(self.get_model().named_modules()).get(name[:-len(".router")] if name.endswith(".router") else name)
+        r = getattr(mod, "router", None)
+        if r is None or mode not in ("experts", "weights") or "_select_experts" in vars(r):
+            return ""
+        orig = r._select_experts
+        experts = int(getattr(r, "global_num_experts", 0) or 0)
+
+        def _select_experts(hidden_states, router_logits, topk_indices_dtype=None, *, input_ids=None):
+            w, ids = orig(hidden_states, router_logits, topk_indices_dtype=topk_indices_dtype, input_ids=input_ids)
+            if not (isinstance(w, torch.Tensor) and isinstance(ids, torch.Tensor)):
+                return w, ids
+            if mode == "experts" and experts:
+                ids = ids.clone()
+                ids[:, -1] = (ids[:, -1] + 1) % experts
+            elif mode == "weights":
+                w = w * 1.5
+            return w, ids
+
+        r._select_experts = _select_experts
+        self._sdcguard_route_faults = getattr(self, "_sdcguard_route_faults", []) + [r]
+        return name
+
+    def sdcguard_test_uncorrupt_route(self) -> int:
+        n = 0
+        for r in getattr(self, "_sdcguard_route_faults", []):
+            vars(r).pop("_select_experts", None)
+            n += 1
+        self._sdcguard_route_faults = []
+        return n
 
     def sdcguard_test_corrupt_moe(self, name: str, mode: str) -> str:
         """In eager mode (--enforce-eager): from now on, make the kernel of the MoE layer named `name` wrong in one of

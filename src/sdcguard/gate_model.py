@@ -13,10 +13,15 @@ compares the distributions position by position:
     ... upgrade vLLM, PyTorch, CUDA, the driver, the quantization ...
     sdcguard gate model-check ref.json --out new.json --noise same.json             # the verdict
 
-Per position: whether the new stack's most likely token is the recorded one (top-1 agreement), the KL divergence
-from the recorded distribution to the new one over the union of both top-20 sets (each renormalized over that
-union; a token one side doesn't list gets that side's smallest listed probability, an upper bound), and the change
-in the recorded token's log-probability. Free-running greedy text isn't compared: across GPUs and batch sizes it
+Per position: whether the new stack's most likely token is the reference's most likely one (top-1 agreement), the
+KL divergence from the recorded distribution to the new one over the union of both top-20 sets (each renormalized
+over that union; a token one side doesn't list gets that side's smallest listed probability, an upper bound), and
+the change in the recorded token's log-probability. Against a server the reference is recorded with every sampling
+setting neutral in the request (no repetition, frequency or presence penalty, no top-k, top-p or min-p), because vLLM
+applies a model's generation_config.json to requests that don't set them (Qwen2.5's has a repetition penalty), and
+the completion would then not be the greedy one; the reference keeps how often its recorded token was its own most
+likely one (recorded_is_top1), and top-1 agreement is measured against the reference's most likely token either
+way. Free-running greedy text isn't compared: across GPUs and batch sizes it
 diverges for a large share of prompts on correct stacks.
 
 Verdict (the thresholds are a starting point taken from published numbers, not calibrated for every model; a
@@ -44,6 +49,10 @@ CHECK_SCHEMA = "sdcguard.gate-model-check/1"
 TOP = 20
 PASS_KL, WARN_KL, FAIL_PROMPT_KL, PASS_PROMPT_KL = 1e-3, 7e-3, 0.1, 0.05
 PASS_TOP1, WARN_TOP1 = 0.99, 0.97
+# sampling settings a server request sets so that a server's defaults (vLLM applies the model's generation_config.json
+# to what a request leaves out) can't change the greedy completion
+NEUTRAL = {"repetition_penalty": 1.0, "frequency_penalty": 0.0, "presence_penalty": 0.0, "top_p": 1.0, "top_k": 0,
+           "min_p": 0.0}
 
 # A fixed, varied prompt set (chat, explanation, code, arithmetic, lists, translation, long instructions): the same
 # prompts every run, so two runs score the same positions.
@@ -114,6 +123,7 @@ def position_metrics(ref: dict, cand: dict, token: int) -> Optional[dict]:
         return None
     if not _usable(cand):
         return {"top1": False, "kl": math.inf, "dlogprob": None, "nonfinite": True}
+    rmax, cmax = max(ref.values()), max(cand.values())
     union = set(ref) | set(cand)
     floor_r = min(v for v in ref.values() if math.isfinite(v))      # a token one side doesn't list: its smallest
     floor_c = min(v for v in cand.values() if math.isfinite(v))     # listed probability (an upper bound)
@@ -126,9 +136,25 @@ def position_metrics(ref: dict, cand: dict, token: int) -> Optional[dict]:
             kl = math.inf if q[t] == 0 else kl + (p[t] / sp) * (math.log(p[t] / sp) - math.log(q[t] / sq))
             if kl == math.inf:
                 break
-    top_c = max(cand, key=lambda t: cand[t])                          # every value is a number here
+    # the candidate's most likely token is the reference's (where either side ties for the top, any shared one)
+    top1 = bool({t for t, v in cand.items() if v == cmax} & {t for t, v in ref.items() if v == rmax})
     d = cand.get(token, math.nan) - ref.get(token, math.nan)
-    return {"top1": top_c == token, "kl": max(0.0, kl), "dlogprob": d if math.isfinite(d) else None}
+    return {"top1": top1, "kl": max(0.0, kl), "dlogprob": d if math.isfinite(d) else None}
+
+
+def recorded_is_top1(records: list) -> Optional[float]:
+    """How often a reference's recorded token is its own most likely one (1.0 for a greedy completion with nothing
+    else changing the choice)."""
+    n = agree = 0
+    for rec in records:
+        for tok, top in zip(rec.get("completion_ids") or [], rec.get("logprobs") or []):
+            vals = {int(t): _lp(v) for t, v in (top or {}).items()}
+            if not _usable(vals):
+                continue
+            m = max(vals.values())
+            n += 1
+            agree += vals.get(int(tok), -math.inf) == m
+    return agree / n if n else None
 
 
 def summarize(per_prompt: list) -> dict:
@@ -263,7 +289,7 @@ def make_ref_url(url: str, out: str, tokens: int = 64, model: Optional[str] = No
                                        "add_generation_prompt": True})["tokens"]
         r = _post(url, "/v1/completions", {"model": model, "prompt": ids, "max_tokens": tokens, "temperature": 0.0,
                                            "logprobs": TOP, "ignore_eos": True, "return_tokens_as_token_ids": True,
-                                           "return_token_ids": True})
+                                           "return_token_ids": True, **NEUTRAL})
         ch = r["choices"][0]
         lp = ch["logprobs"]
         comp = ch.get("token_ids") or [int(t.split(":", 1)[1]) for t in lp["tokens"]]
@@ -271,7 +297,8 @@ def make_ref_url(url: str, out: str, tokens: int = 64, model: Optional[str] = No
         records.append({"prompt_ids": list(ids), "completion_ids": list(comp), "logprobs": tops})
     ref = {"schema": REF_SCHEMA, "model": model, "dtype": None, "max_len": None, "tokens": tokens, "extra": {},
            "via": "server", "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-           "stack": _server_stack(url, model, extra_stack), "records": records}
+           "stack": _server_stack(url, model, extra_stack), "recorded_is_top1": recorded_is_top1(records),
+           "records": records}
     with open(out, "w") as f:
         json.dump(ref, f)
     return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}
@@ -342,7 +369,7 @@ def make_ref(model: str, out: str, tokens: int = 64, dtype: str = "bfloat16", ma
                         "logprobs": [{str(t): _lp(v) for t, v in pos.items()} for pos in c.logprobs]})
     ref = {"schema": REF_SCHEMA, "model": model, "dtype": dtype, "max_len": max_len, "tokens": tokens,
            "extra": extra or {}, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "stack": _stack(),
-           "records": records}
+           "recorded_is_top1": recorded_is_top1(records), "records": records}
     with open(out, "w") as f:
         json.dump(ref, f)
     return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}

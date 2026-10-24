@@ -5,7 +5,8 @@ vLLM's Triton MoE kernel on every server (--moe-backend triton), prefix caching 
 
   plain      SDCGUARD=0: the reference answers and speed
   guarded    SDCGUARD=1 SDCGUARD_REQUIRE=1 SDCGUARD_MOE=1, compiled with CUDA graphs (vLLM's default)
-  nomoe      guarded with SDCGUARD_MOE=0: the speed without MoE checks
+  nomoe      guarded with SDCGUARD_MOE=0 and without SDCGUARD_REQUIRE (which refuses a model whose MoE layers
+             nothing checks): the speed without MoE checks
   eager      guarded with --enforce-eager
 
 plain and guarded answer 64 prompts greedily (32 tokens); plain, guarded and nomoe take the speed load (sdcguard.perf:
@@ -14,7 +15,10 @@ CUDA graphs from Python, and a weight flipped in memory is read by the kernel an
 this check sees), so the compiled server is run clean only. eager runs 6 trials, each making one MoE layer's kernel
 wrong (sdcguard_test_corrupt_moe: its output 1.5 times too large, the kernel given the wrong experts, or each row
 given another row's output) and sending up to 16 rounds of 4 requests at once (a batch of one row hides a row
-mix-up) until an alert names the layer.
+mix-up) until an alert names the layer; then 2 trials of the routing check (SDCGUARD_MOE=1 turns it on with the MoE
+checks; amendment of October 24), each making one router wrong before the check sees its result (each row's last
+expert replaced by the next expert number; every weight 1.5 times too large), the same way until an alert names
+the router.
 
     python experiments/vllm_moe_check.py --out runs/moe
 """
@@ -39,6 +43,7 @@ CLEAN_LIMIT = 2.0                        # the worst clean score allowed (CPU: 0
 MAX_REQUESTS = 16                        # rounds of BURST requests
 BURST = 4                                # requests at once: the layer sees batches of several rows
 CORRUPT_TRIALS = len(MODES)
+ROUTE_MODES = ("experts", "weights")
 COST_LIMIT = 0.03
 IDENTITY = 64
 
@@ -50,8 +55,10 @@ def server(role: str, out: str, port: int, metrics_port: int):
     for k in [k for k in env if k.startswith("SDCGUARD")]:
         del env[k]
     if role != "plain":
-        env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
+        env.update(SDCGUARD="1", SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
                    SDCGUARD_METRICS_PORT=str(metrics_port), SDCGUARD_MOE="0" if role == "nomoe" else "1")
+        if role != "nomoe":
+            env["SDCGUARD_REQUIRE"] = "1"
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL, "--port", str(port),
            "--dtype", "bfloat16", "--max-model-len", "2048", "--gpu-memory-utilization", "0.6", "--seed", "0",
            "--moe-backend", "triton", "--no-enable-prefix-caching",
@@ -98,6 +105,26 @@ def corrupt_trials(port: int, log_path: str, names: list, prompts: list) -> list
     return rows
 
 
+def route_trials(port: int, log_path: str, names: list, prompts: list) -> list:
+    rows = []
+    for k, mode in enumerate(ROUTE_MODES):
+        router = sorted(names)[(7 * k + 4) % len(names)]
+        for p in prompts[:2]:
+            vn._try(port, MODEL, p, 8)
+        time.sleep(3)
+        vn._try(port, MODEL, prompts[0], 4)
+        n0 = len(vn.alerts(log_path))
+        mark = vn.rpc(port, "sdcguard_test_corrupt_route", [router, mode])
+        hit, sent = _until_alert(port, log_path, n0, router, prompts)
+        unmark = vn.rpc(port, "sdcguard_test_uncorrupt_route")
+        rows.append({"router": router, "mode": mode, "mark": mark, "unmark": unmark, "detected": bool(hit),
+                     "rounds_to_detect": sent if hit else None,
+                     "findings": sorted({(a.get("detail") or {}).get("finding") for a in hit} - {None}),
+                     "verdicts": sorted({((a.get("detail") or {}).get("recheck") or {}).get("verdict")
+                                         for a in hit} - {None})})
+    return rows
+
+
 def run(out: str, port: int, metrics_port: int) -> dict:
     os.makedirs(out, exist_ok=True)
     res: dict = {"model": MODEL}
@@ -126,6 +153,9 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             names = (r.get("moe_at_start") or {}).get("names") or []
             if role == "eager" and names:
                 r["corrupt"] = corrupt_trials(port, log_path, names, tp)
+            rnames = ((r.get("moe_at_start") or {}).get("routing") or {}).get("names") or []
+            if role == "eager" and rnames:
+                r["route_corrupt"] = route_trials(port, log_path, rnames, tp)
             r["alerts_total"] = len(vn.alerts(log_path))
         finally:
             r["stop"] = vs.stop(proc)
@@ -144,6 +174,8 @@ def summarize(res: dict) -> dict:
             cost[c] = {"moe_on": on, "moe_off": off, "moe_cost": round(1 - on / off, 4)}
     return {"corrupt": [(t["mode"], t["layer"], t["detected"], t.get("rounds_to_detect"))
                         for t in (res.get("eager") or {}).get("corrupt") or []], "cost": cost,
+            "route_corrupt": [(t["mode"], t["router"], t["detected"], t.get("rounds_to_detect"), t.get("verdicts"))
+                              for t in (res.get("eager") or {}).get("route_corrupt") or []],
             "clean_worst": {k: ((res.get(k) or {}).get("moe_clean") or {}).get("worst") for k in ("guarded", "eager")},
             "backends": ((res.get("guarded") or {}).get("moe_at_start") or {}).get("backends")}
 
@@ -163,6 +195,18 @@ def judge(res: dict) -> tuple:
             kern = st.get("kernel") or {}
             if not kern or not all(v and v[0] for v in kern.values()):
                 fails.append(f"M1 ({role}): the Triton kernels aren't in use: {kern}")
+            rt = st.get("routing") or {}
+            if rt.get("routers") != MOE_LAYERS:
+                fails.append(f"M1 ({role}): the routing of {rt.get('routers')} routers checked, not {MOE_LAYERS}: "
+                             f"{rt.get('not_checked')}")
+    for role in ("guarded", "eager"):
+        r = res.get(role) or {}
+        rk = (((r.get("moe_clean") or {}).get("routing") or {}).get("coverage") or {}).get("kernel") or {}
+        if r.get("ready") and (not rk or not all(v == "Triton" for v in rk.values())):
+            fails.append(f"M1 ({role}): the routing check's Triton kernel isn't in use: {rk}")
+        rs = ((r.get("moe_clean") or {}).get("routing") or {}).get("stats") or {}
+        if r.get("ready") and not rs.get("calls"):
+            fails.append(f"M3 ({role}): no routing check ran")
     x, y = (res.get("plain") or {}).get("identity"), (res.get("guarded") or {}).get("identity")
     if x is None or y is None or x != y or any(t is None for t in x):
         fails.append(f"M2: the guarded server's completions differ from plain's "
@@ -184,6 +228,12 @@ def judge(res: dict) -> tuple:
         if len(rows) != CORRUPT_TRIALS or not all(t["detected"] and t.get("mark") for t in rows):
             fails.append(f"M4: wrong kernels caught in {sum(t['detected'] for t in rows)} of {len(rows)} trials: "
                          f"{[(t['mode'], t['layer'], t['detected']) for t in rows]}")
+        rr = e.get("route_corrupt") or []
+        want = {"experts": "wrong_experts", "weights": "wrong_weights"}
+        if len(rr) != len(ROUTE_MODES) or not all(t["detected"] and t.get("mark") and want[t["mode"]] in
+                                                  (t.get("findings") or []) for t in rr):
+            fails.append(f"M5: wrong routers caught in {sum(t['detected'] for t in rr)} of {len(rr)} trials: "
+                         f"{[(t['mode'], t['router'], t['detected'], t.get('findings')) for t in rr]}")
     s = summarize(res)
     c16 = (s["cost"].get("16") or {}).get("moe_cost")
     s["on_by_default"] = None if c16 is None else c16 <= COST_LIMIT
