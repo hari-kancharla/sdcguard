@@ -122,18 +122,22 @@ def test_sdcguards_own_lines_show_where_nothing_set_up_logging():
                "vp.log.info('sdcguard: checking 3 layers'); vp.log.debug('sdcguard: not shown'); "
                "print(len(vp.log.handlers))")
     assert p.returncode == 0, p.stderr
-    assert p.stdout.strip() == "1"                                   # once, however often register() runs
-    lines = [ln for ln in p.stderr.splitlines() if "sdcguard:" in ln]
+    out = p.stdout.splitlines()
+    assert out[-1].strip() == "1"                                     # one handler, however often register() runs
+    lines = [ln for ln in out if "sdcguard:" in ln]                   # on vLLM's stream (standard output)
     assert len(lines) == 1 and lines[0].startswith("INFO ") and lines[0].endswith("sdcguard: checking 3 layers")
+    p = _fresh("from sdcguard import vllm_plugin as vp; vp._setup_logging(); vp.log.warning('sdcguard: w')",
+               VLLM_LOGGING_STREAM="ext://sys.stderr")
+    assert "sdcguard: w" in p.stderr and "sdcguard: w" not in p.stdout
 
 
 def test_sdcguard_log_level_sets_what_shows():
     code = ("from sdcguard import vllm_plugin as vp; vp._setup_logging(); "
             "vp.log.info('sdcguard: info'); vp.log.warning('sdcguard: warning')")
     p = _fresh(code, SDCGUARD_LOG_LEVEL="warning")
-    assert "sdcguard: warning" in p.stderr and "sdcguard: info" not in p.stderr
+    assert "sdcguard: warning" in p.stdout and "sdcguard: info" not in p.stdout
     p = _fresh(code, SDCGUARD_LOG_LEVEL="loud")                       # not a level: INFO
-    assert "sdcguard: warning" in p.stderr and "sdcguard: info" in p.stderr
+    assert "sdcguard: warning" in p.stdout and "sdcguard: info" in p.stdout
 
 
 def test_a_logging_setup_of_the_users_is_left_alone():

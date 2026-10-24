@@ -423,7 +423,9 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool, runs: O
                       perf_before=base_perf, perf_after=_load(os.path.join(out, f"{name}_perf.json")), plugin=cov,
                       isolation=_load(os.path.join(out, f"{name}_isolation.json")),
                       consistency=_load(os.path.join(out, f"{name}_consistency.json")),
-                      consistency_baseline=_load(os.path.join(out, "baseline_consistency.json")))
+                      # {} when the baseline's is missing: a baseline was meant, so there's no line (not the
+                      # standalone rule)
+                      consistency_baseline=_load(os.path.join(out, "baseline_consistency.json")) or {})
         d["scope"]["tested"] = tested_conditions(out, name)
         _write(os.path.join(out, f"decision_{name}.json"), d)
         with open(os.path.join(out, f"decision_{name}.txt"), "w") as f:

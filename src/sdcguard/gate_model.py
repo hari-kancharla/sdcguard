@@ -421,8 +421,8 @@ def check_trace(ref_path: str, out: str, model: Optional[str] = None, extra: Opt
         outs[i] = o
     cand = []
     for r, o in zip(recs, outs):
-        if o is None:
-            cand.append(None)
+        if o is None:                            # not sent: no completion token, so nothing expected there either
+            cand.append([None] * len(r["prompt_ids"]))
             continue
         c = o.outputs[0]
         if list(c.token_ids) != list(r["completion_ids"]):

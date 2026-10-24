@@ -10,6 +10,7 @@ import os
 import pytest
 import torch
 
+import _fp8_standins as fs
 from _vllm_standins import install_fake_moe, vllm_topk
 from sdcguard import _serve_fast
 from sdcguard import serve_fp8 as sf
@@ -39,6 +40,15 @@ def capture(fn):
     return g
 
 
+def close_counts(e, r, count_cols, z_of, rel=1e-3):
+    """State that went through cuBLAS (the MoE recompute, the linear check's sums): the same counts exactly and the
+    same score to within rel (a replay may run another cuBLAS algorithm than the eager call: the last bits can
+    differ), on the same side of the line."""
+    assert torch.equal(e[:, count_cols], r[:, count_cols]), (e, r)
+    ze, zr = z_of(e), z_of(r)
+    assert abs(ze - zr) <= rel * max(abs(ze), 1.0), (ze, zr)
+
+
 def eager_and_replayed(fn, state, kept=None):
     """(the state after one eager call, the state after one replay of the captured call, the graph). state and the
     kept-row flags (kept) are zeroed before each, so the replay has to write them itself."""
@@ -64,7 +74,7 @@ def eager_and_replayed(fn, state, kept=None):
 class _Quant:
     def __init__(self, static=False, per_token=True):
         self.static, self.use_per_token_if_dynamic, self.is_group_quant = static, per_token, False
-        self.group_shape = type("G", (), {"name": "PER_TOKEN" if per_token else "PER_TENSOR"})()
+        self.group_shape = fs.PER_TOKEN if per_token else fs.PER_TENSOR       # vLLM 0.32's GroupShape
 
 
 @pytest.mark.parametrize("through", ["call", "op"])
@@ -131,9 +141,11 @@ def test_wrong_fp8_scales_are_found_in_a_replayed_graph(recipe):
 def test_the_moe_check_in_a_replayed_graph(monkeypatch, path):
     mod = install_fake_moe(monkeypatch.setitem)
     lay = mod.RoutedExperts(seed=0).to(DEV)
+    other = mod.RoutedExperts(seed=1).to(DEV)
     g = ServeGuard()
     mc = g.moe_checks()
     assert mc.add(lay, "model.layers.0.mlp.experts") == 0
+    assert mc.add(other, "model.layers.1.mlp.experts") == 1          # two layers: they take turns by step
     mc.finalize()
     if path == "triton":
         ok, why = sm.STATUS.get((sm._dev_key(DEV), torch.bfloat16, 0), (False, "not verified"))
@@ -144,14 +156,20 @@ def test_the_moe_check_in_a_replayed_graph(monkeypatch, path):
     out = lay.forward_modular(x=x, topk_weights=w, topk_ids=ids)
     a = lay._sdcguard_moe
     st, slot, cm = a[5], a[6], a[10]
+    z_of = lambda t: sm._f32(int(t[slot, 0]) >> 32)  # noqa: E731
     for wrong in (False, True):
         y = out + 1.0 if wrong else out           # every row 1.0 off: far over the line
-        mc.mark_step(2)
-        (e_st, e_cm), (r_st, r_cm), _ = eager_and_replayed(lambda: fn_check(x, y, w, ids, *a), st, cm)
-        assert torch.equal(e_st, r_st), (e_st, r_st)
-        z = sm._f32(int(r_st[slot, 0]) >> 32)
-        assert int(r_st[slot, sm.C_CALLS]) == 1 and (z > mc.line) == wrong, z
+        mc.mark_step(2)                           # layer 0's turn (2 % 2)
+        (e_st, e_cm), (r_st, r_cm), graph = eager_and_replayed(lambda: fn_check(x, y, w, ids, *a), st, cm)
+        close_counts(e_st, r_st, slice(sm.C_CALLS, None), z_of)
+        assert int(r_st[slot, sm.C_CALLS]) == 1 and (z_of(r_st) > mc.line) == wrong, z_of(r_st)
         assert int(e_cm[slot, 0]) == int(r_cm[slot, 0]) == int(wrong)       # the row kept, by the replay too
+    mc.mark_step(3)                               # layer 1's turn: layer 0's captured check must stay inactive
+    st.zero_()
+    cm.zero_()
+    graph.replay()
+    torch.cuda.synchronize()
+    assert int(st[slot, sm.C_CALLS]) == 0 and int(cm[slot, 0]) == 0
 
 
 # ------------------------------------------------------------------------------------------------------- routing
@@ -210,11 +228,16 @@ def test_the_norm_check_in_a_replayed_graph(path):
         if wrong:
             yy[4, 100] += 5.0
         nc.mark_step(3)
-        (e_st, e_cm), (r_st, r_cm), _ = eager_and_replayed(lambda: fn_check(x, yy, *a), st, cm)
+        (e_st, e_cm), (r_st, r_cm), graph = eager_and_replayed(lambda: fn_check(x, yy, *a), st, cm)
         assert torch.equal(e_st, r_st), (e_st, r_st)
         z = sn._f32(int(r_st[slot, 0]) >> 32)
         assert int(r_st[slot, sn.C_CALLS]) == 1 and (z > nc.line) == wrong, z
         assert int(e_cm[slot, 0]) == int(r_cm[slot, 0]) == int(wrong)
+    nc.mark_step(7)                               # read at replay, not frozen at capture
+    st.zero_()
+    graph.replay()
+    torch.cuda.synchronize()
+    assert int(st[slot, sn.C_STEP]) & 0xFFFFFFFF == 7
 
 
 # ----------------------------------------------------------------------------------------------------- linear check
@@ -223,7 +246,13 @@ def test_the_linear_check_in_a_replayed_graph(path):
     m, k, n = 16, 512, 300
     W = (torch.randn(n, k, device=DEV) / k ** 0.5).to(torch.bfloat16)
     x = torch.randn(m, k, device=DEV).to(torch.bfloat16)
-    y = x @ W.t()
+    mm = torch.backends.cuda.matmul
+    saved = mm.allow_bf16_reduced_precision_reduction
+    mm.allow_bf16_reduced_precision_reduction = False        # fp32 partial sums, as ServeGuard serves with
+    try:
+        y = x @ W.t()
+    finally:
+        mm.allow_bf16_reduced_precision_reduction = saved
     cs = LayerChecksums(W, None, 128)
     if path == "triton":
         assert _serve_fast.verified(DEV, torch.bfloat16), _serve_fast.WHY
@@ -237,6 +266,6 @@ def test_the_linear_check_in_a_replayed_graph(path):
         else:
             fn = lambda: _serve_fast.check(x, yy, *cs.tensors(True), st, 0, 6.0, 1e-20)  # noqa: E731
         eager, replayed, _ = eager_and_replayed(fn, st)
-        assert torch.equal(eager, replayed), (eager, replayed)
+        close_counts(eager, replayed, slice(2, None), lambda t: _serve_fast.decode(*t[0].tolist())[0], rel=2e-2)
         z = _serve_fast.decode(*replayed[0].tolist())[0]
         assert (z > 6.0) == wrong, z

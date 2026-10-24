@@ -5,6 +5,7 @@ GEMM, and the MoE input quantization (vllm.model_executor.layers.fused_moe.utils
 Triton MoE experts module imports it."""
 import sys
 import types
+from typing import NamedTuple
 
 import torch
 
@@ -34,10 +35,31 @@ def quant_per_tensor(x):
     return (x.float() * (1.0 / s)).clamp(-FP8_MAX, FP8_MAX).to(torch.float8_e4m3fn), s
 
 
+class GroupShape(NamedTuple):
+    """vllm/model_executor/layers/quantization/utils/quant_utils.py's GroupShape in vLLM 0.32: a NamedTuple (row,
+    col) with no name (PER_TENSOR is (-1, -1), PER_TOKEN (1, -1))."""
+    row: int
+    col: int
+
+    def is_per_tensor(self) -> bool:
+        return self.row == -1 and self.col == -1
+
+    def is_per_token(self) -> bool:
+        return self.row == 1 and self.col == -1
+
+    def is_per_group(self) -> bool:
+        return self.row == 1 and self.col >= 1
+
+
+PER_TENSOR, PER_TOKEN = GroupShape(-1, -1), GroupShape(1, -1)
+
+
 class QuantFP8:
+    """vLLM's QuantFP8 as far as the plugin reads it (static, group_shape, use_per_token_if_dynamic, is_group_quant)."""
+
     def __init__(self, static=False, per_token=True):
         self.static, self.use_per_token_if_dynamic, self.is_group_quant = static, per_token, False
-        self.group_shape = types.SimpleNamespace(name="PER_TOKEN" if per_token else "PER_TENSOR")
+        self.group_shape = PER_TOKEN if per_token else PER_TENSOR
 
     def __call__(self, x, scale=None, scale_ub=None):
         if self.static:

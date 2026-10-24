@@ -480,7 +480,7 @@ def render(r: dict) -> str:
         if x:
             lines.append(f"   {k}: {x['baseline']} -> {x['candidate']} ({x['change']:+.1%}, {x['direction']}"
                          + (", within noise" if x["noise"] else "") + ")")
-    if not p.get("metrics") and p.get("why"):
+    if p.get("why"):                       # why it couldn't be judged (no runs, or a limited metric missing)
         lines.append(f"   {p['why']}")
     iso = r.get("isolation") or {}
     lines.append(f"4. Isolation (does one request's answer depend on another's?): {iso.get('verdict')}"

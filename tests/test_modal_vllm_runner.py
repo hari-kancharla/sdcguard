@@ -463,3 +463,20 @@ def test_the_graphs_run_makes_a_missing_gpu_a_failure_and_records_its_status(run
     assert seen["env"]["SDCGUARD_GPU_TESTS"] == "1" and "tests/test_gpu_graphs.py" in seen["cmd"]
     status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
     assert status["passed"] is True and status["gpus"] == ["NVIDIA L4"]
+
+
+def test_a_skipped_capture_test_fails_the_graphs_run(runner, monkeypatch):
+    def tee(cmd, log_path, env=None, **_):
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(log_path).write_text("SKIPPED [6] tests/test_gpu_graphs.py:24: needs an NVIDIA GPU\n"
+                                  "SKIPPED [1] tests/test_serve.py:383: no graph-replay hook\n"
+                                  "30 passed, 7 skipped\n")
+        return 0
+
+    monkeypatch.setattr(runner, "_tee", tee)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(
+        device_count=lambda: 1, get_device_name=lambda i: "NVIDIA L4")))
+    msg = runner.graphs()
+    assert msg.startswith("graphs: FAILED") and "exit code 0 " not in msg
+    status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
+    assert status["passed"] is False and len(status["skipped_required"]) == 1      # test_serve.py's skip is allowed

@@ -4,10 +4,11 @@ never read a GPU value on the CPU: under CUDA graph capture that invalidates the
 stalls every step. Each check's PyTorch version runs here on fake tensors (shapes only, no data), where any operation
 that needs a value on the CPU (.item(), indexing with a 0-d tensor, bool() of a tensor, nonzero, a boolean mask)
 raises. Every recipe, policy and option that changes which operations run is covered. (The Triton kernels' launchers
-read shapes and strides only; tests/test_serve_capture.py captures every check in a real CUDA graph on a GPU.)"""
+read shapes and strides only; tests/test_gpu_graphs.py captures every check in a real CUDA graph on a GPU.)"""
 import pytest
 import torch
 
+import _fp8_standins as fs
 from _vllm_standins import install_fake_moe, vllm_grouped_topk, vllm_topk
 from sdcguard import _serve_fast
 from sdcguard import serve_fp8 as sf
@@ -81,7 +82,7 @@ def test_the_linear_check(bias, dt):
 class _Quant:
     def __init__(self, static=False, per_token=True):
         self.static, self.use_per_token_if_dynamic, self.is_group_quant = static, per_token, False
-        self.group_shape = type("G", (), {"name": "PER_TOKEN" if per_token else "PER_TENSOR"})()
+        self.group_shape = fs.PER_TOKEN if per_token else fs.PER_TENSOR       # vLLM 0.32's GroupShape
 
 
 FP8_CASES = {   # name: (static, per_token, rows marked, scale bound, rows of the FP8 input (padded), mult)

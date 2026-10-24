@@ -116,9 +116,16 @@ def test_a_partial_decode_measurement_decides_nothing():
     ok = {"verdict": "CONSISTENT", "cases": [], "cache_hits_confirmed": True}
     j = cs.judge_against({"prefix_cache": ok, "decode_prefill": partial}, {"decode_prefill": full})
     assert j["decode_prefill"] == "INCONCLUSIVE" and j["verdict"] == "INCONCLUSIVE"
-    # a baseline that couldn't be measured sets no line: the candidate stands on its own
-    j = cs.judge_against({"prefix_cache": ok, "decode_prefill": full}, {"decode_prefill": partial})
-    assert j["decode_prefill"] == "CONSISTENT" and "decode_line" not in j
+    # a baseline that couldn't be measured sets no line: nothing to judge the candidate against (the standalone
+    # rule would REJECT a candidate over 0.5 nats that 4 times the baseline's gap allows)
+    big = {"verdict": "INCONSISTENT", "largest_gap": 0.533, "cases": []}
+    for base in ({"decode_prefill": partial}, {}, {"decode_prefill": None}):
+        for cand in (full, big):
+            j = cs.judge_against({"prefix_cache": ok, "decode_prefill": cand}, base)
+            assert j["decode_prefill"] == "INCONCLUSIVE" and "decode_line" not in j, (base, cand)
+            assert any("baseline" in w for w in j["why"])
+    # no baseline at all (the standalone command): the probe's own verdict
+    assert cs.judge_against({"prefix_cache": ok, "decode_prefill": big}, None)["decode_prefill"] == "INCONSISTENT"
 
 
 def test_the_decode_probe_keeps_every_positions_gap_and_splits_them_by_kv_length(server):

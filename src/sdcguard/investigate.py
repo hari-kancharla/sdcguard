@@ -20,8 +20,10 @@ Verdicts:
   NOT ONE GPU     wrong on every one of two or more GPUs, and neither factor cleared it
   NOT REPRODUCED  right everywhere here: a transient fault, one that needs the original data or memory layout, or
                   conditions this machine doesn't reproduce
-  INCONCLUSIVE    a run failed, a run's conditions didn't match the case's, GPUs ran different kernels, or there was
-                  one GPU and no factor cleared it (one GPU can't tell a board from the software on its own)
+  INCONCLUSIVE    a run failed, a run's conditions didn't match the case's, GPUs ran different kernels, a run's kernel
+                  log is empty (so whether they ran the same kernel is unknown: a case whose kernel cuBLASLt doesn't
+                  log can't be called DEVICE), or there was one GPU and no factor cleared it (one GPU can't tell a
+                  board from the software on its own)
 """
 from __future__ import annotations
 

@@ -185,6 +185,43 @@ def test_an_fp8_moe_layers_expert_inputs_are_checked(monkeypatch, tmp_path):
     assert ev[0].detail["finding"] == "scale_from_outside_rows"
 
 
+def test_a_model_with_more_than_64_fp8_layers_checks_its_first_moe_layer(monkeypatch, tmp_path):
+    """granite-3.1-1b-a400m's layout: each of 24 blocks has an FP8 qkv_proj, an FP8 o_proj and an FP8 MoE layer, 72
+    FP8 layers in all, so the check's state grows past 64 while they register. The MoE layers registered before the
+    growth kept the old state (the reviewer's finding before the second fp8_moe run): their checks counted nothing
+    and raised nothing. Here block 0's MoE layer, registered first, must still report."""
+    import sys
+
+    class Block(torch.nn.Module):
+        def __init__(self, i):
+            super().__init__()
+            cls = sys.modules["vllm.model_executor.layers.fused_moe.routed_experts"].RoutedExperts
+            self.qkv_proj = fs.Fp8Linear(64, 64, f"model.layers.{i}.self_attn.qkv_proj", seed=i)
+            self.o_proj = fs.Fp8Linear(64, 64, f"model.layers.{i}.self_attn.o_proj", seed=100 + i)
+            self.experts = cls(sys.modules["vllm.model_executor.layers.fused_moe.experts.triton_moe"], seed=i)
+
+    class Granite(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = torch.nn.ModuleList([Block(i) for i in range(24)])
+
+        def forward(self, x):
+            w = torch.full((x.shape[0], 2), 0.5)
+            ids = torch.tensor([[0, 1], [1, 2], [2, 3], [3, 0], [0, 2], [1, 3], [2, 0], [3, 1]])[:x.shape[0]]
+            return self.layers[0].experts.forward_modular(x=x, topk_weights=w, topk_ids=ids.to(torch.int32))
+
+    vp, runner, smk, tm = _setup(monkeypatch, tmp_path, Granite)
+    fc = vp.guard().fp8
+    assert len(fc.layers) == 72 and vp._STATE["fp8"]["checked"] == 72
+    x = _x(8)
+    x[:6] *= 0.5
+    x[6:] *= 20                            # rows 6 and 7: padding holding an earlier request's larger values
+    runner.execute_model(_so(x, {"a": 4, "b": 2}))
+    ev = vp.poll(wait=True)
+    assert ev and ev[0].detail["where"] == "layers.0.experts (expert inputs)", [e.detail["where"] for e in ev]
+    assert ev[0].detail["finding"] == "scale_from_outside_rows"
+
+
 def test_the_plugins_apply_weights_gives_vllms_output_bit_for_bit(monkeypatch, tmp_path):
     for per_token in (True, False):
         vp, runner, smk, tm = _setup(monkeypatch, tmp_path, lambda: Model(per_token=per_token))

@@ -226,15 +226,20 @@ def decode_probe(url: str, model: str, max_tokens: int = 160, prompts=DECODE_PRO
 
 def judge_against(cand: dict, base: Optional[dict]) -> dict:
     """A candidate's consistency against the baseline's (sdcguard qualify): the prefix-cache probe stands on its own
-    (a cached answer must match a cold one on any stack); decode-vs-prefill gaps are judged against the baseline's."""
+    (a cached answer must match a cold one on any stack); decode-vs-prefill gaps are judged against the baseline's.
+    base None: no baseline (the standalone command), the decode probe's own verdict stands. A baseline given whose
+    decode probe is missing or incomplete sets no line: the candidate's decode gaps are INCONCLUSIVE, not judged by
+    the standalone rule."""
     out = {"prefix_cache": (cand.get("prefix_cache") or {}).get("verdict", "INCONCLUSIVE"), "why": []}
     cd, bd = cand.get("decode_prefill") or {}, (base or {}).get("decode_prefill") or {}
     cg, bg = cd.get("largest_gap"), bd.get("largest_gap")
-    if bd.get("verdict") not in ("CONSISTENT", "INCONSISTENT"):
-        bg = None                   # a baseline whose own probe was incomplete sets no line
     if cg is None or cd.get("verdict") not in ("CONSISTENT", "INCONSISTENT"):
         out["decode_prefill"] = "INCONCLUSIVE"      # partial or failed: a measurement with gaps decides nothing
-    elif bg is None:
+    elif base is not None and (bg is None or bd.get("verdict") not in ("CONSISTENT", "INCONSISTENT")):
+        out["decode_prefill"] = "INCONCLUSIVE"
+        out["why"].append("decode vs prefill: the baseline's own measurement is missing or incomplete, so there is no "
+                          "line to judge the candidate's gaps against")
+    elif base is None:
         out["decode_prefill"] = cd.get("verdict", "INCONCLUSIVE")
     else:
         line = max(DECODE_FACTOR * bg, DECODE_FLOOR)
@@ -245,7 +250,9 @@ def judge_against(cand: dict, base: Optional[dict]) -> dict:
                               f"baseline's {bg:.3f} (line {line:.3f})")
     if out["prefix_cache"] == "INCONSISTENT":
         pc = cand["prefix_cache"]
-        c = next(c for c in pc["cases"] if c["cached"]["significant"])
+        # a case that made the verdict: a significant cached gap, quiet cold answers, the cache hit confirmed
+        c = next((c for c in pc["cases"] if c["cached"]["significant"] and not c["floor"]["significant"] and
+                  c.get("cache_hit") is True), None) or next(c for c in pc["cases"] if c["cached"]["significant"])
         out["why"].append(f"prefix cache: an answer with its prefix read from the cache differs from the same prompt "
                           f"answered cold (largest gap {c['cached']['max_gap']:.3f} nats, "
                           f"{'a sure token changed at position ' + str(c['cached']['flip']['position']) if c['cached']['flip'] else 'no token changed'}"

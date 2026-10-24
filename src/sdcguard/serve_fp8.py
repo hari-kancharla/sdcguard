@@ -199,6 +199,20 @@ def check_call(args: tuple, x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor
             quant_check_torch(x2, xq, xs, recipe, scale_ub, static_ref, rows_buf, stepbuf, state, slot, int(mult))
 
 
+def _per_tensor(gs) -> bool:
+    """Whether a QuantFP8's group shape is per tensor: vLLM 0.32's GroupShape is a NamedTuple (row, col), per tensor
+    when both are -1 (GroupShape.is_per_tensor); an older or stand-in one may only have a name."""
+    f = getattr(gs, "is_per_tensor", None)
+    if callable(f):
+        try:
+            return bool(f())
+        except Exception:  # noqa: BLE001
+            return False
+    if isinstance(gs, tuple) and len(gs) == 2:
+        return tuple(gs) == (-1, -1)
+    return "TENSOR" in str(getattr(gs, "name", gs) or "").upper()
+
+
 def recipe_of(quant_fp8) -> tuple:
     """(recipe, why not): vLLM's QuantFP8 of a layer's kernel."""
     if quant_fp8 is None:
@@ -206,10 +220,9 @@ def recipe_of(quant_fp8) -> tuple:
     if getattr(quant_fp8, "is_group_quant", False):
         return None, "FP8 with group (block) activation scales"
     gs = getattr(quant_fp8, "group_shape", None)
-    name = str(getattr(gs, "name", gs) or "")
     if getattr(quant_fp8, "static", False):
-        if "TENSOR" not in name.upper():
-            return None, f"static FP8 activation scales per {name or 'group'}"
+        if not _per_tensor(gs):
+            return None, f"static FP8 activation scales per {getattr(gs, 'name', gs) or 'group'}"
         return RECIPES["static"], None
     if getattr(quant_fp8, "use_per_token_if_dynamic", False):
         return RECIPES["dynamic_token"], None
@@ -289,6 +302,7 @@ class Fp8Checks:
         finally:
             for lay in self.layers:
                 lay["layer"].__dict__.pop("_sdcguard_fp8", None)
+                lay["layer"].__dict__.pop("_sdcguard_fp8_moe", None)     # (set by the vLLM plugin on MoE layers)
             self.layers.clear()
             for d in (self._state, self._rows, self._step, self._host):
                 d.clear()

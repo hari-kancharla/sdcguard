@@ -225,5 +225,6 @@ def test_a_latency_limit_without_its_measurement_is_never_met():
     r = dc.decide(pol, quality=_quality(), alerts=[], plugin=COV, perf_before=_perf(1000), perf_after=after)
     assert r["performance"]["verdict"] == "UNMEASURED" and "ttft_p99_ms" in r["performance"]["why"]
     assert r["decision"] == "NOT DECIDED"
+    assert "ttft_p99_ms: the policy limits it" in dc.render(r)        # the reason is in the decision text
     ok = dc.decide(pol, quality=_quality(), alerts=[], plugin=COV, perf_before=_perf(1000), perf_after=_perf(1000))
     assert ok["performance"]["verdict"] == "MEETS" and ok["decision"] == "ACCEPT"

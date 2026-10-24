@@ -100,11 +100,15 @@ def _setup_logging() -> None:
     """Make sdcguard's own lines (what it checks, which kernels, what it can't check) show in vLLM's output. vLLM
     configures only its own "vllm" logger, so without a handler of ours Python drops sdcguard's INFO lines and prints
     its warnings bare. Added only when neither sdcguard's logger nor the root logger has a handler (a logging setup of
-    the user's is left alone). SDCGUARD_LOG_LEVEL: DEBUG, INFO (the default), WARNING or ERROR."""
+    the user's is left alone, and then SDCGUARD_LOG_LEVEL doesn't apply). Lines go to the stream vLLM logs to
+    (VLLM_LOGGING_STREAM, standard output by default), so they come in order with vLLM's own. SDCGUARD_LOG_LEVEL:
+    DEBUG, INFO (the default), WARNING or ERROR."""
+    import sys
     root = logging.getLogger()
     if log.handlers or root.handlers:
         return
-    h = logging.StreamHandler()
+    h = logging.StreamHandler(sys.stderr if os.environ.get("VLLM_LOGGING_STREAM", "").endswith("stderr")
+                              else sys.stdout)
     h.setFormatter(logging.Formatter("%(levelname)s %(asctime)s %(message)s", "%m-%d %H:%M:%S"))
     log.addHandler(h)
     level = os.environ.get("SDCGUARD_LOG_LEVEL", "INFO").upper()
@@ -1353,8 +1357,11 @@ def _patch_fp8() -> list:
                     not kwargs.get("quantization_emulation") and isinstance(out[0], torch.Tensor) and \
                     out[0].dtype in (torch.float8_e4m3fn,) and isinstance(A, torch.Tensor) and A.dim() == 2:
                 layer, rows, top_k = ctx
-                a = (getattr(layer, "_sdcguard_fp8_moe", None) or {}).get("per_token" if per_act_token_quant
-                                                                         else "per_tensor")
+                # the layer's live arguments (Fp8Checks.add re-points them when its state grows), when the recipe
+                # registered for its expert inputs is this one
+                kind = getattr(layer, "_sdcguard_fp8_moe", None)
+                a = getattr(layer, "_sdcguard_fp8", None) if kind == ("per_token" if per_act_token_quant
+                                                                      else "per_tensor") else None
                 if a is not None and A_scale is None:
                     mult = 1 if A.shape[0] == rows else (top_k if A.shape[0] == rows * top_k else 0)
                     if mult:
@@ -1434,7 +1441,9 @@ def _register_fp8(runner) -> Optional[dict]:
                                    "group_shape": kind})()
             a = fc.add(mod, name + " (expert inputs)", quant, None, w13.device)
             if a is not None:
-                mod._sdcguard_fp8_moe = {"per_token" if per_token else "per_tensor": a}
+                # which recipe its expert inputs have; the arguments themselves are read from mod._sdcguard_fp8 at
+                # each call, which Fp8Checks keeps current when its state grows past 64 layers
+                mod._sdcguard_fp8_moe = "per_token" if per_token else "per_tensor"
                 checked += 1
     if fc is None:
         _STATE["fp8"] = {"checked": 0, "not_checked": {}, "recipes": sorted(RECIPES)}

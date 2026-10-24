@@ -6,6 +6,7 @@ outside a model step; an MoE layer's second quantization counts top_k rows per t
 import pytest
 import torch
 
+import _fp8_standins as fs
 from sdcguard import serve_fp8 as sf
 from sdcguard.serve import ServeGuard
 
@@ -30,9 +31,11 @@ def vllm_per_tensor(x):
 
 
 class _Quant:
+    """vLLM 0.32's QuantFP8 as the check reads it, with its GroupShape (a NamedTuple without a name)."""
+
     def __init__(self, static=False, per_token=True, group=False):
         self.static, self.use_per_token_if_dynamic, self.is_group_quant = static, per_token, group
-        self.group_shape = type("G", (), {"name": "PER_TENSOR" if not per_token else "PER_TOKEN"})()
+        self.group_shape = fs.PER_TOKEN if per_token else fs.PER_TENSOR
 
 
 def _setup(recipe_quant, static_scale=None):
@@ -156,3 +159,38 @@ def test_group_scales_are_listed_not_checked():
     fc = g.fp8_checks()
     assert fc.add(torch.nn.Module(), "x", _Quant(group=True), None, torch.device("cpu")) is None
     assert "group" in fc.unsupported["x"]
+
+
+def test_vllms_group_shapes_give_the_recipes():
+    """vLLM 0.32's GroupShape is a NamedTuple (row, col) with no name: a static per-tensor layer is checked (it was
+    listed as unsupported, "static FP8 activation scales per GroupShape(row=-1, col=-1)"), a static per-token one
+    isn't, and the dynamic ones follow use_per_token_if_dynamic."""
+    assert sf.recipe_of(_Quant(static=True, per_token=False)) == (sf.RECIPES["static"], None)
+    r, why = sf.recipe_of(_Quant(static=True, per_token=True))
+    assert r is None and "static" in why
+    assert sf.recipe_of(_Quant(per_token=False))[0] == sf.RECIPES["dynamic_tensor"]
+    assert sf.recipe_of(_Quant(per_token=True))[0] == sf.RECIPES["dynamic_token"]
+    named = type("G", (), {"name": "PER_TENSOR"})()                   # a group shape with only a name
+    q = _Quant(static=True, per_token=False)
+    q.group_shape = named
+    assert sf.recipe_of(q)[0] == sf.RECIPES["static"]
+
+
+def test_layers_past_the_first_64_and_earlier_moe_layers_still_report():
+    """The state grows when the 65th layer is added; every registered layer's arguments must follow it (the MoE
+    layers' were a copy the growth missed, so 21 of granite's 24 MoE checks wrote where nothing read)."""
+    g = ServeGuard()
+    fc = g.fp8_checks()
+    lays = [torch.nn.Module() for _ in range(72)]
+    for i, lay in enumerate(lays):
+        assert fc.add(lay, f"model.layers.{i}.x", _Quant(per_token=False), None, torch.device("cpu")) is not None
+    x = _x(16)
+    x[10:] *= 8
+    q, s = vllm_per_tensor(x)
+    fc.mark_step(5, rows=10)
+    sf.check_call(lays[0]._sdcguard_fp8, x, q, s)          # the first layer, added before the growth
+    sf.check_call(lays[71]._sdcguard_fp8, x, q, s)         # the last
+    fc.end_step()
+    ev = g.poll(wait=True)
+    assert {e.detail["where"] for e in ev} == {"model.layers.0.x", "model.layers.71.x"}
+    assert fc.stats["calls"] == 2
