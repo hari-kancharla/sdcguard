@@ -39,7 +39,7 @@ library bug (cuBLAS 6862950). No naturally defective GPU has been tested. Nobody
 | The alert's row kept and rechecked in float64 | GPU-validated | captured inside CUDA graphs (Oct 21, 22) |
 | `sdcguard ready` (protection status from outside) | GPU-validated | second run on real `vllm serve`, with IDLE and `--probe`: 30 of 30 verdicts as expected, never PROTECTED in the 21 cases where it shouldn't be (H100, vLLM 0.32, Oct 24) |
 | The requests an alert concerns | GPU-validated, narrow | 5 of 5 single requests named exactly; with 32 requests at once, the request owning the corrupted row named exactly in 5 of 5 trials (eager mode, Oct 24); dual-batch overlap, sequence parallelism and speculative decoding not covered |
-| The real cuBLAS bug caught inside the server | CPU-tested | GPU run R2 written Oct 24 ("The cuBLAS bug inside the real server") |
+| The real cuBLAS bug caught inside the server | GPU-validated | cuBLAS 6862950 inside real `vllm serve` on an H200 as an MPS client at 40%: 14,707 alerts, every one of the 2,115 with a captured row rechecked as wrong in float64; replays at the alerts' real shapes wrong in 20 of 20 runs at 40% and right in 20 of 20 at 100%, on the server's kernel; no alert at 100% (Oct 24; judged from the saved files after the run hit its time limit in a reported-only step) |
 | `sdcguard isolation` (one request's answer depending on another's) | GPU-validated | vLLM issue #62124 (FP8 per-tensor MoE with CUDA graphs) on an L4: LEAK on vLLM 0.31.0 (20 of 192 answers changed with the request before them) and 0.32.0 (55 of 180); the bf16 and eager controls 0 of 192 (Oct 24) |
 
 ## Deciding on a change

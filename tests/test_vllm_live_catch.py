@@ -132,3 +132,33 @@ def test_kernel_test_results_are_reported_and_decide_nothing():
     assert ok and s["kernel_test_mps40"]["flagged_wrong"] == 2
     r["mps40"]["kernel_test"]["unflagged_wrong"] = 1
     assert lc.judge(r)[0]
+
+
+def test_the_pin_step_pins_the_most_called_shapes_first_within_its_budget(monkeypatch, tmp_path):
+    """The first GPU run spent 50 minutes pinning 215 shapes one process at a time and hit its time limit before
+    writing its summary. Now the shapes go most-called first, and those left when the budget runs out are listed."""
+    made = []
+
+    def fake_gate(args, share, timeout=900):
+        if args[0] == "pin":
+            name = os.path.basename(args[1])
+            made.append(name)
+            os.makedirs(os.path.join(str(tmp_path), "pins"), exist_ok=True)
+            open(os.path.join(str(tmp_path), "pins", name + ".csv"), "w").write(
+                f"Validator,PT_VERSION,2.14.1\nGemmTunableOp_BFloat16_TN,{name},x,1\n")
+        return {"exit_code": 0}
+
+    monkeypatch.setattr(lc, "_gate", fake_gate)
+    fl = [{"out": 1536, "in": 8960, "rows": r, "bias": False, "transa": "OP_T", "calls": c}
+          for r, c in ((16, 3), (32, 90), (64, 7))]
+    clock = iter([0.0, 0.0, 1.0, 999.0, 999.0, 999.0])
+    monkeypatch.setattr(lc.time, "monotonic", lambda: next(clock))
+    p = lc.pins(str(tmp_path), fl, budget_s=10)
+    assert made == ["pin-1536x8960x32", "pin-1536x8960x64"]
+    assert p["not_pinned"] == [[1536, 8960, 16, False]] and p["rows"] == 2
+
+
+def test_the_verdict_is_written_before_the_reported_only_steps(tmp_path):
+    summary, fails = lc._write_summary(str(tmp_path), _res(), final=False)
+    s = json.load(open(os.path.join(str(tmp_path), "SUMMARY.json")))
+    assert summary["verdict"] == "CAUGHT" and s["summary"]["complete"] is False and s["passed"] is True

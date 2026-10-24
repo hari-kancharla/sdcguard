@@ -43,6 +43,7 @@ import vllm_serve_check as vs  # noqa: E402
 
 MODEL = vs.MODEL
 REPLAYS = 3
+PIN_BUDGET_S = 15 * 60      # the pin step (reported only): shapes pinned most-called first until this runs out
 
 
 def _env(role: str, out: str, share: int, sink, metrics_port: int, pin: str | None) -> dict:
@@ -180,13 +181,22 @@ def replays(out: str, alerts: list) -> list:
     return done
 
 
-def pins(out: str, flagged_calls: list) -> dict:
+def pins(out: str, flagged_calls: list, budget_s: float = PIN_BUDGET_S) -> dict:
     """A TunableOp file pinning every flagged shape to algorithm 66 with a 1x1x1 cluster (gate capture + gate pin per
     shape, then merged), or why there is none."""
     from sdcguard import gate
     pack, texts, per = os.path.join(out, "pin_pack"), [], []
-    shapes = sorted({(c["out"], c["in"], c["rows"], c["bias"]) for c in flagged_calls if c["transa"] == "OP_T"})
+    calls: dict = {}
+    for c in flagged_calls:
+        if c["transa"] == "OP_T":
+            key = (c["out"], c["in"], c["rows"], c["bias"])
+            calls[key] = calls.get(key, 0) + int(c.get("calls") or 0)
+    shapes = sorted(calls, key=lambda k: (-calls[k], k))         # the most-called first
+    t0, skipped = time.monotonic(), []
     for o, i, n, b in shapes:
+        if time.monotonic() - t0 > budget_s:
+            skipped.append([o, i, n, b])
+            continue
         name = f"pin-{o}x{i}x{n}{'-bias' if b else ''}"
         cap = _gate(["capture", "--shape", f"{o},{i},{n}", "--dtype", "bfloat16", "--pack", pack, "--repeats", "3",
                      "--name", name] + (["--bias"] if b else []), 40)
@@ -196,12 +206,12 @@ def pins(out: str, flagged_calls: list) -> dict:
         for f in files:
             texts.append(open(f).read())
     if not texts:
-        return {"shapes": per, "file": None, "why": "no pin was made"}
+        return {"shapes": per, "not_pinned": skipped, "file": None, "why": "no pin was made"}
     text, rows = gate.merge_pins(texts)
     path = os.path.join(out, "pins", "merged.csv")
     with open(gate.tunableop_file(path, 0), "w") as f:      # PyTorch reads merged<GPU>.csv (GPU 0 here)
         f.write(text)
-    return {"shapes": per, "file": path, "rows": rows}
+    return {"shapes": per, "not_pinned": skipped, "file": path, "rows": rows}
 
 
 def test_role(out: str, role: str, share: int) -> dict:
@@ -284,21 +294,28 @@ def main(argv=None) -> int:
         if res[role].get("ready"):
             res[role]["kernel_test"] = test_role(a.out, role, share)
     res["replays"] = replays(a.out, res["mps40"].get("alerts") or [])
+    _write_summary(a.out, res, final=False)           # the verdict needs nothing after this: kept if a later step runs out
     fl = (res["mps40"].get("inventory") or {}).get("flagged_6862950") or []
     if fl:
         res["pins"] = pins(a.out, fl)
         if res["pins"].get("file"):
             workarounds(a.out, res["replays"], res["pins"]["file"])
             res["pinned40"] = run_role("pinned40", a.out, 40, a.port, a.metrics_port, pin=res["pins"]["file"])
-    ok, fails, summary = judge(res)
-    res.update(passed=ok, failures=fails, summary=summary)
     if res["replays"]:
         res["reproduce"] = bundle(a.out, res)
-    with open(os.path.join(a.out, "SUMMARY.json"), "w") as f:
-        json.dump(res, f, indent=1, default=str)
+    summary, fails = _write_summary(a.out, res, final=True)
     print(json.dumps({"verdict": summary.get("verdict"), "failures": fails, "summary": summary}, indent=1,
                      default=str))
     return {"CAUGHT": 0, "NOT EXERCISED": 3}.get(summary.get("verdict"), 1)
+
+
+def _write_summary(out: str, res: dict, final: bool) -> tuple:
+    ok, fails, summary = judge(res)
+    summary["complete"] = final
+    res.update(passed=ok, failures=fails, summary=summary)
+    with open(os.path.join(out, "SUMMARY.json"), "w") as f:
+        json.dump(res, f, indent=1, default=str)
+    return summary, fails
 
 
 def _wrong_runs(result) -> tuple:

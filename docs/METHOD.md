@@ -1657,6 +1657,21 @@ replay, `reproduce/` keeps the cases, the pin file, the conditions and the comma
 wrong call and its fix without this script.
 Not claimed whatever the outcome: anything about other models, GPUs or MPS shares, or about hardware faults.
 
+Result (October 24, on 54c3a69, an H200 with cuBLAS 13.1.1 and driver 610.57.04): CAUGHT. The run hit its 85-minute
+limit in the pin step (criterion 5, reported only: it pinned the 215 flagged shapes one process at a time) before it
+wrote SUMMARY.json, so criteria 1 to 4 were judged afterwards from the files it had saved, by the experiment's own
+judge (`judge`, unchanged), and nothing from criterion 5 on is reported. Both servers served under
+SDCGUARD_REQUIRE=1 (1). No alert at 100% (2). At 40%, 419 inventoried calls ran algorithm 66 with 4 or more CTAs
+per cluster (345 at 100%, where the bug doesn't show), 14,707 alerts, and all 2,115 alerts with a captured row
+rechecked in float64 on the CPU as wrong (3). The replays of three alerts at their real shapes (qkv_proj 2048x1536,
+o_proj 1536x1536 and gate_up_proj 17920x1536, 1024 rows with CUDA-graph padding) were wrong in 20 of 20 runs at 40%
+and right in 20 of 20 at 100%, each on the kernel the server's inventory shows for that shape at 40% (4); the kept
+slice replayed alone was right in 20 of 20 for all three: the real shape is what reproduces it. Reported:
+`sdcguard kernels test` at 40% gave 214 WRONG and 9 PASSED among the calls it ran, at 100% 241 PASSED and none
+WRONG. Not reported, because they weren't saved: the completions at 40% against 100%, the servers' speed, and the
+pinned server. Changed for any rerun: the verdict is written before the pin step, and the pin step pins the
+most-called shapes first within 15 minutes and lists the rest.
+
 ### Decisions on four changes to a vLLM server (written October 24, before any run)
 
 `sdcguard decide` puts four questions about one change to a serving stack side by side and keeps them apart:
@@ -1775,6 +1790,14 @@ more) is caught and changes the answers; a flip that makes it smaller, or change
 caught and usually doesn't change them. Not claimed whatever the outcome: rates for hardware faults (a real fault
 isn't one bit of one weight at a time), other models, or one layer in eight (a flip in an unchecked layer is never
 caught there).
+
+Result (October 24, on 54c3a69): failed criterion 3, met 1, 2 and 4. The clean quality check was FAIL (mean KL 9e-6,
+top-1 agreement 90%): the server-reference bug written up under "Qualify on a real server". With it, every trial's
+quality check failed too, so "changed the answers" (79 of 80, bit 0 included) measures nothing here and isn't
+reported. What stands: no alert in the 64 clean requests and none on another layer in any trial; detected, by bit:
+all 5 flips of bit 14 (the exponent's top bit: a typical weight becomes enormous), 1 of 5 each for bits 8, 9 and 10,
+and none for bits 0 to 7, 11 to 13 (in a typical weight these exponent bits are 1, so the flip shrinks it) and 15 (the
+sign). Rerun with the fix before anything about changed answers is said.
 
 ### FP8 arithmetic on Hopper: what a check would see (written October 24, before any run)
 
