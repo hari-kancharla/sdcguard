@@ -13,10 +13,12 @@
                                                       # H100s, 0.31 on 1, at once: about 15 min each, about $5
     modal run scripts/modal_vllm.py --phase quant_l4  # INT4 on Marlin on an L4: about 20 min, about $0.50
     modal run scripts/modal_vllm.py --phase serve_tp2  # the 2-GPU server check alone: about 10 min, about $1.60
-    modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 15 min, about $1.20
+    modal run scripts/modal_vllm.py --phase ready_attrib   # `sdcguard ready` and request naming: about 20 min, about $1.60
     modal run scripts/modal_vllm.py --phase live_catch     # cuBLAS 6862950 live in vllm serve on an H200: about $5-6.50
     modal run scripts/modal_vllm.py --phase decisions      # `sdcguard decide` on four server changes: about $4.40-5.70
     modal run scripts/modal_vllm.py --phase isolation      # vLLM #62124 and controls on 0.31 and 0.32, 2 L4s: under $1
+    modal run scripts/modal_vllm.py --phase sensitivity    # 80 weight bit flips in a served model, 1 H100: about $2
+    modal run scripts/modal_vllm.py --phase fp8_residuals  # vLLM's FP8 GEMM against exact arithmetic, 1 H100: under $1
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -477,6 +479,59 @@ def decisions(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def sensitivity(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_sensitivity.py: which weight bit flips the plugin catches while serving, and whether the ones
+    it misses change the answers (vLLM 0.32, Qwen2.5-1.5B-Instruct, every layer checked, one H100)."""
+    t0 = time.monotonic()
+    tag = "sensitivity"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_sensitivity.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=40 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=20 * 60)
+def fp8_residuals(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/fp8_residuals.py: vLLM's FP8 GEMM on an H100 against exact arithmetic on the same operands."""
+    t0 = time.monotonic()
+    tag = "fp8_residuals"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/fp8_residuals.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=15 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 def _isolation(version: str, force: bool, source: Optional[dict]) -> str:
     t0 = time.monotonic()
     tag = f"isolation{version.replace('.', '')}"
@@ -631,8 +686,8 @@ ESTIMATES = {
                  "limit, at most about $7.30)",
     "quant_l4": "INT4 on Marlin on 1 L4, two 1.5B models: about 20 minutes, roughly $0.50 (60-minute limit, at most "
                 "about $1.50)",
-    "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, three server starts): "
-                    "about 12 to 18 minutes, roughly $1 to $1.50 (60-minute limit, at most about $4.90 at requested "
+    "ready_attrib": "`sdcguard ready` and request naming on real `vllm serve` (vLLM 0.32, 1 H100, four server starts): "
+                    "about 15 to 25 minutes, roughly $1.20 to $2 (60-minute limit, at most about $4.90 at requested "
                     "resources, not a spending cap)",
     "live_catch": "cuBLAS issue 6862950 inside real `vllm serve` on 1 H200 as an MPS client (100% and 40%, then "
                   "40% with the pinned workaround), with replays at the alert's real shape and `kernels test` on "
@@ -645,6 +700,12 @@ ESTIMATES = {
     "isolation": "`sdcguard isolation` on vLLM issue #62124 and two controls, on vLLM 0.31.0 and 0.32.0 at once (2 L4s, "
                  "3 server launches each: about 15 to 25 minutes, roughly $0.40 to $0.70 together; 45-minute limit, "
                  "at most about $1.80 at requested resources, not a spending cap)",
+    "sensitivity": "80 weight bit flips in a served Qwen2.5-1.5B on 1 H100, each with the plugin's verdict and a quality "
+                   "check: about 20 to 30 minutes, roughly $1.60 to $2.40 (45-minute limit, at most about $3.60 at "
+                   "requested resources, not a spending cap)",
+    "fp8_residuals": "vLLM's FP8 GEMM against exact arithmetic on 16 layers of a 1.5B model, 1 H100: about 5 to 10 "
+                     "minutes, roughly $0.40 to $0.80 (20-minute limit, at most about $1.60 at requested resources, "
+                     "not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -724,6 +785,16 @@ def main(phase: str = "vllm", force: bool = False):
                 # 0.32.0 is reported as found (the bug may be fixed there); 0.31.0 carries the criteria
                 if tag == "isolation031" and "exit code 0 " not in str(message):
                     failures.append(str(message))
+        elif phase == "fp8_residuals":
+            message = fp8_residuals.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "sensitivity":
+            message = sensitivity.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
         elif phase == "decisions":
             message = decisions.remote(force, src)
             print(message, flush=True)

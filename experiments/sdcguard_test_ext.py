@@ -32,6 +32,66 @@ class FaultInjection:
                 return name
         return ""
 
+    def sdcguard_test_flip_bit(self, name: str, row_frac: float, col_frac: float, bit: int) -> dict:
+        """Flip one bit of one weight of the linear layer named `name` (exactly), at row int(row_frac * rows) and
+        column int(col_frac * cols) of this worker's shard; a second call with the same arguments flips it back.
+        Returns where, and the weight's value before and after."""
+        import torch
+        for n, mod in self.get_model().named_modules():
+            w = getattr(mod, "weight", None)
+            if n == name and isinstance(w, torch.Tensor) and w.dim() == 2 and w.element_size() == 2:
+                r, c = int(row_frac * w.shape[0]) % w.shape[0], int(col_frac * w.shape[1]) % w.shape[1]
+                with torch.no_grad():
+                    before = float(w.data[r, c])
+                    w.data.view(torch.int16)[r, c] ^= (1 << bit) if bit < 15 else -(1 << 15)
+                    after = float(w.data[r, c])
+                torch.cuda.synchronize()
+                return {"layer": n, "row": r, "col": c, "bit": bit, "before": before, "after": after}
+        return {}
+
+    def sdcguard_test_mark_rows(self, name: str, marker: int, delta: float = 64.0) -> str:
+        """In eager mode (--enforce-eager): from now on, add `delta` to the first 4 outputs of the linear layer named
+        `name` in every row whose input token is `marker`, after its GEMM and before sdcguard's check (a wrong
+        result in exactly those rows, so the request that owns the row is known without the plugin's mapping).
+        The embedding's input ids give the rows. sdcguard_test_unmark_rows undoes it. Returns the layer's name."""
+        import torch
+        model = self.get_model()
+        mods = dict(model.named_modules())
+        target = mods.get(name)
+        emb = next((m for n, m in model.named_modules() if n.endswith("embed_tokens")), None)
+        if target is None or emb is None or not hasattr(getattr(target, "quant_method", None), "_gemm_impl"):
+            return ""
+        state = {"rows": None}
+
+        def pre(m, args):
+            ids = args[0]
+            state["rows"] = (ids.reshape(-1) == marker).nonzero().reshape(-1)
+        handle = emb.register_forward_pre_hook(pre)
+        qm = target.quant_method
+        orig = qm._gemm_impl
+
+        def gemm(layer, x, weight, bias=None):
+            y = orig(layer, x, weight, bias)
+            rows = state["rows"]
+            if layer is target and rows is not None and rows.numel():
+                y2 = y.view(-1, y.shape[-1])
+                rows = rows[rows < y2.shape[0]]
+                y2[rows, :4] += delta
+            return y
+        qm._gemm_impl = gemm
+        self._sdcguard_marks = getattr(self, "_sdcguard_marks", []) + [(qm, orig, handle)]
+        torch.cuda.synchronize()
+        return name
+
+    def sdcguard_test_unmark_rows(self) -> int:
+        n = 0
+        for qm, orig, handle in getattr(self, "_sdcguard_marks", []):
+            qm._gemm_impl = orig
+            handle.remove()
+            n += 1
+        self._sdcguard_marks = []
+        return n
+
     def sdcguard_test_stop_reads(self) -> bool:
         """Make the plugin stop reading results back (its checks keep running on the GPU, nobody reads them), the
         way a broken read path would: what `sdcguard ready` must call NOT PROTECTED while vLLM serves."""

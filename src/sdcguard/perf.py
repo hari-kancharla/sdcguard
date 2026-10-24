@@ -1,5 +1,5 @@
-"""How fast a running vLLM server (or any server with the same completions API) serves a fixed load, measured the same way on
-each side of a change:
+"""How fast a running vLLM server (or any server with the same completions API) serves a fixed load, measured the
+same way on each side of a change:
 
     sdcguard perf --url http://127.0.0.1:8000 --out before.json      # the stack you run now
     ... change the stack, start it again ...

@@ -18,6 +18,9 @@ def _good():
         "concurrent": {"requests": [f"cmpl-c{i}" for i in range(32)], "alerts": 1, "named": [["cmpl-c3-0"]],
                        "attribution": ["exact"], "since": [f"cmpl-c{i}-0" for i in range(32)]}}
     res["identity_guarded"] = res["identity_disabled"] = ["a", "b"]
+    res["exact_concurrent"] = {"marker": 9, "prompts_holding_marker_naturally": [], "trials": [
+        {"target": f"cmpl-m{k}", "alerts": 2, "named": [[f"cmpl-m{k}-0"], [f"cmpl-m{k}-0"]],
+         "attribution": ["exact"] * 2} for k in range(ra.MARK_TRIALS)]}
     return res
 
 
@@ -62,3 +65,19 @@ def test_changed_outputs_fail():
 def test_client_ids_match_vllms_per_prompt_ids():
     assert ra._matches("cmpl-abc-0", "cmpl-abc") and ra._matches("cmpl-abc", "cmpl-abc")
     assert not ra._matches("cmpl-abcd-0", "cmpl-abc")
+
+
+def test_exact_naming_under_concurrency_needs_the_marked_request_every_time():
+    r = _good()
+    r["exact_concurrent"]["trials"][2]["named"] = [["cmpl-m2-0"], ["cmpl-other-0"]]
+    ok, fails, s = ra.judge(r)
+    assert not ok and s["exact_concurrent"] == "4/5" and any(f.startswith("A4") for f in fails)
+    r = _good()
+    r["exact_concurrent"]["trials"][0].update(alerts=0, named=[])
+    assert not ra.judge(r)[0]
+    r = _good()
+    r["exact_concurrent"]["prompts_holding_marker_naturally"] = [4]
+    assert not ra.judge(r)[0]
+    r = _good()
+    r["exact_concurrent"]["trials"][1]["named"] = [None, ["cmpl-m1-0"]]    # an alert without a captured row
+    assert ra.judge(r)[0]

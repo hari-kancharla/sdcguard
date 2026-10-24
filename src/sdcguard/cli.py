@@ -343,6 +343,8 @@ def main(argv=None) -> int:
                    add_help=False)
     sub.add_parser("isolation", help="does one request's answer depend on another's? (a running vLLM server)",
                    add_help=False)
+    sub.add_parser("qualify", help="start the baseline and candidate vLLM stacks, run every check, decide each change",
+                   add_help=False)
     sub.add_parser("nvsentinel", help="send check results and job alerts to NVIDIA NVSentinel (Kubernetes)",
                    add_help=False)
     c = sub.add_parser("certify", help="check every GPU, then write a signed certificate per GPU")
@@ -397,7 +399,7 @@ def main(argv=None) -> int:
 
 
 _DISPATCHED = ("demo", "selftest", "screen", "check", "board", "casefile", "blas", "issues", "nvsentinel", "gate",
-               "ready", "kernels", "decide", "perf", "isolation")
+               "ready", "kernels", "decide", "perf", "isolation", "qualify")
 
 
 def _dispatch(cmd: str, rest: list) -> int:
@@ -424,6 +426,8 @@ def _dispatch(cmd: str, rest: list) -> int:
         from .perf import main as m
     elif cmd == "isolation":
         from .isolation import main as m
+    elif cmd == "qualify":
+        from .qualify import main as m
     elif cmd == "gate":
         from .gate import main as m
     elif cmd == "nvsentinel":

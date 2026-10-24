@@ -366,3 +366,20 @@ def test_the_isolation_runs_both_versions_and_only_031_decides(runner, monkeypat
     monkeypatch.setattr(runner, "isolation031", _Fn("isolation0310: exit code 1 in 18.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("isolation")
+
+
+def test_the_sensitivity_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "sensitivity", _remote("sensitivity: exit code 0 in 22.0 minutes"))
+    runner.main("sensitivity")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "sensitivity", _remote("sensitivity: exit code 1 in 22.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("sensitivity")
+
+
+def test_the_fp8_residuals_run_alone(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "fp8_residuals", _remote("fp8_residuals: exit code 0 in 6.0 minutes"))
+    runner.main("fp8_residuals")
+    assert "Done." in capsys.readouterr().out

@@ -28,6 +28,12 @@ On the guarded server, before R4, request attribution:
      every request an alert names was one of those 32, and the requests since the last clean read include all 32
   A3 the 64 one-at-a-time completions before any flip are identical to the 'disabled' server's (the plugin's step
      bookkeeping doesn't change what vLLM computes)
+On a fourth server, 'eager' (the guarded one with --enforce-eager, so a test hook can act between a layer's GEMM
+and its check):
+  A4 5 times, each in its own layer (model.layers.16 to 20 down_proj): 32 requests sent at once, one of them with a
+     marker token (a rare character's id) inserted in its prompt; that token's row is made wrong in the layer
+     (sdcguard_test_mark_rows), so the owner is known without the plugin's mapping: at least one alert for the
+     layer, and every alert with a captured row names exactly the marked request
 
     python experiments/vllm_ready_attrib_check.py --out runs/ready_attrib
 """
@@ -212,6 +218,63 @@ def attribution(port: int, log_path: str) -> dict:
     return res
 
 
+MARK_TRIALS = 5
+
+
+def _ids(port: int, text: str) -> list:
+    status, raw = vs._request(port, "POST", "/tokenize", {"model": MODEL, "prompt": text})
+    if status != 200:
+        raise RuntimeError(f"/tokenize: HTTP {status}")
+    return list(json.loads(raw)["tokens"])
+
+
+def _complete_ids(port: int, ids: list, tokens: int = 16) -> dict:
+    body = {"model": MODEL, "prompt": ids, "max_tokens": tokens, "temperature": 0.0, "ignore_eos": True}
+    status, raw = vs._request(port, "POST", "/v1/completions", body)
+    if status != 200:
+        raise RuntimeError(f"HTTP {status}: {raw[:300]!r}")
+    return {"id": json.loads(raw)["id"], "t": time.time()}
+
+
+def exact_concurrent(port: int, log_path: str) -> dict:
+    """A4 (eager server): 32 requests at once, one of them holding a marker token; that token's row of one layer
+    is made wrong after its GEMM (sdcguard_test_mark_rows), so its owner is known without the plugin. Every alert
+    for the layer with a captured row must name exactly that request. 5 trials, each with its own layer and its
+    own marked request."""
+    ps = vs.prompts(40)
+    prompts = [_ids(port, p) for p in ps[:32]]
+    rare = _ids(port, "龘")                          # a rare character: its last token is the marker
+    marker = rare[-1]
+    clash = [i for i, ids in enumerate(prompts) if marker in ids]
+    res: dict = {"marker": marker, "prompts_holding_marker_naturally": clash, "trials": []}
+    for k in range(MARK_TRIALS):
+        layer = f"model.layers.{16 + k}.mlp.down_proj"
+        target = (7 * k + 3) % 32
+        batch = [list(ids) for ids in prompts]
+        batch[target] = batch[target][:5] + [marker] + batch[target][5:]
+        for p in ps[32:36]:                                # clean steps and a read first
+            _complete(port, p, tokens=8)
+        time.sleep(3)
+        _complete(port, ps[36], tokens=8)
+        n0 = len(_log_alerts(log_path))
+        mark = _rpc(port, "sdcguard_test_mark_rows", [layer, marker])
+        out: list = [None] * 32
+        threads = [threading.Thread(target=lambda j=j: out.__setitem__(j, _complete_ids(port, batch[j])))
+                   for j in range(32)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        unmark = _rpc(port, "sdcguard_test_unmark_rows")
+        alerts = _wait_alert(log_path, n0, layer, port)
+        named = [_named(b) for b in alerts]
+        res["trials"].append({"layer": layer, "target": out[target]["id"] if out[target] else None,
+                              "requests": [o["id"] for o in out if o], "mark": mark, "unmark": unmark,
+                              "alerts": len(alerts), "named": [n[0] for n in named],
+                              "attribution": [n[1] for n in named]})
+    return res
+
+
 def _start(role: str, out: str, port: int, sink, metrics_port: int):
     """vllm_serve_check.start's server, with the environment of an unprotected role: 'excluded' asks for
     protection (SDCGUARD=1, SDCGUARD_REQUIRE=1, a metrics port) but VLLM_PLUGINS names no installed plugin, so vLLM
@@ -224,11 +287,14 @@ def _start(role: str, out: str, port: int, sink, metrics_port: int):
     env["SDCGUARD_METRICS_PORT"] = str(metrics_port)
     if role == "excluded":
         env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", VLLM_PLUGINS="none_installed")
+    elif role == "eager":
+        env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_LOG=os.path.join(out, "eager_alerts.jsonl"))
     else:
         env["SDCGUARD"] = "0"
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL, "--port", str(port),
            "--dtype", "bfloat16", "--max-model-len", "2048", "--gpu-memory-utilization", "0.6", "--seed", "0",
-           "--worker-extension-cls", "sdcguard_test_ext.FaultInjection"]
+           "--worker-extension-cls", "sdcguard_test_ext.FaultInjection"] + (["--enforce-eager"] if role == "eager"
+                                                                              else [])
     log = open(os.path.join(out, f"{role}_server.log"), "w")
     return subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True), log
 
@@ -268,6 +334,17 @@ def run(out: str, port: int, metrics_port: int) -> dict:
         log.close()
         sink.server.shutdown()
     res["R7_after_guarded"] = [_ready(metrics_port, port) for _ in range(REPEATS)]
+    # eager: exact attribution under concurrency (A4)
+    sink = vs.Sink()
+    proc, log = _start("eager", out, port, sink, metrics_port)
+    try:
+        res["eager_ready"] = vs.wait_ready(port, proc, timeout=1500)
+        if res["eager_ready"]:
+            res["exact_concurrent"] = exact_concurrent(port, os.path.join(out, "eager_alerts.jsonl"))
+    finally:
+        res["eager_stop"] = vs.stop(proc)
+        log.close()
+        sink.server.shutdown()
     # excluded and disabled
     for role in ("excluded", "disabled"):
         sink = vs.Sink()
@@ -325,6 +402,20 @@ def judge(res: dict) -> tuple:
     if not c.get("alerts") or wrong or missing:
         fails.append(f"A2: {c.get('alerts')} alerts, {len(wrong)} named requests not sent during the flip, "
                      f"{len(missing)} flipped requests missing from 'since the last clean read'")
+    ec = res.get("exact_concurrent") or {}
+    ok_exact, rows = 0, []
+    for t in ec.get("trials") or []:
+        named_rows = [n for n in t["named"] if n is not None]
+        exact = (t["alerts"] > 0 and bool(named_rows) and t["target"] is not None and
+                 all(len(n) == 1 and _matches(n[0], t["target"]) for n in named_rows))
+        ok_exact += exact
+        rows.append({"alerts": t["alerts"], "named": t["named"], "target": t["target"], "exact": exact})
+    summary["exact_concurrent"] = f"{ok_exact}/{len(ec.get('trials') or [])}"
+    if ec.get("prompts_holding_marker_naturally"):
+        fails.append(f"A4: the marker token is in other prompts too ({ec['prompts_holding_marker_naturally']})")
+    if len(ec.get("trials") or []) != MARK_TRIALS or ok_exact != MARK_TRIALS:
+        fails.append(f"A4: exact attribution under 32 concurrent requests in {ok_exact} of "
+                     f"{len(ec.get('trials') or [])} trials: {rows}")
     same = res.get("identity_guarded") is not None and res.get("identity_guarded") == res.get("identity_disabled")
     summary["identity"] = same
     if not same:

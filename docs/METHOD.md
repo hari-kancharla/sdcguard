@@ -1603,7 +1603,14 @@ probe; R4i (reads stopped, idle, --vllm --probe) NOT PROTECTED; R5, R6 and R7 NO
 expected, and no PROTECTED in any of the 21 asked where the server wasn't protected, couldn't be told, or wasn't
 shown checking (R2, R4, R4n, R4i, R5, R6, R7); criteria 2 to 4 as above. Criterion 3 is about membership: the
 requests are sent 8 at a time, and the run checks that every request an alert names is one of the 32, not which of
-them held the failing row; only the single-request trials (criterion 2) test exact attribution.
+them held the failing row. So the second run adds criterion 5, exact attribution under concurrency, on a fourth
+server (the guarded one with --enforce-eager, so a test hook can act between a layer's GEMM and its check): 5
+times, each in its own layer, 32 requests sent at once, one of them with a marker token (a rare character's id)
+inserted in its prompt; that token's row of the layer is made wrong after the GEMM, so the request that owns it is
+known by construction, not from the plugin's mapping. 5 of 5: at least one alert for the layer, and every alert with
+a captured row names exactly the marked request (an alert without a captured row names none and doesn't count
+against it). Eager mode is not the default compiled mode: the mapping of rows to requests is the same code in both,
+and the CUDA-graph padding case is criterion 2's.
 
 ### The cuBLAS bug inside the real server (written October 24, before any run)
 
@@ -1720,6 +1727,51 @@ comparison along a fixed token sequence measures the approximation and doesn't r
 triggers the bug. Not claimed whatever the outcome:
 anything about other models, GPUs or serving settings, or that NO LEAK SEEN means a server is isolated beyond these
 prompts.
+
+### Bit flips in a served model's weights (written October 24, before any run)
+
+Every sensitivity number so far is from training matmuls (one wrong value in an output: the default check flagged
+half at about 29% of a typical output, none of 594 at 10%) or from a few flips chosen to be caught. Nothing says
+how much of what goes wrong in a served model's weights the vLLM plugin sees, or whether what it misses matters.
+`experiments/vllm_sensitivity.py` (`modal run scripts/modal_vllm.py --phase sensitivity`, one H100, vLLM 0.32.0,
+Qwen2.5-1.5B-Instruct in bf16, every linear layer checked, about 20 to 30 minutes and $1.60 to $2.40) flips one bit
+of one weight at a time in the running server: every bit position of a bf16 weight (0 to 6 mantissa, 7 to 14
+exponent, 15 sign), 5 trials each (80), at layers and positions drawn with seed 0 from the q/k/v, o, gate/up and
+down projections of all 28 blocks. With the flip in place: 8 requests, then the quality check (`gate model-check
+--url`, 32 prompts teacher-forced against the clean server's reference, with a clean check as noise), then the bit
+flipped back. A trial is detected when an alert names its layer between the flip and 5 s after the flip back; it
+changed the answers when the quality check says WARN or FAIL.
+
+Criteria (about the run, not about how much is caught): 1. the server starts with SDCGUARD_REQUIRE=1; 2. no alert in
+64 requests with no fault; 3. the clean quality check is PASS; 4. every flip is undone (the weight reads back as it
+was). Reported as found, by bit and in total: trials detected, trials that changed the answers, and the ones that
+changed the answers and weren't detected (the misses that matter); alerts on layers other than the flipped one
+(a huge weight can make the next layers' inputs non-finite). Expected from the training numbers, not a criterion:
+a flip that makes a typical weight much larger (the exponent's top bit, or a 0 bit that multiplies it by 16 or
+more) is caught and changes the answers; a flip that makes it smaller, or changes it by under about 10%, isn't
+caught and usually doesn't change them. Not claimed whatever the outcome: rates for hardware faults (a real fault
+isn't one bit of one weight at a time), other models, or one layer in eight (a flip in an unchecked layer is never
+caught there).
+
+### FP8 arithmetic on Hopper: what a check would see (written October 24, before any run)
+
+The vLLM plugin doesn't check FP8 layers. Before building a check for them, this measures what it would have to
+tell apart from a fault. vLLM's `--quantization fp8` on Hopper quantizes weights to FP8 E4M3 per tensor and
+activations per token, and multiplies them with CUTLASS kernels that use FP8 fast accumulation (every Hopper FP8
+configuration in vLLM 0.32's `scaled_mm_sm90_fp8_dispatch.cuh`). DeepSeek-V3's report describes Hopper's FP8
+tensor-core accumulation as limited to about 14 bits; how far that moves a block sum on real layers is the
+question. `experiments/fp8_residuals.py` (`modal run scripts/modal_vllm.py --phase fp8_residuals`, one H100, about 5
+to 10 minutes and $0.40 to $0.80) takes the inputs and weights of 16 linear layers of Qwen2.5-1.5B-Instruct on 16
+prompts, quantizes them as vLLM does, and compares vLLM's `cutlass_scaled_mm`, and `torch._scaled_mm` with and
+without fast accumulation, with exact float64 arithmetic on the same FP8 values and scales: per output, the error
+relative to its row's largest value and its sign bias; per 128-column block, the sum's distance from the exact sum
+in units of what bf16 rounding of the outputs alone explains.
+
+No pass line; what decides the design, written now: if the fast kernel's clean block scores stay under 3 on every
+layer (at the 99.9th percentile), an FP8 check can use the current noise model with the FP8 operands; if they reach
+6 or more, the check needs an accumulation term fitted to these numbers, and catches correspondingly less than the
+bf16 check (the run gives the size). Either way, no FP8 check is called supported until one meets criteria of its
+own on a real server (same answers as plain vLLM, no clean alert, a flipped weight caught).
 
 ### The upgrade gate on cuBLAS issue 6862950
 

@@ -42,38 +42,32 @@ ROLES = {
 POLICY = {"quality": {"accept_warn": True}, "isolation": {"required": True}}
 
 
-def _sdc(*args, timeout: int = 1800) -> dict:
-    p = subprocess.run([sys.executable, "-m", "sdcguard", *args], capture_output=True, text=True, timeout=timeout)
-    return {"exit_code": p.returncode, "output": (p.stdout + p.stderr)[-3000:]}
+FILE = {"bf16": "baseline", "fp8pt": "fp8pt", "eager": "eager"}     # role -> the name sdcguard qualify gives it
+SERVE = (f"{MODEL} --max-model-len 4096 --gpu-memory-utilization 0.85 --seed 0 "
+         f"--compilation-config '{json.dumps(json.loads(COMPILE), separators=(',', ':'))}'")
 
 
-def run_role(role: str, out: str, port: int) -> dict:
-    env = {k: v for k, v in os.environ.items() if not k.startswith("SDCGUARD")}
-    cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL, "--port", str(port),
-           "--max-model-len", "4096", "--gpu-memory-utilization", "0.85",
-           "--seed", "0", "--compilation-config", COMPILE, *ROLES[role]]
-    log = open(os.path.join(out, f"{role}_server.log"), "w")
-    proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-    url = f"http://127.0.0.1:{port}"
-    res: dict = {"role": role, "args": ROLES[role]}
+def config(role: str) -> str:
+    return " ".join([SERVE, *ROLES[role]])
+
+
+def run_qualify(out: str, port: int) -> dict:
+    """The whole run is one `sdcguard qualify` (the product's own command), without the plugin."""
+    with open(os.path.join(out, "policy.json"), "w") as f:
+        json.dump(POLICY, f)
+    cmd = [sys.executable, "-m", "sdcguard", "qualify", "--out", out, "--policy", os.path.join(out, "policy.json"),
+           "--baseline", config("bf16"), "--candidate", f"fp8pt={config('fp8pt')}",
+           "--candidate", f"eager={config('eager')}", "--no-plugin", "--port", str(port), "--rounds", "2",
+           "--stack", "gpu=L4"]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=3000)
+    res = {"qualify_exit_code": p.returncode, "qualify_output": (p.stdout + p.stderr)[-4000:]}
     try:
-        t0 = time.monotonic()
-        res["ready"] = vs.wait_ready(port, proc, timeout=1500)
-        res["startup_s"] = round(time.monotonic() - t0, 1)
-        if not res["ready"]:
-            res["exit_code"] = proc.poll()
-            return res
-        stack = ["--stack", "gpu=L4", "--stack", f"role={role}", "--stack", "args=" + json.dumps(ROLES[role])]
-        ref = os.path.join(out, "ref.json")
-        if role == "bf16":
-            res["model_ref"] = _sdc("gate", "model-ref", "--url", url, "--out", ref, *stack)
-        else:
-            res["model_check"] = _sdc("gate", "model-check", ref, "--url", url, "--out",
-                                      os.path.join(out, f"{role}_quality.json"), *stack)
-        res["isolation"] = _sdc("isolation", "--url", url, "--out", os.path.join(out, f"{role}_isolation.json"))
-    finally:
-        res["stop"] = vs.stop(proc)
-        log.close()
+        q = json.load(open(os.path.join(out, "QUALIFY.json")))
+    except (OSError, ValueError):
+        return res
+    for role, name in FILE.items():
+        res[role] = q["runs"].get(name) or {}
+    res["decisions"] = q.get("decisions") or {}
     return res
 
 
@@ -104,23 +98,6 @@ def traces(out: str) -> dict:
     return res
 
 
-def decide_all(out: str) -> dict:
-    from sdcguard import decide as dc
-    rd = lambda p: json.load(open(p)) if os.path.exists(p) else None  # noqa: E731
-    dec = {}
-    for role in ("fp8pt", "eager"):
-        d = dc.decide(POLICY, quality=rd(os.path.join(out, f"{role}_quality.json")),
-                      isolation=rd(os.path.join(out, f"{role}_isolation.json")))
-        with open(os.path.join(out, f"decision_{role}.json"), "w") as f:
-            json.dump(d, f, indent=1, default=str)
-        with open(os.path.join(out, f"decision_{role}.txt"), "w") as f:
-            f.write(dc.render(d) + "\n")
-        dec[role] = {"decision": d["decision"], "why": d["why"], "isolation": d["isolation"]["verdict"],
-                     "approximation": d["approximation"]["verdict"], "quality_check": d["approximation"].get("check"),
-                     "arithmetic": d["arithmetic"]["verdict"]}
-    return dec
-
-
 def judge(res: dict, out: str) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "Answers that depend on the request before"."""
     fails, s = [], {}
@@ -132,7 +109,7 @@ def judge(res: dict, out: str) -> tuple:
     iso = {}
     for role in ROLES:
         try:
-            iso[role] = json.load(open(os.path.join(out, f"{role}_isolation.json")))
+            iso[role] = json.load(open(os.path.join(out, f"{FILE[role]}_isolation.json")))
         except (OSError, ValueError):
             iso[role] = {}
         p, c = iso[role].get("primer") or {}, iso[role].get("canary") or {}
@@ -166,11 +143,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
     res: dict = {"model": MODEL, "compile": COMPILE, "policy": POLICY}
-    for role in ROLES:
-        res[role] = run_role(role, a.out, a.port)
-        with open(os.path.join(a.out, "PROGRESS.json"), "w") as f:
-            json.dump(res, f, indent=1, default=str)
-    res["decisions"] = decide_all(a.out)
+    res.update(run_qualify(a.out, a.port))
     if (res.get("bf16") or {}).get("ready"):
         res["traces"] = traces(a.out)
     ok, fails, summary = judge(res, a.out)

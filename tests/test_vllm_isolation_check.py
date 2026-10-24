@@ -18,11 +18,12 @@ def _run(tmp_path, fp8=None, eager=None, bf16=None):
     out = str(tmp_path)
     q = {"verdict": {"verdict": "WARN", "why": "x"}, "summary": {"mean_kl": 3e-3, "top1_agreement": 0.98}}
     for role, iso in (("fp8pt", fp8 or _iso("LEAK", "LEAK")), ("eager", eager or _iso()), ("bf16", bf16 or _iso())):
-        json.dump(iso, open(os.path.join(out, f"{role}_isolation.json"), "w"))
+        json.dump(iso, open(os.path.join(out, f"{ic.FILE[role]}_isolation.json"), "w"))
         if role != "bf16":
             json.dump(q, open(os.path.join(out, f"{role}_quality.json"), "w"))
     res = {r: {"ready": True} for r in ic.ROLES}
-    res["decisions"] = ic.decide_all(out)
+    from sdcguard import qualify
+    res["decisions"] = qualify.decide_all(out, ["fp8pt", "eager"], ic.POLICY, plugin=False)
     return res, out
 
 
@@ -47,3 +48,12 @@ def test_a_leak_on_a_control_fails(tmp_path):
     res, out = _run(tmp_path, bf16=_iso("LEAK", leaks=[{"request": 1, "found_code_of": 2}]))
     ok, fails, _ = ic.judge(res, out)
     assert any(f.startswith("4:") for f in fails)
+
+
+def test_the_configurations_keep_the_compilation_json_in_one_argument():
+    import shlex
+    args = shlex.split(ic.config("eager"))
+    i = args.index("--compilation-config")
+    import json as j
+    assert j.loads(args[i + 1])["cudagraph_capture_sizes"] == [1, 2, 4, 8]
+    assert args[-1] == "--enforce-eager" and "fp8_per_tensor" in args
