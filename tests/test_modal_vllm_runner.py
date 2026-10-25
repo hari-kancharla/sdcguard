@@ -170,6 +170,39 @@ def test_successful_remote_and_download_complete(runner, monkeypatch, phase, cap
     assert "Done." in capsys.readouterr().out
 
 
+class _ModalError(Exception):
+    pass
+
+
+class ConnectionError(_ModalError):  # noqa: A001  (shaped like modal.exception.ConnectionError: not Python's own)
+    pass
+
+
+class FunctionTimeoutError(_ModalError):
+    pass
+
+
+@pytest.mark.parametrize("err", [ConnectionError("Deadline exceeded"), OSError(8, "nodename nor servname provided")])
+def test_a_broken_connection_triggers_nothing_more(runner, monkeypatch, err):
+    """When the call to Modal breaks off (this computer's network), the client calls no other function: a detached
+    run keeps only the last function the client triggered alive, so a download now could stop the run."""
+    calls = []
+    monkeypatch.setattr(runner, "run1", _remote(err))
+    monkeypatch.setattr(runner, "bundle", SimpleNamespace(remote=lambda *a, **k: calls.append(1) or _archive()))
+    with pytest.raises(SystemExit) as exc:
+        runner.main("run1")
+    assert calls == [] and "connection to Modal broke off" in str(exc.value) and "--phase fetch" in str(exc.value)
+
+
+def test_a_run_that_fails_on_modal_still_downloads(runner, monkeypatch):
+    calls = []
+    monkeypatch.setattr(runner, "run1", _remote(FunctionTimeoutError("ran past its limit")))
+    monkeypatch.setattr(runner, "bundle", SimpleNamespace(remote=lambda *a, **k: calls.append(1) or _archive()))
+    with pytest.raises(SystemExit):
+        runner.main("run1")
+    assert calls == [1] and not runner._connection_broke(FunctionTimeoutError("x"))
+
+
 def test_remote_and_download_failures_are_both_preserved(runner, monkeypatch):
     monkeypatch.setattr(runner, "vllm", _remote(RuntimeError("kernel failed")))
     monkeypatch.setattr(runner, "bundle", _remote(RuntimeError("download interrupted")))
@@ -604,3 +637,45 @@ def test_the_norm_diagnosis_runs_alone_and_fails_on_a_nonzero_exit(runner, monke
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("norm_diag")
     assert "45-minute limit" in runner.ESTIMATES["norm_diag"]
+
+
+def test_the_spot_run_spawns_both_gpus_and_fails_if_either_does(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+
+    class Spawned:
+        def __init__(self, msg):
+            self.msg = msg
+
+        def get(self):
+            return self.msg
+
+    class F:
+        def __init__(self, msg):
+            self.msg = msg
+
+        def spawn(self, *a):
+            return Spawned(self.msg)
+    monkeypatch.setattr(runner, "spot_h100", F("spot_h100: exit code 0 in 30.0 minutes"))
+    monkeypatch.setattr(runner, "spot_l4", F("spot_l4: exit code 0 in 12.0 minutes"))
+    runner.main("spot")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "spot_l4", F("spot_l4: exit code 1 in 12.0 minutes"))
+    with pytest.raises(SystemExit, match="spot_l4: exit code 1"):
+        runner.main("spot")
+
+
+def test_run1_is_one_call_and_reports_every_part(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    ok = {t: f"{t}: exit code 0 in 20.0 minutes" for t in runner.RUN1}
+    monkeypatch.setattr(runner, "run1", _remote(ok))
+    runner.main("run1")
+    out = capsys.readouterr().out
+    assert "Done." in out and all(m in out for m in ok.values())
+    bad = dict(ok, norm_diag="norm_diag: exit code 1 in 30.0 minutes")
+    bad.pop("spot_l4")
+    monkeypatch.setattr(runner, "run1", _remote(bad))
+    with pytest.raises(SystemExit) as e:
+        runner.main("run1")
+    assert "norm_diag: exit code 1" in str(e.value) and "spot_l4: no result" in str(e.value)
+    assert set(runner.RUN1) == {"weight_scan", "moe_bench", "norm_diag", "spot_h100", "spot_l4", "screen_ops_h100",
+                                "screen_ops_l4", "fp8_moe"}

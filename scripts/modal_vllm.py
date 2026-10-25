@@ -26,7 +26,13 @@
     modal run scripts/modal_vllm.py --phase graphs         # every check inside a captured CUDA graph, 1 L4: about $0.25
     modal run scripts/modal_vllm.py --phase fp8mm_cal      # FP8 GEMM block sums for an FP8 matmul check, H100 + L4: about $1.50
     modal run scripts/modal_vllm.py --phase attn           # attention checks in vllm serve, H100 + L4: $4.50 to $7
-    modal run scripts/modal_vllm.py --phase screen_ops     # exact operator tests for screening GPUs, L4 + H100: under $1
+    modal run scripts/modal_vllm.py --phase screen_ops     # exact operator tests for screening GPUs, L4 + H100: under $1.30
+    modal run scripts/modal_vllm.py --phase moe_bench      # where the MoE checks' cost goes, 1 H100, no server: under $0.65
+    modal run scripts/modal_vllm.py --phase norm_diag      # why norm checks changed answers, 7 servers, 1 H100: $2-2.85
+    modal run scripts/modal_vllm.py --phase spot           # spot checks in vllm serve, H100 + L4: $2.25-3.20
+    modal run --detach scripts/modal_vllm.py --phase run1  # weight_scan, moe_bench, norm_diag, spot, screen_ops and
+                                                           # fp8_moe at once, each on its own GPU: about
+                                                           # $10.50-14.80, about 2 hours (fp8_moe the longest)
 
 vllm: Qwen2.5-1.5B-Instruct and Qwen2.5-7B-Instruct without sdcguard, with it on every layer and on 1/8 of
       the layers: outputs, tokens/s (256 requests at a time, and 16), alerts on clean traffic, and a flipped weight
@@ -826,6 +832,65 @@ def norm_diag(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+RUN1 = ("weight_scan", "moe_bench", "norm_diag", "spot_h100", "spot_l4", "screen_ops_h100", "screen_ops_l4",
+        "fp8_moe")
+
+
+@app.function(image=vllm032_image, volumes=VOLS, cpu=1, memory=2048, timeout=200 * 60)
+def run1(force: bool = False, source: Optional[dict] = None) -> dict:
+    """Run 1 from one call (so `modal run --detach` keeps all of it alive: the parts are started from here, inside
+    Modal, not by the local client): the weight scan, the MoE cost bench, the norm diagnosis, the spot checks (H100
+    and L4), the screen's operator tests with their varied inputs and realistic-data matmuls (H100 and L4), and the
+    FP8 MoE run (L4, the longest: up to its 190-minute limit), each on its own GPU at the same time, each with its own
+    time limit. {tag: its message}."""
+    fns = {"weight_scan": weight_scan, "moe_bench": moe_bench, "norm_diag": norm_diag, "spot_h100": spot_h100,
+           "spot_l4": spot_l4, "screen_ops_h100": screen_ops_h100, "screen_ops_l4": screen_ops_l4,
+           "fp8_moe": fp8_moe}
+    calls = {tag: fns[tag].spawn(force, source) for tag in RUN1}
+    out = {}
+    for tag, call in calls.items():
+        try:
+            out[tag] = str(call.get())
+        except Exception as e:  # noqa: BLE001
+            out[tag] = f"{tag} did not complete: {type(e).__name__}: {e}"
+    return out
+
+
+def _spot(tag: str, gpu: str, rate: float, what: str, source: Optional[dict], force: bool) -> str:
+    t0 = time.monotonic()
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_spot_check.py", "--out", out, "--gpu", gpu], f"{out}.txt",
+                    cwd="/root", timeout=42 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, rate, what)}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def spot_h100(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_spot_check.py on an H100: the spot checks in real `vllm serve` (Qwen2.5-1.5B, every linear
+    layer): answers, clean traffic, cost, and wrong layers caught."""
+    return _spot("spot_h100", "h100", RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=30 * 60)
+def spot_l4(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_spot_check.py --gpu l4: the spot server's clean traffic on an L4."""
+    return _spot("spot_l4", "l4", RATE_L4, "L4, 8 cores, 32 GiB", source, force)
+
+
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=25 * 60)
 def screen_ops_h100(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/screen_ops_check.py on an H100: sdcguard.screen_ops clean for 5 minutes, then each test with one
@@ -1125,8 +1190,9 @@ ESTIMATES = {
             "and guarded) at once: about 45 to 75 minutes and 20 to 35 minutes, roughly $3.60 to $6 plus $0.50 to "
             "$0.85 (90- and 45-minute limits, at most about $7.30 and $1.10 at requested resources, not a spending "
             "cap)",
-    "screen_ops": "sdcguard.screen_ops (exact FP64, FP32, TF32, BF16, FP16 and FP8 matmuls, CUDA-core FMAs, SM "
-                  "consistency and a memory test) clean for 5 minutes and then with one value made wrong per test, on "
+    "screen_ops": "sdcguard.screen_ops (exact FP64, FP32, TF32, BF16, FP16, FP8 and INT8 matmuls in varied shapes, "
+                  "BF16 and FP16 matmuls of realistic data, CUDA-core FMAs, SM consistency and a memory test) clean "
+                  "for 5 minutes and then with one value made wrong per test, on "
                   "1 H100 and 1 L4 at once: about 8 to 12 minutes each, roughly $0.65 to $1 plus $0.20 to $0.30 "
                   "(25-minute limits, at most about $2 and $0.60 at requested resources, not a spending cap)",
     "moe_bench": "where the MoE checks' cost goes, measured without vLLM on 1 H100 (kernels in CUDA graphs): about 4 "
@@ -1136,8 +1202,24 @@ ESTIMATES = {
                  "each compiled afresh (plain twice, plain with the plugin's cuBLAS setting, the plugin without and "
                  "with norm checks, and both in Inductor's deterministic mode): about 25 to 35 minutes, roughly $2 "
                  "to $2.85 (45-minute limit, at most about $3.65 at requested resources, not a spending cap)",
+    "spot": "the spot checks in real `vllm serve`, Qwen2.5-1.5B with every linear layer checked: on 1 H100 three "
+            "servers (answers, clean traffic, cost, 11 wrong-layer trials), and on 1 L4 at the same time the spot "
+            "server's clean traffic: about 25 to 35 minutes, roughly $2 to $2.85 (H100) and $0.25 to $0.35 (L4) "
+            "(45- and 30-minute limits, at most about $3.65 and $0.72 at requested resources, not a spending cap)",
+    "run1": "Run 1, each part on its own GPU at the same time: weight_scan, moe_bench, norm_diag, spot (H100 and "
+            "L4), screen_ops (H100 and L4) and fp8_moe (L4) as above, about 45 minutes for all but fp8_moe and about "
+            "2 hours for it: roughly $10.50 to $14.80 together (at most about $21.30 at the parts' limits and "
+            "requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
+
+
+def _connection_broke(e: BaseException) -> bool:
+    """Did the client lose its connection to Modal (this computer's network or sleep), rather than the run fail?
+    modal.exception.ConnectionError ("Deadline exceeded") and ClientClosed don't derive from Python's own
+    ConnectionError, so they are told by name; socket errors (OSError, e.g. "nodename nor servname provided") by type."""
+    names = {c.__name__ for c in type(e).__mro__}
+    return isinstance(e, OSError) or bool(names & {"ConnectionError", "ClientClosed"})
 
 
 @app.local_entrypoint()
@@ -1148,6 +1230,7 @@ def main(phase: str = "vllm", force: bool = False):
     src = _source()
     print(f"Code fingerprint {src['sha256'][:12]} ({src['files']} files)", flush=True)
     failures = []
+    broken = False
     try:
         if phase == "vllm":
             message = vllm.remote(force, src)
@@ -1260,6 +1343,23 @@ def main(phase: str = "vllm", force: bool = False):
                 print(message, flush=True)
                 if "exit code 0 " not in str(message):
                     failures.append(str(message))
+        elif phase == "run1":
+            result = run1.remote(force, src)
+            for tag in RUN1:
+                message = (result or {}).get(tag, f"{tag}: no result") if isinstance(result, dict) else str(result)
+                print(message, flush=True)
+                if "exit code 0 " not in str(message):
+                    failures.append(str(message))
+        elif phase == "spot":
+            calls = {"spot_h100": spot_h100.spawn(force, src), "spot_l4": spot_l4.spawn(force, src)}
+            for tag, call in calls.items():
+                try:
+                    message = call.get()
+                except Exception as e:  # noqa: BLE001
+                    message = f"{tag} did not complete: {type(e).__name__}: {e}"
+                print(message, flush=True)
+                if "exit code 0 " not in str(message):
+                    failures.append(str(message))
         elif phase == "graphs":
             message = graphs.remote(force, src)
             print(message, flush=True)
@@ -1308,8 +1408,15 @@ def main(phase: str = "vllm", force: bool = False):
                 failures.append(str(message))
     except Exception as e:  # noqa: BLE001 (download diagnostics before reporting the remote failure)
         failures.append(f"{phase} did not complete: {type(e).__name__}: {e}")
+        broken = _connection_broke(e)
     finally:
         try:
+            if broken:
+                # the connection to Modal broke off (this computer's network, sleep): calling another function now
+                # would make it the last one this client triggered, and a detached run keeps only that one alive
+                # (Modal's note), which stopped the October 25 FP8 MoE run after 48 minutes. Download later instead.
+                raise RuntimeError("not downloaded: the connection to Modal broke off, so the run is left alone "
+                                   "(check it on modal.com, then run --phase fetch)")
             data = bundle.remote()
             dest = LOCAL / "runs"
             dest.mkdir(exist_ok=True)

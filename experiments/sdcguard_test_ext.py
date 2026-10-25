@@ -102,14 +102,54 @@ class FaultInjection:
         torch.cuda.synchronize()
         return name
 
+    def sdcguard_test_scale_outputs(self, name: str, factor: float, col_start: int = 0, col_count: int = 0) -> dict:
+        """In eager mode (--enforce-eager): from now on, multiply the outputs of the linear layer named `name` by
+        `factor` after its GEMM and before sdcguard's checks, in every row: all columns (col_count 0) or col_count
+        of them from col_start (a band, as a fault in some tiles would touch). sdcguard_test_unmark_rows undoes it.
+        Returns {"layer": the name, "cols": [first, count], "width": the output width} ({} if there is no such layer
+        with a GEMM to wrap)."""
+        import torch
+        target = dict(self.get_model().named_modules()).get(name)
+        qm = getattr(target, "quant_method", None)
+        if target is None or not hasattr(qm, "_gemm_impl"):
+            return {}
+        orig = qm._gemm_impl
+        width = int(target.weight.shape[0])
+        c0 = int(col_start) % width
+        cc = width - c0 if int(col_count) <= 0 else min(int(col_count), width - c0)
+
+        def gemm(layer, x, weight, bias=None):
+            y = orig(layer, x, weight, bias)
+            if layer is target:
+                y2 = y.view(-1, y.shape[-1])
+                y2[:, c0:c0 + cc] = (y2[:, c0:c0 + cc].float() * factor).to(y2.dtype)
+            return y
+        qm._gemm_impl = gemm
+        self._sdcguard_marks = getattr(self, "_sdcguard_marks", []) + [(qm, orig, None)]
+        torch.cuda.synchronize()
+        return {"layer": name, "cols": [c0, cc], "width": width}
+
     def sdcguard_test_unmark_rows(self) -> int:
         n = 0
         for qm, orig, handle in getattr(self, "_sdcguard_marks", []):
             qm._gemm_impl = orig
-            handle.remove()
+            if handle is not None:
+                handle.remove()
             n += 1
         self._sdcguard_marks = []
         return n
+
+    def sdcguard_test_spot_stats(self) -> dict:
+        """The plugin's spot checks in this worker: coverage, counters, the worst scores and each layer's turns read
+        back so far ({"layers": 0} when off)."""
+        from sdcguard import vllm_plugin
+        sc = getattr(vllm_plugin._STATE.get("guard"), "spot", None)
+        if sc is None:
+            return {"layers": 0}
+        worst = sorted(sc.worst_seen.items(), key=lambda kv: -kv[1])
+        return {"layers": len(sc.layers), "names": [lay["name"] for lay in sc.layers], "coverage": sc.coverage(),
+                "stats": dict(sc.stats), "worst": _num(worst[0][1]) if worst else None,
+                "worst_layers": [[k, _num(v)] for k, v in worst[:5]], "turns": dict(sc.checks_seen)}
 
     def sdcguard_test_flip_norm_bit(self, name: str, col_frac: float, bit: int) -> dict:
         """Flip one bit of one weight of the norm layer named `name` (exactly), at int(col_frac * width); a second

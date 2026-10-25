@@ -2209,6 +2209,17 @@ rows the experts' check judged against the rows it sampled (2 for each active ca
 they should match, apart from counts that a read still in flight at the start carried over from startup), and real
 rows without experts (expected 0).
 
+Result of the fourth run (October 25, on 6260af4; `results/moe_oct25b/`; about $0.84): every criterion met. M1: all
+four servers started, and the guarded and eager servers checked all 24 MoE layers and their routers with the Triton
+kernels. M2: the guarded server's 64 completions were identical to plain vLLM's (nomoe's too). M3: no alert with no
+fault on the guarded and eager servers, worst clean scores 0.46 and 0.30; on the guarded server's clean traffic the
+experts' check made 7,793 active calls and judged 15,382 of the 15,586 rows it sampled, with no real row without
+experts. M4: all 6 wrong kernels (2 each of a wrong scale, a wrong expert and a wrong row) caught by an alert naming
+the layer within 1 or 2 rounds, each rechecked as output_wrong. M5: both wrong routers caught within 1 or 2 rounds,
+findings wrong_experts and wrong_weights. Cost of both checks: 6.44% at 16 requests at once and 7.55% at 256, over
+the 3% bar, so they stay opt-in; where it goes is measured next (moe_bench, Run 1). (The plain server ran with
+PyTorch's default reduced-precision reductions, the plugin's servers without them.)
+
 Amendment (October 25, after the fourth run, before the next): the routing's validity. The experts' check skips a row
 whose experts are all -1 (vLLM's CUDA-graph padding rows), so a real row given no experts went unjudged, only counted
 among the two sampled rows. Now the active layer also reads the expert ids of every one of the step's known real rows
@@ -2365,6 +2376,25 @@ didn't finish.
 
 Amendment (October 25, before the rerun): limits only, as above; the criteria are unchanged and the rerun is judged
 on all six.
+
+Result of the third run (October 25, on 6260af4; `results/fp8_moe_oct25c/`; about $1.15): not completed. Its
+function was stopped after 48 minutes, with qualify on its fourth server (eager): its status has no exit code and
+the eager server's log just ends. The cause isn't certain. The launching computer reported losing its network
+connection to Modal about 23 minutes later; Modal's client warns that a detached run keeps alive only the last
+function the client triggered, and our runner called its download function whenever a call failed, so a broken
+connection could stop the run that way. What it measured before the stop, as saved: the bf16 baseline and its
+repeat NO LEAK SEEN and CONSISTENT (the repeat's quality WARN against the baseline: mean KL 1.80e-3, top-1 agreement
+99.71%); fp8pt REJECT: isolation LEAK (49 of 192 probe answers changed with the request before them), the FP8 check's
+1,916 alerts, every one on an MoE layer's expert inputs (all 24 layers) with the finding that the per-tensor scale was
+taken over rows outside the batch, every one in a step whose batch had CUDA-graph padding (3 tokens padded to 4 in
+814, 5 to 8 in 749, 7 to 8 in 329, 6 to 8 in 24), each naming every request in its step (the fix after the second
+run), with the scale used 1.01 to 78,643 times the one the step's real rows give (median 1,900); 72 FP8 layers
+checked and 695,424 quantizations judged; quality FAIL (mean KL 3.88e-2 against 5.4e-3) and INCONSISTENT; 54.2
+output tokens per second at 16 requests at once against the baseline's 155.2 (not required, and not split between
+FP8 on this GPU and the check's cost). eager's quality FAIL (mean KL 3.71e-2) was measured before the stop; its
+isolation check, fp8pc and the repro folder weren't run. F1 to F6 can't be judged, so the run isn't counted. Fixed
+since: the runner calls nothing after a broken connection (it says to fetch the results later), and the rerun is a
+part of Run 1, started from inside Modal rather than by the launching computer. The criteria are unchanged.
 
 ### Every check inside a captured CUDA graph (written October 24, before any run)
 
@@ -2607,6 +2637,51 @@ Results (October 24, on 03e27ba; `results/screen_ops_oct24/`; about $0.56): both
   errors (none pending, no remap failure), which is how its memory handles those, not a fault these tests found.
 - S2: in each test, on each GPU, one value made wrong in software was found, the only one, where it was made wrong.
 
+### Varied inputs and realistic-data matmuls in the screen (written October 25, before any run)
+
+The exact tests above use one input shape per precision and integer-valued inputs, which never reach most exponents,
+roundings or the accumulation's own error, so a unit that is wrong only on such data, or only in the kernels other
+shapes select, passes them. `src/sdcguard/screen_ops.py` now gives each precision 4 input sets (SETS) of different
+shapes and inner sizes, still exact (M, N, K multiples of 16, M over 16, K at most the precision's exact K: 1024 x 1024
+at the full K, 32 x 4096 at the full K, 512 x 1536 at 3/4 of it, 272 x 2992 at half), two of them each round in turn,
+and adds two tests: gemm_bf16_real and gemm_fp16_real, matmuls of random normal inputs drawn on the GPU (weights
+scaled by 1/sqrt(K)) in three shapes, one a round in turn (16 x 4096 with K = 4,096, 512 x 1536 with K = 2,048,
+256 x 3072 with K = 8,960), alternately transposed. Each is checked two ways: 256 distinct sampled outputs against a
+float64 reference computed on the CPU from the sampled inputs as the GPU held them, scored as the spot check scores
+them (serve_spot: output rounding plus 6 times the fp32 accumulation's error model; a correct output scores at most 1,
+over 2 is wrong, which always finds a median output moved by more than 1.3% to 1.9% in bf16 or 0.3% to 0.9% in fp16,
+by K), and every output against the same matmul run again,
+bit for bit (cuBLAS gives the same bits for the same call on the same GPU, so any value that changes between two
+identical runs is found, however small). The report keeps each realistic-data test's worst score. These add to
+each round's time, so the exact tests get fewer rounds in the same minutes than on October 24 (reported). On the CPU
+(`tests/test_screen_ops.py`, `tests/test_screen_ops_check.py`): every input set at its full shape and inner size comes
+out exact (scaled and transposed), the sets turn two a round, the realistic-data matmuls score at most 1 when right, a
+sampled output moved by 3% of its value plus 0.01 (away from zero, so well over the line whatever the value: checked
+over 120 draws) is found by the reference at its row and column when moved in both runs and by the repeat when moved
+in the second run only, the matmul settings are put back as they were, and the stated floors match
+serve_spot.min_caught. (A review before any run found the first version's simulated value, 3% plus 0.01 toward
+positive, too small to cross the line for values near -1/3, in about one draw in eight, and samples that could repeat;
+both fixed.)
+
+`experiments/screen_ops_check.py` as before (one H100 and one L4 at once, part of Run 1: a clean run of every test for
+5 minutes, then a short run of each with one value made wrong in software, and for each realistic-data test a second
+one with the value made wrong in its second run only; about 8 to 12 minutes each with startup, roughly
+$0.65 to $1 and $0.20 to $0.30, with time limits of 25 minutes, so at most about $2 and $0.60).
+
+Criteria (on each GPU):
+- S1: every test runs (none skipped on the H100 or the L4), each checks values in at least one round, and the clean run
+  finds no wrong value: no exact result wrong, no sampled output over the line, no value different between two runs.
+- S2: with one value made wrong in a test, that test finds exactly one wrong value, where it was made wrong (the
+  realistic-data tests: in the simulation's round, seed and shape, at the sampled row and column, by the reference;
+  and with the value made wrong in the second run only, at that output, by the repeat): 15 simulations.
+- S3: each realistic-data test's worst clean score is at most 1.5.
+
+Reported: values checked, rounds, the worst scores, telemetry. Decided now: if all three are met on both GPUs, the
+Salad run screens with these tests, its own criteria written before it; if S3 fails on a GPU, the realistic-data
+tests' results are reported, not part of a verdict, until a rerun with criteria of its own. Not claimed: that these
+tests find every defective GPU, that the bound holds on GPUs other than these two (consumer Ampere cards among them),
+or any fault rate.
+
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 
 vLLM issue #54035, open on the current release: with an FP8 KV cache on Hopper, FlashAttention 3 tiles decode and
@@ -2660,6 +2735,91 @@ decode probe with any position it couldn't measure is INCONCLUSIVE; and in quali
 missing or incomplete sets no line, so the candidate's decode gaps are INCONCLUSIVE instead of judged by the
 standalone 0.5-nat rule. None changes a verdict of the runs so far: in every one, every case's cache hit was
 confirmed and no position was missing.
+
+### Spot checks in serving (written October 25, before any run)
+
+The checksum check of a bf16 linear layer judges block sums of 128 rounded outputs, so its noise is the rounding of 128
+outputs at once, and on training matmuls it flagged half of single wrong values only at about 29% of a typical output in
+their block (none of 594 at 10%). The vLLM plugin can now also recompute a few outputs exactly
+(`src/sdcguard/serve_spot.py`, SDCGUARD_SPOT=1, off by default until this run says otherwise): at each model step one of
+the layers the checksum check takes (they take turns by step number) recomputes 8 output columns for up to 32 of the
+step's real rows (all of them when there are fewer; otherwise evenly spaced ones that move by one each turn) from the
+layer's own input and weights: fp32 products (exact for bf16 and fp16) summed in fp32 with compensation (Kahan). The 8
+columns are N / 8 apart, and their offset moves each turn by a step near the golden ratio of that spacing, coprime with
+N, whose ratio to the spacing has small continued-fraction terms: every column of a layer is covered within N / 8 of its
+turns (when 8 divides N), and a band of w adjacent columns, as a fault in some tiles would touch, is sampled about once
+every N / (8w) turns and, for every start of the band and 21 common layer widths from 1,536 to 151,936 (w = 16, 64,
+128), never more than 2.5 times that apart (2.07 at worst). Moving the offset by one, as first written, would sample a
+band in one run of w turns every N / 8 turns; the nearest coprime step alone, the first fix, left gaps up to 9.9 times
+the mean at N = 4,096 (a second review found it). An output's score is |y - r| over u |r| (its own rounding: u = 2^-8 in
+bf16, 2^-11 in fp16), plus u |r - bias| when the layer adds a bias, plus A, 6 times precise mode's model of the served
+matmul's fp32 accumulation (A = 6 x 2^-24 (0.6 sqrt(K) |x_row| |w_col| + (sqrt(K) + K / 8 + 1) |r|)). The line is 2. So
+a fault that moves the exact result by e before it is rounded is always over the line when |e| > 3u |r| + 2u |r - bias|
++ 2.2 A, plus u |r - bias| more with a bias in case it was added after a first rounding (2u for the line, u for the
+rounding, twice the accumulation's allowance plus the error it allows); for Gaussian-like data that is, for a median
+output, 1.3% (bf16) and 0.27% (fp16) at K = 1,536 and 1.9% and 0.87% at K = 8,960, and about 1.2 points more in bf16 for
+a layer with a small bias (2.5% at K = 1,536); the accumulation term is what raises it with K. These are the bound's
+arithmetic, in the outputs sampled; this run measures what the check catches on GPUs. Smaller faults are caught when the
+rounding falls their way: with every output of a layer 2% too large, 73% to 96% of its outputs score over the line on
+the CPU (a qkv-like layer with a bias and a K = 8,960 layer at 73%), so a turn catches it. (Written first as "3u, 1.2%
+in bf16 and 0.15% in fp16", which holds only where the accumulation term is small; a review found the difference before
+any run.) The first output over the line on a GPU in a read is kept (its layer, input row, weight row and bias, copied
+on the GPU), read back with the read and rechecked in float64 on the CPU; that layer's alert names the kept output (row,
+column, values), and another layer's alert in the same read names its read's score maxima and says it has no kept
+output. One Triton kernel per spot-checked layer per step (8 x 4 programs that return at once unless it's their layer's
+turn); outside CUDA-graph capture, a call whose layer isn't active is skipped on the host, so only CUDA graphs carry the
+inactive layers' launches. The PyTorch version is the reference, compared with the kernel before its first use on each
+GPU and dtype; on a GPU where the kernel fails that comparison the layers aren't spot-checked (SDCGUARD_SPOT_TORCH=1
+uses the PyTorch version, about 40 more operations per layer call), nor where the bound's assumptions don't hold
+(PyTorch's reduced-precision split-K reductions on, which SDCGUARD_EXACT=0 leaves; fp16 accumulation): those layers keep
+their call, which returns at once (outside CUDA graphs a call still costs a few microseconds), and are listed with the
+reason, so the traced graph is the same whatever the GPU's comparison or settings found. The spot setting is part of the
+plugin's compile cache key (vLLM's own key doesn't see it, so a server with spot checks would otherwise load a graph
+traced without them; a review found this before any run, and the FP8, MoE and attention settings were added with it).
+Spot alerts get their own log line. It doesn't see outputs it doesn't sample, or a weight changed in memory (the weight
+scan's job: the served matmul and the recompute read the same weights).
+
+On the CPU (`tests/test_serve_spot.py`): over layers with K of 1,536, 4,096 and 8,960 (Gaussian inputs, inputs with
+outliers, ReLU inputs with weights of non-zero mean, and inputs and weights built to cancel by halves and by blocks of
+512), with and without a bias, in bf16 and fp16, every output of PyTorch's own matmul scored at most 0.932 against a
+float64 recompute; a fault 0.1% over the stated floor was over the line for every output; an output 2% too large
+was named with its row and column and rechecked as wrong; outputs past the step's real rows are never sampled; the
+compiled branch (Inductor, dynamic shapes) counts and names as the eager one; inside CUDA-graph capture every layer's
+call launches; left-out layers' calls do nothing; the Triton kernel and the PyTorch version
+give the same counts, scores (within 0.25) and kept outputs through Triton's interpreter in 72 cases (y with a
+column stride and steps near 2^32 among them), and the kernel compiles for the A100, L4 and H100 with Triton 3.8.0
+and 3.7.1.
+
+`experiments/vllm_spot_check.py` (`modal run scripts/modal_vllm.py --phase spot`, vLLM 0.32.0, Qwen2.5-1.5B-Instruct
+in bf16, 112 linear layers, SDCGUARD_SHARE=1 so every one is spot-checked, attention checks off, prefix caching off):
+on one H100 (about 25 to 35 minutes and $2 to $2.85, 45-minute limit), nospot (SDCGUARD_SPOT=0) and spot, both
+compiled with CUDA graphs, answer 64 prompts greedily (32 tokens) and take the speed load (sdcguard.perf: 128 prompts,
+128 tokens, 3 rounds, 16 and 256 requests at once); then eager (--enforce-eager, spot checks on) answers 16 prompts and
+runs 11 trials, one after another, each on a linear layer drawn with seed 0, its outputs multiplied after its GEMM and
+before the checks (sdcguard_test_scale_outputs), with rounds of 4 requests at once until a spot alert names the layer
+or 40 rounds have passed (about 11 of the layer's turns), then undone; each trial records the layer's turns. On one L4
+at the same time (about 10 to 15 minutes and $0.25 to $0.35, 30-minute limit), only the spot server, compiled, with
+its clean traffic.
+
+Criteria:
+- S1: every server starts; each spot-checking server spot-checks all 112 layers with the Triton kernel (passed its
+  first-use comparison on the GPU).
+- S2: the spot server's 64 completions are identical to nospot's (H100).
+- S3: no alert with no fault on any spot-checking server (H100 compiled and eager, L4 compiled); the worst clean spot
+  score read back is at most 1.5, and outputs were judged.
+- S4 (H100 eager): every output of the layer 2% too large (3 trials) and 5% too large (3 trials): each caught within
+  40 rounds by a spot alert naming the layer, with an alert rechecked as output_wrong; no spot alert names another
+  layer during the trials.
+
+Reported, not criteria: every output 1% too large (2 trials), a band of 64 adjacent columns 3% too large (3 trials:
+one on a qkv layer, N = 2,048, which the column order samples within 11 turns from any starting turn; two on gate_up
+layers, N = 17,920, sampled within 11 turns from 31% of starting turns, computed exactly from the order, so most
+likely not both and possibly neither; each trial records its turns and those odds), the rounds and turns to each catch, the checksum check's
+alerts during the trials, outputs judged, the worst clean scores, and the cost (output tokens per second, spot against
+nospot, medians of 3 rounds, at 16 and 256 at once). Decided now: if S1 to S4 are met and the cost is at most 2% at 16
+and at 256 requests at once, spot checks become on by default; otherwise they stay opt-in. Not claimed whatever the
+outcome: outputs not sampled, faults under the floor above, quantized layers and layers the checksum check doesn't
+take, other models and GPUs.
 
 ### Scheduled weight scan in serving (written October 25, before any run)
 

@@ -1,0 +1,159 @@
+{
+ "schema": "sdcguard.isolation/1",
+ "url": "http://127.0.0.1:8000",
+ "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+ "server_version": "0.32.0",
+ "verdict": "NO LEAK SEEN",
+ "why": [
+  "192 primer pairs agreed and 52 canary answers held no other request's code"
+ ],
+ "primer": {
+  "verdict": "NO LEAK SEEN",
+  "cases": [
+   {
+    "probe": "import numpy as",
+    "probe_tokens": 3,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "import numpy as",
+    "probe_tokens": 3,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "The capital of France is",
+    "probe_tokens": 5,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "The capital of France is",
+    "probe_tokens": 5,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "def add(a, b):",
+    "probe_tokens": 7,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "def add(a, b):",
+    "probe_tokens": 7,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "1, 2, 3, 4,",
+    "probe_tokens": 11,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "1, 2, 3, 4,",
+    "probe_tokens": 11,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Once upon a time",
+    "probe_tokens": 4,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Once upon a time",
+    "probe_tokens": 4,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "SELECT name FROM",
+    "probe_tokens": 3,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "SELECT name FROM",
+    "probe_tokens": 3,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "The opposite of hot is",
+    "probe_tokens": 5,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "The opposite of hot is",
+    "probe_tokens": 5,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Water boils at",
+    "probe_tokens": 4,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Water boils at",
+    "probe_tokens": 4,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   }
+  ],
+  "errors": [],
+  "judged": 16,
+  "with_leak": 0,
+  "pairs": 192,
+  "pairs_differing": 0
+ },
+ "canary": {
+  "verdict": "NO LEAK SEEN",
+  "requests": 64,
+  "cancelled": 12,
+  "answered": 52,
+  "echoed_own_code": 52,
+  "leaks": [],
+  "errors": []
+ },
+ "seconds": 33.7,
+ "created": "2026-10-25T16:27:01Z"
+}

@@ -1,0 +1,306 @@
+{
+ "schema": "sdcguard.decision/1",
+ "decision": "REJECT",
+ "why": [
+  "quantization: the FP8 scale was taken over rows outside the batch (an earlier request's data decided this batch's quantization): model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs) and 21 more layers",
+  "approximation: mean KL 3.88e-02 (pass up to 5.4e-03), top-1 agreement 95.46%, worst prompt's mean KL 7.87e-02, over 2048 positions of 32 prompts",
+  "isolation: primer dependence: 49 of 192 probe answers changed with the request before them, e.g. 'import numpy as' answered ' np\\n\\ndef calculate_mean(' after the 'plain_b' primer and ' np\\n\\ndef get_data(' after the reference one, whose own repeat agreed exactly",
+  "consistency: prefix cache: an answer with its prefix read from the cache differs from the same prompt answered cold (largest gap 0.384 nats, a sure token changed at position 13), while two cold answers agreed within 0.000"
+ ],
+ "arithmetic": {
+  "verdict": "INCONCLUSIVE",
+  "faults": [],
+  "unresolved": [
+   "the plugin's 1916 alerts can't stand for no fault: it checks 0% of the linear-layer weights on some worker, under the policy's 50%"
+  ],
+  "notes": [],
+  "sources": {
+   "plugin_alerts": {
+    "alerts": 0,
+    "confirmed_wrong": 0,
+    "weights_changed": 0,
+    "cleared": 0,
+    "unconfirmed": 0,
+    "coverage": {
+     "workers": [
+      {
+       "layers_checked": 24.0,
+       "layers_unchecked": 73.0,
+       "weights_checked_ratio": 0.0005892462558310827,
+       "checks_executed": 174216.0,
+       "reads": 816.0,
+       "fp8_layers_checked": 72.0,
+       "fp8_calls_judged": 695424.0,
+       "share": "1",
+       "gpu": "GPU-57570884-1a6f-7b2a-e377-41c432143afc"
+      }
+     ],
+     "checked": true,
+     "min_weights_checked": 0.0005892462558310827
+    },
+    "counts_as_source": false
+   }
+  },
+  "weights_changed": []
+ },
+ "weights": {
+  "verdict": "UNCHANGED",
+  "why": "no checked layer's weights differed from their checksums at load"
+ },
+ "quantization": {
+  "verdict": "WRONG",
+  "findings": {
+   "scale_from_outside_rows": [
+    "model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.11.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.12.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.13.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.14.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.15.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.16.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.17.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.18.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.19.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.2.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.20.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.21.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.22.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.23.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.3.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.4.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.5.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.6.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.7.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.8.block_sparse_moe.experts.routed_experts (expert inputs)",
+    "model.layers.9.block_sparse_moe.experts.routed_experts (expert inputs)"
+   ]
+  },
+  "why": "the FP8 scale was taken over rows outside the batch (an earlier request's data decided this batch's quantization): model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs) and 21 more layers",
+  "alerts": 1916
+ },
+ "approximation": {
+  "verdict": "OUTSIDE",
+  "check": "FAIL",
+  "why": "mean KL 3.88e-02 (pass up to 5.4e-03), top-1 agreement 95.46%, worst prompt's mean KL 7.87e-02, over 2048 positions of 32 prompts",
+  "summary": {
+   "positions": 2048,
+   "prompts": 32,
+   "nonfinite_positions": 0,
+   "mean_kl": 0.03878642784587643,
+   "p99_kl": 0.43267905865781947,
+   "max_kl": 2.5818061866606303,
+   "top1_agreement": 0.95458984375,
+   "max_prompt_mean_kl": 0.07866492307971244,
+   "mean_abs_dlogprob": 0.09809858947206364,
+   "expected_positions": 2048,
+   "missing_positions": 0,
+   "missing_prompts": 0,
+   "extra_results": 0
+  }
+ },
+ "performance": {
+  "verdict": "MISSES",
+  "required": false,
+  "misses": [
+   "throughput changed -65.1%, the policy asks for at least +0.0%"
+  ],
+  "metrics": {
+   "output_tokens_per_s": {
+    "baseline": 155.2,
+    "candidate": 54.2,
+    "change": -0.6508,
+    "direction": "worse",
+    "round_spread": 0.1488,
+    "noise": false
+   },
+   "ttft_p50_ms": {
+    "baseline": 315.77,
+    "candidate": 854.1,
+    "change": 1.7048,
+    "direction": "worse",
+    "round_spread": 0.142,
+    "noise": false
+   },
+   "ttft_p99_ms": {
+    "baseline": 486.0,
+    "candidate": 1259.52,
+    "change": 1.5916,
+    "direction": "worse",
+    "round_spread": 2.9438,
+    "noise": true
+   },
+   "itl_p50_ms": {
+    "baseline": 98.96,
+    "candidate": 283.52,
+    "change": 1.865,
+    "direction": "worse",
+    "round_spread": 0.0935,
+    "noise": false
+   },
+   "itl_p99_ms": {
+    "baseline": 147.94,
+    "candidate": 353.54,
+    "change": 1.3898,
+    "direction": "worse",
+    "round_spread": 0.5968,
+    "noise": false
+   },
+   "latency_p50_ms": {
+    "baseline": 13598.03,
+    "candidate": 37013.33,
+    "change": 1.722,
+    "direction": "worse",
+    "round_spread": 0.1616,
+    "noise": false
+   },
+   "latency_p99_ms": {
+    "baseline": 14157.75,
+    "candidate": 40196.74,
+    "change": 1.8392,
+    "direction": "worse",
+    "round_spread": 0.3733,
+    "noise": false
+   }
+  }
+ },
+ "isolation": {
+  "verdict": "LEAK",
+  "required": true,
+  "why": "primer dependence: 49 of 192 probe answers changed with the request before them, e.g. 'import numpy as' answered ' np\\n\\ndef calculate_mean(' after the 'plain_b' primer and ' np\\n\\ndef get_data(' after the reference one, whose own repeat agreed exactly",
+  "primer_pairs": 192,
+  "primer_pairs_differing": 49,
+  "canary_answers": 52,
+  "canary_leaks": 0
+ },
+ "consistency": {
+  "verdict": "INCONSISTENT",
+  "required": false,
+  "prefix_cache": "INCONSISTENT",
+  "decode_prefill": "CONSISTENT",
+  "decode_largest_gap": 0.712554,
+  "baseline_decode_largest_gap": 0.188899,
+  "prefix_cache_hits_confirmed": true,
+  "why": "prefix cache: an answer with its prefix read from the cache differs from the same prompt answered cold (largest gap 0.384 nats, a sure token changed at position 13), while two cold answers agreed within 0.000"
+ },
+ "scope": {
+  "stacks": {
+   "baseline": {
+    "vllm": "0.32.0",
+    "served_model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "url": "http://127.0.0.1:8000",
+    "config": "ibm-granite/granite-3.1-1b-a400m-instruct --max-model-len 2048 --gpu-memory-utilization 0.85 --seed 0 --moe-backend triton --compilation-config '{\"cudagraph_capture_sizes\": [1, 2, 4, 8], \"cudagraph_mode\": \"FULL_AND_PIECEWISE\"}'",
+    "gpu": "L4",
+    "deployed": {
+     "attention": "FLASH_ATTN",
+     "checks": "attention=off,fp8=on,moe=off,norms=off,share=1,weights=off,z=6",
+     "compilation": "3",
+     "cuda": "13.0",
+     "cudagraph": "FULL_AND_PIECEWISE",
+     "data_parallel": "1",
+     "dtype": "bfloat16",
+     "eager": "False",
+     "env": "",
+     "fingerprint": "3063e5a5e0411e70",
+     "generation_config": "auto",
+     "gpu": "NVIDIA L4",
+     "hf_overrides": "",
+     "kv_cache_dtype": "auto",
+     "max_model_len": "2048",
+     "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+     "model_config": "bdc2eb61d43514bf",
+     "moe": "TRITON",
+     "pipeline_parallel": "1",
+     "quantization": "",
+     "revision": "main",
+     "rms_norm": "native",
+     "sdcguard": "0.4.0",
+     "tensor_parallel": "1",
+     "torch": "2.13.0+cu130",
+     "triton": "3.7.1",
+     "vllm": "0.32.0"
+    }
+   },
+   "candidate": {
+    "vllm": "0.32.0",
+    "served_model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "url": "http://127.0.0.1:8000",
+    "config": "ibm-granite/granite-3.1-1b-a400m-instruct --max-model-len 2048 --gpu-memory-utilization 0.85 --seed 0 --moe-backend triton --compilation-config '{\"cudagraph_capture_sizes\": [1, 2, 4, 8], \"cudagraph_mode\": \"FULL_AND_PIECEWISE\"}' --quantization fp8_per_tensor",
+    "gpu": "L4",
+    "deployed": {
+     "attention": "FLASH_ATTN",
+     "checks": "attention=off,fp8=on,moe=off,norms=off,share=1,weights=off,z=6",
+     "compilation": "3",
+     "cuda": "13.0",
+     "cudagraph": "FULL_AND_PIECEWISE",
+     "data_parallel": "1",
+     "dtype": "bfloat16",
+     "eager": "False",
+     "env": "",
+     "fingerprint": "11d789e95ac736ea",
+     "generation_config": "auto",
+     "gpu": "NVIDIA L4",
+     "hf_overrides": "",
+     "kv_cache_dtype": "auto",
+     "max_model_len": "2048",
+     "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+     "model_config": "bdc2eb61d43514bf",
+     "moe": "Fp8PerTensorOnlineMoEMethod",
+     "pipeline_parallel": "1",
+     "quantization": "fp8_per_tensor",
+     "revision": "main",
+     "rms_norm": "native",
+     "sdcguard": "0.4.0",
+     "tensor_parallel": "1",
+     "torch": "2.13.0+cu130",
+     "triton": "3.7.1",
+     "vllm": "0.32.0"
+    }
+   }
+  },
+  "not_checked": [
+   "attention, normalization, sampling and other non-GEMM kernels: only through the quality check",
+   "requests unlike the quality check's prompts and the perf load",
+   "faults that need the workload's own data or memory layout to show (the kernel test uses random inputs)"
+  ],
+  "kernels": null,
+  "fingerprint": "c1addf37beae1e28",
+  "tested": {
+   "probes": [
+    "quality",
+    "consistency",
+    "isolation",
+    "perf"
+   ],
+   "prefix_cache_hit_tested": true,
+   "decode_past_128_tested": true,
+   "max_prompt_tokens": 523,
+   "max_context_tokens": 547,
+   "max_concurrency": 32
+  }
+ },
+ "policy": {
+  "arithmetic": {
+   "min_weights_checked": 0.5
+  },
+  "quality": {
+   "accept_warn": true,
+   "max_mean_kl": null,
+   "min_top1": null
+  },
+  "performance": {
+   "required": false,
+   "min_throughput_gain": 0.0,
+   "max_ttft_p99_increase": null,
+   "max_itl_p99_increase": null
+  },
+  "isolation": {
+   "required": true
+  },
+  "consistency": {
+   "required": false
+  }
+ },
+ "created": "2026-10-25T17:01:23Z"
+}

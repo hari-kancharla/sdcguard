@@ -1,0 +1,158 @@
+# HELP sdcguard_layers_checked Linear layers this process checks
+# TYPE sdcguard_layers_checked gauge
+sdcguard_layers_checked 24.0
+# HELP sdcguard_fast_layers Layers checked by the Triton kernel
+# TYPE sdcguard_fast_layers gauge
+sdcguard_fast_layers 24.0
+# HELP sdcguard_worst_score Worst score over all layers at the last read
+# TYPE sdcguard_worst_score gauge
+sdcguard_worst_score 1.0571153163909912
+# HELP sdcguard_layer_worst_score Worst score per layer at the last read
+# TYPE sdcguard_layer_worst_score gauge
+sdcguard_layer_worst_score{layer="model.layers.0.block_sparse_moe.gate"} 0.368515282869339
+sdcguard_layer_worst_score{layer="model.layers.1.block_sparse_moe.gate"} 0.7606616020202637
+sdcguard_layer_worst_score{layer="model.layers.2.block_sparse_moe.gate"} 0.3717368543148041
+sdcguard_layer_worst_score{layer="model.layers.3.block_sparse_moe.gate"} 0.8043002486228943
+sdcguard_layer_worst_score{layer="model.layers.4.block_sparse_moe.gate"} 0.5538198351860046
+sdcguard_layer_worst_score{layer="model.layers.5.block_sparse_moe.gate"} 0.8941622972488403
+sdcguard_layer_worst_score{layer="model.layers.6.block_sparse_moe.gate"} 0.8121368288993835
+sdcguard_layer_worst_score{layer="model.layers.7.block_sparse_moe.gate"} 0.4785346984863281
+sdcguard_layer_worst_score{layer="model.layers.8.block_sparse_moe.gate"} 0.46537744998931885
+sdcguard_layer_worst_score{layer="model.layers.9.block_sparse_moe.gate"} 0.7482268214225769
+sdcguard_layer_worst_score{layer="model.layers.10.block_sparse_moe.gate"} 0.6534295678138733
+sdcguard_layer_worst_score{layer="model.layers.11.block_sparse_moe.gate"} 0.9030840396881104
+sdcguard_layer_worst_score{layer="model.layers.12.block_sparse_moe.gate"} 0.6542444229125977
+sdcguard_layer_worst_score{layer="model.layers.13.block_sparse_moe.gate"} 0.611977756023407
+sdcguard_layer_worst_score{layer="model.layers.14.block_sparse_moe.gate"} 0.5771793723106384
+sdcguard_layer_worst_score{layer="model.layers.15.block_sparse_moe.gate"} 0.5804241895675659
+sdcguard_layer_worst_score{layer="model.layers.16.block_sparse_moe.gate"} 0.8008946180343628
+sdcguard_layer_worst_score{layer="model.layers.17.block_sparse_moe.gate"} 1.0571153163909912
+sdcguard_layer_worst_score{layer="model.layers.18.block_sparse_moe.gate"} 0.866813063621521
+sdcguard_layer_worst_score{layer="model.layers.19.block_sparse_moe.gate"} 0.7155637145042419
+sdcguard_layer_worst_score{layer="model.layers.20.block_sparse_moe.gate"} 0.7344716191291809
+sdcguard_layer_worst_score{layer="model.layers.21.block_sparse_moe.gate"} 0.6659935116767883
+sdcguard_layer_worst_score{layer="model.layers.22.block_sparse_moe.gate"} 0.752751886844635
+sdcguard_layer_worst_score{layer="model.layers.23.block_sparse_moe.gate"} 0.7111502289772034
+# HELP sdcguard_alerts_total Alerts
+# TYPE sdcguard_alerts_total counter
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs)"} 94.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.2.block_sparse_moe.experts.routed_experts (expert inputs)"} 79.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.3.block_sparse_moe.experts.routed_experts (expert inputs)"} 81.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.4.block_sparse_moe.experts.routed_experts (expert inputs)"} 82.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.6.block_sparse_moe.experts.routed_experts (expert inputs)"} 79.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.7.block_sparse_moe.experts.routed_experts (expert inputs)"} 79.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.8.block_sparse_moe.experts.routed_experts (expert inputs)"} 87.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.9.block_sparse_moe.experts.routed_experts (expert inputs)"} 87.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs)"} 86.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.11.block_sparse_moe.experts.routed_experts (expert inputs)"} 97.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.12.block_sparse_moe.experts.routed_experts (expert inputs)"} 79.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.13.block_sparse_moe.experts.routed_experts (expert inputs)"} 82.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.14.block_sparse_moe.experts.routed_experts (expert inputs)"} 86.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.15.block_sparse_moe.experts.routed_experts (expert inputs)"} 87.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.16.block_sparse_moe.experts.routed_experts (expert inputs)"} 79.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.17.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.18.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.19.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.20.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.21.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.22.block_sparse_moe.experts.routed_experts (expert inputs)"} 78.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.5.block_sparse_moe.experts.routed_experts (expert inputs)"} 51.0
+sdcguard_alerts_total{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.23.block_sparse_moe.experts.routed_experts (expert inputs)"} 55.0
+# HELP sdcguard_alerts_created Alerts
+# TYPE sdcguard_alerts_created gauge
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374966443e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374966745e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.2.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374966986e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.3.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374967206e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.4.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374967475e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.6.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374967625e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.7.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374967787e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.8.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374967942e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.9.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.792946637496806e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374968185e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.11.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.792946637496841e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.12.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374968607e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.13.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374968884e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.14.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.792946637496907e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.15.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374969199e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.16.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374969463e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.17.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374969633e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.18.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374969835e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.19.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374970033e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.20.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374970171e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.21.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.792946637497057e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.22.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466374970715e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.5.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466433562436e+09
+sdcguard_alerts_created{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",layer="model.layers.23.block_sparse_moe.experts.routed_experts (expert inputs)"} 1.7929466433563569e+09
+# HELP sdcguard_all_alerts_total Alerts on any layer
+# TYPE sdcguard_all_alerts_total counter
+sdcguard_all_alerts_total 1916.0
+# HELP sdcguard_all_alerts_created Alerts on any layer
+# TYPE sdcguard_all_alerts_created gauge
+sdcguard_all_alerts_created 1.792946441048289e+09
+# HELP sdcguard_layers_unchecked Linear layers this process doesn't check, by reason
+# TYPE sdcguard_layers_unchecked gauge
+sdcguard_layers_unchecked{method="Fp8PerTensorOnlineLinearMethod"} 48.0
+sdcguard_layers_unchecked{method="fused MoE experts (Fp8PerTensorOnlineMoEMethod)"} 24.0
+sdcguard_layers_unchecked{method="LM head"} 1.0
+# HELP sdcguard_layers_never_checked Registered layers whose check never ran
+# TYPE sdcguard_layers_never_checked gauge
+sdcguard_layers_never_checked 0.0
+# HELP sdcguard_weights_checked_ratio Share of the model's linear-layer weights whose matmuls are checked
+# TYPE sdcguard_weights_checked_ratio gauge
+sdcguard_weights_checked_ratio 0.0005892462558310827
+# HELP sdcguard_reads_total Times results were read back
+# TYPE sdcguard_reads_total counter
+sdcguard_reads_total 816.0
+# HELP sdcguard_reads_created Times results were read back
+# TYPE sdcguard_reads_created gauge
+sdcguard_reads_created 1.7929464410483346e+09
+# HELP sdcguard_checks_executed_total Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_total counter
+sdcguard_checks_executed_total 174216.0
+# HELP sdcguard_checks_executed_created Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_created gauge
+sdcguard_checks_executed_created 1.792946441048345e+09
+# HELP sdcguard_unjudged_checksums_total Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_total counter
+sdcguard_unjudged_checksums_total 8946.0
+# HELP sdcguard_unjudged_checksums_created Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_created gauge
+sdcguard_unjudged_checksums_created 1.7929464410483563e+09
+# HELP sdcguard_last_read_timestamp_seconds When results were last read back
+# TYPE sdcguard_last_read_timestamp_seconds gauge
+sdcguard_last_read_timestamp_seconds 1.7929476818554513e+09
+# HELP sdcguard_protection_info Which GPU and process this is, and how it checks (value 1)
+# TYPE sdcguard_protection_info gauge
+sdcguard_protection_info{UUID="GPU-57570884-1a6f-7b2a-e377-41c432143afc",pid="827",share="1",version="0.4.0",z="6"} 1.0
+# HELP sdcguard_norms_checked Norm layers (RMSNorm) this process checks
+# TYPE sdcguard_norms_checked gauge
+sdcguard_norms_checked 0.0
+# HELP sdcguard_norm_worst_score Worst norm score at the last read
+# TYPE sdcguard_norm_worst_score gauge
+sdcguard_norm_worst_score 0.0
+# HELP sdcguard_norm_checks_executed_total Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_total counter
+sdcguard_norm_checks_executed_total 0.0
+# HELP sdcguard_norm_checks_executed_created Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_created gauge
+sdcguard_norm_checks_executed_created 1.7929464410484219e+09
+# HELP sdcguard_norm_unjudged_outputs_total Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_total counter
+sdcguard_norm_unjudged_outputs_total 0.0
+# HELP sdcguard_norm_unjudged_outputs_created Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_created gauge
+sdcguard_norm_unjudged_outputs_created 1.7929464410484366e+09
+# HELP sdcguard_stack_info What this server runs, read from inside it (value 1)
+# TYPE sdcguard_stack_info gauge
+sdcguard_stack_info{attention="FLASH_ATTN",checks="attention=off,fp8=on,moe=off,norms=off,share=1,weights=off,z=6",compilation="3",cuda="13.0",cudagraph="FULL_AND_PIECEWISE",data_parallel="1",dtype="bfloat16",eager="False",env="",fingerprint="11d789e95ac736ea",generation_config="auto",gpu="NVIDIA L4",hf_overrides="",kv_cache_dtype="auto",max_model_len="2048",model="ibm-granite/granite-3.1-1b-a400m-instruct",model_config="bdc2eb61d43514bf",moe="Fp8PerTensorOnlineMoEMethod",pipeline_parallel="1",quantization="fp8_per_tensor",revision="main",rms_norm="native",sdcguard="0.4.0",tensor_parallel="1",torch="2.13.0+cu130",triton="3.7.1",vllm="0.32.0"} 1.0
+# HELP sdcguard_fp8_layers_checked FP8 layers whose input quantization this process checks
+# TYPE sdcguard_fp8_layers_checked gauge
+sdcguard_fp8_layers_checked 72.0
+# HELP sdcguard_fp8_calls_judged_total FP8 quantizations judged, counted on the GPU
+# TYPE sdcguard_fp8_calls_judged_total counter
+sdcguard_fp8_calls_judged_total 695424.0
+# HELP sdcguard_fp8_calls_judged_created FP8 quantizations judged, counted on the GPU
+# TYPE sdcguard_fp8_calls_judged_created gauge
+sdcguard_fp8_calls_judged_created 1.7929465624864066e+09

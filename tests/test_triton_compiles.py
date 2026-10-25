@@ -190,3 +190,20 @@ def test_the_weight_scan_kernel_compiles(dtype, n):
     with compiling() as done:
         sw._launch(t, row)
     _compiled(done, "_fingerprint_kernel")
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("shape", [(5, 24, 200), (300, 1536, 1536), (16, 17920, 1536), (64, 1536, 8960)])
+@pytest.mark.parametrize("bias", [False, True])
+def test_the_spot_kernel_compiles(dtype, shape, bias):
+    from sdcguard import serve_spot as sp
+    m, n, k = shape
+    x, y = torch.zeros(m, k, dtype=dtype), torch.zeros(m, n, dtype=dtype)
+    w, b = torch.zeros(n, k, dtype=dtype), (torch.zeros(n, dtype=dtype) if bias else None)
+    st = torch.zeros(3, sp.COLS, dtype=torch.int64)
+    caps = sp.new_caps("cpu", k)
+    sb = torch.zeros(1, dtype=torch.int64)
+    with compiling() as done:
+        sp.spot_check_triton(x, y, w, b, sb, st, 1, 3, 1, *caps, sp.SPOT_Z)
+        sp.spot_check_triton(x, y.t().contiguous().t(), w, b, sb, st, 2, 3, 2, *caps, sp.SPOT_Z)  # y's column stride
+    _compiled(done, "_spot_kernel")

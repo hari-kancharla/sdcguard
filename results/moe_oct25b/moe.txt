@@ -1,0 +1,138 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "corrupt": [
+   [
+    "scale",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "scale",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ]
+  ],
+  "cost": {
+   "16": {
+    "moe_on": 3613.4,
+    "moe_off": 3862.0,
+    "moe_cost": 0.0644
+   },
+   "256": {
+    "moe_on": 16667.3,
+    "moe_off": 18027.7,
+    "moe_cost": 0.0755
+   }
+  },
+  "route_corrupt": [
+   [
+    "experts",
+    "model.layers.12.block_sparse_moe.experts.router",
+    true,
+    1,
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "weights",
+    "model.layers.19.block_sparse_moe.experts.router",
+    true,
+    2,
+    [
+     "not_rechecked",
+     "output_wrong"
+    ]
+   ]
+  ],
+  "clean_worst": {
+   "guarded": 0.4602091908454895,
+   "eager": 0.29893729090690613
+  },
+  "moe_rows": {
+   "guarded": {
+    "clean_traffic": {
+     "active_calls": 7793,
+     "rows_checked": 15382,
+     "unrouted_real_rows": 0,
+     "samples": 15586
+    },
+    "total": {
+     "active_calls": 7851,
+     "rows_checked": 15392,
+     "unrouted_real_rows": 0
+    }
+   },
+   "eager": {
+    "clean_traffic": {
+     "active_calls": 3,
+     "rows_checked": 6,
+     "unrouted_real_rows": 0,
+     "samples": 6
+    },
+    "total": {
+     "active_calls": 3,
+     "rows_checked": 6,
+     "unrouted_real_rows": 0
+    }
+   }
+  },
+  "identity_differ": {
+   "plain_vs_guarded": 0,
+   "guarded_vs_nomoe": 0,
+   "plain_vs_nomoe": 0
+  },
+  "reductions": {
+   "plain": {
+    "bf16": true,
+    "fp16": true
+   },
+   "guarded": {
+    "bf16": false,
+    "fp16": false
+   },
+   "nomoe": {
+    "bf16": false,
+    "fp16": false
+   },
+   "eager": {
+    "bf16": false,
+    "fp16": false
+   }
+  },
+  "backends": [
+   "TRITON"
+  ],
+  "on_by_default": false
+ }
+}
+
+[exit code 0]

@@ -1,4 +1,5 @@
-"""Operator tests for screening GPUs: computations whose exact answer is known, compared bit for bit.
+"""Operator tests for screening GPUs: computations whose exact answer is known, compared bit for bit, and matmuls of
+realistic data checked against a stated bound and against themselves.
 
     python -m sdcguard.screen_ops --minutes 5                 # this machine's first GPU (or --device cuda:3)
     python -m sdcguard.screen_ops --minutes 5 --out screen_ops_out --simulate gemm_bf16   # a demo of a failure
@@ -6,7 +7,8 @@
 `sdcguard screen` runs a checked transformer, which is what GPUs are bought for, but checks bf16 and fp16 tensor-core
 matmuls only, within a noise model. Defective GPUs in the field also compute wrong FP64 and FP32 results on their
 CUDA cores (in ByteDance's study, OSDI '26, those units failed more often than the bf16 tensor cores), and wrong values
-in memory. These tests judge each result exactly, with no noise model:
+in memory. These tests judge each result exactly, with no noise model, except the realistic-data matmuls, which use
+the spot check's stated bound:
 
   gemm_<p>      matmuls in FP64, FP32 (TF32 off), TF32, BF16, FP16, FP8 (e4m3, torch._scaled_mm, with and without
                 fast accumulation, where the GPU has it) and INT8 (torch._int_mm), on integer-valued inputs small enough that every product and
@@ -14,7 +16,16 @@ in memory. These tests judge each result exactly, with no noise model:
                 integer (rounded once to the output dtype for BF16 and FP16, with PyTorch's reduced-precision split-K
                 reductions turned off). Each input set is also run scaled by powers of two (exact) over much of the
                 exponent range, and transposed (another kernel); the reference is computed once per set on the CPU in
-                float64.
+                float64. Each precision has SETS input sets of different shapes and inner sizes (other cuBLAS kernels
+                and tile edges), two of them each round in turn.
+  gemm_bf16_real, matmuls of random normal inputs (the data a served model's layers see: every exponent and
+  gemm_fp16_real  rounding, which integer-valued inputs never reach) in three shapes, a round each, alternately
+                transposed. REAL_SAMPLES outputs of each are compared with a float64 reference computed on the CPU
+                and scored against the spot check's bound (output rounding plus 6 times the fp32 accumulation's error
+                model; a correct output scores at most 1, over 2 is wrong: a median sampled output moved by more than
+                about 1.3% to 1.9% in bf16 or 0.3% to 0.9% in fp16, by K, is always found, serve_spot.min_caught), and
+                every output is compared bit for bit with the same matmul run again (a value that changes between two
+                identical runs, however little). The report keeps the worst score.
   fma_fp32,     x * y + z elementwise on the CUDA cores over tens of millions of elements, against the same in int64
   fma_fp64      on the integer units.
   sm_consistency  exp, sin, tanh, rsqrt and log of the same values laid out in two different orders, so other SMs and
@@ -33,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -59,8 +71,16 @@ GEMM = {
     "fp8": dict(dtype=getattr(torch, "float8_e4m3fn", None), r=3, k=512, tf32=False),   # 9 * 2^9 < 2^13
     "int8": dict(dtype=torch.int8, r=127, k=2048, tf32=False),          # 127^2 * 2^11 < 2^31 (int32 output)
 }
-SIZE = (1024, 1024)            # M, N of each matmul
-SETS = 2                       # input sets per precision (each with its own CPU reference)
+SIZE = (1024, 1024)            # M, N of the first input set of each precision
+SETS = 4                       # input sets per precision (each with its own CPU reference), two run each round
+# the other sets' M, N and their K as a share of the precision's largest exact K: other shapes and lengths reach other
+# cuBLAS kernels and tile edges (M, N, K multiples of 16 where FP8 and INT8 need them)
+SHAPES = ((None, 1.0), ((32, 4096), 1.0), ((512, 1536), 0.75), ((272, 2992), 0.5))
+# M, N, K of the realistic-data matmuls, one a round in turn: a decode step's few rows, a prefill block, a long K
+REAL = ((16, 4096, 4096), (512, 1536, 2048), (256, 3072, 8960))
+REAL_SAMPLES = 256             # outputs of each realistic-data matmul recomputed in float64 on the CPU
+REAL_LINE = 2.0                # a sampled output further from its reference than this many bounds is wrong
+REAL_DTYPE = {"gemm_bf16_real": torch.bfloat16, "gemm_fp16_real": torch.float16}
 SCALES = {"fp64": (-600, 600), "fp32": (-50, 50), "tf32": (-50, 50), "bf16": (-50, 50), "fp16": (0, 0),
           "fp8": (0, 0), "int8": (0, 0)}       # exponents added to the result (half on each input), kept within normal range
 FMA_N = 1 << 24
@@ -98,6 +118,7 @@ class _Found:
 
     def __init__(self, name: str):
         self.name, self.wrong, self.checked, self.rounds, self.first = name, 0, 0, 0, []
+        self.worst: Optional[float] = None               # the largest score, for tests judged against a bound
 
     def add(self, got: torch.Tensor, want: torch.Tensor, where: dict) -> None:
         g, w = got.reshape(-1), want.reshape(-1)
@@ -109,9 +130,28 @@ class _Found:
             for i in torch.nonzero(bad).flatten()[:max(0, MAX_REPORTED - len(self.first))].tolist():
                 self.first.append({**where, "element": int(i), "got": _num(g[i]), "expected": _num(w[i])})
 
+    def add_scores(self, z: torch.Tensor, where: dict, at: dict, line: float = REAL_LINE) -> None:
+        """Sampled values judged against a bound: z [S] is each one's distance from its reference in units of the
+        bound, and over the line is wrong (NaN too). at: tensors [S] reported with a wrong value (its row, column,
+        value and reference)."""
+        self.checked += z.numel()
+        if z.numel():
+            top = float(torch.nan_to_num(z.float(), nan=float("inf")).max())
+            self.worst = top if self.worst is None else max(self.worst, top)
+        bad = ~(z <= line)
+        n = int(bad.sum())
+        if n:
+            self.wrong += n
+            for i in torch.nonzero(bad).flatten()[:max(0, MAX_REPORTED - len(self.first))].tolist():
+                self.first.append({**where, **{k: (_num(v[i]) if v.is_floating_point() else int(v[i]))
+                                               for k, v in at.items()}, "score": _num(z[i])})
+
     def result(self) -> dict:
-        return {"test": self.name, "rounds": self.rounds, "values_checked": self.checked, "wrong": self.wrong,
-                "first_wrong": self.first}
+        out = {"test": self.name, "rounds": self.rounds, "values_checked": self.checked, "wrong": self.wrong,
+               "first_wrong": self.first}
+        if self.worst is not None:
+            out["worst_score"] = round(self.worst, 4) if self.worst != float("inf") else repr(self.worst)
+        return out
 
 
 def _int_view(dtype) -> torch.dtype:
@@ -194,22 +234,42 @@ class GemmSet:
 
 
 class _Matmul:
-    """TF32 and PyTorch's reduced-precision split-K reductions set for an exact test, then put back."""
+    """TF32 set, PyTorch's reduced-precision split-K reductions and fp16 accumulation (PyTorch 2.7+) off, for an exact
+    test, then every setting put back as it was (the reductions' split-K part too, where PyTorch has it)."""
+
+    RED = ("allow_bf16_reduced_precision_reduction", "allow_fp16_reduced_precision_reduction")
 
     def __init__(self, tf32: bool):
         self.tf32 = tf32
 
+    @staticmethod
+    def _get(name):
+        m = torch.backends.cuda.matmul
+        v = getattr(m, name)
+        try:
+            return (v, getattr(m, name + "_split_k"))           # (PyTorch with the split-K part: set as a pair)
+        except AttributeError:
+            return v
+
     def __enter__(self):
         m = torch.backends.cuda.matmul
-        self.saved = (m.allow_tf32, m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction)
+        self.saved = {"allow_tf32": m.allow_tf32, **{n: self._get(n) for n in self.RED}}
+        try:
+            self.saved["allow_fp16_accumulation"] = m.allow_fp16_accumulation
+        except AttributeError:
+            pass
         m.allow_tf32 = self.tf32
-        m.allow_bf16_reduced_precision_reduction = False
-        m.allow_fp16_reduced_precision_reduction = False
+        for n in self.RED:
+            v = self.saved[n]
+            setattr(m, n, (False, v[1]) if isinstance(v, tuple) else False)
+        if "allow_fp16_accumulation" in self.saved:
+            m.allow_fp16_accumulation = False
         return self
 
     def __exit__(self, *a):
         m = torch.backends.cuda.matmul
-        m.allow_tf32, m.allow_bf16_reduced_precision_reduction, m.allow_fp16_reduced_precision_reduction = self.saved
+        for n, v in self.saved.items():
+            setattr(m, n, v)
         return False
 
 
@@ -220,6 +280,59 @@ def _scales(name: str, rnd: int, s: int) -> tuple:
     span = hi - lo
     e = lo + ((rnd * 7919 + s * 104729) % (span + 1))
     return e // 2, e - e // 2
+
+
+def real_samples(seed: int, shape: tuple) -> tuple:
+    """(rows, cols) of the outputs a realistic-data matmul recomputes, REAL_SAMPLES distinct ones drawn from its
+    seed, so a report's seed and shape say which outputs were sampled."""
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    m, n = shape[0], shape[1]
+    idx = torch.randperm(m * n, generator=g)[:REAL_SAMPLES]
+    return idx // n, idx % n
+
+
+def real_round(dtype, shape: tuple, seed: int, device, transposed: bool = False, wrong: Optional[str] = None) -> dict:
+    """A matmul of random normal inputs in bf16 or fp16 (drawn on the device): the data a served model's layers see,
+    which integer-valued inputs don't reach (every exponent and rounding, and the accumulation's own error). It is
+    checked two ways: REAL_SAMPLES of its outputs against a reference computed in float64 on the CPU from the sampled
+    inputs as the device held them, each scored as the spot check scores them (serve_spot: |y - r| over the output's
+    rounding plus 6 times the fp32 accumulation's error model, so a correct output scores at most 1 and over REAL_LINE
+    is wrong); and every output against the same matmul run again, bit for bit (cuBLAS gives the same bits for the
+    same call on the same GPU, so a value that changed between the runs is a fault the reference can't see unless it
+    is sampled). transposed computes
+    (B^T A^T)^T, another kernel. wrong (a demo of a failure): "both" moves one sampled output in both runs, as
+    a persistent fault would; "second" does it in the second run only, as an intermittent one would. (3% of its value
+    plus 0.01, away from zero: well over the line for any value.)
+    Returns the scores, the sampled rows, columns, values and references, and the two runs."""
+    from .serve_norm import dtype_consts
+    from .serve_spot import acc_term
+    m, n, k = shape
+    rows, cols = real_samples(seed, shape)
+    gd = torch.Generator(device=device).manual_seed(seed + 1)       # (drawn where they are used: fast on a GPU)
+    ad = torch.randn(m, k, generator=gd, device=device).to(dtype)
+    bd = (torch.randn(k, n, generator=gd, device=device) * k ** -0.5).to(dtype)
+    mm = (lambda: (bd.t() @ ad.t()).t()) if transposed else (lambda: ad @ bd)
+    y, again = mm(), mm()
+    if wrong:
+        r0, c0 = int(rows[0]), int(cols[0])
+        y0 = y[r0, c0].float()
+        v = (y0 + torch.copysign(0.03 * y0.abs() + 0.01, y0)).to(dtype)
+        if wrong == "both":
+            y = y.clone()
+            y[r0, c0] = v
+        again = again.clone()
+        again[r0, c0] = v
+    rd, cd = rows.to(device), cols.to(device)
+    got = y[rd, cd].cpu().double()
+    # the sampled inputs as the GPU held them ([S, K] each, contiguous: about 18 MB in float64 at K = 8,960)
+    xa = ad.index_select(0, rd).cpu().double()
+    wb = bd.index_select(1, cd).t().contiguous().cpu().double()
+    ref = (xa * wb).sum(1)                                 # products exact; the sum's own error is negligible
+    norm = xa.norm(dim=1) * wb.norm(dim=1)
+    u, sp, _ = dtype_consts(dtype)
+    den = u * ref.abs() + acc_term(k, norm, ref.abs()).double() + sp
+    z = (got - ref).abs() / den
+    return {"scores": z, "rows": rows, "cols": cols, "got": got, "ref": ref, "y": y, "again": again}
 
 
 def fma_round(dtype, n: int, seed: int, device) -> tuple:
@@ -298,29 +411,46 @@ def memory_test(device, share: float, seed: int, found: _Found, chunk_mb: int = 
 
 def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, seed: int = 0, mem_share: float = 0.5,
         simulate: Optional[str] = None, tests=None, size=SIZE, fma_n: int = FMA_N, sm_n: int = SM_N,
-        mem_limit_gb: float = 32.0) -> dict:
-    """Run the tests on one device for about `minutes`. simulate: a test name whose first result is made wrong in
-    one value (a demo of what a failure looks like, never a GPU fault)."""
+        mem_limit_gb: float = 32.0, shapes=SHAPES, real=REAL, min_rounds: int = 1) -> dict:
+    """Run the tests on one device for about `minutes` (at least min_rounds rounds). simulate: a test name whose first
+    result is made wrong in one value (a demo of what a failure looks like, never a GPU fault); a realistic-data
+    test's name with ".repeat" makes the value wrong in its second run only, which the repeat finds. shapes: each
+    input set's (M, N) (None: size) and its K as a share of the precision's largest; real: the realistic-data
+    matmuls' (M, N, K)."""
     t0 = time.time()
     ident = device_identity(device)
     smi_id = ident.get("gpu_uuid") or (str(device.index) if device.type == "cuda" else None)
     report: dict = {"sdcguard": __version__, "torch": torch.__version__, "device": str(device), "gpu": ident,
                     "telemetry_before": _smi(smi_id) if device.type == "cuda" else {}, "seed": seed,
                     "minutes_asked": minutes, "simulated": simulate, "tests": {}, "skipped": {}}
-    names = [f"gemm_{p}" for p in GEMM] + ["fma_fp32", "fma_fp64", "sm_consistency", "memory"]
+    sim_mode = "second" if simulate and simulate.endswith(".repeat") else "both"
+    simulate = simulate[:-len(".repeat")] if simulate and simulate.endswith(".repeat") else simulate
+    names = [f"gemm_{p}" for p in GEMM] + ["gemm_bf16_real", "gemm_fp16_real", "fma_fp32", "fma_fp64",
+                                           "sm_consistency", "memory"]
     names = [n for n in names if tests is None or n in tests]
     found = {n: _Found(n) for n in names}
     sets: dict = {}
     for n in names:
-        if n.startswith("gemm_"):
+        if n.startswith("gemm_") and not n.endswith("_real"):
             why = gemm_supported(n[5:], device)
             if why:
                 report["skipped"][n] = why
                 del found[n]
                 continue
             p = GEMM[n[5:]]
-            sets[n] = [GemmSet(n[5:], seed * 1000 + 17 * s + zlib.crc32(n.encode()) % 997, p["k"], device, size)
-                       for s in range(SETS)]
+            sets[n] = []
+            for s in range(SETS):
+                shape, kshare = shapes[s % len(shapes)]
+                k = max(16, int(p["k"] * kshare) // 16 * 16)
+                sets[n].append(GemmSet(n[5:], seed * 1000 + 17 * s + zlib.crc32(n.encode()) % 997, k, device,
+                                       size if shape is None else shape))
+        elif n.endswith("_real"):
+            why = gemm_supported(n[5:-5], device)
+            if device.type != "cuda" and simulate != n and tests is None:
+                why = "realistic-data matmuls are for GPUs (on the CPU, ask for them with tests)"
+            if why:
+                report["skipped"][n] = why
+                del found[n]
     error = None
     deadline = t0 + 60.0 * minutes
     rnd = 0
@@ -332,7 +462,8 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
             for n, ss in sets.items():
                 p = GEMM[n[5:]]
                 with _Matmul(p["tf32"]):
-                    for s, gs in enumerate(ss):
+                    for s in ((2 * rnd) % len(ss), (2 * rnd + 1) % len(ss)) if len(ss) > 2 else range(len(ss)):
+                        gs = ss[s]
                         ea, eb = _scales(n[5:], rnd, s)
                         for tr in (False, True):
                             y, want = gs.run(ea, eb, tr)
@@ -342,6 +473,17 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
                             found[n].add(y, want, {"round": rnd, "set": s, "seed": gs.seed, "scale_a": ea,
                                                    "scale_b": eb, "transposed": tr, "shape": list(y.shape)})
                 found[n].rounds += 1
+            for n, dt in REAL_DTYPE.items():
+                if n in found:
+                    shape, tr = real[rnd % len(real)], (rnd // len(real)) % 2 == 1
+                    rs = seed * 13 + rnd
+                    with _Matmul(False):
+                        rr = real_round(dt, shape, rs, device, tr, wrong=sim_mode if simulate == n and rnd == 0 else None)
+                    where = {"round": rnd, "seed": rs, "shape": list(shape), "transposed": tr}
+                    found[n].add_scores(rr["scores"], {**where, "check": "reference"},
+                                        {"row": rr["rows"], "col": rr["cols"], "got": rr["got"], "expected": rr["ref"]})
+                    found[n].add(rr["again"], rr["y"], {**where, "check": "repeat"})
+                    found[n].rounds += 1
             for n, dt in (("fma_fp32", torch.float32), ("fma_fp64", torch.float64)):
                 if n in found:
                     got, want = fma_round(dt, fma_n, seed * 7 + rnd, device)
@@ -359,7 +501,7 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
             rnd += 1
-            if time.time() >= deadline:
+            if time.time() >= deadline and rnd >= min_rounds:
                 break
         if "memory" in found:
             memory_test(device, mem_share, seed + 1, found["memory"], limit_gb=mem_limit_gb)
@@ -390,7 +532,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--memory-share", type=float, default=0.5, help="share of free GPU memory the memory test uses")
     ap.add_argument("--tests", default=None, help="comma-separated subset of the tests")
-    ap.add_argument("--simulate", default=None, help="demo only: make one value of this test's first result wrong")
+    ap.add_argument("--simulate", default=None, help="demo only: make one value of this test's first result wrong "
+                                                    "(gemm_bf16_real.repeat: in its second run only)")
     a = ap.parse_args(argv)
     try:
         dev = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -406,7 +549,8 @@ def main(argv=None) -> int:
           f"PCI {g.get('pci_bus_id')}: {r['values_checked']:,} values checked in {r['minutes']} min, "
           f"{r['wrong']} wrong")
     for n, t in r["tests"].items():
-        print(f"  {n:16s} {t['rounds']:5d} rounds {t['values_checked']:>16,} values  {t['wrong']} wrong")
+        worst = f"  worst score {t['worst_score']} (line {REAL_LINE})" if "worst_score" in t else ""
+        print(f"  {n:16s} {t['rounds']:5d} rounds {t['values_checked']:>16,} values  {t['wrong']} wrong{worst}")
         for w in t["first_wrong"][:3]:
             print(f"      {w}")
     for n, why in r["skipped"].items():

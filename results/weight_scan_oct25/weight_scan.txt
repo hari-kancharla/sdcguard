@@ -1,0 +1,146 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "trials": 48,
+  "detected": 48,
+  "by_bit": {
+   "0": {
+    "trials": 3,
+    "detected": 3
+   },
+   "1": {
+    "trials": 3,
+    "detected": 3
+   },
+   "2": {
+    "trials": 3,
+    "detected": 3
+   },
+   "3": {
+    "trials": 3,
+    "detected": 3
+   },
+   "4": {
+    "trials": 3,
+    "detected": 3
+   },
+   "5": {
+    "trials": 3,
+    "detected": 3
+   },
+   "6": {
+    "trials": 3,
+    "detected": 3
+   },
+   "7": {
+    "trials": 3,
+    "detected": 3
+   },
+   "8": {
+    "trials": 3,
+    "detected": 3
+   },
+   "9": {
+    "trials": 3,
+    "detected": 3
+   },
+   "10": {
+    "trials": 3,
+    "detected": 3
+   },
+   "11": {
+    "trials": 3,
+    "detected": 3
+   },
+   "12": {
+    "trials": 3,
+    "detected": 3
+   },
+   "13": {
+    "trials": 3,
+    "detected": 3
+   },
+   "14": {
+    "trials": 3,
+    "detected": 3
+   },
+   "15": {
+    "trials": 3,
+    "detected": 3
+   }
+  },
+  "alerted_after_the_limit": 0,
+  "checksum_detections_until_next_trial": 1,
+  "stopped": [],
+  "seconds_to_detect": {
+   "median": 0.7164999999999999,
+   "max": 1.58
+  },
+  "detected_in_unchecked_layers": 42,
+  "checksum_detections": 1,
+  "scan_alerts_other_layers": 0,
+  "prefix_cache_not_emptied": 0,
+  "cost": {
+   "16": {
+    "scan_on": 5377.05,
+    "scan_off": 5601.0,
+    "scan_cost": 0.04,
+    "rounds_on": [
+     5377.5,
+     5364.0,
+     5399.6,
+     5376.6
+    ],
+    "rounds_off": [
+     5524.4,
+     5611.5,
+     5590.5,
+     5613.2
+    ],
+    "measured": true,
+    "pause_failed": [],
+    "errors": []
+   },
+   "256": {
+    "scan_on": 17532.1,
+    "scan_off": 17911.7,
+    "scan_cost": 0.0212,
+    "rounds_on": [
+     17678.7,
+     17379.7,
+     17588.9,
+     17475.3
+    ],
+    "rounds_off": [
+     17950.4,
+     17873.0,
+     17518.4,
+     18120.4
+    ],
+    "measured": true,
+    "pause_failed": [],
+    "errors": []
+   }
+  },
+  "coverage": {
+   "entries": 112,
+   "by_kind": {
+    "checked": 15,
+    "unchecked": 97
+   },
+   "bytes": 2620506112,
+   "budget_bytes_per_read": 67108864,
+   "passes": 24,
+   "last_pass_seconds": 4.782,
+   "never_compared": [],
+   "changed": [],
+   "not_scanned": {}
+  },
+  "passes": 47,
+  "last_pass_seconds": 1.613,
+  "on_by_default": false
+ }
+}
+
+[exit code 0]

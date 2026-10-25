@@ -1,0 +1,1442 @@
+{
+ "schema": "sdcguard.isolation/1",
+ "url": "http://127.0.0.1:8000",
+ "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+ "server_version": "0.32.0",
+ "verdict": "LEAK",
+ "why": [
+  "primer dependence: 49 of 192 probe answers changed with the request before them, e.g. 'import numpy as' answered ' np\\n\\ndef calculate_mean(' after the 'plain_b' primer and ' np\\n\\ndef get_data(' after the reference one, whose own repeat agreed exactly"
+ ],
+ "primer": {
+  "verdict": "LEAK",
+  "cases": [
+   {
+    "probe": "import numpy as",
+    "probe_tokens": 3,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "import numpy as",
+    "probe_tokens": 3,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 4,
+      "tokens": [
+       2065,
+       203,
+       203,
+       589,
+       9169,
+       81,
+       6009,
+       26
+      ],
+      "reference_tokens": [
+       2065,
+       203,
+       203,
+       589,
+       622,
+       81,
+       605,
+       26
+      ],
+      "text": " np\n\ndef calculate_mean(",
+      "reference_text": " np\n\ndef get_data("
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 2,
+      "tokens": [
+       2065,
+       203,
+       465,
+       12643,
+       619,
+       6121,
+       203,
+       465
+      ],
+      "reference_tokens": [
+       2065,
+       203,
+       203,
+       589,
+       622,
+       81,
+       605,
+       26
+      ],
+      "text": " np\nimport pandas as pd\nimport",
+      "reference_text": " np\n\ndef get_data("
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 2,
+      "tokens": [
+       2065,
+       203,
+       465,
+       12643,
+       619,
+       6121,
+       203,
+       465
+      ],
+      "reference_tokens": [
+       2065,
+       203,
+       203,
+       589,
+       622,
+       81,
+       605,
+       26
+      ],
+      "text": " np\nimport pandas as pd\nimport",
+      "reference_text": " np\n\ndef get_data("
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 2,
+      "tokens": [
+       2065,
+       203,
+       465,
+       12643,
+       619,
+       6121,
+       203,
+       465
+      ],
+      "reference_tokens": [
+       2065,
+       203,
+       203,
+       589,
+       622,
+       81,
+       605,
+       26
+      ],
+      "text": " np\nimport pandas as pd\nimport",
+      "reference_text": " np\n\ndef get_data("
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 2,
+      "tokens": [
+       2065,
+       203,
+       465,
+       12643,
+       619,
+       6121,
+       203,
+       465
+      ],
+      "reference_tokens": [
+       2065,
+       203,
+       203,
+       589,
+       622,
+       81,
+       605,
+       26
+      ],
+      "text": " np\nimport pandas as pd\nimport",
+      "reference_text": " np\n\ndef get_data("
+     }
+    ]
+   },
+   {
+    "probe": "The capital of France is",
+    "probe_tokens": 5,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 5,
+      "tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       1318,
+       18926,
+       432
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " Paris.\n\nThe capital of",
+      "reference_text": " Paris.\n\nQuestion: What"
+     },
+     {
+      "primer": "plain_b",
+      "first_token_differing": 5,
+      "tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       1318,
+       18926,
+       432
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " Paris.\n\nThe capital of",
+      "reference_text": " Paris.\n\nQuestion: What"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 5,
+      "tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       1318,
+       18926,
+       432
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " Paris.\n\nThe capital of",
+      "reference_text": " Paris.\n\nQuestion: What"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 5,
+      "tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       1318,
+       18926,
+       432
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " Paris.\n\nThe capital of",
+      "reference_text": " Paris.\n\nQuestion: What"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       688,
+       438,
+       8967,
+       436,
+       2819,
+       20815
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " a country that is known for its rich",
+      "reference_text": " Paris.\n\nQuestion: What"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       688,
+       438,
+       8967,
+       436,
+       2819,
+       20815
+      ],
+      "reference_tokens": [
+       2716,
+       297,
+       32,
+       203,
+       203,
+       9927,
+       44,
+       6180
+      ],
+      "text": " a country that is known for its rich",
+      "reference_text": " Paris.\n\nQuestion: What"
+     }
+    ]
+   },
+   {
+    "probe": "The capital of France is",
+    "probe_tokens": 5,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       328,
+       30940,
+       2327,
+       27268,
+       32,
+       2030
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country in Western Europe. It",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "plain_b",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       328,
+       30940,
+       2327,
+       27268,
+       32,
+       2030
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country in Western Europe. It",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       328,
+       30940,
+       2327,
+       27268,
+       32,
+       2030
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country in Western Europe. It",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       328,
+       30940,
+       2327,
+       27268,
+       32,
+       2030
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country in Western Europe. It",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 4,
+      "tokens": [
+       225,
+       35,
+       34,
+       34,
+       23,
+       3809,
+       32,
+       203
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " 100% correct.\n",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 4,
+      "tokens": [
+       225,
+       35,
+       34,
+       34,
+       23,
+       3809,
+       32,
+       203
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " 100% correct.\n",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       688,
+       438,
+       8967,
+       436,
+       2819,
+       20815
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country that is known for its rich",
+      "reference_text": " 1000000"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10769,
+       688,
+       438,
+       8967,
+       436,
+       2819,
+       20815
+      ],
+      "reference_tokens": [
+       225,
+       35,
+       34,
+       34,
+       34,
+       34,
+       34,
+       34
+      ],
+      "text": " a country that is known for its rich",
+      "reference_text": " 1000000"
+     }
+    ]
+   },
+   {
+    "probe": "def add(a, b):",
+    "probe_tokens": 7,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "repeat",
+      "first_token_differing": 1,
+      "tokens": [
+       284,
+       281,
+       280,
+       225,
+       37,
+       284,
+       1459,
+       26
+      ],
+      "reference_tokens": [
+       284,
+       442,
+       312,
+       474,
+       323,
+       203,
+       203,
+       589
+      ],
+      "text": "\n    c = 3\n    print(",
+      "reference_text": "\n    return a + b\n\ndef"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 1,
+      "tokens": [
+       284,
+       281,
+       280,
+       225,
+       37,
+       284,
+       1459,
+       26
+      ],
+      "reference_tokens": [
+       284,
+       442,
+       312,
+       474,
+       323,
+       203,
+       203,
+       589
+      ],
+      "text": "\n    c = 3\n    print(",
+      "reference_text": "\n    return a + b\n\ndef"
+     }
+    ]
+   },
+   {
+    "probe": "def add(a, b):",
+    "probe_tokens": 7,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "symbols",
+      "first_token_differing": 1,
+      "tokens": [
+       284,
+       1459,
+       26,
+       83,
+       474,
+       323,
+       27,
+       203
+      ],
+      "reference_tokens": [
+       284,
+       281,
+       280,
+       225,
+       37,
+       284,
+       1459,
+       26
+      ],
+      "text": "\n    print(a + b)\n",
+      "reference_text": "\n    c = 3\n    print("
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 1,
+      "tokens": [
+       284,
+       1459,
+       26,
+       83,
+       474,
+       323,
+       27,
+       203
+      ],
+      "reference_tokens": [
+       284,
+       281,
+       280,
+       225,
+       37,
+       284,
+       1459,
+       26
+      ],
+      "text": "\n    print(a + b)\n",
+      "reference_text": "\n    c = 3\n    print("
+     }
+    ]
+   },
+   {
+    "probe": "1, 2, 3, 4,",
+    "probe_tokens": 11,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "1, 2, 3, 4,",
+    "probe_tokens": 11,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Once upon a time",
+    "probe_tokens": 4,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Once upon a time",
+    "probe_tokens": 4,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "SELECT name FROM",
+    "probe_tokens": 3,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "digits",
+      "first_token_differing": 1,
+      "tokens": [
+       1858,
+       81,
+       426,
+       4998,
+       636,
+       280,
+       330,
+       426
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       26621,
+       6611,
+       22,
+       1903,
+       23
+      ],
+      "text": " table_name WHERE name = 'name",
+      "reference_text": " table WHERE name LIKE '%$search%"
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 1,
+      "tokens": [
+       1858,
+       81,
+       426,
+       4998,
+       636,
+       280,
+       330,
+       426
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       26621,
+       6611,
+       22,
+       1903,
+       23
+      ],
+      "text": " table_name WHERE name = 'name",
+      "reference_text": " table WHERE name LIKE '%$search%"
+     }
+    ]
+   },
+   {
+    "probe": "SELECT name FROM",
+    "probe_tokens": 3,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "plain_b",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 6,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       25,
+       203
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name = 'John'\n",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 3,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       26621,
+       6611,
+       22,
+       1903,
+       23
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name LIKE '%$search%",
+      "reference_text": " table WHERE name = 'John Doe';"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 3,
+      "tokens": [
+       1858,
+       4998,
+       636,
+       26621,
+       6611,
+       22,
+       1903,
+       23
+      ],
+      "reference_tokens": [
+       1858,
+       4998,
+       636,
+       280,
+       330,
+       19693,
+       41747,
+       920
+      ],
+      "text": " table WHERE name LIKE '%$search%",
+      "reference_text": " table WHERE name = 'John Doe';"
+     }
+    ]
+   },
+   {
+    "probe": "The opposite of hot is",
+    "probe_tokens": 5,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     },
+     {
+      "primer": "plain_b",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 7,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       8117
+      ],
+      "reference_tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "text": " cold.\n\nThe opposite of fast",
+      "reference_text": " cold.\n\nThe opposite of hot"
+     }
+    ]
+   },
+   {
+    "probe": "The opposite of hot is",
+    "probe_tokens": 5,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": [
+     {
+      "primer": "plain_b",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       5615,
+       1654,
+       372,
+       5510,
+       312,
+       18734,
+       2154
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a term used to describe a situation where",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "plain_b",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       5615,
+       1654,
+       372,
+       5510,
+       312,
+       18734,
+       2154
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a term used to describe a situation where",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       5615,
+       1654,
+       372,
+       5510,
+       312,
+       18734,
+       2154
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a term used to describe a situation where",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "digits",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       5615,
+       1654,
+       372,
+       5510,
+       312,
+       18734,
+       2154
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a term used to describe a situation where",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10243,
+       688,
+       438,
+       12270,
+       1654,
+       328,
+       322
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a concept that is often used in the",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "symbols",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       10243,
+       688,
+       438,
+       12270,
+       1654,
+       328,
+       322
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a concept that is often used in the",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       23909,
+       688,
+       18872,
+       312,
+       18734,
+       2154,
+       4660
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a phrase that describes a situation where something",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "caps",
+      "first_token_differing": 0,
+      "tokens": [
+       312,
+       23909,
+       688,
+       18872,
+       312,
+       18734,
+       2154,
+       4660
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " a phrase that describes a situation where something",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " cold.\n\nThe opposite of hot",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     },
+     {
+      "primer": "repeat",
+      "first_token_differing": 0,
+      "tokens": [
+       36169,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       14309
+      ],
+      "reference_tokens": [
+       32794,
+       32,
+       203,
+       203,
+       1318,
+       30519,
+       432,
+       32794
+      ],
+      "text": " cold.\n\nThe opposite of hot",
+      "reference_text": " warm.\n\nThe opposite of warm"
+     }
+    ]
+   },
+   {
+    "probe": "Water boils at",
+    "probe_tokens": 4,
+    "primer_tokens": 8,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   },
+   {
+    "probe": "Water boils at",
+    "probe_tokens": 4,
+    "primer_tokens": 16,
+    "control_agrees": true,
+    "pairs": 12,
+    "differing": []
+   }
+  ],
+  "errors": [],
+  "judged": 16,
+  "with_leak": 9,
+  "pairs": 192,
+  "pairs_differing": 49
+ },
+ "canary": {
+  "verdict": "NO LEAK SEEN",
+  "requests": 64,
+  "cancelled": 12,
+  "answered": 52,
+  "echoed_own_code": 52,
+  "leaks": [],
+  "errors": []
+ },
+ "seconds": 94.0,
+ "created": "2026-10-25T16:45:31Z"
+}

@@ -28,6 +28,10 @@ nothing). What it does, in every vLLM process:
     checks that those tokens' own KV-cache writes went where attention reads them (serve_attn.py: vLLM's
     FlashAttention and Triton backends, decoder attention with a 16-bit KV cache; SDCGUARD_ATTN_Z sets its line,
     default 4);
+  - with SDCGUARD_SPOT=1 (off by default until its GPU run), at each model step one of the checked linear layers (they
+    take turns) recomputes 8 output columns for up to 32 of the step's real rows exactly (fp32 products, compensated
+    fp32 sums) and compares each served output with it, to about twice its own rounding (serve_spot.py): small errors
+    the checksum check can't see, in the outputs it samples;
   - with SDCGUARD_WEIGHT_SCAN=1 (off by default until its GPU run), at each read of the results below, compares a
     few layers' weights with their fingerprint at load, in turn, so a changed weight bit is named within a pass over
     the model however small its effect (serve_weights.py; the checked layers, quantized ones included, the bf16
@@ -679,6 +683,8 @@ def _attribute(ev) -> None:
         (["sampled rows of MoE experts and their routing"] if _STATE.get("moe_classes") else []) + \
         (["FP8 input quantization"] if _STATE.get("fp8_classes") else []) + \
         ([f"sampled attention outputs{where} and those tokens' KV writes"] if attn else []) + \
+        (["sampled outputs of the linear layers against an exact recompute (spot checks)"]
+         if getattr(getattr(_STATE.get("guard"), "spot", None), "layers", None) else []) + \
         (["the scanned layers' weights against their load-time fingerprints"]
          if getattr(_STATE.get("guard"), "wscan", None) is not None else [])
     rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
@@ -765,6 +771,13 @@ def _on_alert(ev) -> None:
                     "%s missing some; last row %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
                     i.get("pci_bus_id"), i.get("host"), d.get("finding"), d.get("real_rows_without_experts"),
                     d.get("real_rows_missing_some_experts"), d.get("row"), (d.get("recheck") or {}).get("verdict"))
+        return
+    if ev.detector == "serve_spot":
+        log.warning("sdcguard ALERT: spot check of %s on %s (%s, PCI %s, host %s) max z=%s, line %s (row %s, column %s, "
+                    "%s: %s, expected %s, relative error %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
+                    i.get("pci_bus_id"), i.get("host"), d.get("max_z"), d.get("alarm_line"), d.get("row"), d.get("col"),
+                    _from(d), d.get("output"), d.get("expected"), d.get("relative_error"),
+                    (d.get("recheck") or {}).get("verdict"))
         return
     if ev.detector == "serve_moe":
         log.warning("sdcguard ALERT: MoE experts %s on %s (%s, PCI %s, host %s) max z=%s (row %s, column %s, %s: %s, "
@@ -859,7 +872,7 @@ def _take_new_weights(g) -> None:
     except Exception:  # noqa: BLE001
         pass
     _STATE["norms_stale"] = False
-    for part in (g.norms, g.moe):
+    for part in (g.norms, g.moe, getattr(g, "spot", None)):
         if part is not None:
             try:
                 part.refresh()
@@ -921,21 +934,30 @@ def _graph_key(share: float, offset: int, inline: bool) -> str:
     SDCGUARD_OFFSET, SDCGUARD_ALLOW_CPU), the constants in each check's call (its slot, and z), whether the check
     is traced in or called as the custom op (SDCGUARD_OPAQUE, SDCGUARD_FAST, SDCGUARD_SERVE_FAST), whether quantized
     layers are checked (SDCGUARD_QUANT), the sdcguard version, the check op's arguments (serve.OP_SCHEMA: a graph
-    traced with other arguments can't run), and whether norms are checked, with what line and op arguments
-    (SDCGUARD_NORMS, SDCGUARD_NORM_Z, serve_norm.NORM_SCHEMA)."""
+    traced with other arguments can't run), whether norms are checked, with what line and op arguments
+    (SDCGUARD_NORMS, SDCGUARD_NORM_Z, serve_norm.NORM_SCHEMA), whether linear layers are spot-checked, with what
+    line and op arguments (SDCGUARD_SPOT, serve_spot.SPOT_Z and SPOT_SCHEMA: its op is called in the linear layers'
+    apply, so it is in the traced graph), and whether FP8 inputs, MoE experts and attention are checked
+    (SDCGUARD_FP8: its op is called in the FP8 linear layers' apply, traced too; SDCGUARD_MOE and SDCGUARD_ATTN run
+    inside vLLM's own opaque ops on NVIDIA GPUs, which leave them out of the graph, but are traced where vLLM calls
+    those layers directly, as on the CPU)."""
     from . import __version__
     from .serve import OP_SCHEMA
     env = os.environ
     z = _z_from(env.get("SDCGUARD_Z", "6")) or 6.0
-    norms = None
+    norms = spot = None
     if env.get("SDCGUARD_NORMS", "0") == "1":        # (serve_norm imports Triton: only when norms are checked)
         from .serve_norm import NORM_SCHEMA
         norms = (NORM_SCHEMA, _norm_line())
+    if _spot_on():                                   # (serve_spot imports Triton: only when spot checks are on)
+        from .serve_spot import SPOT_SCHEMA, SPOT_Z
+        spot = (SPOT_SCHEMA, SPOT_Z)
+    others = (env.get("SDCGUARD_FP8", "0") == "1", env.get("SDCGUARD_MOE", "0") == "1", _attn_on())
     return hashlib.sha256(repr((__version__, OP_SCHEMA, MACHETE_GRAPH, share, offset, z,
                                 inline,
                                 env.get("SDCGUARD_FAST", "1") != "0", env.get("SDCGUARD_SERVE_FAST", "1") != "0",
-                                env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0", norms)
-                               ).encode()).hexdigest()[:12]
+                                env.get("SDCGUARD_ALLOW_CPU") == "1", env.get("SDCGUARD_QUANT", "1") != "0", norms,
+                                spot, others)).encode()).hexdigest()[:12]
 
 
 def _cache_root(key: str) -> str:
@@ -2040,6 +2062,7 @@ def _publish_stack(runner) -> Optional[dict]:
     checks = {"share": f"{_share(os.environ.get('SDCGUARD_SHARE', '1')):g}", "z": f"{_STATE.get('z') or 6:g}",
               "norms": "on" if _STATE.get("norm_classes") else "off",
               "moe": "on" if _STATE.get("moe_classes") else "off",
+              "spot": "on" if getattr(getattr(_STATE.get("guard"), "spot", None), "layers", None) else "off",
               "fp8": "on" if _STATE.get("fp8_classes") else "off",
               "attention": {True: "on", False: "outside_graphs", None: "on_unknown_where"}[_attn_kernels()[0]]
               if (_STATE.get("attn") or {}).get("checked") else "off",
@@ -2053,6 +2076,42 @@ def _publish_stack(runner) -> Optional[dict]:
              ", ".join(f"{k} {info[k]}" for k in ("model", "dtype", "quantization", "attention", "moe", "compilation",
                                                   "cudagraph", "vllm", "gpu") if info.get(k)))
     return info
+
+
+def _spot_on() -> bool:
+    return os.environ.get("SDCGUARD_SPOT", "0").strip().lower() in ("1", "true", "on", "yes")
+
+
+def _register_spot(runner) -> Optional[dict]:
+    """With SDCGUARD_SPOT=1, after vLLM loaded the model and before it compiles it or captures CUDA graphs: the linear
+    layers the checksum check takes are spot-checked too (serve_spot: one layer a step recomputes a few outputs
+    exactly), once per process."""
+    if not _spot_on() or _STATE.get("spot_registered"):
+        return None
+    _STATE["spot_registered"] = True
+    model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        log.warning("sdcguard: couldn't find the model to register its spot-checked layers; nothing is spot-checked")
+        return None
+    found = [(n, m) for n, m in model.named_modules() if getattr(m, "_sdcguard_args", None) is not None]
+    if not found:
+        return None
+    w = getattr(found[0][1], "weight", None)
+    g = _guard(w.device if isinstance(w, torch.Tensor) else None)
+    sc = g.spot_checks()
+    for name, mod in found:
+        sc.add(mod, getattr(mod, "prefix", "") or name)
+    sc.finalize()
+    from .serve_spot import SPOT_COLS, SPOT_ROWS, STATUS as SS
+    why: dict = {}
+    for w_ in sc.unsupported.values():
+        why[w_] = why.get(w_, 0) + 1
+    log.info("sdcguard: spot-checking %d of %d checked linear layers (one layer a step, %d columns of up to %d rows; "
+             "kernels %s)%s", len(sc.layers), len(found), SPOT_COLS, SPOT_ROWS,
+             {f"{d} {str(t).replace('torch.', '')}": ("Triton" if ok else f"not usable: {kw}")
+              for (d, t), (ok, kw) in SS.items()} or "none",
+             "; not spot-checked: " + ", ".join(f"{n} {w_}" for w_, n in sorted(why.items())) if why else "")
+    return {"checked": len(sc.layers), "not_checked": dict(sc.unsupported)}
 
 
 def _register_norms(runner) -> Optional[dict]:
@@ -2139,6 +2198,9 @@ def register() -> None:
     from .serve import _op, check_static_any, check_static_impl, select_layer
     op = _op()
     seen = [0]
+    spot_call = None
+    if _spot_on():
+        from .serve_spot import check_call as spot_call
 
     def select(layer) -> bool:
         """SDCGUARD_SHARE: is this eligible layer (unquantized or quantized, in load order) one of those checked?
@@ -2194,12 +2256,26 @@ def register() -> None:
             else:
                 fn = check_static_any              # eager (enforce_eager): no custom-op dispatch
             fn(x.reshape(-1, x.shape[-1]), y.reshape(-1, y.shape[-1]), *(a[1] if bias is not None else a[0]))
+            sa = getattr(layer, "_sdcguard_spot", None)
+            if sa is not None and spot_call is not None:   # SDCGUARD_SPOT=1: one Triton kernel more (it returns
+                if torch.compiler.is_compiling():          # at once unless this layer's turn has come)
+                    spot_call(sa, x, y, bias)
+                else:
+                    try:
+                        spot_call(sa, x, y, bias)
+                    except Exception as e:  # noqa: BLE001  (never break serving: this layer isn't spot-checked)
+                        layer.__dict__.pop("_sdcguard_spot", None)
+                        log.warning("sdcguard: a spot check failed (%s: %s); that layer isn't spot-checked from now "
+                                    "on", type(e).__name__, e)
         return y
 
     M.process_weights_after_loading = process_weights_after_loading
     M.apply = apply
     M._sdcguard = True
     _STATE["patched"] = True
+    if _spot_on():
+        from .serve_spot import spot_op
+        spot_op()                             # registered here, in every process, before any graph is traced
     if os.environ.get("SDCGUARD_NORMS", "0") == "1":
         from .serve_norm import norm_op
         norm_op()                             # registered here, in every process, before any graph is traced
@@ -2237,7 +2313,8 @@ def register() -> None:
             def load_model(self, *args, **kwargs):
                 out = orig_load(self, *args, **kwargs)
                 for what, fn in (("norm", _register_norms), ("MoE", _register_moe), ("FP8", _register_fp8),
-                                 ("attention", _register_attn), ("other weights to scan", _register_scan_rest)):
+                                 ("attention", _register_attn), ("other weights to scan", _register_scan_rest),
+                                 ("spot-checked", _register_spot)):
                     try:
                         fn(self)
                     except Exception as e:  # noqa: BLE001  (never break model loading)

@@ -613,6 +613,7 @@ class ServeGuard:
         self.route = None                          # serve_route.RouteChecks: MoE routers (route_checks())
         self.attn = None                           # serve_attn.AttnChecks: attention layers (attn_checks())
         self.wscan = None                          # serve_weights.WeightScan: weights compared with load (weight_scan())
+        self.spot = None                           # serve_spot.SpotChecks: sampled exact recomputes (spot_checks())
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -909,7 +910,7 @@ class ServeGuard:
                 self.poll(wait=True)
         finally:
             self.wscan = None
-            for part in ("norms", "moe", "fp8", "route", "attn"):
+            for part in ("norms", "moe", "fp8", "route", "attn", "spot"):
                 if getattr(self, part) is not None:
                     try:
                         getattr(self, part).detach()
@@ -993,6 +994,15 @@ class ServeGuard:
         get = tensors if tensors is not None else (lambda m=module: (getattr(m, "weight", None), _bias(m)))
         return self.wscan.add(name, get, "unchecked", module)
 
+    def spot_checks(self, line: Optional[float] = None):
+        """The linear layers this guard also spot-checks (serve_spot.SpotChecks: a few outputs of one layer a step,
+        recomputed exactly), made at the first call: add() each layer and finalize() once, before CUDA graph capture;
+        poll(), mark_step() and detach() take them along."""
+        if self.spot is None:
+            from .serve_spot import SPOT_Z, SpotChecks
+            self.spot = SpotChecks(self, SPOT_Z if line is None else line)
+        return self.spot
+
     def moe_checks(self, line: Optional[float] = None):
         """The fused MoE layers this guard checks too (serve_moe.MoEChecks), made at the first call: add() each MoE
         layer and finalize() once, before CUDA graph capture; poll(), mark_step() and detach() take them along."""
@@ -1038,6 +1048,7 @@ class ServeGuard:
                 "not_attached": dict(self.unsupported),
                 **({"norms": self.norms.coverage()} if self.norms is not None and self.norms.finalized else {}),
                 **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {}),
+                **({"spot": self.spot.coverage()} if self.spot is not None and self.spot.finalized else {}),
                 **({"fp8_quantization": self.fp8.coverage()} if self.fp8 is not None and self.fp8.layers else {}),
                 **({"moe_routing": self.route.coverage()} if self.route is not None and self.route.layers else {}),
                 **({"attention": self.attn.coverage()} if self.attn is not None and self.attn.finalized else {}),
@@ -1092,7 +1103,7 @@ class ServeGuard:
                 ev = torch.cuda.Event()
                 ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (buf, ev, epoch)
-        for part in (self.norms, self.moe, self.attn):
+        for part in (self.norms, self.moe, self.attn, self.spot):
             if part is not None and part.finalized:
                 events += part.poll(wait=wait)
         for part in (self.fp8, self.route):
@@ -1108,8 +1119,9 @@ class ServeGuard:
         for part in (self.fp8, self.route, self.attn):
             if part is not None:
                 part.end_step()
-        if self.moe is not None and self.moe.finalized:
-            self.moe.end_step()
+        for part in (self.moe, self.spot):
+            if part is not None and part.finalized:
+                part.end_step()
 
     def mark_step(self, step: int, rows: Optional[int] = None) -> None:
         """The model step the work queued next belongs to: call it before each step, outside any CUDA graph (a
@@ -1130,8 +1142,9 @@ class ServeGuard:
         for part in (self.norms, self.attn):
             if part is not None and part.finalized:
                 part.mark_step(step)
-        if self.moe is not None and self.moe.finalized:
-            self.moe.mark_step(step, rows)
+        for part in (self.moe, self.spot):
+            if part is not None and part.finalized:
+                part.mark_step(step, rows)
         for part in (self.fp8, self.route):
             if part is not None:
                 part.mark_step(step, rows)
@@ -1484,7 +1497,7 @@ class ServeGuard:
         unreadable = self._unreadable_weights()
         with torch.inference_mode(False):             # ordinary tensors, as in add_layer
             n = sum(self._refresh_layer(slot, None, None, unreadable) for slot in range(len(self.layers)))
-            for part in (self.norms, self.moe):        # (norm and MoE layers aren't counted in the number returned)
+            for part in (self.norms, self.moe, self.spot):   # (norm, MoE and spot-checked layers aren't counted)
                 if part is not None:
                     part.refresh()
             if self.wscan is not None:

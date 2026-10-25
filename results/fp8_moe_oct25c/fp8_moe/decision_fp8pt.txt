@@ -1,0 +1,34 @@
+DECISION: REJECT
+  quantization: the FP8 scale was taken over rows outside the batch (an earlier request's data decided this batch's quantization): model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs) and 21 more layers
+  approximation: mean KL 3.88e-02 (pass up to 5.4e-03), top-1 agreement 95.46%, worst prompt's mean KL 7.87e-02, over 2048 positions of 32 prompts
+  isolation: primer dependence: 49 of 192 probe answers changed with the request before them, e.g. 'import numpy as' answered ' np\n\ndef calculate_mean(' after the 'plain_b' primer and ' np\n\ndef get_data(' after the reference one, whose own repeat agreed exactly
+  consistency: prefix cache: an answer with its prefix read from the cache differs from the same prompt answered cold (largest gap 0.384 nats, a sure token changed at position 13), while two cold answers agreed within 0.000
+
+1. Arithmetic (against float64): INCONCLUSIVE
+   unresolved: the plugin's 1916 alerts can't stand for no fault: it checks 0% of the linear-layer weights on some worker, under the policy's 50%
+   plugin_alerts: {"alerts": 0, "confirmed_wrong": 0, "weights_changed": 0, "cleared": 0, "unconfirmed": 0, "coverage": {"workers": [{"layers_checked": 24.0, "layers_unchecked": 73.0, "weights_checked_ratio": 0.0005892462558310827, "checks_executed": 174216.0, "reads": 816.0, "fp8_layers_checked": 72.0, "fp8_calls_judged": 695424.0, "share": "1", "gpu": "GPU-57570884-1a6f-7b2a-e377-41c432143afc"}], "checked": true, "min_weights_checked": 0.0005892462558310827}, "counts_as_source": false}
+1a. Weight integrity (the checked layers' weights against their checksums at load): UNCHANGED
+   no checked layer's weights differed from their checksums at load
+1b. FP8 quantization (inputs quantized from the step's own rows, by their recipe): WRONG
+   the FP8 scale was taken over rows outside the batch (an earlier request's data decided this batch's quantization): model.layers.0.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.1.block_sparse_moe.experts.routed_experts (expert inputs), model.layers.10.block_sparse_moe.experts.routed_experts (expert inputs) and 21 more layers
+2. Approximation (model outputs against the trusted stack): OUTSIDE, model-check FAIL
+   mean KL 3.88e-02 (pass up to 5.4e-03), top-1 agreement 95.46%, worst prompt's mean KL 7.87e-02, over 2048 positions of 32 prompts
+3. Performance: MISSES (not required)
+   throughput changed -65.1%, the policy asks for at least +0.0%
+   output_tokens_per_s: 155.2 -> 54.2 (-65.1%, worse)
+   ttft_p50_ms: 315.77 -> 854.1 (+170.5%, worse)
+   ttft_p99_ms: 486.0 -> 1259.52 (+159.2%, worse, within noise)
+   itl_p50_ms: 98.96 -> 283.52 (+186.5%, worse)
+   itl_p99_ms: 147.94 -> 353.54 (+139.0%, worse)
+   latency_p50_ms: 13598.03 -> 37013.33 (+172.2%, worse)
+   latency_p99_ms: 14157.75 -> 40196.74 (+183.9%, worse)
+4. Isolation (does one request's answer depend on another's?): LEAK (required)
+   primer dependence: 49 of 192 probe answers changed with the request before them, e.g. 'import numpy as' answered ' np\n\ndef calculate_mean(' after the 'plain_b' primer and ' np\n\ndef get_data(' after the reference one, whose own repeat agreed exactly
+4b. Consistency (the same answer from the prefix cache and cold; decode and prefill): INCONSISTENT (not required)
+   prefix cache: an answer with its prefix read from the cache differs from the same prompt answered cold (largest gap 0.384 nats, a sure token changed at position 13), while two cold answers agreed within 0.000
+5. Scope (stack fingerprint c1addf37beae1e28)
+   baseline: gpu L4, vllm 0.32.0
+   candidate: gpu L4, vllm 0.32.0
+   not checked: attention, normalization, sampling and other non-GEMM kernels: only through the quality check
+   not checked: requests unlike the quality check's prompts and the perf load
+   not checked: faults that need the workload's own data or memory layout to show (the kernel test uses random inputs)
