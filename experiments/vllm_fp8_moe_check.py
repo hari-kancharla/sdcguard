@@ -35,6 +35,11 @@ CANDIDATES = {"fp8pt": f"{BASE} --quantization fp8_per_tensor",
               "fp8pc": f"{BASE} --quantization fp8_per_channel"}
 POLICY = {"quality": {"accept_warn": True}, "isolation": {"required": True}}
 MOE_LAYERS = 24
+# within the Modal function's 120 minutes (its log is cut at 117): a server that never comes up costs 15 minutes, not
+# qualify's default 30, and a run past either limit is still judged on what it saved
+STARTUP_S = 900
+QUALIFY_S = 90 * 60
+RERUN_S = 20 * 60
 
 
 def _alerts(path: str) -> list:
@@ -71,15 +76,20 @@ def run(out: str, port: int, metrics_port: int) -> dict:
         json.dump(POLICY, f)
     cmd = [sys.executable, "-m", "sdcguard", "qualify", "--out", out, "--baseline", BASE, "--repeat-baseline",
            "--policy", pol, "--env", "SDCGUARD_FP8=1", "--port", str(port), "--metrics-port", str(metrics_port),
-           "--stack", "gpu=L4"]
+           "--stack", "gpu=L4", "--startup-timeout", str(STARTUP_S)]
     for name, cfg in CANDIDATES.items():
         cmd += ["--candidate", f"{name}={cfg}"]
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=5000)
-    res: dict = {"cmd": cmd, "exit_code": p.returncode, "output": (p.stdout + p.stderr)[-6000:]}
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=QUALIFY_S)
+        res: dict = {"cmd": cmd, "exit_code": p.returncode, "output": (p.stdout + p.stderr)[-6000:]}
+    except subprocess.TimeoutExpired as e:      # still judged (and written): what qualify saved by then
+        out_s = (e.stdout or b"") + (e.stderr or b"")
+        res = {"cmd": cmd, "exit_code": None, "error": f"qualify ran past {QUALIFY_S} s",
+               "output": (out_s.decode(errors="replace") if isinstance(out_s, bytes) else out_s)[-6000:]}
     try:
         q = json.load(open(os.path.join(out, "QUALIFY.json")))
     except (OSError, ValueError) as e:
-        res["error"] = f"no QUALIFY.json: {e}"
+        res["error"] = (f"{res['error']}; " if res.get("error") else "") + f"no QUALIFY.json: {e}"
         return res
     res["runs"], res["decisions"] = q.get("runs") or {}, q.get("decisions") or {}
     res["fp8_alerts"] = {}
@@ -96,10 +106,15 @@ def run(out: str, port: int, metrics_port: int) -> dict:
                            for name in ("baseline", *CANDIDATES)}
     rp = (res["decisions"].get("fp8pt") or {}).get("repro")
     if rp and os.path.exists(os.path.join(rp, "rerun.sh")):
-        r = subprocess.run(["sh", os.path.join(rp, "rerun.sh")], capture_output=True, text=True, timeout=1500,
-                           env=dict(os.environ, PORT=str(port), MPORT=str(metrics_port), PY=sys.executable))
+        try:
+            r = subprocess.run(["sh", os.path.join(rp, "rerun.sh")], capture_output=True, text=True,
+                               timeout=RERUN_S,
+                               env=dict(os.environ, PORT=str(port), MPORT=str(metrics_port), PY=sys.executable))
+            code, text = r.returncode, (r.stdout + r.stderr)[-3000:]
+        except subprocess.TimeoutExpired:
+            code, text = None, f"rerun.sh ran past {RERUN_S} s"
         iso = os.path.join(rp, "rerun_isolation.json")
-        res["repro"] = {"exit_code": r.returncode, "output": (r.stdout + r.stderr)[-3000:],
+        res["repro"] = {"exit_code": code, "output": text,
                         "isolation": json.load(open(iso)).get("verdict") if os.path.exists(iso) else None,
                         "fp8_alerts": len([a for a in _alerts(os.path.join(rp, "rerun_alerts.jsonl"))
                                            if a.get("detector") == "serve_fp8"])}

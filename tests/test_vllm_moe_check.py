@@ -93,3 +93,15 @@ def test_a_costly_check_isnt_on_by_default():
     r["guarded"]["speed"]["16"]["median"]["output_tokens_per_s"] = 950.0
     ok, _, s = vm.judge(r)
     assert ok and s["on_by_default"] is False
+
+
+def test_nomoe_answers_and_cublas_settings_say_why_answers_differ():
+    res = passing()
+    res["nomoe"]["identity"] = ["a"] * vm.IDENTITY
+    res["guarded"]["identity"] = ["b"] + ["a"] * (vm.IDENTITY - 1)
+    res["plain"]["reductions"] = [{"bf16": True, "fp16": True}]
+    res["guarded"]["reductions"] = [{"bf16": False, "fp16": False}]
+    ok, fails, s = vm.judge(res)
+    assert not ok and any(f.startswith("M2") for f in fails)                   # M2 as written
+    assert s["identity_differ"] == {"plain_vs_guarded": 1, "guarded_vs_nomoe": 1, "plain_vs_nomoe": 0}
+    assert s["reductions"]["plain"] == [{"bf16": True, "fp16": True}] and s["reductions"]["nomoe"] is None

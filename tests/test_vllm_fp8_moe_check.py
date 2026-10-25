@@ -66,6 +66,7 @@ def test_the_qualify_command_has_the_check_on_and_the_policy(monkeypatch, tmp_pa
     cmd = seen["cmd"]
     assert "no QUALIFY.json" in res["error"]
     assert cmd[cmd.index("--env") + 1] == "SDCGUARD_FP8=1" and "--repeat-baseline" in cmd
+    assert cmd[cmd.index("--startup-timeout") + 1] == str(vf.STARTUP_S) == "900"
     assert sum(c.startswith(("fp8pt=", "eager=", "fp8pc=")) for c in cmd) == 3
     import json
     pol = json.load(open(cmd[cmd.index("--policy") + 1]))
@@ -86,3 +87,17 @@ def test_each_servers_fp8_coverage_is_read_from_its_metrics(tmp_path):
     r["fp8_coverage"] = {"fp8pt": {"layers": 72.0, "calls_judged": 1234.0}}
     ok, fails, s = vf.judge(r)
     assert ok and s["fp8_coverage"]["fp8pt"]["layers"] == 72.0
+
+
+def test_a_qualify_past_its_limit_still_gives_a_judged_result(monkeypatch, tmp_path):
+    """qualify and the repro folder fit inside the Modal function's 120 minutes, and one that runs past its limit
+    leaves an error to judge instead of no SUMMARY.json."""
+    def late(cmd, **kw):
+        raise vf.subprocess.TimeoutExpired(cmd, kw.get("timeout"), output=b"started", stderr=b"")
+    monkeypatch.setattr(vf.subprocess, "run", late)
+    res = vf.run(str(tmp_path), 8000, 9400)
+    assert res["exit_code"] is None and res["error"].startswith(f"qualify ran past {vf.QUALIFY_S} s; no QUALIFY.json")
+    assert res["output"] == "started"
+    ok, fails, _ = vf.judge(res)
+    assert not ok and fails
+    assert vf.QUALIFY_S + vf.RERUN_S < 117 * 60 and vf.STARTUP_S < vf.QUALIFY_S     # (servers start inside qualify)

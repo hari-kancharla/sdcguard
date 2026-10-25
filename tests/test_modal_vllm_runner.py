@@ -559,3 +559,16 @@ def test_the_operator_screen_runs_on_both_gpus(runner, monkeypatch, capsys):
     with pytest.raises(SystemExit, match="screen_ops_l4: exit code 1"):
         runner.main("screen_ops")
     assert "screen_ops_h100: exit code 0" in capsys.readouterr().out
+
+
+def test_a_rerun_keeps_the_earlier_runs_folder_and_log(runner, tmp_path):
+    out = tmp_path / "remote-results" / "moe"
+    out.mkdir(parents=True)
+    (out / "SUMMARY.json").write_text("{}")
+    (tmp_path / "remote-results" / "moe.txt").write_text("earlier log")
+    runner._set_aside(str(out))
+    kept = sorted(p.name for p in (tmp_path / "remote-results").iterdir())
+    assert len(kept) == 2 and all(k.startswith("moe_before_") for k in kept)
+    assert kept[0][:-4] == kept[1] or kept[1][:-4] == kept[0]                  # the same time on both
+    assert (tmp_path / "remote-results" / [k for k in kept if k.endswith(".txt")][0]).read_text() == "earlier log"
+    runner._set_aside(str(out))                                                # nothing there: no error

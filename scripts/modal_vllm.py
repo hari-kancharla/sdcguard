@@ -49,7 +49,7 @@ charges; the roughly $6 of requested resources for a run that uses the whole lim
 Results are saved to the Modal volume sdcguard-runs and downloaded to runs/gpu_r3/. Every function has a
 hard time limit, and a phase won't start again within an hour and a half of its last start unless you pass
 --force.
-A new run never deletes an earlier one: the earlier folder is renamed vllm_before_<time>. STATUS.json records the
+A new run never deletes an earlier one: the earlier folder (and the log beside it) is renamed <phase>_before_<time>. STATUS.json records the
 code fingerprint the run used, its exit codes, its measured minutes and the cost those minutes imply at the rates
 above (Modal's usage page has the billed amount).
 """
@@ -136,6 +136,15 @@ tests_image = vllm032_image.uv_pip_install("pytest==9.1.1").add_local_dir(LOCAL 
 app = modal.App("sdcguard-vllm", image=vllm_image)
 vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
 VOLS = {V: vol}
+
+
+def _set_aside(out: str) -> None:
+    """A rerun (--force) keeps the earlier run: its folder and its log, both renamed with the same time."""
+    stamp = time.strftime('%Y%m%d_%H%M%S')
+    if os.path.isdir(out):
+        os.rename(out, f"{out}_before_{stamp}")
+    if os.path.exists(f"{out}.txt"):
+        os.rename(f"{out}.txt", f"{out}_before_{stamp}.txt")
 
 
 def _tee(cmd, log_path, env=None, cwd=R, timeout: float = 15 * 60):
@@ -262,8 +271,7 @@ def quant(force: bool = False, source: dict | None = None) -> str:
     if msg:
         raise RuntimeError(msg)
     out = f"{RUNS}/quant"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     codes = {}
     try:
@@ -304,8 +312,7 @@ def outputs(force: bool = False, source: dict | None = None) -> str:
     if msg:
         raise RuntimeError(msg)
     out = f"{RUNS}/outputs"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     codes = {}
     g = [sys.executable, "-m", "sdcguard", "gate"]
@@ -345,8 +352,7 @@ def machete_diag(force: bool = False, source: dict | None = None) -> dict:
     if msg:
         raise RuntimeError(msg)
     out = f"{RUNS}/machete_diag"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code, fix = None, None
     try:
@@ -404,8 +410,7 @@ def _serve(tag: str, tp: int, force: bool, source: Optional[dict], rate: float, 
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -446,8 +451,7 @@ def ready_attrib(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -473,8 +477,7 @@ def decisions(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -500,8 +503,7 @@ def sensitivity(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -526,8 +528,7 @@ def fp8_residuals(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -554,8 +555,7 @@ def norms(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -581,8 +581,7 @@ def moe(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -609,8 +608,7 @@ def qualify(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -626,7 +624,7 @@ def qualify(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=100 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=120 * 60)
 def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_fp8_moe_check.py: one `sdcguard qualify` on vLLM issue #62124 (FP8 per-tensor MoE with CUDA
     graphs, granite-3.1-1b-a400m on one L4) and two remedies, with the FP8 quantization check on; then the rejected
@@ -637,13 +635,12 @@ def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_fp8_moe_check.py", "--out", out], f"{out}.txt",
-                    cwd="/root", timeout=97 * 60)
+                    cwd="/root", timeout=117 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -660,8 +657,7 @@ def _fp8mm_cal(tag: str, models: str, rate: float, what: str, source: Optional[d
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -695,8 +691,7 @@ def _attn(tag: str, roles: str, rate: float, what: str, minutes: int, source: Op
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -733,8 +728,7 @@ def _screen_ops(tag: str, rate: float, what: str, source: Optional[dict], force:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -779,8 +773,7 @@ def graphs(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code, skipped, other = None, [], []
     try:
@@ -828,8 +821,7 @@ def fp8kv(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -852,8 +844,7 @@ def _isolation(version: str, force: bool, source: Optional[dict]) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code = None
     try:
@@ -895,8 +886,7 @@ def live_catch(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/{tag}"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     code, mps = None, shutil.which("nvidia-cuda-mps-control")
     base = dict(os.environ, CUDA_MPS_PIPE_DIRECTORY="/tmp/mps_pipe", CUDA_MPS_LOG_DIRECTORY="/tmp/mps_log")
@@ -946,8 +936,7 @@ def quant_l4(force: bool = False, source: Optional[dict] = None) -> str:
     if msg:
         return msg
     out = f"{RUNS}/quant_l4"
-    if os.path.isdir(out):
-        os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
+    _set_aside(out)
     os.makedirs(out, exist_ok=True)
     codes = {}
     try:
@@ -1032,7 +1021,7 @@ ESTIMATES = {
            "to $2.80 (50-minute limit, at most about $4 at requested resources, not a spending cap)",
     "fp8_moe": "one `sdcguard qualify` on vLLM issue #62124 and two remedies on 1 L4 (granite-3.1-1b-a400m: bf16 "
                "twice, FP8 per-tensor, the same eager, FP8 per-channel; 5 server launches, then the repro folder "
-               "once): about 60 to 85 minutes, roughly $1.45 to $2 (100-minute limit, at most about $2.40 at requested "
+               "once): about 60 to 85 minutes, roughly $1.45 to $2 (120-minute limit, at most about $2.90 at requested "
                "resources, not a spending cap)",
     "fp8kv": "one `sdcguard qualify` on vLLM issue #54035 on 1 H100 (Qwen3-4B: bf16 KV cache, FP8 KV cache, FP8 on "
              "FlashInfer; 3 server launches): about 35 to 50 minutes, roughly $2.80 to $4 (75-minute limit, at most "

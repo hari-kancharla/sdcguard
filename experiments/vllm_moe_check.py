@@ -143,7 +143,12 @@ def run(out: str, port: int, metrics_port: int) -> dict:
                 continue
             if role in ("guarded", "eager"):
                 r["moe_at_start"] = vn.rpc(port, "sdcguard_test_moe_stats")
-            if role in ("plain", "guarded"):
+            # reported, not criteria (amendment of October 25): nomoe answers too and every server says its cuBLAS
+            # setting, so a difference between plain and guarded can be told apart: the MoE checks (guarded against
+            # nomoe, both with the plugin's setting) or the plugin without them (nomoe against plain: its cuBLAS
+            # setting and the linear-layer checks together; the reported setting shows the cuBLAS part alone)
+            r["reductions"] = vn.rpc(port, "sdcguard_test_reductions")
+            if role in ("plain", "guarded", "nomoe"):
                 r["identity"] = [vn._try(port, MODEL, p).get("text") for p in ps[:IDENTITY]]
             if role in ("plain", "guarded", "nomoe"):
                 r["speed"] = vn._speed(port, MODEL)
@@ -165,6 +170,14 @@ def run(out: str, port: int, metrics_port: int) -> dict:
     return res
 
 
+def _differ(res: dict, a: str, b: str):
+    """How many of the identity completions differ between two servers (None when one has none)."""
+    x, y = (res.get(a) or {}).get("identity"), (res.get(b) or {}).get("identity")
+    if not x or not y:
+        return None
+    return sum(p != q for p, q in zip(x, y)) + abs(len(x) - len(y))
+
+
 def summarize(res: dict) -> dict:
     g = res.get("guarded") or {}
     cost = {}
@@ -179,6 +192,9 @@ def summarize(res: dict) -> dict:
             "route_corrupt": [(t["mode"], t["router"], t["detected"], t.get("rounds_to_detect"), t.get("verdicts"))
                               for t in (res.get("eager") or {}).get("route_corrupt") or []],
             "clean_worst": {k: ((res.get(k) or {}).get("moe_clean") or {}).get("worst") for k in ("guarded", "eager")},
+            "identity_differ": {f"{a}_vs_{b}": _differ(res, a, b)
+                                for a, b in (("plain", "guarded"), ("guarded", "nomoe"), ("plain", "nomoe"))},
+            "reductions": {k: (res.get(k) or {}).get("reductions") for k in ("plain", "guarded", "nomoe", "eager")},
             "backends": ((res.get("guarded") or {}).get("moe_at_start") or {}).get("backends")}
 
 

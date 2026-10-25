@@ -2130,6 +2130,13 @@ rows a layer). The MoE and routing checks now draw rows from the layer's own tur
 the number of layers), so each takes every row of a steady batch in turn (CPU-tested). The rerun on the earlier code
 is judged as written; this changes which rows are sampled, not what a sample is judged against.
 
+Amendment (October 25, before the next run): reported only, not criteria. The nomoe server answers the 64 prompts
+too, and every server reports its cuBLAS reduced-precision setting (the plain server runs with PyTorch's default,
+the others with the plugin's), so if M2 fails the run can say why: guarded against nomoe (both with the plugin's
+setting) isolates the MoE checks; nomoe against plain is the plugin without its MoE checks (its cuBLAS setting and
+the linear-layer checks together), and the reported setting shows the cuBLAS part on its own. M2 stays as written,
+against plain vLLM at PyTorch's default.
+
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 
 Two new parts are tried on a real, open vLLM bug at once. The plugin's FP8 quantization check
@@ -2203,6 +2210,11 @@ that kept a copy of the old one (their checks would have counted and reported no
 72); and vLLM 0.32's GroupShape has no name, so a static per-tensor FP8 layer was listed as unsupported (our
 stand-ins had a name; they now copy vLLM's). The criteria stand as written for the rerun. Reported in the rerun: the FP8 layers each server checks (72 expected on fp8pt: 48 linear, whose inputs
 vLLM quantizes per token on CUTLASS, and 24 MoE layers, per tensor).
+
+Amendment (October 25, before the rerun): limits only. Each server gets 15 minutes to start (qualify's default is
+30), qualify 90 minutes and the repro folder 20, inside a function limit raised from 100 to 120 minutes, and a run
+past either limit is still judged on what it saved, so a server that hangs costs at most 15 minutes and can't leave
+the run without a verdict. The criteria are unchanged.
 
 ### Every check inside a captured CUDA graph (written October 24, before any run)
 
