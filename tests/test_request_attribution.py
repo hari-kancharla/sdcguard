@@ -161,6 +161,9 @@ def test_attribution_is_unavailable_rather_than_guessed(monkeypatch):
     ev = types.SimpleNamespace(detail={"captured": {"step": 5, "row": 0}})
     p._attribute(ev)
     assert ev.detail["directly_implicated"] is None and "microbatches" in ev.detail["attribution"]
+    for pc in (types.SimpleNamespace(ubatch_size=2), types.SimpleNamespace(use_ubatching=True)):   # vLLM 0.32's
+        assert "microbatches" in p._rows_split(types.SimpleNamespace(parallel_config=pc))      # --ubatch-size
+    assert p._rows_split(types.SimpleNamespace(parallel_config=types.SimpleNamespace(ubatch_size=1))) is None
     assert p._external("chat-1-deadbeef") == "chat-1" and p._external("plain") == "plain"
 
 

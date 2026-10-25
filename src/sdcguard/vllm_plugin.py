@@ -574,10 +574,24 @@ def _batch_rows(runner, args, kwargs) -> Optional[tuple]:
     return tuple(ids), ends, int(padded) if isinstance(padded, int) else None
 
 
+def _ubatching(runner) -> bool:
+    """Whether vLLM may split steps into microbatches: dual-batch overlap, or --ubatch-size above 1 (vLLM 0.32's
+    ParallelConfig.use_ubatching; it splits a step only under some conditions, such as data parallelism and enough
+    tokens)."""
+    pc = getattr(runner, "parallel_config", None)
+    if pc is None:
+        return False
+    try:
+        return bool(getattr(pc, "use_ubatching", False) or getattr(pc, "enable_dbo", False) or
+                    int(getattr(pc, "ubatch_size", 0) or 0) > 1)
+    except (TypeError, ValueError):
+        return bool(getattr(pc, "enable_dbo", False))
+
+
 def _rows_split(runner) -> Optional[str]:
     """Why a step's rows don't map to its requests one to one (microbatching, sequence parallelism), or None."""
-    if getattr(getattr(runner, "parallel_config", None), "enable_dbo", False):
-        return "rows are split into microbatches (dual-batch overlap)"
+    if _ubatching(runner):
+        return "rows can be split into microbatches (dual-batch overlap or --ubatch-size)"
     pc = getattr(getattr(runner, "compilation_config", None), "pass_config", None)
     if getattr(pc, "enable_sequence_parallelism", False):
         return "rows are split across tensor-parallel ranks (sequence parallelism)"
@@ -665,19 +679,24 @@ def _attribute(ev) -> None:
                                             "requests": since[:1000], "complete": min(steps) <= clean[1] + 1}
 
 
+def _from(d: dict) -> str:
+    """Where an alert's place comes from, for its log line."""
+    return "kept and rechecked" if str(d.get("place") or "").startswith("the kept") else "from the score maxima"
+
+
 def _on_alert(ev) -> None:
     d, i = ev.detail, ev.identity
     if ev.detector == "serve_norm":
-        log.warning("sdcguard ALERT: norm %s on %s (%s, PCI %s, host %s) z=%s (row %s, column %s: %s, expected %s; %s)",
-                    d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"),
-                    d.get("max_z"), d.get("row"), d.get("col"), d.get("output"), d.get("expected"),
-                    (d.get("recheck") or {}).get("verdict"))
+        log.warning("sdcguard ALERT: norm %s on %s (%s, PCI %s, host %s) max z=%s (row %s, column %s, %s: %s, expected "
+                    "%s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
+                    i.get("host"), d.get("max_z"), d.get("row"), d.get("col"), _from(d), d.get("output"),
+                    d.get("expected"), (d.get("recheck") or {}).get("verdict"))
         return
     if ev.detector == "serve_moe":
-        log.warning("sdcguard ALERT: MoE experts %s on %s (%s, PCI %s, host %s) z=%s (row %s, column %s: %s, expected "
-                    "%s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
-                    i.get("host"), d.get("max_z"), d.get("row"), d.get("col"), d.get("output"), d.get("expected"),
-                    (d.get("recheck") or {}).get("verdict"))
+        log.warning("sdcguard ALERT: MoE experts %s on %s (%s, PCI %s, host %s) max z=%s (row %s, column %s, %s: %s, "
+                    "expected %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
+                    i.get("host"), d.get("max_z"), d.get("row"), d.get("col"), _from(d), d.get("output"),
+                    d.get("expected"), (d.get("recheck") or {}).get("verdict"))
         return
     if ev.detector == "serve_fp8":
         log.warning("sdcguard ALERT: FP8 quantization of %s on %s (%s, PCI %s, host %s): %s (%s of %s calls with a "
@@ -700,10 +719,10 @@ def _on_alert(ev) -> None:
                         "point outside the KV cache", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
                         i.get("pci_bus_id"), i.get("host"), d.get("samples"))
         else:
-            log.warning("sdcguard ALERT: attention %s on %s (%s, PCI %s, host %s) z=%s (row %s, head %s, dim %s, "
-                        "position %s: %s, expected %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
+            log.warning("sdcguard ALERT: attention %s on %s (%s, PCI %s, host %s) max z=%s (row %s, head %s, dim %s, "
+                        "position %s, %s: %s, expected %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
                         i.get("pci_bus_id"), i.get("host"), d.get("max_z"), d.get("row"), d.get("head"),
-                        d.get("dim"), d.get("position"), d.get("output"), d.get("expected"),
+                        d.get("dim"), d.get("position"), _from(d), d.get("output"), d.get("expected"),
                         (d.get("recheck") or {}).get("verdict"))
         return
     if ev.detector == "serve_route":
@@ -1310,9 +1329,10 @@ def _register_attn(runner) -> Optional[dict]:
         log.info("sdcguard: no attention layers found in this model")
         _STATE["attn"] = {"checked": 0, "not_checked": {}}
         return None
-    if getattr(getattr(runner, "parallel_config", None), "enable_dbo", False):
-        # microbatches run on their own streams at once, and the layers' checks share their buffers on a device
-        why = "dual-batch overlap runs microbatches concurrently"
+    if _ubatching(runner):
+        # steps can run as microbatches (each layer called once per microbatch), which the attention check hasn't
+        # been run with: left off and listed rather than assumed right
+        why = "microbatching (dual-batch overlap or --ubatch-size), which the attention check hasn't been run with"
         log.warning("sdcguard: attention isn't checked: %s", why)
         _STATE["attn"] = {"checked": 0, "not_checked": {str(getattr(m, "layer_name", n)): why for n, m in found}}
         return None

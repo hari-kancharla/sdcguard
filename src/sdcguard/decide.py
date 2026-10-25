@@ -14,9 +14,10 @@ kernel backend, a parallelism or batching setting), with its questions kept apar
         --consistency cons.json base_cons.json   # `sdcguard consistency` of the candidate (and of the baseline)
     sdcguard decide --applies decision.json      # does that decision still apply to the stack installed here?
 
-1. Arithmetic: did the operations that were checked compute correctly? Against float64, never against the old
-   stack, so a faulty baseline can't make a faulty candidate look right.
-     FAULT              an output shown wrong: a plugin alert whose float64 recheck says output_wrong (or the layer's
+1. Arithmetic: did the operations that were checked compute correctly? Against a recompute (in float64, or on the
+   CPU with the kernel's own rounding steps for MoE experts), never against the old stack, so a faulty baseline
+   can't make a faulty candidate look right.
+     FAULT              an output shown wrong: a plugin alert whose CPU recheck says output_wrong (or the layer's
                         weights changed in memory), a kept case REGRESSED or still wrong, a kernel test call WRONG
      NO FAULT OBSERVED  none of those, from at least one source; with what each source covered (the plugin's alerts
                         count only with its metrics showing checks ran on every worker)
@@ -138,7 +139,7 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
             at = f" at step {step}" if step is not None else ""
             if rv in _FAULT_RECHECK:
                 n["confirmed_wrong"] += 1
-                faults.append(f"the plugin's alert on {where}{at}: the float64 recheck says {rv}")
+                faults.append(f"the plugin's alert on {where}{at}: its recheck on the CPU says {rv}")
             elif rv in _WEIGHTS_RECHECK or d.get("weights_changed_since_load") is True:
                 # the layer's weights no longer match their load-time checksums: a changed weight (in GPU memory,
                 # or updated without refresh()), which the GPU may multiply correctly. Its own finding, not arithmetic

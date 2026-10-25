@@ -136,8 +136,8 @@ def fault_trials(port: int, log_path: str, names: list, prompts: list) -> list:
                      "verdicts": sorted({((a.get("detail") or {}).get("recheck") or {}).get("verdict")
                                          for a in hit} - {None}),
                      "where": [((a.get("detail") or {}).get("head"), (a.get("detail") or {}).get("dim"),
-                                ((a.get("detail") or {}).get("latest") or {}).get("dim"),
-                                ((a.get("detail") or {}).get("latest") or {}).get("part")) for a in hit[:4]],
+                                ((a.get("detail") or {}).get("a_wrong_write") or {}).get("dim"),
+                                ((a.get("detail") or {}).get("a_wrong_write") or {}).get("part")) for a in hit[:4]],
                      "alerts_other_layers": len(other),
                      "other_layers": sorted({f'{a.get("detector")}:{(a.get("detail") or {}).get("where")}'
                                              for a in other})})

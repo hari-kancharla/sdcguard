@@ -83,6 +83,13 @@ def pick(t: torch.Tensor, i: torch.Tensor) -> torch.Tensor:
     return t.index_select(0, i.reshape(1)).squeeze(0)
 
 
+# Where an alert's row, column and values come from (its "place"): a kept row is written whole by one program,
+# so its recheck on the CPU names one real place; the score maxima are per-column maxima over the read, which with
+# scores exactly tied in several places (non-finite outputs, say) can each come from a different one of them
+PLACE_KEPT = ("the kept row's worst output, rechecked on the CPU (the kept row is the first over the line since the "
+              "layer's last alert was read; max_z is the largest score in the read, not necessarily this output's)")
+PLACE_MAXIMA = ("the read's score maxima: with scores exactly tied in several places, row, column and values can each "
+                "come from a different one of them")
 S31 = 0x7FFFFFFF          # a step kept in a key's top bits: 31 bits, so the int64 key stays positive for atomic max
 
 
@@ -211,7 +218,9 @@ if HAVE_TRITON:
         if pz > 0.0:
             k0 = zb | prow
             cur = tl.load(base)
-            if k0 > cur:                       # (most rows: read, not one atomic per row on one address)
+            # (most rows: read, not one atomic per row on one address). A score equal to the maximum so far updates
+            # too: with tied scores every column is the maximum over the tied rows, the same in any program order
+            if zb >= (cur & -4294967296):
                 tl.atomic_max(base + 0, k0)
                 tl.atomic_max(base + 1, zb | pcol)
                 tl.atomic_max(base + 2, zb | (py.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF))
@@ -412,13 +421,16 @@ def recheck(x_row: torch.Tensor, y_row: torch.Tensor, w_ref: torch.Tensor, w_now
         z = (y - ref).abs() / (u * ref.abs() + sp)
         ok = (ref.abs() <= fm) & (x.square().sum() < SS_MAX)
         z = torch.where(ok, torch.nan_to_num(z, nan=float("inf"), posinf=float("inf")), torch.zeros_like(z))
-        return (float(z.max()) if z.numel() else 0.0), int((z > line).sum())
+        return (float(z.max()) if z.numel() else 0.0), int((z > line).sum()), z, ref
 
-    worst, bad = score(w_ref)
+    worst, bad, z, ref = score(w_ref)
     out = {"worst_score": worst, "outputs_over_line": bad, "outputs": int(x.numel())}
+    if z.numel():                                  # the worst output's place and values (first of tied ones)
+        c = int(z.argmax())
+        out.update(col=c, output=float(y[c]), expected=float(ref[c]))
     changed = w_now is not None and not torch.equal(w_now.float().cpu(), w_ref.float().cpu())
     if bad and changed:
-        wn, bn = score(w_now)
+        wn, bn = score(w_now)[:2]
         if not bn:
             return {**out, "verdict": "weights_changed", "worst_score_current_weights": wn,
                     "why": "the kept output disagrees with the norm of its kept input under the weights registered "
@@ -706,8 +718,11 @@ class NormChecks:
         key = str(dev)
         if key not in ident:
             ident[key] = device_identity(dev)
+        place = PLACE_MAXIMA
+        if captured is not None and rc is not None and rc.get("outputs_over_line") and rc.get("col") is not None:
+            row, col, yv, rv, place = captured["row"], rc["col"], rc["output"], rc["expected"], PLACE_KEPT
         detail = {"where": lay["name"], "kind": lay["kind"], "max_z": z, "row": row, "col": col,
-                  "output": yv, "expected": rv,
+                  "output": yv, "expected": rv, "place": place,
                   "relative_error": (abs(yv - rv) / abs(rv)) if rv and rv == rv else None,
                   "captured": captured,
                   "recheck": rc or {"verdict": "not_rechecked",

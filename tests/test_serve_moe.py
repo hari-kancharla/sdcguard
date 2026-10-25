@@ -67,12 +67,14 @@ def test_gross_faults_are_caught(dtype):
     y = moe_kernel_like(x, w13, w2, ids, w, 0, dtype)
     wrong_expert = ids.clone()
     wrong_expert[5, 0] = (wrong_expert[5, 0] + 1) % 8
+    big = int(y[5].float().abs().argmax())    # bit 13 flipped in the row's largest output: it drops to ~0 (|y| < 2)
+    #                                           or grows by 2^64, gross whatever the inputs (in a tiny output, not)
     cases = {
         "a wrong expert": moe_kernel_like(x, w13, w2, wrong_expert, w, 0, dtype)[5],
         "another row's output": y[6],
         "the output scaled by 1.5": (y[5].float() * 1.5).to(dtype),
         "a NaN": torch.where(torch.arange(256) == 9, torch.tensor(float("nan"), dtype=dtype), y[5]),
-        "an exponent bit flipped": (y[5].view(torch.int16) ^ torch.where(torch.arange(256) == 3, 1 << 13, 0)
+        "an exponent bit flipped": (y[5].view(torch.int16) ^ torch.where(torch.arange(256) == big, 1 << 13, 0)
                                     .to(torch.int16)).view(dtype),
     }
     for what, row in cases.items():
@@ -137,6 +139,9 @@ def test_layers_take_turns_and_an_alert_keeps_and_rechecks_its_row(monkeypatch, 
     assert hits[0].detector == "serve_moe" and d["where"] == "model.layers.1.mlp.experts"
     assert d["captured"]["step"] == 7 and d["recheck"]["verdict"] == "output_wrong"
     assert d["weights_changed_since_load"] is False and d["max_z"] > 6
+    # the place is the kept row's worst output (one row, one column, that output's own values)
+    assert d["place"] == sm.PLACE_KEPT and d["row"] == d["captured"]["row"] and d["col"] == d["recheck"]["col"]
+    assert d["output"] == d["recheck"]["output"] and d["expected"] == d["recheck"]["expected"]
     assert "serve_moe" in (tmp_path / "alerts.jsonl").read_text()
     assert g.coverage_report()["moe"]["layers_checked"] == 3
 

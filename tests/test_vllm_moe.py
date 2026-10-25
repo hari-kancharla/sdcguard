@@ -98,3 +98,31 @@ def test_require_refuses_moe_layers_nothing_checks(monkeypatch, tmp_path):
     runner.load_model()
     with pytest.raises(vp.RequirementNotMet, match="fused MoE experts"):
         runner.execute_model(_x())
+
+
+
+def test_moe_layers_on_an_all_to_all_are_listed_not_checked(monkeypatch, tmp_path, caplog):
+    """Expert parallelism's all-to-all (which dual-batch overlap needs), passthrough experts, or data parallelism
+    (vLLM's all-gather/reduce-scatter): the layer's output combines other GPUs' experts or weight shards, which the
+    recompute can't read, so it isn't checked."""
+    import types
+    vp, UL, GM, moe = _setup(monkeypatch, tmp_path)
+    pc = types.SimpleNamespace(use_all2all_kernels=True)
+    monkeypatch.setattr(moe.RoutedExperts, "moe_config", types.SimpleNamespace(moe_parallel_config=pc), raising=False)
+    vp.register()
+    runner = GM(lambda: MoEDecoder(moe, UL))
+    with caplog.at_level(logging.INFO, logger="sdcguard"):
+        runner.load_model()
+    mc = vp.guard().moe
+    assert mc is not None and len(mc.layers) == 0 and len(mc.unsupported) == 3
+    assert all("all-to-all" in w for w in mc.unsupported.values())
+    assert any("checking 0 of 3 MoE layers" in r.getMessage() for r in caplog.records)
+    assert runner.execute_model(_x()) is not None and vp.poll(wait=True) == []
+    pc.use_all2all_kernels = False                   # expert parallelism without one (or none), one DP rank: checked
+    from sdcguard.serve_moe import describe
+    assert describe(runner.model.experts[0])[0] is not None
+    pc.dp_size = 2               # data parallelism without --enable-expert-parallel: vLLM's all-gather/reduce-scatter
+    need, why = describe(runner.model.experts[0])
+    assert need is None and "data parallelism" in why
+    pc.dp_size, pc.use_passthrough_all2all = 1, True
+    assert describe(runner.model.experts[0])[0] is None

@@ -97,8 +97,9 @@ def test_a_wrong_kv_write_is_caught(monkeypatch, tmp_path):
         runner.execute_model(b)
     ev = [e for e in vp.poll(wait=True) if e.detail.get("finding") == "kv_write_wrong"]
     assert len(ev) == 1 and ev[0].detail["where"] == "model.layers.0.self_attn.attn"
-    lt = ev[0].detail["latest"]
-    assert lt["content_wrong"] and not lt["slot_wrong"] and lt["dim"] == 7 and lt["part"] == "key"
+    lt, w = ev[0].detail["latest"], ev[0].detail["a_wrong_write"]
+    assert set(lt) == {"step", "row"} and w["content_wrong"] and not w["slot_wrong"] and w["dim"] == 7 and \
+        w["part"] == "key"
 
 
 def test_a_failing_attention_check_turns_that_layer_off_without_breaking_serving(monkeypatch, tmp_path, caplog):
@@ -163,3 +164,22 @@ def test_a_dummy_batch_is_not_a_model_step(monkeypatch, tmp_path):
     assert vp.poll(wait=True) == []
     assert vp._STATE["steps"] == vp._STATE["token_steps"] == 6
     assert ac.stats["calls_checked"] == 6 and ac.stats["samples"] == 6 * 4
+
+
+def test_attention_is_listed_not_checked_under_microbatching(monkeypatch, tmp_path, caplog):
+    """vLLM 0.32 splits steps into microbatches with dual-batch overlap or --ubatch-size above 1; the attention check
+    hasn't been run that way, so its layers are listed as not checked, and the model serves."""
+    import types
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(GM, "parallel_config", types.SimpleNamespace(enable_dbo=False, ubatch_size=2), raising=False)
+    vp.register()
+    runner = GM(_model(impls))
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):
+        runner.load_model()
+    g = vp.guard()
+    assert g is None or g.attn is None
+    assert all("microbatching" in w for w in vp._STATE["attn"]["not_checked"].values())
+    assert len(vp._STATE["attn"]["not_checked"]) == 3 and vp._STATE["attn"]["checked"] == 0
+    assert any("attention isn't checked: microbatching" in r.getMessage() for r in caplog.records)
+    outs = runner.execute_model(attn_batches(4, 2, 64, 3, steps=1)[0])
+    assert all(torch.isfinite(o.float()).all() for o in outs)

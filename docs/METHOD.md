@@ -2213,6 +2213,14 @@ computes on its inputs' device; the routing comparison checks each kept row agai
 sampled rows, as given); the linear and MoE comparisons hold fp32 partial sums in cuBLAS while they run. The criteria
 are unchanged; the next graphs run decides them.
 
+Second run (October 24, on fbfbdaf, one L4, about $0.08): passed. 62 tests passed and 2 skipped. Every test in
+`tests/test_gpu_graphs.py` and `tests/test_serve_no_sync.py` ran and passed, so G1 to G5 are met for every check, the
+attention check included. Of the two linear GPU tests of `tests/test_serve.py`, the Triton check's comparison passed;
+the compiled-model test (both variants) ran and then skipped at its replay check, the 2 skips: PyTorch 2.13 has no CUDA
+graph replay hook, so it can't prove its replays there (it isn't in G5's files). After this run
+the kernels changed how tied scores update their state (every program at the top score updates, so the state no
+longer depends on the order programs run in), so the next bundle runs this phase again first.
+
 ### Attention checks in serving (written October 24, before any run)
 
 The vLLM plugin can now check attention (`src/sdcguard/serve_attn.py`, SDCGUARD_ATTN=1, off by default until this run

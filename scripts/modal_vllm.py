@@ -781,36 +781,40 @@ def graphs(force: bool = False, source: Optional[dict] = None) -> str:
     if os.path.isdir(out):
         os.rename(out, f"{out}_before_{time.strftime('%Y%m%d_%H%M%S')}")
     os.makedirs(out, exist_ok=True)
-    code, skipped = None, []
+    code, skipped, other = None, [], []
     try:
         code = _tee([sys.executable, "-m", "pytest", "-q", "-rfEs", "-p", "no:cacheprovider", *GRAPH_TESTS],
                     f"{out}/pytest.txt", env={**os.environ, "SDCGUARD_GPU_TESTS": "1"}, cwd=R, timeout=25 * 60)
         skipped = _required_skips(f"{out}/pytest.txt")
+        other = [s for s in _required_skips(f"{out}/pytest.txt", any_file=True) if s not in skipped]
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
             json.dump({"exit_code": code, "passed": code == 0 and not skipped, "skipped_required": skipped,
-                       "source": source, "tests": list(GRAPH_TESTS),
+                       "skipped_other": other, "source": source, "tests": list(GRAPH_TESTS),
                        "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
                        **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
         vol.commit()
     if skipped:      # a skipped capture test shows nothing: the phase fails (criterion G5)
         return (f"{tag}: FAILED, {len(skipped)} required GPU tests skipped ({'; '.join(skipped)[:300]}) in "
                 f"{(time.monotonic() - t0) / 60:.1f} minutes")
-    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+    # skips outside the required files (G5) are allowed, and said: the compiled-model test of tests/test_serve.py
+    # skips where PyTorch has no CUDA graph replay hook (2.13 hasn't), so it can't prove its replays there
+    note = f" (skipped, not required: {'; '.join(other)[:300]})" if other else ""
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes{note}"
 
 
 REQUIRED_GPU_TESTS = ("tests/test_gpu_graphs.py", "tests/test_serve_no_sync.py")
 
 
-def _required_skips(log_path: str) -> list:
-    """The skips pytest reported (-rs) in the test files that must run in full on the GPU."""
+def _required_skips(log_path: str, any_file: bool = False) -> list:
+    """The skips pytest reported (-rs) in the test files that must run in full on the GPU (any_file: all of them)."""
     try:
         lines = open(log_path, errors="replace").read().splitlines()
     except OSError:
         return []
     return [ln.strip() for ln in lines if ln.lstrip().startswith("SKIPPED") and
-            any(t in ln for t in REQUIRED_GPU_TESTS)]
+            (any_file or any(t in ln for t in REQUIRED_GPU_TESTS))]
 
 
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=75 * 60)

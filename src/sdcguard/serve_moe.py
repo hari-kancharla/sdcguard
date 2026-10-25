@@ -25,8 +25,10 @@ non-finite values. Not a weight changed in memory: the kernel and the recompute 
 they agree on a corrupted one (an alert raised for another reason says whether the weights changed since load, from
 per-expert sums kept then). Not covered either: MoE layers on other kernels (FlashInfer, CUTLASS, DeepGEMM, Marlin,
 the monolithic ones that route inside the kernel), quantized experts, experts with biases, activations other than
-SiLU and GELU (gated), the router itself (the top-k choice is taken as given) and outputs whose finalize is deferred
-(expert parallelism's all-to-all). Each run's log lists what isn't checked.
+SiLU and GELU (gated), the router itself (the top-k choice is taken as given), outputs whose finalize is deferred,
+and layers whose kernel combines across GPUs: expert parallelism's all-to-all, passthrough experts, and data
+parallelism (vLLM's all-gather/reduce-scatter), whose output holds other GPUs' experts or weight shards, which the
+recompute can't read. Each run's log lists what isn't checked.
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
-from .serve_norm import dtype_consts, pick
+from .serve_norm import PLACE_KEPT, PLACE_MAXIMA, dtype_consts, pick
 
 MOE_Z = 6.0
 SAMPLES = 2              # rows recomputed per active call
@@ -341,7 +343,7 @@ if HAVE_TRITON:
             if pz > 0.0:
                 k0 = zb | row
                 cur = tl.load(sbase)
-                if k0 > cur:
+                if zb >= (cur & -4294967296):      # (ties too: the same columns in any program order)
                     tl.atomic_max(sbase + 0, k0)
                     tl.atomic_max(sbase + 1, zb | col)
                     tl.atomic_max(sbase + 2, zb | (py.to(tl.int32, bitcast=True).to(tl.int64) & 0xFFFFFFFF))
@@ -572,8 +574,8 @@ def check_call(args: tuple, x: torch.Tensor, topk_weights: torch.Tensor, topk_id
 def recheck(x_row: torch.Tensor, y_row: torch.Tensor, ids: torch.Tensor, g: torch.Tensor, w13: torch.Tensor,
             w2: torch.Tensor, expert_map: Optional[torch.Tensor], act: int, routed_first: bool, dtype: torch.dtype,
             line: float = MOE_Z) -> dict:
-    """The kept row recomputed on the CPU in float64 arithmetic with the same rounding steps, from the experts'
-    weights as the layer holds them now."""
+    """The kept row recomputed on the CPU with the same rounding steps (fp32 arithmetic, as the GPU check), from the
+    experts' weights as the layer holds them now."""
     e = ids.long().cpu()
     if expert_map is not None:
         em = expert_map.long().cpu()
@@ -587,10 +589,14 @@ def recheck(x_row: torch.Tensor, y_row: torch.Tensor, ids: torch.Tensor, g: torc
     local = torch.tensor([[remap.get(int(v), -1) for v in e]])
     r, cmax, sq, mx = recompute(x_row.view(1, -1).to(dtype).cpu(), local, g.view(1, -1).float().cpu(), w13c, w2c,
                                 None, act, routed_first, dtype)
-    z, _ = scores(y_row.view(1, -1).float().cpu(), r, cmax, sq, mx, dtype)
+    yf = y_row.view(1, -1).float().cpu()
+    z, _ = scores(yf, r, cmax, sq, mx, dtype)
     worst = float(z.max()) if z.numel() else 0.0
     bad = int((z > line).sum())
     out = {"worst_score": worst, "outputs_over_line": bad, "outputs": int(z.numel()), "experts": used}
+    if z.numel():                                  # the worst output's place and values (first of tied ones)
+        c = int(z.reshape(-1).argmax())
+        out.update(col=c, output=float(yf.reshape(-1)[c]), expected=float(r.reshape(-1)[c]))
     if bad:
         return {**out, "verdict": "output_wrong",
                 "why": f"{bad} of {z.numel()} outputs of the kept row are farther from the recompute (the layer's "
@@ -607,6 +613,17 @@ def describe(mod) -> tuple:
     qm = getattr(mod, "quant_method", None)
     if type(qm).__name__ != "UnquantizedFusedMoEMethod":
         return None, f"{type(qm).__name__ if qm is not None else 'no quant method'}: quantized or another method"
+    pc = getattr(getattr(mod, "moe_config", None), "moe_parallel_config", None)
+    try:             # vLLM 0.32 (all2all_utils.maybe_make_prepare_finalize): the modular kernel itself gathers and
+        #              combines across ranks with expert parallelism's all-to-all, with "passthrough" experts, and with
+        #              data parallelism without it (its all-gather/reduce-scatter fallback, over expert-weight shards)
+        across = bool(getattr(pc, "use_all2all_kernels", False) or getattr(pc, "use_passthrough_all2all", False) or
+                      int(getattr(pc, "dp_size", 1) or 1) > 1)
+    except Exception:  # noqa: BLE001  (properties that can't be read: treated as communicating, unchecked)
+        across = True
+    if across:
+        return None, ("expert parallelism's all-to-all or data parallelism: the layer's output combines other GPUs' "
+                      "experts or weight shards, which the recompute can't read")
     backend = getattr(getattr(qm, "unquantized_backend", None), "name", None)
     if backend != "TRITON":
         return None, f"the {backend or 'unknown'} MoE backend (only vLLM's Triton MoE kernel is checked)"
@@ -832,8 +849,11 @@ class MoEChecks:
         if key not in ident:
             ident[key] = device_identity(dev)
         yv, rv = _f32(keys[C_OUT]), _f32(keys[C_REF])
-        detail = {"where": lay["name"], "kind": "moe_experts", "max_z": z, "row": keys[C_ROW] & M32,
-                  "col": keys[C_COL] & M32, "output": yv, "expected": rv,
+        row, col, place = keys[C_ROW] & M32, keys[C_COL] & M32, PLACE_MAXIMA
+        if captured is not None and rc is not None and rc.get("outputs_over_line") and rc.get("col") is not None:
+            row, col, yv, rv, place = captured["row"], rc["col"], rc["output"], rc["expected"], PLACE_KEPT
+        detail = {"where": lay["name"], "kind": "moe_experts", "max_z": z, "row": row, "col": col, "output": yv,
+                  "expected": rv, "place": place,
                   "relative_error": (abs(yv - rv) / abs(rv)) if rv and rv == rv else None, "captured": captured,
                   "recheck": rc or {"verdict": "not_rechecked",
                                     "why": "no row was kept for this alert (the layer's kept row was taken by an "

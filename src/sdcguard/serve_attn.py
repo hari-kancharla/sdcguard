@@ -68,7 +68,7 @@ from typing import Optional
 import torch
 
 from .events import SDCEvent, device_identity
-from .serve_norm import S31, dtype_consts, pick, unwrap31
+from .serve_norm import PLACE_KEPT, PLACE_MAXIMA, S31, dtype_consts, pick, unwrap31
 
 ATTN_Z = 4.0
 MIN_LINE = 1.5           # a correct output scores at most 1 to first order
@@ -483,7 +483,7 @@ if HAVE_TRITON:
                     if pz > 0.0:
                         k0 = zb | i
                         cur = tl.load(sb)
-                        if k0 > cur:
+                        if zb >= (cur & -4294967296):      # (ties too: the same columns in any program order)
                             tl.atomic_max(sb + 0, k0)
                             tl.atomic_max(sb + 1, zb | hq)
                             tl.atomic_max(sb + 2, zb | pd.to(tl.int64))
@@ -787,6 +787,9 @@ def recheck(q_row: torch.Tensor, o_row: torch.Tensor, k_rows: torch.Tensor, v_ro
     out = {"worst_score": worst, "outputs_over_line": bad, "outputs": int(o.numel()), "keys": int(K.shape[0])}
     if not torch.isfinite(ref).all():
         return {**out, "verdict": "not_judged", "why": "the kept keys or values aren't finite"}
+    if z.numel():                                  # the worst output's dimension and values (first of tied ones)
+        d = int(z.argmax())
+        out.update(dim=d, output=float(o[d]), expected=float(ref[d]))
     if bad:
         return {**out, "verdict": "output_wrong",
                 "why": f"{bad} of {o.numel()} values of the kept output are more than {line:g} times the rounding "
@@ -1196,9 +1199,17 @@ class AttnChecks:
                              "the buffer, there were more than the buffer holds, the PyTorch check ran, or "
                              "SDCGUARD_ATTN_KEEP_KV=0)"}
             b["capm"][slot].zero_()
+        place = {"row": k[C_ZT] & M32, "head": k[C_ZH] & M32, "dim": k[C_ZD] & M32, "position": k[C_ZP] & M32,
+                 "step": (k[C_ZS] & M32) if self._marked is not None else None, "output": yv, "expected": rv,
+                 "place": PLACE_MAXIMA}
+        if captured is not None and rc is not None and rc.get("outputs_over_line") and rc.get("dim") is not None:
+            place = {"row": captured["row"], "head": captured["head"], "dim": rc["dim"],
+                     "position": captured["position"], "step": captured["step"], "output": rc["output"],
+                     "expected": rc["expected"],
+                     "place": PLACE_KEPT.replace("kept row's worst output", "kept sample's worst output").replace(
+                         "the kept row is", "the kept sample is")}
         detail = {"where": lay["name"], "backend": lay["backend"], "finding": "output_wrong_or_misread", "max_z": z,
-                  "row": k[C_ZT] & M32, "head": k[C_ZH] & M32, "dim": k[C_ZD] & M32, "position": k[C_ZP] & M32,
-                  "step": (k[C_ZS] & M32) if self._marked is not None else None, "output": yv, "expected": rv,
+                  **place,
                   "captured": captured,
                   "recheck": rc or {"verdict": "not_rechecked",
                                     "why": "no sample was kept for this alert (the layer's kept sample was taken by an "
@@ -1217,13 +1228,16 @@ class AttnChecks:
         last, wh = k[C_WLAST], k[C_WWHERE]
         kind = (wh >> 28) & 0xF
         info = wh & 0x0FFFFFFF
-        latest = {"step": unwrap31(last >> 32, self._marked) if self._marked is not None else None, "row": last & M32,
-                  "content_wrong": bool(kind & W_CONTENT), "slot_wrong": bool(kind & W_SLOT)}
+        latest = {"step": unwrap31(last >> 32, self._marked) if self._marked is not None else None, "row": last & M32}
+        # (their own key, with the step in its top bits: of the latest step's wrong writes, the largest packed one)
+        wrong = {"content_wrong": bool(kind & W_CONTENT), "slot_wrong": bool(kind & W_SLOT)}
         if kind & W_CONTENT:
-            latest.update({"kv_head": info >> 12, "dim": (info >> 1) & 0x7FF, "part": "value" if info & 1 else "key"})
+            wrong.update({"kv_head": info >> 12, "dim": (info >> 1) & 0x7FF, "part": "value" if info & 1 else "key"})
         detail = {"where": lay["name"], "backend": lay["backend"], "finding": "kv_write_wrong",
                   "writes_checked": k[C_WN], "writes_with_wrong_content": k[C_WBAD],
-                  "writes_to_another_slot": k[C_WSLOT], "latest": latest,
+                  "writes_to_another_slot": k[C_WSLOT], "latest": latest, "a_wrong_write": wrong,
+                  "a_wrong_write_is": "a wrong write of the latest step (the largest of that step's packed kinds and "
+                                      "places): it can be another token than the latest row",
                   "captured": {"row": latest["row"], "step": latest["step"]},
                   "read_window_steps": window, "last_clean_read_steps": self._last_clean.get(lay["name"]),
                   "reading": "a sampled token's KV-cache slot doesn't hold the key and value the layer computed for "

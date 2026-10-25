@@ -103,6 +103,7 @@ def test_a_wrong_output_is_caught_located_kept_and_rechecked():
     assert d["recheck"]["verdict"] == "output_wrong" and d["recheck"]["outputs_over_line"] == 1
     assert d["weights_changed_since_load"] is False and d["read_window_steps"] == [41, 41]
     assert abs(d["relative_error"] - 0.05) < 0.01
+    assert d["place"] == sn.PLACE_KEPT and d["recheck"]["col"] == 700 and d["output"] == float(y[5, 700])
     # the kept row was freed: the next wrong output is kept again
     nc.mark_step(42)
     y2 = m.compute(x)
@@ -329,3 +330,23 @@ def test_the_triton_kernel_matches_the_pytorch_check():
                        text=True, timeout=1200)
     assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
     assert "ALL MATCH" in p.stdout
+
+
+def test_an_alert_names_one_real_place_when_scores_tie():
+    """NaN outputs in two rows score inf in both: the score maxima, taken per column, could combine their rows and
+    columns. The alert's place comes from the kept row instead (written whole by one program), rechecked in float64:
+    a row and column that really are wrong, with that output's own values."""
+    m = Norm(1536)
+    nc = _checks([m])
+    nc.mark_step(3)
+    x = _rows(9, 1536, torch.bfloat16)
+    for r, c in ((2, 900), (6, 40)):              # two calls in one read, each with a NaN: both score inf
+        y = m.compute(x)
+        y[r, c] = float("nan")
+        sn.check_call(m._sdcguard_norm, x, None, y)
+    st = nc._state[torch.device("cpu")][0]
+    assert (int(st[sn.C_ROW]) & sn.M32, int(st[sn.C_COL]) & sn.M32) == (6, 900)     # the maxima combine them
+    (ev,) = nc.poll(wait=True)
+    d = ev.detail
+    assert d["place"] == sn.PLACE_KEPT and (d["row"], d["col"]) == (2, 900) == (d["captured"]["row"], 900)
+    assert d["output"] != d["output"] and d["recheck"]["verdict"] == "output_wrong"     # the NaN itself

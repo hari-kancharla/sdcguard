@@ -480,6 +480,22 @@ def test_a_skipped_capture_test_fails_the_graphs_run(runner, monkeypatch):
     assert msg.startswith("graphs: FAILED") and "exit code 0 " not in msg
     status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
     assert status["passed"] is False and len(status["skipped_required"]) == 1      # test_serve.py's skip is allowed
+    assert status["skipped_other"] == ["SKIPPED [1] tests/test_serve.py:383: no graph-replay hook"]
+
+
+def test_an_allowed_skip_passes_the_graphs_run_and_is_said(runner, monkeypatch):
+    def tee(cmd, log_path, env=None, **_):
+        Path(log_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(log_path).write_text("SKIPPED [1] tests/test_serve.py:383: no graph-replay hook\n63 passed, 1 skipped\n")
+        return 0
+
+    monkeypatch.setattr(runner, "_tee", tee)
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(
+        device_count=lambda: 1, get_device_name=lambda i: "NVIDIA L4")))
+    msg = runner.graphs()
+    assert msg.startswith("graphs: exit code 0 ") and "skipped, not required: SKIPPED [1] tests/test_serve.py" in msg
+    status = json.loads((Path(runner.RUNS) / "graphs" / "STATUS.json").read_text())
+    assert status["passed"] is True and status["skipped_required"] == [] and len(status["skipped_other"]) == 1
 
 
 def test_the_fp8mm_calibration_runs_on_both_gpus_and_fails_if_either_does(runner, monkeypatch, capsys):

@@ -104,6 +104,7 @@ def main():
     assert len(ev) == 1, [e.detail for e in ev]
     d = ev[0].detail
     assert d["dim"] == 11 and d["row"] == 0 and d["captured"]["keys_kept"] and d["captured"]["position"] == 89
+    assert d["place"].startswith("the kept sample's worst output") and d["recheck"]["dim"] == 11
     assert d["recheck"]["verdict"] == "output_wrong" and d["recheck"]["keys"] == 90, d["recheck"]
     hk = d["captured"]["kv_head"]
     kept = ac.bufs[torch.device("cpu")]["capkv"]
