@@ -35,11 +35,13 @@ CANDIDATES = {"fp8pt": f"{BASE} --quantization fp8_per_tensor",
               "fp8pc": f"{BASE} --quantization fp8_per_channel"}
 POLICY = {"quality": {"accept_warn": True}, "isolation": {"required": True}}
 MOE_LAYERS = 24
-# within the Modal function's 120 minutes (its log is cut at 117): a server that never comes up costs 15 minutes, not
-# qualify's default 30, and a run past either limit is still judged on what it saved
+# within the Modal function's 190 minutes (its log is cut at 187): a server that never comes up costs 15 minutes, not
+# qualify's default 30, and a run past either limit is still judged on what it saved (qualify writes its record after
+# each server). In the October 25 run qualify would have needed about 100 to 105 minutes (the FP8 and eager servers'
+# speed loads on an L4 are slow) and was stopped at the 90 it had.
 STARTUP_S = 900
-QUALIFY_S = 90 * 60
-RERUN_S = 20 * 60
+QUALIFY_S = 150 * 60
+RERUN_S = 25 * 60
 
 
 def _alerts(path: str) -> list:
@@ -92,6 +94,8 @@ def run(out: str, port: int, metrics_port: int) -> dict:
         res["error"] = (f"{res['error']}; " if res.get("error") else "") + f"no QUALIFY.json: {e}"
         return res
     res["runs"], res["decisions"] = q.get("runs") or {}, q.get("decisions") or {}
+    # a qualify cut short: its record so far (complete: false), and the servers it never reached
+    res["qualify_complete"], res["not_yet_run"] = q.get("complete", True), q.get("not_yet_run") or []
     res["fp8_alerts"] = {}
     for name in ("baseline", *CANDIDATES):
         al = [a for a in _alerts(os.path.join(out, f"{name}_alerts.jsonl")) if a.get("detector") == "serve_fp8"]
@@ -125,8 +129,11 @@ def judge(res: dict) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "An FP8 MoE bug from detection to remedy"."""
     fails = []
     runs, dec, fa = res.get("runs") or {}, res.get("decisions") or {}, res.get("fp8_alerts") or {}
+    later = res.get("not_yet_run") or []
     for name in ("baseline", "fp8pt", "eager"):
-        if not (runs.get(name) or {}).get("ready"):
+        if name in later:
+            fails.append(f"F1: qualify stopped before it finished {name}")
+        elif not (runs.get(name) or {}).get("ready"):
             fails.append(f"F1: {name} didn't start")
     d = dec.get("fp8pt") or {}
     if d.get("decision") != "REJECT" or d.get("isolation") != "LEAK":
@@ -141,7 +148,9 @@ def judge(res: dict) -> tuple:
     if (fa.get("baseline") or {}).get("count"):
         fails.append(f"F5: FP8 alerts on the bf16 baseline: {fa['baseline']}")
     rp = res.get("repro") or {}
-    if rp.get("isolation") != "LEAK":
+    if res.get("qualify_complete") is False:
+        fails.append("F6: qualify didn't finish, so it wrote no repro folder to rerun")
+    elif rp.get("isolation") != "LEAK":
         fails.append(f"F6: the repro folder's rerun didn't reproduce the leak ({rp.get('isolation')})")
     s = {"decisions": {n: {k: (dec.get(n) or {}).get(k) for k in ("decision", "approximation", "isolation",
                                                                  "consistency", "throughput_change")} for n in dec},
@@ -149,7 +158,8 @@ def judge(res: dict) -> tuple:
          "fp8pc": {"started": (runs.get("fp8pc") or {}).get("ready"), "fp8_alerts": (fa.get("fp8pc") or {}).get("count"),
                    "isolation": (dec.get("fp8pc") or {}).get("isolation")},
          "repro": {k: rp.get(k) for k in ("isolation", "fp8_alerts", "exit_code")},
-         "fp8_coverage": res.get("fp8_coverage")}
+         "fp8_coverage": res.get("fp8_coverage"), "qualify_complete": res.get("qualify_complete"),
+         "not_yet_run": later}
     return not fails, fails, s
 
 

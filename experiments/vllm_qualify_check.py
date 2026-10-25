@@ -47,6 +47,7 @@ def run(out: str, port: int, metrics_port: int) -> dict:
         return res
     res["runs"] = q.get("runs") or {}
     res["decisions"] = q.get("decisions") or {}
+    res["qualify_complete"] = q.get("complete", True)          # False: qualify stopped partway (its record so far)
     res["report_exists"] = os.path.exists(os.path.join(out, "REPORT.md"))
     res["alerts"] = {name: _count(os.path.join(out, f"{name}_alerts.jsonl")) for name in res["runs"]}
     dec = os.path.join(out, "decision_same.json")
@@ -107,6 +108,8 @@ def judge(res: dict) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "Qualify on a real server"."""
     fails = []
     runs, dec = res.get("runs") or {}, res.get("decisions") or {}
+    if res.get("qualify_complete") is False:
+        fails.append("run: qualify stopped partway; its record so far isn't the run's")
     for name in ("baseline", "again", *CANDIDATES):
         if not (runs.get(name) or {}).get("ready"):
             fails.append(f"Q1: {name} didn't start")

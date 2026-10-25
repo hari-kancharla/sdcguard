@@ -1,0 +1,113 @@
+{
+ "passed": false,
+ "failures": [
+  "M3 (guarded): 110 alerts with no fault",
+  "M3 (guarded): the worst clean MoE score was inf, above 2.0"
+ ],
+ "summary": {
+  "corrupt": [
+   [
+    "scale",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "scale",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ]
+  ],
+  "cost": {
+   "16": {
+    "moe_on": 3505.9,
+    "moe_off": 4002.6,
+    "moe_cost": 0.1241
+   },
+   "256": {
+    "moe_on": 16468.8,
+    "moe_off": 17578.8,
+    "moe_cost": 0.0631
+   }
+  },
+  "route_corrupt": [
+   [
+    "experts",
+    "model.layers.12.block_sparse_moe.experts.router",
+    true,
+    1,
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "weights",
+    "model.layers.19.block_sparse_moe.experts.router",
+    true,
+    2,
+    [
+     "not_rechecked",
+     "output_wrong"
+    ]
+   ]
+  ],
+  "clean_worst": {
+   "guarded": "inf",
+   "eager": 0.29893729090690613
+  },
+  "identity_differ": {
+   "plain_vs_guarded": 0,
+   "guarded_vs_nomoe": 0,
+   "plain_vs_nomoe": 0
+  },
+  "reductions": {
+   "plain": {
+    "bf16": true,
+    "fp16": true
+   },
+   "guarded": {
+    "bf16": false,
+    "fp16": false
+   },
+   "nomoe": {
+    "bf16": false,
+    "fp16": false
+   },
+   "eager": {
+    "bf16": false,
+    "fp16": false
+   }
+  },
+  "backends": [
+   "TRITON"
+  ],
+  "on_by_default": false
+ }
+}
+
+[exit code 1]

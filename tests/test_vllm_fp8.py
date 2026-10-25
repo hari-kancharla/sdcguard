@@ -113,7 +113,10 @@ def test_a_per_tensor_scale_from_padding_rows_is_named_with_its_request(monkeypa
     assert ev and all(e.detector == "serve_fp8" for e in ev)
     d = ev[0].detail
     assert d["where"] == "model.layers.0.mlp.down_proj" and d["finding"] == "scale_from_outside_rows"
-    assert d["directly_implicated"] and d["directly_implicated"][0] in ("req-a", "req-b")
+    # a per-tensor scale is every row's: both requests of the step, not one row's owner (nor "padding")
+    assert sorted(d["directly_implicated"]) == ["req-a", "req-b"], d.get("attribution")
+    assert d["captured"]["every_row"] is True and d["captured"]["row"] is None
+    assert d["attribution"].startswith("exact: every row of step") and d["step_rows"]["tokens"] == 5
     assert any("communication between GPUs" in u for u in d["unknown_impact"])
     # padding with smaller values than the real rows: quiet
     x = _x(8)

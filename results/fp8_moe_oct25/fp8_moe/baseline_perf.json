@@ -1,0 +1,75 @@
+{
+ "schema": "sdcguard.perf/1",
+ "url": "http://127.0.0.1:8000",
+ "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+ "server_version": "0.32.0",
+ "load": {
+  "prompts": 128,
+  "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+  "concurrency": 16,
+  "max_tokens": 128,
+  "rounds": 3,
+  "warmup": 8
+ },
+ "rounds": [
+  {
+   "requests": 128,
+   "completed": 128,
+   "errors": 0,
+   "error_samples": [],
+   "seconds": 102.369,
+   "output_tokens": 16384,
+   "output_tokens_per_s": 160.0,
+   "tokens_counted_by_server": true,
+   "ttft_p50_ms": 336.91,
+   "ttft_p99_ms": 451.39,
+   "itl_p50_ms": 98.15,
+   "itl_p99_ms": 106.38,
+   "latency_p50_ms": 12782.09,
+   "latency_p99_ms": 12969.36
+  },
+  {
+   "requests": 128,
+   "completed": 128,
+   "errors": 0,
+   "error_samples": [],
+   "seconds": 112.466,
+   "output_tokens": 16384,
+   "output_tokens_per_s": 145.7,
+   "tokens_counted_by_server": true,
+   "ttft_p50_ms": 340.13,
+   "ttft_p99_ms": 1632.63,
+   "itl_p50_ms": 105.21,
+   "itl_p99_ms": 125.01,
+   "latency_p50_ms": 14684.24,
+   "latency_p99_ms": 15819.6
+  },
+  {
+   "requests": 128,
+   "completed": 128,
+   "errors": 0,
+   "error_samples": [],
+   "seconds": 101.432,
+   "output_tokens": 16384,
+   "output_tokens_per_s": 161.5,
+   "tokens_counted_by_server": true,
+   "ttft_p50_ms": 301.51,
+   "ttft_p99_ms": 340.23,
+   "itl_p50_ms": 97.32,
+   "itl_p99_ms": 105.69,
+   "latency_p50_ms": 12666.1,
+   "latency_p99_ms": 12890.99
+  }
+ ],
+ "median": {
+  "output_tokens_per_s": 160.0,
+  "ttft_p50_ms": 336.91,
+  "ttft_p99_ms": 451.39,
+  "itl_p50_ms": 98.15,
+  "itl_p99_ms": 106.38,
+  "latency_p50_ms": 12782.09,
+  "latency_p99_ms": 12969.36
+ },
+ "complete": true,
+ "created": "2026-10-25T10:43:29Z"
+}

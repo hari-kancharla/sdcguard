@@ -68,6 +68,7 @@ def run_qualify(out: str, port: int) -> dict:
     for role, name in FILE.items():
         res[role] = q["runs"].get(name) or {}
     res["decisions"] = q.get("decisions") or {}
+    res["qualify_complete"] = q.get("complete", True)          # False: qualify stopped partway (its record so far)
     return res
 
 
@@ -101,6 +102,8 @@ def traces(out: str) -> dict:
 def judge(res: dict, out: str) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "Answers that depend on the request before"."""
     fails, s = [], {}
+    if res.get("qualify_complete") is False:
+        fails.append("run: qualify stopped partway; its record so far isn't the run's")
     for role in ROLES:
         if not (res.get(role) or {}).get("ready"):
             fails.append(f"1: the {role} server didn't start")

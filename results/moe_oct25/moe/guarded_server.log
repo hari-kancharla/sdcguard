@@ -1,0 +1,1139 @@
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 10:25:11 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347] 
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.32.0
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347]   █▄█▀ █     █     █     █  model   ibm-granite/granite-3.1-1b-a400m-instruct
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:347] 
+(APIServer pid=1101) INFO 10-25 10:25:12 [api_utils.py:286] non-default args: {'model_tag': 'ibm-granite/granite-3.1-1b-a400m-instruct', 'model': 'ibm-granite/granite-3.1-1b-a400m-instruct', 'dtype': 'bfloat16', 'max_model_len': 2048, 'worker_extension_cls': 'sdcguard_test_ext.FaultInjection', 'gpu_memory_utilization': 0.6, 'enable_prefix_caching': False, 'moe_backend': 'triton'}
+(APIServer pid=1101) INFO 10-25 10:25:21 [model.py:733] Resolved architecture: GraniteMoeForCausalLM
+(APIServer pid=1101) INFO 10-25 10:25:21 [model.py:2152] Using max model len 2048
+(APIServer pid=1101) INFO 10-25 10:25:21 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=8192.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=1101) INFO 10-25 10:25:21 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 1218.78it/s]
+(EngineCore pid=1196) WARNING 10-25 10:25:29 [flashinfer.py:99] FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 10:25:30 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(EngineCore pid=1196) INFO 10-25 10:25:30 [core.py:133] Initializing a V1 LLM engine (v0.32.0) with config: model='ibm-granite/granite-3.1-1b-a400m-instruct', speculative_config=None, tokenizer='ibm-granite/granite-3.1-1b-a400m-instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=main, tokenizer_revision=main, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=2048, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=ibm-granite/granite-3.1-1b-a400m-instruct, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::qwen4_exp_qsa_prepare_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=True, moe_backend='triton', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=1196) INFO 10-25 10:25:30 [worker_base.py:317] Injected <class 'sdcguard_test_ext.FaultInjection'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['sdcguard_test_attn_stats', 'sdcguard_test_corrupt_attn', 'sdcguard_test_corrupt_moe', 'sdcguard_test_corrupt_route', 'sdcguard_test_flip', 'sdcguard_test_flip_bit', 'sdcguard_test_flip_expert_bit', 'sdcguard_test_flip_norm_bit', 'sdcguard_test_mark_norm_rows', 'sdcguard_test_mark_rows', 'sdcguard_test_moe_stats', 'sdcguard_test_norm_stats', 'sdcguard_test_reductions', 'sdcguard_test_route_stats', 'sdcguard_test_scale', 'sdcguard_test_steps', 'sdcguard_test_stop_reads', 'sdcguard_test_uncorrupt_attn', 'sdcguard_test_uncorrupt_moe', 'sdcguard_test_uncorrupt_route', 'sdcguard_test_unmark_norm_rows', 'sdcguard_test_unmark_rows']
+(EngineCore pid=1196) INFO 10-25 10:25:30 [parallel_state.py:1906] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_d71f83ac06f448fa81896bc5a8bb5d36 backend=nccl
+(EngineCore pid=1196) INFO 10-25 10:25:30 [parallel_state.py:2350] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank 0, EPLB rank N/A
+(EngineCore pid=1196) INFO 10-25 10:25:30 [gpu_worker.py:518] Using V2 Model Runner
+(EngineCore pid=1196) INFO 10-25 10:25:30 [model_runner.py:392] Loading model from scratch...
+(EngineCore pid=1196) INFO 10-25 10:25:31 [cuda.py:506] Using FLASH_ATTN attention backend out of potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].
+(EngineCore pid=1196) INFO 10-25 10:25:31 [flash_attn.py:1117] Using FlashAttention version 3
+(EngineCore pid=1196) INFO 10-25 10:25:31 [unquantized.py:294] Using TRITON Unquantized MoE backend out of potential backends: ['TRITON', 'BATCHED_TRITON', 'FlashInfer TRTLLM', 'FlashInfer CUTLASS'].
+(EngineCore pid=1196) INFO 10-25 10:25:32 [base_loader.py:82] Initializing model took 1.542123 seconds
+(EngineCore pid=1196) INFO 10-25 10:25:32 [weight_utils.py:1108] Filesystem type for checkpoints: 9P. Checkpoint size: 2.49 GiB. Available RAM: 1017.57 GiB.
+(EngineCore pid=1196) INFO 10-25 10:25:32 [weight_utils.py:1131] Auto-prefetch is disabled because the filesystem (9P) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  1.77it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  1.77it/s]
+
+(EngineCore pid=1196) INFO 10-25 10:25:33 [default_loader.py:501] Loading weights took 0.63 seconds
+INFO 10-25 10:25:33 sdcguard: Prometheus metrics on port 9400
+(EngineCore pid=1196) INFO 10-25 10:26:04 [unquantized.py:528] Using MoEPrepareAndFinalizeNoDPEPModular
+(EngineCore pid=1196) INFO 10-25 10:26:04 [unquantized.py:529] Using TritonExperts MoE backend
+(EngineCore pid=1196) INFO 10-25 10:26:05 [model_runner.py:424] Model loading took 2.54 GiB memory and 34.916571 seconds
+(EngineCore pid=1196) INFO 10-25 10:26:05 [topk_topp_sampler.py:96] FlashInfer top-p/top-k sampling disabled via VLLM_USE_FLASHINFER_SAMPLER=0.
+INFO 10-25 10:26:06 sdcguard: checking the routing of 24 of 24 MoE routers (one router a step, 2 rows each)
+INFO 10-25 10:26:06 sdcguard: checking 24 of 24 MoE layers (one layer a step, 2 rows each; kernels {'cuda:0 bfloat16 act 0': (True, '')})
+INFO 10-25 10:26:06 sdcguard: stack 41d160ebb443ca80 (model ibm-granite/granite-3.1-1b-a400m-instruct, dtype bfloat16, attention FLASH_ATTN, moe TRITON, compilation 3, cudagraph FULL_AND_PIECEWISE, vllm 0.32.0, gpu NVIDIA H100 80GB HBM3)
+(EngineCore pid=1196) WARNING 10-25 10:26:06 [torch_utils.py:283] OMP_NUM_THREADS=8 is set; leaving Torch threads at 8 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=1196) INFO 10-25 10:26:06 [utils.py:347] Using LBNHC KV cache layout.
+INFO 10-25 10:26:06 sdcguard: checking 72 of 73 linear layers (6% of their weights); 24 fused MoE layers checked by the MoE check's sampled recompute; not checked: 1 LM head
+(EngineCore pid=1196) INFO 10-25 10:26:06 [monitor.py:40] [backbone] Starting torch.compile
+(EngineCore pid=1196) INFO 10-25 10:26:11 [backends.py:1104] [backbone] Using cache directory: /root/.cache/vllm/sdcguard-c07ff01e0e54/torch_compile_cache/86f76b4827/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=1196) INFO 10-25 10:26:11 [backends.py:1166] [backbone] Dynamo bytecode transform time: 4.87 s
+(EngineCore pid=1196) INFO 10-25 10:26:35 [backends.py:398] [backbone] Compiling a graph for compile range (1, 8192) takes 23.88 s
+(EngineCore pid=1196) INFO 10-25 10:26:39 [backends.py:927] collected artifacts: 25 entries, 25 artifacts, 43790877 bytes total
+(EngineCore pid=1196) INFO 10-25 10:26:39 [decorators.py:743] [backbone] saved AOT compiled function to /root/.cache/vllm/sdcguard-c07ff01e0e54/torch_compile_cache/torch_aot_compile/291f53f2b406cb8728430a376b20fa0f634455f3e4b9475eb8fb16c741de459d/rank_0_0/model
+(EngineCore pid=1196) INFO 10-25 10:26:39 [monitor.py:62] [backbone] torch.compile took 32.11 s in total
+(EngineCore pid=1196) WARNING 10-25 10:26:39 [fused_moe.py:1163] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/configs/E=32,N=512,device_name=NVIDIA_H100_80GB_HBM3.json
+(EngineCore pid=1196) INFO 10-25 10:26:42 [monitor.py:91] [backbone] Initial profiling/warmup run took 3.40 s
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:30,  1.65it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:16,  2.98it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:11,  4.22it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:00<00:08,  5.25it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:01<00:08,  5.60it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:10,  4.31it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:09,  4.69it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:10,  4.29it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:02<00:08,  4.74it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:02<00:07,  5.41it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:06,  6.04it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:06,  6.48it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:06,  5.75it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:02<00:06,  5.93it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:02<00:05,  6.37it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:03<00:05,  6.80it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:03<00:06,  5.40it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:05<00:21,  1.55it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:05<00:16,  1.90it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:05<00:13,  2.25it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:05<00:10,  2.86it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:05<00:09,  3.07it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:06<00:07,  3.81it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:06<00:05,  4.57it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:06<00:04,  5.31it/s]Capturing CUDA graphs (PIECEWISE):  51%|█████     | 26/51 [00:06<00:04,  6.00it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:06<00:04,  5.98it/s]Capturing CUDA graphs (PIECEWISE):  55%|█████▍    | 28/51 [00:06<00:03,  6.55it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:06<00:03,  7.03it/s]Capturing CUDA graphs (PIECEWISE):  59%|█████▉    | 30/51 [00:06<00:02,  7.43it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:07<00:02,  7.03it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:07<00:03,  5.03it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:08<00:06,  2.81it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:08<00:05,  3.29it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:08<00:04,  3.29it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:08<00:04,  3.56it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:09<00:05,  2.55it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:09<00:04,  3.22it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:09<00:03,  3.37it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:10<00:02,  3.79it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:10<00:03,  2.84it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:10<00:02,  3.53it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:10<00:01,  4.23it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:11<00:01,  4.96it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:11<00:01,  3.21it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:11<00:01,  3.73it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:12<00:01,  4.00it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:12<00:00,  4.78it/s]Capturing CUDA graphs (PIECEWISE):  96%|█████████▌| 49/51 [00:12<00:00,  5.61it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:12<00:00,  6.46it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:14<00:00,  1.36it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:14<00:00,  3.54it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/2 [00:00<?, ?it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00,  8.79it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00,  8.75it/s]
+(EngineCore pid=1196) INFO 10-25 10:26:58 [model_runner.py:1127] Graph capturing finished in 15 secs, took 0.32 GiB
+(EngineCore pid=1196) INFO 10-25 10:26:59 [gpu_worker.py:759] Available KV cache memory: 43.3 GiB
+(EngineCore pid=1196) INFO 10-25 10:26:59 [gpu_worker.py:774] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.6000 is equivalent to --gpu-memory-utilization=0.5943 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.6057. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=1196) INFO 10-25 10:26:59 [kv_cache_utils.py:2327] GPU KV cache size: 945,888 tokens, Maximum concurrency for 2,048 tokens per request: 461.86x
+(EngineCore pid=1196) INFO 10-25 10:26:59 [kernel_warmup.py:176] JIT kernel warmup starting.
+(EngineCore pid=1196) INFO 10-25 10:26:59 [kernel_warmup.py:189] JIT kernel warmup finished in 0.00s.
+(EngineCore pid=1196) INFO 10-25 10:26:59 [kernel_warmup.py:98] Warming up ll_bf16 router GEMM kernels for shapes: ((1024, 32),).
+WARNING 10-25 10:27:03 sdcguard ALERT: MoE experts model.layers.0.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 345, column 21, from the score maxima: -194.0, expected 0.0; not_rechecked)
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:07,  6.33it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:11,  4.39it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:10,  4.42it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:00<00:08,  5.31it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:00<00:07,  6.15it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:06,  6.63it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:08,  5.30it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:08,  5.06it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:01<00:07,  5.83it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:01<00:08,  5.07it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:07,  5.02it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:06,  5.70it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:06,  6.31it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:02<00:05,  6.23it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:02<00:05,  6.60it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:02<00:05,  6.96it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:02<00:04,  7.38it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:02<00:04,  7.72it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:03<00:04,  7.93it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:03<00:06,  4.78it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:03<00:05,  5.26it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:03<00:05,  4.88it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:04<00:05,  5.40it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:04<00:04,  6.08it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:04<00:03,  6.68it/s]Capturing CUDA graphs (PIECEWISE):  51%|█████     | 26/51 [00:04<00:03,  7.18it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:04<00:03,  6.78it/s]Capturing CUDA graphs (PIECEWISE):  55%|█████▍    | 28/51 [00:04<00:03,  6.54it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:04<00:03,  7.03it/s]Capturing CUDA graphs (PIECEWISE):  59%|█████▉    | 30/51 [00:04<00:02,  7.43it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:05<00:02,  6.94it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:05<00:04,  4.74it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:05<00:03,  5.24it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:05<00:03,  4.38it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:06<00:03,  4.98it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:06<00:02,  5.65it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:06<00:02,  6.16it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:06<00:02,  5.89it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:06<00:01,  6.13it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:06<00:01,  6.67it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:06<00:01,  7.10it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:07<00:01,  6.72it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:07<00:01,  5.54it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:07<00:01,  5.46it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:07<00:00,  6.18it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:07<00:00,  5.26it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:08<00:00,  5.81it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:08<00:00,  6.52it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:08<00:00,  7.84it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:08<00:00,  8.28it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:08<00:00,  6.06it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):   2%|▏         | 1/51 [00:00<00:06,  8.27it/s]Capturing CUDA graphs (FULL):   4%|▍         | 2/51 [00:00<00:05,  9.12it/s]Capturing CUDA graphs (FULL):   6%|▌         | 3/51 [00:00<00:05,  9.36it/s]Capturing CUDA graphs (FULL):   8%|▊         | 4/51 [00:00<00:04,  9.50it/s]Capturing CUDA graphs (FULL):  10%|▉         | 5/51 [00:00<00:04,  9.54it/s]Capturing CUDA graphs (FULL):  12%|█▏        | 6/51 [00:00<00:04,  9.62it/s]Capturing CUDA graphs (FULL):  14%|█▎        | 7/51 [00:00<00:04,  9.33it/s]Capturing CUDA graphs (FULL):  16%|█▌        | 8/51 [00:00<00:05,  7.64it/s]Capturing CUDA graphs (FULL):  18%|█▊        | 9/51 [00:01<00:05,  7.83it/s]Capturing CUDA graphs (FULL):  20%|█▉        | 10/51 [00:01<00:05,  8.12it/s]Capturing CUDA graphs (FULL):  22%|██▏       | 11/51 [00:01<00:04,  8.45it/s]Capturing CUDA graphs (FULL):  24%|██▎       | 12/51 [00:01<00:05,  7.52it/s]Capturing CUDA graphs (FULL):  25%|██▌       | 13/51 [00:01<00:04,  7.82it/s]Capturing CUDA graphs (FULL):  27%|██▋       | 14/51 [00:01<00:04,  8.33it/s]Capturing CUDA graphs (FULL):  31%|███▏      | 16/51 [00:01<00:03,  8.98it/s]Capturing CUDA graphs (FULL):  35%|███▌      | 18/51 [00:02<00:03,  9.40it/s]Capturing CUDA graphs (FULL):  37%|███▋      | 19/51 [00:02<00:03,  9.50it/s]Capturing CUDA graphs (FULL):  41%|████      | 21/51 [00:02<00:03,  9.89it/s]Capturing CUDA graphs (FULL):  45%|████▌     | 23/51 [00:02<00:02, 10.16it/s]Capturing CUDA graphs (FULL):  49%|████▉     | 25/51 [00:02<00:02, 10.33it/s]Capturing CUDA graphs (FULL):  53%|█████▎    | 27/51 [00:02<00:02,  9.24it/s]Capturing CUDA graphs (FULL):  55%|█████▍    | 28/51 [00:03<00:02,  9.00it/s]Capturing CUDA graphs (FULL):  57%|█████▋    | 29/51 [00:03<00:02,  8.98it/s]Capturing CUDA graphs (FULL):  59%|█████▉    | 30/51 [00:03<00:02,  8.89it/s]Capturing CUDA graphs (FULL):  61%|██████    | 31/51 [00:03<00:02,  8.51it/s]Capturing CUDA graphs (FULL):  65%|██████▍   | 33/51 [00:03<00:01,  9.14it/s]Capturing CUDA graphs (FULL):  69%|██████▊   | 35/51 [00:03<00:01,  9.74it/s]Capturing CUDA graphs (FULL):  73%|███████▎  | 37/51 [00:04<00:01,  9.59it/s]Capturing CUDA graphs (FULL):  76%|███████▋  | 39/51 [00:04<00:01,  9.97it/s]Capturing CUDA graphs (FULL):  80%|████████  | 41/51 [00:04<00:00, 10.48it/s]Capturing CUDA graphs (FULL):  84%|████████▍ | 43/51 [00:04<00:00, 10.86it/s]Capturing CUDA graphs (FULL):  88%|████████▊ | 45/51 [00:04<00:00, 10.98it/s]Capturing CUDA graphs (FULL):  92%|█████████▏| 47/51 [00:04<00:00, 10.40it/s]Capturing CUDA graphs (FULL):  96%|█████████▌| 49/51 [00:05<00:00, 10.38it/s]Capturing CUDA graphs (FULL): 100%|██████████| 51/51 [00:05<00:00, 10.39it/s]Capturing CUDA graphs (FULL): 100%|██████████| 51/51 [00:05<00:00,  9.50it/s]
+(EngineCore pid=1196) INFO 10-25 10:27:36 [model_runner.py:1127] Graph capturing finished in 15 secs, took 0.22 GiB
+(EngineCore pid=1196) INFO 10-25 10:27:36 [gpu_worker.py:971] CUDA graph pool memory: 0.22 GiB (actual), 0.45 GiB (estimated), difference: 0.24 GiB (109.0%).
+(EngineCore pid=1196) INFO 10-25 10:27:36 [gpu_worker.py:1034] Free memory on device (78.66/79.17 GiB) on startup. Desired GPU memory utilization is (0.6, 47.5 GiB). Actual usage is 3.63 GiB for consumed memory (weights + non-torch), 0.57 GiB for peak activation, and 0.22 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=46102457856` (42.94 GiB) to fit into requested memory, or `--kv-cache-memory=79553801728` (74.09 GiB) to fully utilize gpu memory. Current kv cache memory in use is 43.3 GiB.
+(EngineCore pid=1196) INFO 10-25 10:27:36 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(EngineCore pid=1196) INFO 10-25 10:27:36 [core.py:395] init engine (profile, create kv cache, warmup model) took 90.47 s (compilation: 32.11 s)
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 870.46it/s]
+(EngineCore pid=1196) INFO 10-25 10:27:37 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=1101) INFO 10-25 10:27:37 [entry.py:136] Supported tasks: ['generate']
+(APIServer pid=1101) WARNING 10-25 10:27:37 [__init__.py:44] SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!
+(APIServer pid=1101) INFO 10-25 10:27:37 [factories.py:89] Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them.
+(APIServer pid=1101) INFO 10-25 10:27:38 [hf.py:648] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1101) INFO 10-25 10:27:38 [entry.py:140] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:186] Available routes are:
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /docs, Methods: GET, HEAD
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /load, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /version, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /kv_event_sources, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /health, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /metrics, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /tokenize, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /detokenize, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/models, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/systemone, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /ping, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /ping, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /invocations, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /reset_prefix_cache, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /reset_mm_cache, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /reset_encoder_cache, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /collective_rpc, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /server_info, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /sleep, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /release_kv_cache_memory, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /wake_up, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /is_sleeping, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /pause, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /resume, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /abort_requests, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /is_paused, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /init_weight_transfer_engine, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /shutdown_weight_transfer_engine, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /start_weight_update, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /start_draft_weight_update, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /update_weights, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /finish_weight_update, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /update_weight_version, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /weight_info, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /weight_checker, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /get_world_size, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/responses, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/completions, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/messages, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /generative_scoring, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/messages/render, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/completions/render, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/responses/render, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=1101) INFO 10-25 10:27:38 [launcher.py:195] Route: /inference/v1/abort_requests, Methods: POST
+INFO:     Started server process [1101]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:36968 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43919 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24161 - "POST /collective_rpc HTTP/1.1" 200 OK
+WARNING 10-25 10:27:38 sdcguard ALERT: MoE experts model.layers.5.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 345, column 37, from the score maxima: -14400.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:18210 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:38 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 71, column 0, from the score maxima: -1576.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:31400 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48782 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22365 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16478 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47285 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65316 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30061 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:39 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 350, column 0, from the score maxima: 224.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:45323 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45303 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47161 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19308 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62730 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31808 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17339 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47939 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32639 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58535 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34919 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56370 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27866 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62552 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28778 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63622 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22643 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19533 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39931 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27159 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41749 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16206 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64441 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28346 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55684 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45554 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21973 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40150 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62447 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35003 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39932 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25884 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18223 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56330 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27122 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65029 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57524 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:42 sdcguard ALERT: MoE experts model.layers.6.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 220, column 191, from the score maxima: -45.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:42696 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50719 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23383 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18870 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63765 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21181 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30409 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41919 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46790 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:43 sdcguard ALERT: MoE experts model.layers.0.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 151, column 191, from the score maxima: -42.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:33280 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46917 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65454 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19385 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46091 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35412 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:43 sdcguard ALERT: MoE experts model.layers.12.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 391, column 191, from the score maxima: -69.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:17928 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50853 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:44 sdcguard ALERT: MoE experts model.layers.22.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 0, from the score maxima: -38.25, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:47959 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19571 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30521 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54344 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42064 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59298 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43031 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55454 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53616 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28278 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17403 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40723 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55800 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29540 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56857 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20286 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55586 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51618 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22997 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65129 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47628 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27194 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33966 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42255 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42403 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57963 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57537 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48902 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46283 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65224 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22733 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29699 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51711 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59696 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53360 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18489 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:47 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -54.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:47 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -54.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:27647 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61855 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55771 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48619 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28646 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50182 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33630 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56237 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41569 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29541 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36826 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44926 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41071 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32298 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60930 - "POST /v1/completions HTTP/1.1" 200 OK
+(EngineCore pid=1196) WARNING 10-25 10:27:47 [jit_monitor.py:140] Triton kernel JIT compilation during inference: fused_moe_kernel. This causes a latency spike; consider extending warmup to cover this shape/config.
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.1.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -52.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.2.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -52.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.3.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -52.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.9.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -43.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 71, column 5, from the score maxima: 60.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 3, column 5, from the score maxima: 46.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:48 sdcguard ALERT: MoE experts model.layers.17.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 3, column 5, from the score maxima: 46.5, expected 0.0; not_rechecked)
+(APIServer pid=1101) INFO 10-25 10:27:48 [loggers.py:335] Engine 000: Avg prompt throughput: 2204.1 tokens/s, Avg generation throughput: 796.6 tokens/s, Running: 16 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.5%
+INFO:     127.0.0.1:19290 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42591 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23687 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19495 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57144 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50958 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58951 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30672 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20565 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18855 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55770 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23031 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41878 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28477 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37034 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63776 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61722 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64942 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29896 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39960 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19651 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16887 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56506 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61984 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49643 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49825 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24724 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29237 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42899 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.2.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 29, column 4, from the score maxima: -36.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:33276 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20515 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23184 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36757 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53913 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63113 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17579 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44763 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64036 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19369 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43446 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39513 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26286 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54878 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26535 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57126 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.10.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -65.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.11.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -65.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.12.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -65.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:49 sdcguard ALERT: MoE experts model.layers.23.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -53.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:39893 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43198 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64138 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62964 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37938 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50150 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40280 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23106 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27916 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17423 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62419 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18347 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61067 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23230 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61634 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53432 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62020 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23950 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57741 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24392 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29621 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50063 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49965 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31714 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51201 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27138 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49110 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62278 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28326 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32057 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26568 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18385 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:50 sdcguard ALERT: MoE experts model.layers.11.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 12, column 191, from the score maxima: -59.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:50 sdcguard ALERT: MoE experts model.layers.12.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=2.6249999541045123e+38 (row 3, column 510, from the score maxima: 26.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.19.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.20.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.22.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.23.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:23718 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43361 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60077 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50223 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64974 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33967 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23488 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48633 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22720 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32584 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41464 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64628 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32611 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37605 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60533 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49523 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.4.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -35.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.17.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.18.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.19.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.20.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.22.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:51 sdcguard ALERT: MoE experts model.layers.23.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:21816 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54934 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16367 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18438 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35964 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42761 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52849 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30735 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21933 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59259 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32350 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50135 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40277 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18860 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36257 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53620 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55063 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27461 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38124 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25791 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24164 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36428 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41953 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44912 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31267 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25034 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55754 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51082 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52445 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57405 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:52 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 59, column 0, from the score maxima: -34.25, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:39638 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52673 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58985 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51513 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39768 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59492 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47496 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21589 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17236 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34413 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60434 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17915 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51756 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34945 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16086 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:53 sdcguard ALERT: MoE experts model.layers.22.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -59.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:50667 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36531 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20339 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48693 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57349 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28432 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33551 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44840 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40633 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33649 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52591 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30094 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56226 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51989 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18097 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:53 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 3, column 5, from the score maxima: 117.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:35929 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49087 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50606 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63927 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22654 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39897 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25512 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27547 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45887 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30580 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17099 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49116 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52445 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36827 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27064 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50658 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45876 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53863 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56415 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49616 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48680 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31477 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16875 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37580 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19829 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41956 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56281 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52904 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22368 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24913 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:54 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 12, column 5, from the score maxima: 89.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:63528 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62768 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16902 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32072 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29192 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63354 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19078 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57062 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38947 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38324 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43451 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60556 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18655 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16452 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.0.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -43.75, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:19635 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.1.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -43.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.2.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 31, column 0, from the score maxima: -64.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.4.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -37.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.5.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -37.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.6.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -37.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -37.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.11.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -45.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.12.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 31, from the score maxima: -85.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 31, from the score maxima: -85.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 70, column 209, from the score maxima: -38.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 5, from the score maxima: 68.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:55 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 5, from the score maxima: 68.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:34385 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32119 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17746 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58356 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49442 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64714 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20060 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46838 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64760 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47646 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57577 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59811 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23369 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31120 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17580 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.0.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 9, column 191, from the score maxima: -53.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.17.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.18.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.19.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.20.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.22.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:56 sdcguard ALERT: MoE experts model.layers.23.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 10, column 191, from the score maxima: -56.75, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:28162 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32337 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57662 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60766 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32275 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16679 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32249 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50595 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51923 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60247 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48753 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26833 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61107 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49145 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29032 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21117 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36139 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21079 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36666 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16101 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34036 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23959 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38072 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20369 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48248 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55635 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16537 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31770 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41587 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33682 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53512 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -50.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.23.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -61.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 62, column 5, from the score maxima: 87.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 5, from the score maxima: 584.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 5, from the score maxima: 584.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:53806 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27383 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20899 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57010 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34872 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37561 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61498 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43421 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56899 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45699 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45441 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30952 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33135 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35507 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30149 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58245 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.1.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 23, column 0, from the score maxima: -42.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:57 sdcguard ALERT: MoE experts model.layers.2.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 3, column 7, from the score maxima: -61.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:27500 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24949 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24730 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45354 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57689 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59742 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18683 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19952 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39285 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29264 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44349 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39012 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21007 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44365 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64096 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1101) INFO 10-25 10:27:58 [loggers.py:335] Engine 000: Avg prompt throughput: 5011.3 tokens/s, Avg generation throughput: 3578.5 tokens/s, Running: 16 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%
+INFO:     127.0.0.1:61087 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21314 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41297 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54113 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23846 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47792 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57962 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16777 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52385 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19829 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46251 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30987 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39968 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39362 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61614 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57106 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:58 sdcguard ALERT: MoE experts model.layers.20.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -51.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:58 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 191, from the score maxima: -51.75, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.3.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -55.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.4.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -55.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.6.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 5, column 5, from the score maxima: 107.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 5, column 5, from the score maxima: 107.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.8.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 29, column 5, from the score maxima: 78.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:51732 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27624 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53941 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38538 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43754 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63005 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24852 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25010 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32310 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58875 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19802 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56887 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16978 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28603 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25642 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.6.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.8.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.5, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 191, from the score maxima: -39.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.17.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 0, from the score maxima: -56.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.18.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 15, column 0, from the score maxima: -56.25, expected 0.0; not_rechecked)
+WARNING 10-25 10:27:59 sdcguard ALERT: MoE experts model.layers.19.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 5, from the score maxima: 58.25, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:41623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27500 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54064 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28575 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24728 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30817 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42312 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16657 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57364 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16453 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40493 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20377 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57790 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32671 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20448 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 66, column 0, from the score maxima: -68.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.9.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 66, column 191, from the score maxima: -38.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:31622 - "GET /version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28477 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.6.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.7.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.8.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.9.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.10.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.11.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.12.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.14.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.15.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.16.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.18.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 5, column 191, from the score maxima: -71.0, expected 0.0; not_rechecked)
+WARNING 10-25 10:28:00 sdcguard ALERT: MoE experts model.layers.21.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 191, from the score maxima: -56.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:30241 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52125 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55735 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:28:01 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 14, column 0, from the score maxima: -40.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:24238 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48226 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26376 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21748 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40144 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22443 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29767 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53681 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56007 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51334 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16439 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58358 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57624 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34054 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41425 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53652 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28267 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28886 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49636 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50601 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65487 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64386 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38856 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23998 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40789 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63856 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29664 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39291 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30970 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64450 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60041 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63266 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57557 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39475 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53087 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60075 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56298 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21766 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57711 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17563 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31735 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59702 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29784 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65144 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36852 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57746 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40801 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41830 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22200 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40262 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46837 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38331 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18374 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20368 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51931 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25072 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27883 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42866 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51724 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27319 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53179 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31178 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53586 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45617 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35428 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28870 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38215 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42661 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16705 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55000 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53372 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49444 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32346 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62836 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59032 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48480 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17444 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62629 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18846 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34886 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38447 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34399 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64955 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26953 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61626 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60558 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22856 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23630 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32469 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45797 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47112 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28101 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41998 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46810 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52194 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45198 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43689 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44223 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50182 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43900 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59201 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36977 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37839 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23596 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37577 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31289 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25353 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20372 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40238 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25324 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52907 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46252 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61238 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50864 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37162 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63781 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62931 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39491 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51179 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36530 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42819 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62627 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20332 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46499 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40976 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32268 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59422 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25462 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23915 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16124 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49054 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60497 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28091 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36058 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50945 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38935 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45874 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59007 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24763 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38206 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44765 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56765 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36993 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20537 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47404 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33274 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64642 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58788 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54361 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19067 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58299 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56799 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30554 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61280 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53797 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31628 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27460 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41629 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17529 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46724 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51695 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63443 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56390 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29539 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50322 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58723 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59671 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40785 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36678 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63598 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21287 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62602 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46051 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34786 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17835 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46933 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51658 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29044 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64780 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26183 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25682 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18403 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47987 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59488 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16001 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64871 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57293 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65464 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47391 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44804 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53008 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36241 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23267 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59409 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63827 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34142 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48797 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65291 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30567 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43744 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28077 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30129 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65263 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41243 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47110 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34406 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43859 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32855 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60087 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28669 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20085 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23692 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39992 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45016 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16206 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63021 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47101 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35736 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34171 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31411 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60129 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24532 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41528 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56356 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36361 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61793 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58226 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54459 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56551 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19937 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64198 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37804 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33980 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36463 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54290 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44137 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46249 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43971 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25817 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51520 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44297 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:28:04 sdcguard ALERT: MoE experts model.layers.1.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 11, column 191, from the score maxima: -69.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:53453 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25185 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48881 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35106 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49605 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57152 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59595 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23064 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50681 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25377 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54030 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51132 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51342 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51777 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55687 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23542 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59412 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42090 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18635 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16461 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41843 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50972 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16583 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48205 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58057 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28568 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19252 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17063 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52472 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17221 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57039 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33470 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43329 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46681 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16981 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37758 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38869 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38446 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20120 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31475 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46806 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56121 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21317 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19976 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30506 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22468 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48905 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59989 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58386 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43972 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55094 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21296 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44000 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36568 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55050 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19161 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61101 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63487 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24555 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51087 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46266 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16729 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22038 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21236 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55069 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36849 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48246 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27558 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61102 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46774 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40828 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50783 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48394 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30520 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30294 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50053 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22374 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23402 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27198 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19732 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36820 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59777 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29279 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31499 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60763 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28202 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35393 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34964 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23166 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36219 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60873 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60878 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35418 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32897 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58422 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32883 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55350 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61783 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48864 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22438 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60386 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53239 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34021 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54977 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59862 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43404 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65058 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61007 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57153 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27783 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31363 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27565 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55713 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40251 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56996 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32304 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41039 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47952 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54895 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21559 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 10:28:05 sdcguard ALERT: MoE experts model.layers.19.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 13, column 2, from the score maxima: 37.5, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:40264 - "GET /version HTTP/1.1" 200 OK
+(APIServer pid=1101) INFO 10-25 10:28:08 [loggers.py:335] Engine 000: Avg prompt throughput: 7841.8 tokens/s, Avg generation throughput: 5762.6 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%
+WARNING 10-25 10:28:09 sdcguard ALERT: MoE experts model.layers.13.block_sparse_moe.experts.routed_experts on GPU-95c59528-971e-ec20-e211-d0e8b38d15db (NVIDIA H100 80GB HBM3, PCI 00000000:3A:00.0, host modal) max z=inf (row 7, column 0, from the score maxima: -47.0, expected 0.0; not_rechecked)
+INFO:     127.0.0.1:29300 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22457 - "POST /collective_rpc HTTP/1.1" 200 OK
+(EngineCore pid=1196) INFO 10-25 10:28:09 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGINT
+(APIServer pid=1101) INFO 10-25 10:28:09 [launcher.py:254] [shutdown] API server: shutdown triggered
+(APIServer pid=1101) INFO 10-25 10:28:09 [launcher.py:270] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(EngineCore pid=1196) INFO 10-25 10:28:09 [core.py:1635] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=1196) INFO 10-25 10:28:09 [core.py:1666] [shutdown] EngineCore: request processing complete; starting resource teardown
+(APIServer pid=1101) INFO 10-25 10:28:09 [core_client.py:770] [shutdown] MPClient: start timeout=0s
+(APIServer pid=1101) INFO 10-25 10:28:09 [core_client.py:772] [shutdown] MPClient: stopping engine manager
+(APIServer pid=1101) INFO 10-25 10:28:09 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore
+(EngineCore pid=1196) INFO 10-25 10:28:09 [core.py:1499] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=1101) WARNING 10-25 10:28:09 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1
+(EngineCore pid=1196) INFO 10-25 10:28:09 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGTERM
+(APIServer pid=1101) WARNING 10-25 10:28:09 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 1196
+(APIServer pid=1101) INFO 10-25 10:28:09 [core_client.py:774] [shutdown] MPClient: engine manager stopped
+(APIServer pid=1101) INFO 10-25 10:28:09 [core_client.py:775] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=1101) INFO 10-25 10:28:09 [core_client.py:777] [shutdown] MPClient: complete
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906] AsyncLLM output_handler failed.
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906] Traceback (most recent call last):
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 849, in output_handler
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906]     outputs = await engine_core.get_output_async()
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1235, in get_output_async
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906]     raise self._format_exception(outputs) from None
+(APIServer pid=1101) ERROR 10-25 10:28:09 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=1101) INFO 10-25 10:28:09 [launcher.py:279] [shutdown] API server: engine client stopped
+(APIServer pid=1101) INFO 10-25 10:28:09 [launcher.py:282] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=1101) INFO 10-25 10:28:09 [launcher.py:304] [shutdown] API server: shutting down FastAPI HTTP server
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

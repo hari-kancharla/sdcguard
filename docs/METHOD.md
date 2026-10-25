@@ -1819,6 +1819,19 @@ all 5 flips of bit 14 (the exponent's top bit: a typical weight becomes enormous
 and none for bits 0 to 7, 11 to 13 (in a typical weight these exponent bits are 1, so the flip shrinks it) and 15 (the
 sign). Rerun with the fix before anything about changed answers is said.
 
+Result of the rerun (October 25, on 64c9d02): every criterion met. The server started with SDCGUARD_REQUIRE=1, no
+alert in the 64 clean requests, the clean quality check PASS (mean KL 8.1e-6, top-1 agreement 100%), every flip
+undone. Found, by bit: detected, as in the first run, all 5 flips of bit 14 and 1 of 5 each of bits 8, 9 and 10 (8
+of 80), none of the others; no alert on another layer. The 4 trials whose quality check said FAIL ("changed the
+answers") were all bit-14 flips, which made one weight about 10^36 to 10^37, and all 4 were detected: one changed
+29% of the top-1 tokens; the other three gave the same mean KL, 3.13, on three different layers, with top-1
+agreement 100%, which fits a flat output (every token equally likely: the quality check counts a tie for the top as
+agreement) rather than answers that stayed the same. The fifth bit-14 flip's quality check was INCONCLUSIVE (it was
+detected), and the three detected flips of bits 8 to 10 passed it. The quality check passed all 72 flips the plugin
+missed: 70 of them moved the answers measurably (mean KL up to 5.3e-4, against 8.1e-6 with no fault; top-1 agreement
+at least 99.9%) but under its line, and two flips of bit 0 changed nothing it measures. For this model, every layer
+checked and this quality check, no flip that failed it went undetected.
+
 ### FP8 arithmetic on Hopper: what a check would see (written October 24, before any run)
 
 The vLLM plugin doesn't check FP8 layers. Before building a check for them, this measures what it would have to
@@ -2243,6 +2256,37 @@ Amendment (October 25, before the rerun): limits only. Each server gets 15 minut
 30), qualify 90 minutes and the repro folder 20, inside a function limit raised from 100 to 120 minutes, and a run
 past either limit is still judged on what it saved, so a server that hangs costs at most 15 minutes and can't leave
 the run without a verdict. The criteria are unchanged.
+
+Result of the second run (October 25, on 64c9d02): not completed, for a mistake of ours in its limits and in
+qualify. All five servers started; four were measured in full and the fifth, fp8pc, all but its speed. qualify would
+have needed about 100 to 105 minutes (the fp8pt and eager servers took about 20 and 32 minutes each, their speed
+loads alone about 15 and 18) and was stopped at its 90-minute limit during fp8pc's speed load. It wrote its record
+only at the end, so there was no QUALIFY.json, and the run's judge, which reads only that file, reported every
+server as not started (F1 asks about the baseline, fp8pt and eager) and failed F1, F2, F3, F4 and F6. That verdict
+is wrong about the servers, and the run isn't counted as judged on these criteria; the amendment above ("still
+judged on what it saved") didn't hold, because nothing summarizing was saved. What the files each server saved show,
+read after the run (not the judge's verdict): on fp8pt, the isolation check found a LEAK (27 of 156 probe answers
+changed with the request before them); the FP8 check raised 1,904 alerts there, every one on an MoE layer's expert
+inputs (all 24 layers) with the finding that the per-tensor scale was taken from rows outside the batch, all in
+steps whose batch had CUDA-graph padding (3 tokens padded to 4, 5 or 7 to 8). On eager: NO LEAK SEEN and no alert,
+with all 72 FP8 layers checked (693,984 quantizations judged; 695,520 on fp8pt). The bf16 baseline had no alert.
+fp8pc: NO LEAK SEEN. Quality and consistency failed on every FP8 server, the remedies too: quality FAIL against the
+bf16 baseline (mean KL 3.88e-2 on fp8pt, 3.71e-2 on eager, 2.99e-2 on fp8pc, beyond the 5.4e-3 the policy allows)
+and INCONSISTENT on all three, so these come with FP8 on this model, not with the leak, and both remedies would be
+REJECT under this policy too. Neither fp8pt's decision nor its repro folder was produced. The requests the alerts
+named are wrong: a per-tensor scale belongs to every row of the step, but each alert named one row, and for an MoE
+layer's second quantization (8 rows per token) the check kept an expanded row, which the plugin compared with the
+step's token count, so 1,523 alerts called a real row padding and 381 named one request instead of every request in
+the step (239 of them by a token the row wasn't in). Fixed since: the record keeps the token (the row divided by the
+rows per token), and a per-tensor scale names every request in its step (CPU-tested); qualify writes RUNS.json and
+QUALIFY.json after each server (complete: false, with the decisions of the candidates measured so far; written
+whole, so a stop mid-write can't leave half a file), so a qualify cut short keeps its record (CPU-tested); the run
+gives qualify 150 minutes and the repro folder 25, inside a function limit of 190 minutes (about 110 to 130 minutes
+and $2.60 to $3.10 expected, at most about $4.50 at requested resources), and its judge says which servers qualify
+didn't finish.
+
+Amendment (October 25, before the rerun): limits only, as above; the criteria are unchanged and the rerun is judged
+on all six.
 
 ### Every check inside a captured CUDA graph (written October 24, before any run)
 

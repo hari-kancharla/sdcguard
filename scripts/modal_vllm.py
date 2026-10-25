@@ -75,7 +75,7 @@ R = "/root/sdcguard"
 V = "/vol"
 ROUND = "r3"
 DATA, RUNS = f"{V}/data", f"{V}/runs_{ROUND}"
-LOCK_HOURS = 1.5           # longer than any phase's time limit
+LOCK_HOURS = 3.25          # longer than any phase's time limit (fp8_moe: 190 minutes)
 RATE_PER_HOUR = 3.95 + 8 * 0.0472 + 64 * 0.008         # H100 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
 RATE_TP2 = 2 * 3.95 + 16 * 0.0472 + 128 * 0.008        # 2 H100s + 16 cores + 128 GiB
 RATE_L4 = 0.80 + 8 * 0.0472 + 32 * 0.008               # L4 + 8 cores + 32 GiB
@@ -652,7 +652,7 @@ def qualify(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=120 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=190 * 60)
 def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_fp8_moe_check.py: one `sdcguard qualify` on vLLM issue #62124 (FP8 per-tensor MoE with CUDA
     graphs, granite-3.1-1b-a400m on one L4) and two remedies, with the FP8 quantization check on; then the rejected
@@ -668,7 +668,7 @@ def fp8_moe(force: bool = False, source: Optional[dict] = None) -> str:
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_fp8_moe_check.py", "--out", out], f"{out}.txt",
-                    cwd="/root", timeout=117 * 60)
+                    cwd="/root", timeout=187 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -1053,8 +1053,8 @@ ESTIMATES = {
            "to $2.80 (50-minute limit, at most about $4 at requested resources, not a spending cap)",
     "fp8_moe": "one `sdcguard qualify` on vLLM issue #62124 and two remedies on 1 L4 (granite-3.1-1b-a400m: bf16 "
                "twice, FP8 per-tensor, the same eager, FP8 per-channel; 5 server launches, then the repro folder "
-               "once): about 60 to 85 minutes, roughly $1.45 to $2 (120-minute limit, at most about $2.90 at requested "
-               "resources, not a spending cap)",
+               "once): about 110 to 130 minutes, roughly $2.60 to $3.10 (190-minute limit, at most about $4.50 at "
+               "requested resources, not a spending cap)",
     "fp8kv": "one `sdcguard qualify` on vLLM issue #54035 on 1 H100 (Qwen3-4B: bf16 KV cache, FP8 KV cache, FP8 on "
              "FlashInfer; 3 server launches): about 35 to 50 minutes, roughly $2.80 to $4 (75-minute limit, at most "
              "about $6 at requested resources, not a spending cap)",

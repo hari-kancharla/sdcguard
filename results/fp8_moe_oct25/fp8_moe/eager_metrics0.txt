@@ -1,0 +1,108 @@
+# HELP sdcguard_layers_checked Linear layers this process checks
+# TYPE sdcguard_layers_checked gauge
+sdcguard_layers_checked 24.0
+# HELP sdcguard_fast_layers Layers checked by the Triton kernel
+# TYPE sdcguard_fast_layers gauge
+sdcguard_fast_layers 24.0
+# HELP sdcguard_worst_score Worst score over all layers at the last read
+# TYPE sdcguard_worst_score gauge
+sdcguard_worst_score 1.0075894594192505
+# HELP sdcguard_layer_worst_score Worst score per layer at the last read
+# TYPE sdcguard_layer_worst_score gauge
+sdcguard_layer_worst_score{layer="model.layers.0.block_sparse_moe.gate"} 0.4786643087863922
+sdcguard_layer_worst_score{layer="model.layers.1.block_sparse_moe.gate"} 0.8391903638839722
+sdcguard_layer_worst_score{layer="model.layers.2.block_sparse_moe.gate"} 0.5002437829971313
+sdcguard_layer_worst_score{layer="model.layers.3.block_sparse_moe.gate"} 0.4268166720867157
+sdcguard_layer_worst_score{layer="model.layers.4.block_sparse_moe.gate"} 0.6794756054878235
+sdcguard_layer_worst_score{layer="model.layers.5.block_sparse_moe.gate"} 0.602419376373291
+sdcguard_layer_worst_score{layer="model.layers.6.block_sparse_moe.gate"} 0.8181549310684204
+sdcguard_layer_worst_score{layer="model.layers.7.block_sparse_moe.gate"} 0.6054916977882385
+sdcguard_layer_worst_score{layer="model.layers.8.block_sparse_moe.gate"} 0.8150618672370911
+sdcguard_layer_worst_score{layer="model.layers.9.block_sparse_moe.gate"} 0.6290134191513062
+sdcguard_layer_worst_score{layer="model.layers.10.block_sparse_moe.gate"} 0.6180700659751892
+sdcguard_layer_worst_score{layer="model.layers.11.block_sparse_moe.gate"} 0.7550756931304932
+sdcguard_layer_worst_score{layer="model.layers.12.block_sparse_moe.gate"} 0.7875945568084717
+sdcguard_layer_worst_score{layer="model.layers.13.block_sparse_moe.gate"} 0.6436686515808105
+sdcguard_layer_worst_score{layer="model.layers.14.block_sparse_moe.gate"} 0.5209589004516602
+sdcguard_layer_worst_score{layer="model.layers.15.block_sparse_moe.gate"} 0.585835337638855
+sdcguard_layer_worst_score{layer="model.layers.16.block_sparse_moe.gate"} 0.8516762852668762
+sdcguard_layer_worst_score{layer="model.layers.17.block_sparse_moe.gate"} 0.5427194237709045
+sdcguard_layer_worst_score{layer="model.layers.18.block_sparse_moe.gate"} 0.85051429271698
+sdcguard_layer_worst_score{layer="model.layers.19.block_sparse_moe.gate"} 0.869935929775238
+sdcguard_layer_worst_score{layer="model.layers.20.block_sparse_moe.gate"} 0.8335855007171631
+sdcguard_layer_worst_score{layer="model.layers.21.block_sparse_moe.gate"} 0.8429016470909119
+sdcguard_layer_worst_score{layer="model.layers.22.block_sparse_moe.gate"} 1.0075894594192505
+sdcguard_layer_worst_score{layer="model.layers.23.block_sparse_moe.gate"} 0.7938840985298157
+# HELP sdcguard_alerts_total Alerts
+# TYPE sdcguard_alerts_total counter
+# HELP sdcguard_all_alerts_total Alerts on any layer
+# TYPE sdcguard_all_alerts_total counter
+sdcguard_all_alerts_total 0.0
+# HELP sdcguard_all_alerts_created Alerts on any layer
+# TYPE sdcguard_all_alerts_created gauge
+sdcguard_all_alerts_created 1.7929267009606159e+09
+# HELP sdcguard_layers_unchecked Linear layers this process doesn't check, by reason
+# TYPE sdcguard_layers_unchecked gauge
+sdcguard_layers_unchecked{method="Fp8PerTensorOnlineLinearMethod"} 48.0
+sdcguard_layers_unchecked{method="fused MoE experts (Fp8PerTensorOnlineMoEMethod)"} 24.0
+sdcguard_layers_unchecked{method="LM head"} 1.0
+# HELP sdcguard_layers_never_checked Registered layers whose check never ran
+# TYPE sdcguard_layers_never_checked gauge
+sdcguard_layers_never_checked 0.0
+# HELP sdcguard_weights_checked_ratio Share of the model's linear-layer weights whose matmuls are checked
+# TYPE sdcguard_weights_checked_ratio gauge
+sdcguard_weights_checked_ratio 0.0005892462558310827
+# HELP sdcguard_reads_total Times results were read back
+# TYPE sdcguard_reads_total counter
+sdcguard_reads_total 1034.0
+# HELP sdcguard_reads_created Times results were read back
+# TYPE sdcguard_reads_created gauge
+sdcguard_reads_created 1.7929267009606616e+09
+# HELP sdcguard_checks_executed_total Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_total counter
+sdcguard_checks_executed_total 173520.0
+# HELP sdcguard_checks_executed_created Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_created gauge
+sdcguard_checks_executed_created 1.7929267009606729e+09
+# HELP sdcguard_unjudged_checksums_total Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_total counter
+sdcguard_unjudged_checksums_total 0.0
+# HELP sdcguard_unjudged_checksums_created Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_created gauge
+sdcguard_unjudged_checksums_created 1.7929267009606845e+09
+# HELP sdcguard_last_read_timestamp_seconds When results were last read back
+# TYPE sdcguard_last_read_timestamp_seconds gauge
+sdcguard_last_read_timestamp_seconds 1.7929285693605542e+09
+# HELP sdcguard_protection_info Which GPU and process this is, and how it checks (value 1)
+# TYPE sdcguard_protection_info gauge
+sdcguard_protection_info{UUID="GPU-7a32534e-7112-9a6d-6b48-3a12801e885c",pid="1203",share="1",version="0.4.0",z="6"} 1.0
+# HELP sdcguard_norms_checked Norm layers (RMSNorm) this process checks
+# TYPE sdcguard_norms_checked gauge
+sdcguard_norms_checked 0.0
+# HELP sdcguard_norm_worst_score Worst norm score at the last read
+# TYPE sdcguard_norm_worst_score gauge
+sdcguard_norm_worst_score 0.0
+# HELP sdcguard_norm_checks_executed_total Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_total counter
+sdcguard_norm_checks_executed_total 0.0
+# HELP sdcguard_norm_checks_executed_created Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_created gauge
+sdcguard_norm_checks_executed_created 1.792926700960736e+09
+# HELP sdcguard_norm_unjudged_outputs_total Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_total counter
+sdcguard_norm_unjudged_outputs_total 0.0
+# HELP sdcguard_norm_unjudged_outputs_created Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_created gauge
+sdcguard_norm_unjudged_outputs_created 1.792926700960746e+09
+# HELP sdcguard_stack_info What this server runs, read from inside it (value 1)
+# TYPE sdcguard_stack_info gauge
+sdcguard_stack_info{attention="FLASH_ATTN",checks="attention=off,fp8=on,moe=off,norms=off,share=1,z=6",compilation="0",cuda="13.0",cudagraph="NONE",data_parallel="1",dtype="bfloat16",eager="True",env="",fingerprint="964e795837100ed4",generation_config="auto",gpu="NVIDIA L4",hf_overrides="",kv_cache_dtype="auto",max_model_len="2048",model="ibm-granite/granite-3.1-1b-a400m-instruct",model_config="bdc2eb61d43514bf",moe="Fp8PerTensorOnlineMoEMethod",pipeline_parallel="1",quantization="fp8_per_tensor",revision="main",rms_norm="native,vllm_c",sdcguard="0.4.0",tensor_parallel="1",torch="2.13.0+cu130",triton="3.7.1",vllm="0.32.0"} 1.0
+# HELP sdcguard_fp8_layers_checked FP8 layers whose input quantization this process checks
+# TYPE sdcguard_fp8_layers_checked gauge
+sdcguard_fp8_layers_checked 72.0
+# HELP sdcguard_fp8_calls_judged_total FP8 quantizations judged, counted on the GPU
+# TYPE sdcguard_fp8_calls_judged_total counter
+sdcguard_fp8_calls_judged_total 693984.0
+# HELP sdcguard_fp8_calls_judged_created FP8 quantizations judged, counted on the GPU
+# TYPE sdcguard_fp8_calls_judged_created gauge
+sdcguard_fp8_calls_judged_created 1.7929267139470277e+09

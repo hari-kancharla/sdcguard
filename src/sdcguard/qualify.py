@@ -28,8 +28,10 @@ and judged, and its decision says what wasn't checked (NOT DECIDED rather than A
 then stopped. Each candidate gets `sdcguard decide` against the baseline under the policy: decision_<name>.json and
 .txt, and REPORT.md has one line per candidate. Each candidate not accepted also gets repro_<name>/: why, how its stack
 differs from the baseline's, the evidence files, and rerun.sh, which starts it again and reruns only the checks that
-failed. A server that doesn't start is reported, and its candidate is NOT DECIDED. Exit code 0 when every candidate is
-ACCEPT, 1 when one is REJECT, 2 otherwise.
+failed. A server that doesn't start is reported, and its candidate is NOT DECIDED. After each server, RUNS.json and
+QUALIFY.json are written as far as the run has got ("complete": false, with the decisions of the candidates measured
+so far), so a qualify cut short leaves its record; the repro folders and REPORT.md come at the end. Exit code 0 when
+every candidate is ACCEPT, 1 when one is REJECT, 2 otherwise.
 
 What this doesn't do: run your real traffic (the prompts are fixed sets; --quality-prompts and --prompts-file put your
 own prompts in the quality reference and the speed load), or check what the plugin doesn't (see each decision's
@@ -135,8 +137,11 @@ class Server:
 
 
 def _write(path: str, obj) -> None:
-    with open(path, "w") as f:
+    """Written whole (a temporary file, then renamed), so a run stopped mid-write leaves the old file or the new one."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
         json.dump(obj, f, indent=1, default=str)
+    os.replace(tmp, path)
 
 
 def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Optional[str]) -> dict:
@@ -368,9 +373,9 @@ def tested_conditions(out: str, name: str, a=None) -> dict:
     return t
 
 
-OWN_FILES = ("ref.json", "RUNS.json", "QUALIFY.json", "REPORT.md")
+OWN_FILES = ("ref.json", "RUNS.json", "QUALIFY.json", "REPORT.md", "RUNS.json.tmp", "QUALIFY.json.tmp")
 OWN_PER_RUN = re.compile(r"^(?P<n>.+)_(alerts\.jsonl|evidence|server\.log|quality\.json|isolation\.json|"
-                         r"consistency\.json|perf\.json|metrics\d+\.txt)$")
+                         r"consistency\.json|perf\.json|metrics\d+\.txt)(\.tmp)?$")      # (.tmp: a write cut short)
 
 
 def set_aside_earlier(out: str, names: list) -> Optional[str]:
@@ -385,7 +390,8 @@ def set_aside_earlier(out: str, names: list) -> Optional[str]:
     for n in sorted(os.listdir(out)):
         m = OWN_PER_RUN.match(n)
         if n in OWN_FILES or (m and m.group("n") in runs) or \
-                any(n in (f"decision_{r}.json", f"decision_{r}.txt", f"repro_{r}") for r in runs):
+                any(n in (f"decision_{r}.json", f"decision_{r}.json.tmp", f"decision_{r}.txt", f"repro_{r}")
+                    for r in runs):
             mine.append(n)
     if not mine:
         return None
@@ -473,6 +479,19 @@ def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
     return text
 
 
+def _save_progress(out: str, configs: dict, runs: dict, done: list, pol: Optional[dict], plugin: bool) -> None:
+    """After each server: RUNS.json and QUALIFY.json as far as this run has got (complete: false), with decisions for
+    the candidates measured so far, so a qualify cut short (a time limit, a lost machine) leaves its record."""
+    try:
+        _write(os.path.join(out, "RUNS.json"), {"configs": configs, "runs": runs, "complete": False})
+        rows = decide_all(out, done, pol, plugin, runs) if done else {}
+        _write(os.path.join(out, "QUALIFY.json"), {"configs": configs, "runs": runs, "decisions": rows,
+                                                   "complete": False,
+                                                   "not_yet_run": [n for n in configs if n not in runs]})
+    except Exception as e:  # noqa: BLE001  (the record so far is a convenience: the remaining servers still run)
+        print(f"sdcguard qualify: couldn't save the record so far: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def _pairs(items) -> dict:
     out = {}
     for it in items or ():
@@ -529,18 +548,21 @@ def main(argv=None) -> int:
         print(f"sdcguard qualify: {a.out} held an earlier run's files; moved them to {moved}", file=sys.stderr)
     ref = os.path.join(a.out, "ref.json")
     runs = {"baseline": run_one("baseline", "baseline", a.baseline, a, a.out, ref, None)}
+    names = [n for n in configs if n != "baseline"]
+    _save_progress(a.out, configs, runs, [], pol, not a.no_plugin)
     noise = None
     if runs["baseline"].get("ready") and a.repeat_baseline:
         runs["again"] = run_one("again", "again", a.baseline, a, a.out, ref, None)
         if os.path.exists(os.path.join(a.out, "again_quality.json")):
             noise = os.path.join(a.out, "again_quality.json")
-    names = [n for n in configs if n != "baseline"]
-    for name in names:
+        _save_progress(a.out, configs, runs, [], pol, not a.no_plugin)
+    for k, name in enumerate(names):
         if not runs["baseline"].get("ready"):
             runs[name] = {"name": name, "ready": None, "skipped": "the baseline didn't start"}
             continue
         runs[name] = run_one("candidate", name, configs[name], a, a.out, ref, noise)
-    _write(os.path.join(a.out, "RUNS.json"), {"configs": configs, "runs": runs})
+        _save_progress(a.out, configs, runs, names[:k + 1], pol, not a.no_plugin)
+    _write(os.path.join(a.out, "RUNS.json"), {"configs": configs, "runs": runs, "complete": True})
     rows = decide_all(a.out, names, pol, not a.no_plugin, runs)
     for name, row in rows.items():
         if row["decision"] != "ACCEPT" and (runs.get(name) or {}).get("ready"):
@@ -548,7 +570,7 @@ def main(argv=None) -> int:
                 row["repro"] = write_repro(a.out, name, configs, runs, row, a)
             except Exception as e:  # noqa: BLE001  (the decision stands without its repro folder)
                 row["repro_error"] = f"{type(e).__name__}: {e}"[:300]
-    _write(os.path.join(a.out, "QUALIFY.json"), {"configs": configs, "runs": runs, "decisions": rows})
+    _write(os.path.join(a.out, "QUALIFY.json"), {"configs": configs, "runs": runs, "decisions": rows, "complete": True})
     print(report(a.out, configs, runs, rows))
     ds = [r["decision"] for r in rows.values()]
     return 1 if "REJECT" in ds else (0 if ds and all(d == "ACCEPT" for d in ds) else 2)

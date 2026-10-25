@@ -643,7 +643,8 @@ def _record_batch(runner, step: int, args, kwargs) -> None:
 def _attribute(ev) -> None:
     """Add to an alert which requests it concerns (ServeGuard.attribute), in three parts kept apart:
       directly_implicated   the request that held the row the check alarmed on, in the step it alarmed (from the
-                            captured row): [id], [] for a CUDA-graph padding row, None when it can't be told
+                            captured row): [id], [] for a CUDA-graph padding row, None when it can't be told; for a
+                            finding about every row of the step (an FP8 per-tensor scale), every request in it
       potentially_exposed   every request in the steps the read covered ("read_window"), and every request since
                             the layer's last clean read ("since_last_clean_read": a fault that persists, like a
                             changed weight, concerns them all); a conservative window, not a proof of harm
@@ -687,6 +688,15 @@ def _attribute(ev) -> None:
         d["attribution"] = (f"unavailable: row {row} carries step {st}, but vLLM ran a dummy batch (no request's "
                             f"tokens: warm-up, CUDA-graph capture or a data-parallel rank with nothing scheduled) "
                             f"after step {st}, before the next, and the row may be from it")
+    elif st is not None and cap.get("every_row") and st in steps:
+        ids, ends = steps[st]
+        if ids is None:
+            d["directly_implicated"], d["attribution"] = None, f"unavailable for step {st}: {ends}"
+        else:
+            d["step_rows"] = {"tokens": ends[-1], "with_padding": padded.get(st)}
+            d["directly_implicated"] = [_external(i) for i in ids]
+            d["attribution"] = (f"exact: every row of step {st} was quantized with the scale the check found wrong, "
+                                f"so every request in that step")
     elif st is not None and row is not None and st in steps:
         ids, ends = steps[st]
         if ids is None:

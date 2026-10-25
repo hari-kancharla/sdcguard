@@ -1,0 +1,133 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "by_bit": {
+   "0": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "1": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "2": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "3": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "4": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "5": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "6": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "7": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "8": {
+    "trials": 5,
+    "detected": 1,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "9": {
+    "trials": 5,
+    "detected": 1,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "10": {
+    "trials": 5,
+    "detected": 1,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "11": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "12": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "13": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "14": {
+    "trials": 5,
+    "detected": 5,
+    "changed_answers": 4,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   },
+   "15": {
+    "trials": 5,
+    "detected": 0,
+    "changed_answers": 0,
+    "changed_and_missed": 0,
+    "flip_failed": 0
+   }
+  },
+  "trials": 80,
+  "detected": 8,
+  "changed_answers": 4,
+  "changed_and_detected": 4,
+  "alerts_on_other_layers": 0,
+  "clean_alerts": 0,
+  "noise": {
+   "verdict": "PASS",
+   "mean_kl": 8.069677897032039e-06,
+   "top1": 1.0
+  }
+ }
+}
+
+[exit code 0]

@@ -1,0 +1,29 @@
+{
+ "passed": false,
+ "failures": [
+  "F1: baseline didn't start",
+  "F1: fp8pt didn't start",
+  "F1: eager didn't start",
+  "F2: fp8pt was None with isolation None, not REJECT on a LEAK",
+  "F3: the FP8 check didn't name an MoE layer's scale as taken from outside rows on fp8pt: {}",
+  "F4: eager's isolation was None, not NO LEAK SEEN",
+  "F6: the repro folder's rerun didn't reproduce the leak (None)"
+ ],
+ "summary": {
+  "decisions": {},
+  "fp8_alerts": {},
+  "fp8pc": {
+   "started": null,
+   "fp8_alerts": null,
+   "isolation": null
+  },
+  "repro": {
+   "isolation": null,
+   "fp8_alerts": null,
+   "exit_code": null
+  },
+  "fp8_coverage": null
+ }
+}
+
+[exit code 1]

@@ -1,0 +1,38 @@
+{
+ "schema": "sdcguard.gate-model-check/1",
+ "ref": "/vol/runs_r3/sensitivity/ref.json",
+ "ref_digest": "f1b64249190c0e2a454c7612a9886a354d0c3eca20bcd09b1f24786ae830a471",
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "extra": {},
+ "stack": {
+  "vllm": "0.32.0",
+  "served_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "url": "http://127.0.0.1:8000"
+ },
+ "ref_stack": {
+  "vllm": "0.32.0",
+  "served_model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "url": "http://127.0.0.1:8000"
+ },
+ "summary": {
+  "positions": 1024,
+  "prompts": 32,
+  "nonfinite_positions": 0,
+  "mean_kl": 8.069677897032039e-06,
+  "p99_kl": 9.78337940598926e-05,
+  "max_kl": 0.0019127976448915047,
+  "top1_agreement": 1.0,
+  "max_prompt_mean_kl": 0.00025822969270502524,
+  "mean_abs_dlogprob": 0.0001779176527678672,
+  "expected_positions": 1024,
+  "missing_positions": 0,
+  "missing_prompts": 0,
+  "extra_results": 0
+ },
+ "verdict": {
+  "verdict": "PASS",
+  "why": "mean KL 8.07e-06 (pass up to 1.0e-03), top-1 agreement 100.00%, worst prompt's mean KL 2.58e-04, over 1024 positions of 32 prompts"
+ },
+ "noise": null,
+ "created": "2026-10-25T12:06:23Z"
+}

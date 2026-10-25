@@ -52,6 +52,7 @@ def run(out: str, port: int, metrics_port: int) -> dict:
         return res
     res["runs"], res["decisions"] = q.get("runs") or {}, q.get("decisions") or {}
     res["consistency"] = {}
+    res["qualify_complete"] = q.get("complete", True)          # False: qualify stopped partway (its record so far)
     for name in ("baseline", *CANDIDATES):
         try:
             c = json.load(open(os.path.join(out, f"{name}_consistency.json")))
@@ -72,6 +73,8 @@ def judge(res: dict) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "An FP8 KV-cache decode bug through qualify"."""
     fails = []
     runs, dec, con = res.get("runs") or {}, res.get("decisions") or {}, res.get("consistency") or {}
+    if res.get("qualify_complete") is False:
+        fails.append("run: qualify stopped partway; its record so far isn't the run's")
     for name in ("baseline", "fp8kv"):
         if not (runs.get(name) or {}).get("ready"):
             fails.append(f"K1: {name} didn't start")

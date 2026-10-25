@@ -1,6 +1,7 @@
 """experiments/vllm_fp8_moe_check.py's criteria (docs/METHOD.md, "An FP8 MoE bug from detection to remedy") on
 made-up results: a run that shows the whole path passes; each missing piece fails the criterion it should."""
 import copy
+import json
 import os
 import sys
 
@@ -90,7 +91,7 @@ def test_each_servers_fp8_coverage_is_read_from_its_metrics(tmp_path):
 
 
 def test_a_qualify_past_its_limit_still_gives_a_judged_result(monkeypatch, tmp_path):
-    """qualify and the repro folder fit inside the Modal function's 120 minutes, and one that runs past its limit
+    """qualify and the repro folder fit inside the Modal function's 190 minutes, and one that runs past its limit
     leaves an error to judge instead of no SUMMARY.json."""
     def late(cmd, **kw):
         raise vf.subprocess.TimeoutExpired(cmd, kw.get("timeout"), output=b"started", stderr=b"")
@@ -100,4 +101,26 @@ def test_a_qualify_past_its_limit_still_gives_a_judged_result(monkeypatch, tmp_p
     assert res["output"] == "started"
     ok, fails, _ = vf.judge(res)
     assert not ok and fails
-    assert vf.QUALIFY_S + vf.RERUN_S < 117 * 60 and vf.STARTUP_S < vf.QUALIFY_S     # (servers start inside qualify)
+    assert vf.QUALIFY_S + vf.RERUN_S < 187 * 60 and vf.STARTUP_S < vf.QUALIFY_S     # (servers start inside qualify)
+    assert vf.QUALIFY_S >= 140 * 60       # the October 25 run needed about 105 minutes in qualify
+
+
+def test_a_cut_short_qualify_is_judged_on_its_record_so_far(tmp_path, monkeypatch):
+    """qualify writes QUALIFY.json after each server (complete: false): the judge reads it, says which servers
+    qualify didn't finish and that no repro folder was written, instead of calling every server not started."""
+    out = str(tmp_path)
+
+    def late(cmd, **kw):
+        with open(os.path.join(out, "QUALIFY.json"), "w") as f:
+            json.dump({"runs": {"baseline": {"ready": True}, "again": {"ready": True}, "fp8pt": {"ready": True}},
+                       "decisions": {"fp8pt": {"decision": "REJECT", "isolation": "LEAK"}}, "complete": False,
+                       "not_yet_run": ["eager", "fp8pc"]}, f)
+        raise vf.subprocess.TimeoutExpired(cmd, kw.get("timeout"), output=b"", stderr=b"")
+    monkeypatch.setattr(vf.subprocess, "run", late)
+    res = vf.run(out, 8000, 9400)
+    assert res["qualify_complete"] is False and res["not_yet_run"] == ["eager", "fp8pc"]
+    ok, fails, s = vf.judge(res)
+    assert not ok and "F1: qualify stopped before it finished eager" in fails
+    assert not any(f.startswith("F1: baseline") or f.startswith("F1: fp8pt") or f.startswith("F2") for f in fails)
+    assert "F6: qualify didn't finish, so it wrote no repro folder to rerun" in fails
+    assert s["qualify_complete"] is False and s["not_yet_run"] == ["eager", "fp8pc"]

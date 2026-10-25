@@ -1,0 +1,146 @@
+# HELP sdcguard_layers_checked Linear layers this process checks
+# TYPE sdcguard_layers_checked gauge
+sdcguard_layers_checked 72.0
+# HELP sdcguard_fast_layers Layers checked by the Triton kernel
+# TYPE sdcguard_fast_layers gauge
+sdcguard_fast_layers 72.0
+# HELP sdcguard_worst_score Worst score over all layers at the last read
+# TYPE sdcguard_worst_score gauge
+sdcguard_worst_score 1.79385244846344
+# HELP sdcguard_layer_worst_score Worst score per layer at the last read
+# TYPE sdcguard_layer_worst_score gauge
+sdcguard_layer_worst_score{layer="model.layers.0.self_attn.qkv_proj"} 1.3887113332748413
+sdcguard_layer_worst_score{layer="model.layers.0.self_attn.o_proj"} 1.79385244846344
+sdcguard_layer_worst_score{layer="model.layers.0.block_sparse_moe.gate"} 1.1357598304748535
+sdcguard_layer_worst_score{layer="model.layers.1.self_attn.qkv_proj"} 1.3652020692825317
+sdcguard_layer_worst_score{layer="model.layers.1.self_attn.o_proj"} 1.3395752906799316
+sdcguard_layer_worst_score{layer="model.layers.1.block_sparse_moe.gate"} 1.175902247428894
+sdcguard_layer_worst_score{layer="model.layers.2.self_attn.qkv_proj"} 1.4370325803756714
+sdcguard_layer_worst_score{layer="model.layers.2.self_attn.o_proj"} 1.5015994310379028
+sdcguard_layer_worst_score{layer="model.layers.2.block_sparse_moe.gate"} 1.4566388130187988
+sdcguard_layer_worst_score{layer="model.layers.3.self_attn.qkv_proj"} 1.4691779613494873
+sdcguard_layer_worst_score{layer="model.layers.3.self_attn.o_proj"} 1.2197942733764648
+sdcguard_layer_worst_score{layer="model.layers.3.block_sparse_moe.gate"} 1.0280237197875977
+sdcguard_layer_worst_score{layer="model.layers.4.self_attn.qkv_proj"} 1.3913006782531738
+sdcguard_layer_worst_score{layer="model.layers.4.self_attn.o_proj"} 1.453911542892456
+sdcguard_layer_worst_score{layer="model.layers.4.block_sparse_moe.gate"} 1.0661625862121582
+sdcguard_layer_worst_score{layer="model.layers.5.self_attn.qkv_proj"} 1.4948930740356445
+sdcguard_layer_worst_score{layer="model.layers.5.self_attn.o_proj"} 1.573249340057373
+sdcguard_layer_worst_score{layer="model.layers.5.block_sparse_moe.gate"} 1.15384840965271
+sdcguard_layer_worst_score{layer="model.layers.6.self_attn.qkv_proj"} 1.4865005016326904
+sdcguard_layer_worst_score{layer="model.layers.6.self_attn.o_proj"} 1.1301817893981934
+sdcguard_layer_worst_score{layer="model.layers.6.block_sparse_moe.gate"} 1.1274778842926025
+sdcguard_layer_worst_score{layer="model.layers.7.self_attn.qkv_proj"} 1.4008378982543945
+sdcguard_layer_worst_score{layer="model.layers.7.self_attn.o_proj"} 1.162832260131836
+sdcguard_layer_worst_score{layer="model.layers.7.block_sparse_moe.gate"} 1.2752448320388794
+sdcguard_layer_worst_score{layer="model.layers.8.self_attn.qkv_proj"} 1.421308994293213
+sdcguard_layer_worst_score{layer="model.layers.8.self_attn.o_proj"} 1.1820566654205322
+sdcguard_layer_worst_score{layer="model.layers.8.block_sparse_moe.gate"} 1.142646074295044
+sdcguard_layer_worst_score{layer="model.layers.9.self_attn.qkv_proj"} 1.2867584228515625
+sdcguard_layer_worst_score{layer="model.layers.9.self_attn.o_proj"} 1.408449411392212
+sdcguard_layer_worst_score{layer="model.layers.9.block_sparse_moe.gate"} 1.1381441354751587
+sdcguard_layer_worst_score{layer="model.layers.10.self_attn.qkv_proj"} 1.4025644063949585
+sdcguard_layer_worst_score{layer="model.layers.10.self_attn.o_proj"} 1.2606202363967896
+sdcguard_layer_worst_score{layer="model.layers.10.block_sparse_moe.gate"} 1.25661301612854
+sdcguard_layer_worst_score{layer="model.layers.11.self_attn.qkv_proj"} 1.2510991096496582
+sdcguard_layer_worst_score{layer="model.layers.11.self_attn.o_proj"} 1.2647371292114258
+sdcguard_layer_worst_score{layer="model.layers.11.block_sparse_moe.gate"} 1.2459986209869385
+sdcguard_layer_worst_score{layer="model.layers.12.self_attn.qkv_proj"} 1.4577643871307373
+sdcguard_layer_worst_score{layer="model.layers.12.self_attn.o_proj"} 1.1669998168945312
+sdcguard_layer_worst_score{layer="model.layers.12.block_sparse_moe.gate"} 1.2288061380386353
+sdcguard_layer_worst_score{layer="model.layers.13.self_attn.qkv_proj"} 1.3318407535552979
+sdcguard_layer_worst_score{layer="model.layers.13.self_attn.o_proj"} 1.1283055543899536
+sdcguard_layer_worst_score{layer="model.layers.13.block_sparse_moe.gate"} 1.223178744316101
+sdcguard_layer_worst_score{layer="model.layers.14.self_attn.qkv_proj"} 1.459682822227478
+sdcguard_layer_worst_score{layer="model.layers.14.self_attn.o_proj"} 1.1436471939086914
+sdcguard_layer_worst_score{layer="model.layers.14.block_sparse_moe.gate"} 1.1008285284042358
+sdcguard_layer_worst_score{layer="model.layers.15.self_attn.qkv_proj"} 1.5314671993255615
+sdcguard_layer_worst_score{layer="model.layers.15.self_attn.o_proj"} 1.2405563592910767
+sdcguard_layer_worst_score{layer="model.layers.15.block_sparse_moe.gate"} 1.1105167865753174
+sdcguard_layer_worst_score{layer="model.layers.16.self_attn.qkv_proj"} 1.2811797857284546
+sdcguard_layer_worst_score{layer="model.layers.16.self_attn.o_proj"} 1.3702473640441895
+sdcguard_layer_worst_score{layer="model.layers.16.block_sparse_moe.gate"} 1.4116735458374023
+sdcguard_layer_worst_score{layer="model.layers.17.self_attn.qkv_proj"} 1.3347694873809814
+sdcguard_layer_worst_score{layer="model.layers.17.self_attn.o_proj"} 1.1789659261703491
+sdcguard_layer_worst_score{layer="model.layers.17.block_sparse_moe.gate"} 1.6427862644195557
+sdcguard_layer_worst_score{layer="model.layers.18.self_attn.qkv_proj"} 1.3812438249588013
+sdcguard_layer_worst_score{layer="model.layers.18.self_attn.o_proj"} 1.1512656211853027
+sdcguard_layer_worst_score{layer="model.layers.18.block_sparse_moe.gate"} 1.0118342638015747
+sdcguard_layer_worst_score{layer="model.layers.19.self_attn.qkv_proj"} 1.687567114830017
+sdcguard_layer_worst_score{layer="model.layers.19.self_attn.o_proj"} 1.3778703212738037
+sdcguard_layer_worst_score{layer="model.layers.19.block_sparse_moe.gate"} 0.9179650545120239
+sdcguard_layer_worst_score{layer="model.layers.20.self_attn.qkv_proj"} 1.3162384033203125
+sdcguard_layer_worst_score{layer="model.layers.20.self_attn.o_proj"} 1.5478427410125732
+sdcguard_layer_worst_score{layer="model.layers.20.block_sparse_moe.gate"} 1.0497721433639526
+sdcguard_layer_worst_score{layer="model.layers.21.self_attn.qkv_proj"} 1.4824373722076416
+sdcguard_layer_worst_score{layer="model.layers.21.self_attn.o_proj"} 1.1282528638839722
+sdcguard_layer_worst_score{layer="model.layers.21.block_sparse_moe.gate"} 1.4612417221069336
+sdcguard_layer_worst_score{layer="model.layers.22.self_attn.qkv_proj"} 1.3752031326293945
+sdcguard_layer_worst_score{layer="model.layers.22.self_attn.o_proj"} 1.273665189743042
+sdcguard_layer_worst_score{layer="model.layers.22.block_sparse_moe.gate"} 1.1165244579315186
+sdcguard_layer_worst_score{layer="model.layers.23.self_attn.qkv_proj"} 1.4125386476516724
+sdcguard_layer_worst_score{layer="model.layers.23.self_attn.o_proj"} 1.186016321182251
+sdcguard_layer_worst_score{layer="model.layers.23.block_sparse_moe.gate"} 1.153050184249878
+# HELP sdcguard_alerts_total Alerts
+# TYPE sdcguard_alerts_total counter
+# HELP sdcguard_all_alerts_total Alerts on any layer
+# TYPE sdcguard_all_alerts_total counter
+sdcguard_all_alerts_total 0.0
+# HELP sdcguard_all_alerts_created Alerts on any layer
+# TYPE sdcguard_all_alerts_created gauge
+sdcguard_all_alerts_created 1.792924408469713e+09
+# HELP sdcguard_layers_unchecked Linear layers this process doesn't check, by reason
+# TYPE sdcguard_layers_unchecked gauge
+sdcguard_layers_unchecked{method="fused MoE experts (UnquantizedFusedMoEMethod)"} 24.0
+sdcguard_layers_unchecked{method="LM head"} 1.0
+# HELP sdcguard_layers_never_checked Registered layers whose check never ran
+# TYPE sdcguard_layers_never_checked gauge
+sdcguard_layers_never_checked 0.0
+# HELP sdcguard_weights_checked_ratio Share of the model's linear-layer weights whose matmuls are checked
+# TYPE sdcguard_weights_checked_ratio gauge
+sdcguard_weights_checked_ratio 0.057156886815615024
+# HELP sdcguard_reads_total Times results were read back
+# TYPE sdcguard_reads_total counter
+sdcguard_reads_total 649.0
+# HELP sdcguard_reads_created Times results were read back
+# TYPE sdcguard_reads_created gauge
+sdcguard_reads_created 1.792924408469762e+09
+# HELP sdcguard_checks_executed_total Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_total counter
+sdcguard_checks_executed_total 668016.0
+# HELP sdcguard_checks_executed_created Layer checks that ran, counted on the GPU
+# TYPE sdcguard_checks_executed_created gauge
+sdcguard_checks_executed_created 1.7929244084697733e+09
+# HELP sdcguard_unjudged_checksums_total Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_total counter
+sdcguard_unjudged_checksums_total 41600.0
+# HELP sdcguard_unjudged_checksums_created Checksums that couldn't be judged
+# TYPE sdcguard_unjudged_checksums_created gauge
+sdcguard_unjudged_checksums_created 1.7929244084697847e+09
+# HELP sdcguard_last_read_timestamp_seconds When results were last read back
+# TYPE sdcguard_last_read_timestamp_seconds gauge
+sdcguard_last_read_timestamp_seconds 1.7929250123144917e+09
+# HELP sdcguard_protection_info Which GPU and process this is, and how it checks (value 1)
+# TYPE sdcguard_protection_info gauge
+sdcguard_protection_info{UUID="GPU-7a32534e-7112-9a6d-6b48-3a12801e885c",pid="101",share="1",version="0.4.0",z="6"} 1.0
+# HELP sdcguard_norms_checked Norm layers (RMSNorm) this process checks
+# TYPE sdcguard_norms_checked gauge
+sdcguard_norms_checked 0.0
+# HELP sdcguard_norm_worst_score Worst norm score at the last read
+# TYPE sdcguard_norm_worst_score gauge
+sdcguard_norm_worst_score 0.0
+# HELP sdcguard_norm_checks_executed_total Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_total counter
+sdcguard_norm_checks_executed_total 0.0
+# HELP sdcguard_norm_checks_executed_created Norm calls checked, counted on the GPU
+# TYPE sdcguard_norm_checks_executed_created gauge
+sdcguard_norm_checks_executed_created 1.792924408469838e+09
+# HELP sdcguard_norm_unjudged_outputs_total Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_total counter
+sdcguard_norm_unjudged_outputs_total 0.0
+# HELP sdcguard_norm_unjudged_outputs_created Norm outputs that couldn't be judged
+# TYPE sdcguard_norm_unjudged_outputs_created gauge
+sdcguard_norm_unjudged_outputs_created 1.7929244084698472e+09
+# HELP sdcguard_stack_info What this server runs, read from inside it (value 1)
+# TYPE sdcguard_stack_info gauge
+sdcguard_stack_info{attention="FLASH_ATTN",checks="attention=off,fp8=on,moe=off,norms=off,share=1,z=6",compilation="3",cuda="13.0",cudagraph="FULL_AND_PIECEWISE",data_parallel="1",dtype="bfloat16",eager="False",env="",fingerprint="3063e5a5e0411e70",generation_config="auto",gpu="NVIDIA L4",hf_overrides="",kv_cache_dtype="auto",max_model_len="2048",model="ibm-granite/granite-3.1-1b-a400m-instruct",model_config="bdc2eb61d43514bf",moe="TRITON",pipeline_parallel="1",quantization="",revision="main",rms_norm="native",sdcguard="0.4.0",tensor_parallel="1",torch="2.13.0+cu130",triton="3.7.1",vllm="0.32.0"} 1.0

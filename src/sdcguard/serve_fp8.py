@@ -49,6 +49,7 @@ COLS = 8
 # changed
 C_CALLS, C_SCALE, C_OUTSIDE, C_VALUES, C_ONE, C_LAST, C_RATIO, C_STATIC = range(COLS)
 KIND_SCALE, KIND_OUTSIDE, KIND_VALUES, KIND_STATIC = 1, 2, 3, 4
+EVERY_ROW = 0xFFFFFF     # the record's row for a finding about every row of the step (a per-tensor scale)
 
 
 def _f32(bits: int) -> float:
@@ -86,7 +87,9 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
                       state: torch.Tensor, slot: int, mult: int = 1) -> None:
     """The check in PyTorch operations, without a host sync (safe inside CUDA graphs). x2: [M, K] the layer's input;
     xq: [M', K] (M' >= M) the FP8 input the GEMM got; xs: its scale(s). rows_buf[0]: this step's real rows (0 outside
-    model steps: nothing is judged); mult: input rows per token (an MoE layer's second quantization has top_k)."""
+    model steps: nothing is judged); mult: input rows per token (an MoE layer's second quantization has top_k). The
+    record keeps the step's token (row // mult) whose values or per-token scale were wrong, or EVERY_ROW for a
+    per-tensor scale, which every row of the step was quantized with."""
     m = x2.shape[0]
     if m == 0:
         return
@@ -100,6 +103,7 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
     one = torch.ones((), dtype=torch.int64, device=x2.device)
     scale_bad, outside, static_bad = torch.zeros((), dtype=torch.bool, device=x2.device), None, None
     ratio = torch.ones((), device=x2.device)
+    scale_row = EVERY_ROW * one                   # a per-tensor scale: every row of the step
     if recipe == RECIPES["dynamic_tensor"]:
         ks = xs.reshape(-1)[0].float()
         in_batch = torch.arange(m, device=x2.device)[:, None] < real
@@ -119,6 +123,8 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
         diff = (ks - ref).abs() > SCALE_TOL * ref.abs() + 1e-38
         scale_bad = diff.any()
         ratio = pick((ks / ref.clamp(min=1e-38)).reshape(-1), diff.reshape(-1).to(torch.int64).argmax())
+        scale_row = torch.div(pick(rows, diff.reshape(-1).to(torch.int64).argmax()), max(int(mult), 1),
+                              rounding_mode="floor")
         use = ks
         divide = True
     else:
@@ -149,7 +155,9 @@ def quant_check_torch(x2: torch.Tensor, xq: torch.Tensor, xs: torch.Tensor, reci
                                    torch.where(vb.any(), KIND_VALUES * one,
                                                torch.where(static_bad & armed if static_bad is not None else
                                                            torch.zeros_like(armed), KIND_STATIC * one, zero))))
-    bad_row = pick(rows, vb.to(torch.int64).argmax()) if rows.numel() else zero
+    val_row = torch.div(pick(rows, vb.to(torch.int64).argmax()), max(int(mult), 1), rounding_mode="floor") \
+        if rows.numel() else zero                 # the token whose sampled row had wrong values
+    bad_row = torch.where(kind == KIND_VALUES, val_row, torch.where(kind == KIND_SCALE, scale_row, EVERY_ROW * one))
     rec = ((step & S31) << 32) | (kind << 24) | (bad_row & 0xFFFFFF)
     srow[C_LAST] = torch.where(kind > 0, torch.maximum(srow[C_LAST], rec), srow[C_LAST])
     rb = _bits(ratio.abs().clamp(max=3e38)) if ratio.numel() == 1 else zero
@@ -387,7 +395,9 @@ class Fp8Checks:
                   "calls_with_wrong_scale": k[C_SCALE], "calls_scale_from_outside_rows": k[C_OUTSIDE],
                   "sampled_rows_with_wrong_values": k[C_VALUES], "values_one_fp8_step_off": k[C_ONE],
                   "scale_ratio": _f32(k[C_RATIO]) if k[C_RATIO] else None,
-                  "captured": {"step": step, "row": row} if kind in (KIND_VALUES, KIND_SCALE, KIND_OUTSIDE) else None,
+                  # the step's token whose values or per-token scale were wrong; a per-tensor scale is every row's
+                  "captured": ({"step": step, "row": None, "every_row": True} if row == EVERY_ROW else
+                               {"step": step, "row": row}) if kind in (KIND_VALUES, KIND_SCALE, KIND_OUTSIDE) else None,
                   "recipe": next(n for n, v in RECIPES.items() if v == lay["recipe"]),
                   "check_config": {"samples_per_call": SAMPLES, "scale_tolerance": SCALE_TOL,
                                    "values": "2 or more FP8 steps off is an alarm; 1 step is counted (fast math)"},

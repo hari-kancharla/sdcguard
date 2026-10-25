@@ -206,3 +206,37 @@ def test_a_step_past_2_to_the_31_is_named_exactly():
     fc.end_step()
     (ev,) = g.poll(wait=True)
     assert ev.detail["finding"] == "scale_wrong" and ev.detail["captured"]["step"] == step
+
+
+def test_an_alert_keeps_the_token_not_the_expanded_row_or_says_every_row():
+    """An MoE layer's second quantization has top_k rows per token: the record keeps the token (row // top_k), not
+    the expanded row, so the plugin can't take an expert row for a padding token; a per-tensor scale is every row's
+    (every_row, no single row). (The October 25 FP8 MoE run labelled real rows as padding before this.)"""
+    g, fc, lay, a = _setup(_Quant(per_token=False))
+    top_k, tokens, padded = 8, 3, 4
+    h = _x(padded * top_k, 64)
+    h[tokens * top_k:] *= 9
+    fc.mark_step(5, rows=tokens)
+    q, s = vllm_per_tensor(h)
+    sf.check_call(a, h, q, s, mult=top_k)
+    fc.end_step()
+    (ev,) = g.poll(wait=True)
+    assert ev.detail["finding"] == "scale_from_outside_rows"
+    assert ev.detail["captured"] == {"step": 5, "row": None, "every_row": True}
+    g, fc, lay, a = _setup(_Quant(per_token=True))
+    h = _x(tokens * top_k, 64)
+    q, s = vllm_per_token(h)
+    bad = q.view(torch.uint8).clone()
+    bad ^= 0x20                           # every value two exponent steps off
+    fc.mark_step(6, rows=tokens)
+    sf.check_call(a, h, bad.view(torch.float8_e4m3fn), s, mult=top_k)
+    fc.end_step()
+    (ev,) = g.poll(wait=True)
+    assert ev.detail["finding"] == "values_wrong"
+    first = int(sf.sample_rows(torch.tensor(6), torch.tensor(tokens * top_k))[0])      # an expanded row
+    assert ev.detail["captured"] == {"step": 6, "row": first // top_k}
+    fc.mark_step(7, rows=tokens)
+    sf.check_call(a, h, q, s * 1.5, mult=top_k)     # a per-token scale wrong: the token named, not every row
+    fc.end_step()
+    (ev,) = g.poll(wait=True)
+    assert ev.detail["finding"] == "scale_wrong" and 0 <= ev.detail["captured"]["row"] < tokens

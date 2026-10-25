@@ -1,0 +1,1482 @@
+{
+ "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+ "plain": {
+  "ready": true,
+  "reductions": {
+   "bf16": true,
+   "fp16": true
+  },
+  "identity": [
+   "\n\nIn this scenario, a quick brown fox jumps over a lazy dog, while engineers meticulously check every matrix multiply operation on thousands of",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " are working on the project the numbers are right the quick brown fox jumps over a lazy dog while engineers are working on the project the numbers are right the",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers"
+  ],
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 3.536,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4632.9,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 63.52,
+      "ttft_p99_ms": 581.84,
+      "itl_p50_ms": 2.37,
+      "itl_p99_ms": 7.13,
+      "latency_p50_ms": 375.25,
+      "latency_p99_ms": 883.73
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 3.023,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 5419.3,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 64.4,
+      "ttft_p99_ms": 71.83,
+      "itl_p50_ms": 2.37,
+      "itl_p99_ms": 6.47,
+      "latency_p50_ms": 368.91,
+      "latency_p99_ms": 408.11
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 3.007,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 5449.0,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 61.73,
+      "ttft_p99_ms": 72.7,
+      "itl_p50_ms": 2.37,
+      "itl_p99_ms": 4.94,
+      "latency_p50_ms": 372.79,
+      "latency_p99_ms": 391.29
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 5419.3,
+     "ttft_p50_ms": 63.52,
+     "ttft_p99_ms": 72.7,
+     "itl_p50_ms": 2.37,
+     "itl_p99_ms": 6.47,
+     "latency_p50_ms": 372.79,
+     "latency_p99_ms": 408.11
+    },
+    "complete": true,
+    "created": "2026-10-25T10:24:58Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.776,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 21110.0,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 211.97,
+      "ttft_p99_ms": 295.61,
+      "itl_p50_ms": 6.26,
+      "itl_p99_ms": 30.16,
+      "latency_p50_ms": 728.6,
+      "latency_p99_ms": 736.23
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.768,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 21323.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 205.41,
+      "ttft_p99_ms": 298.17,
+      "itl_p50_ms": 6.57,
+      "itl_p99_ms": 27.53,
+      "latency_p50_ms": 722.45,
+      "latency_p99_ms": 727.96
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.753,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 21753.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 215.05,
+      "ttft_p99_ms": 280.57,
+      "itl_p50_ms": 6.45,
+      "itl_p99_ms": 28.7,
+      "latency_p50_ms": 707.94,
+      "latency_p99_ms": 714.26
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 21323.5,
+     "ttft_p50_ms": 211.97,
+     "ttft_p99_ms": 295.61,
+     "itl_p50_ms": 6.45,
+     "itl_p99_ms": 28.7,
+     "latency_p50_ms": 722.45,
+     "latency_p99_ms": 727.96
+    },
+    "complete": true,
+    "created": "2026-10-25T10:25:02Z"
+   }
+  },
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.4,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "guarded": {
+  "ready": true,
+  "moe_at_start": {
+   "layers": 24,
+   "names": [
+    "model.layers.0.block_sparse_moe.experts.routed_experts",
+    "model.layers.1.block_sparse_moe.experts.routed_experts",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "model.layers.4.block_sparse_moe.experts.routed_experts",
+    "model.layers.5.block_sparse_moe.experts.routed_experts",
+    "model.layers.6.block_sparse_moe.experts.routed_experts",
+    "model.layers.7.block_sparse_moe.experts.routed_experts",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "model.layers.9.block_sparse_moe.experts.routed_experts",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "model.layers.12.block_sparse_moe.experts.routed_experts",
+    "model.layers.13.block_sparse_moe.experts.routed_experts",
+    "model.layers.14.block_sparse_moe.experts.routed_experts",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "model.layers.16.block_sparse_moe.experts.routed_experts",
+    "model.layers.17.block_sparse_moe.experts.routed_experts",
+    "model.layers.18.block_sparse_moe.experts.routed_experts",
+    "model.layers.19.block_sparse_moe.experts.routed_experts",
+    "model.layers.20.block_sparse_moe.experts.routed_experts",
+    "model.layers.21.block_sparse_moe.experts.routed_experts",
+    "model.layers.22.block_sparse_moe.experts.routed_experts",
+    "model.layers.23.block_sparse_moe.experts.routed_experts"
+   ],
+   "line": 6.0,
+   "kernel": {
+    "cuda:0 bfloat16 act 0": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "stats": {
+    "layers": 24,
+    "active_calls": 58,
+    "rows_checked": 116,
+    "unjudged_outputs": 0,
+    "alerts": 1
+   },
+   "coverage": {
+    "layers": 24,
+    "active_calls": 58,
+    "layers_checked": 5,
+    "never_checked": [
+     "model.layers.10.block_sparse_moe.experts.routed_experts",
+     "model.layers.11.block_sparse_moe.experts.routed_experts",
+     "model.layers.12.block_sparse_moe.experts.routed_experts",
+     "model.layers.13.block_sparse_moe.experts.routed_experts",
+     "model.layers.14.block_sparse_moe.experts.routed_experts",
+     "model.layers.15.block_sparse_moe.experts.routed_experts",
+     "model.layers.16.block_sparse_moe.experts.routed_experts",
+     "model.layers.17.block_sparse_moe.experts.routed_experts",
+     "model.layers.18.block_sparse_moe.experts.routed_experts",
+     "model.layers.19.block_sparse_moe.experts.routed_experts",
+     "model.layers.20.block_sparse_moe.experts.routed_experts",
+     "model.layers.21.block_sparse_moe.experts.routed_experts",
+     "model.layers.22.block_sparse_moe.experts.routed_experts",
+     "model.layers.23.block_sparse_moe.experts.routed_experts",
+     "model.layers.5.block_sparse_moe.experts.routed_experts",
+     "model.layers.6.block_sparse_moe.experts.routed_experts",
+     "model.layers.7.block_sparse_moe.experts.routed_experts",
+     "model.layers.8.block_sparse_moe.experts.routed_experts",
+     "model.layers.9.block_sparse_moe.experts.routed_experts"
+    ],
+    "not_attached": {},
+    "samples_per_step": 2
+   },
+   "worst": "inf",
+   "worst_layers": [
+    [
+     "model.layers.0.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ],
+    [
+     "model.layers.1.block_sparse_moe.experts.routed_experts",
+     0.28530216217041016
+    ],
+    [
+     "model.layers.3.block_sparse_moe.experts.routed_experts",
+     0.2576122581958771
+    ],
+    [
+     "model.layers.2.block_sparse_moe.experts.routed_experts",
+     0.25690045952796936
+    ],
+    [
+     "model.layers.4.block_sparse_moe.experts.routed_experts",
+     0.1810964047908783
+    ]
+   ],
+   "backends": [
+    "TRITON"
+   ],
+   "experts": 32,
+   "routing": {
+    "routers": 24,
+    "names": [
+     "model.layers.0.block_sparse_moe.experts.router",
+     "model.layers.1.block_sparse_moe.experts.router",
+     "model.layers.2.block_sparse_moe.experts.router",
+     "model.layers.3.block_sparse_moe.experts.router",
+     "model.layers.4.block_sparse_moe.experts.router",
+     "model.layers.5.block_sparse_moe.experts.router",
+     "model.layers.6.block_sparse_moe.experts.router",
+     "model.layers.7.block_sparse_moe.experts.router",
+     "model.layers.8.block_sparse_moe.experts.router",
+     "model.layers.9.block_sparse_moe.experts.router",
+     "model.layers.10.block_sparse_moe.experts.router",
+     "model.layers.11.block_sparse_moe.experts.router",
+     "model.layers.12.block_sparse_moe.experts.router",
+     "model.layers.13.block_sparse_moe.experts.router",
+     "model.layers.14.block_sparse_moe.experts.router",
+     "model.layers.15.block_sparse_moe.experts.router",
+     "model.layers.16.block_sparse_moe.experts.router",
+     "model.layers.17.block_sparse_moe.experts.router",
+     "model.layers.18.block_sparse_moe.experts.router",
+     "model.layers.19.block_sparse_moe.experts.router",
+     "model.layers.20.block_sparse_moe.experts.router",
+     "model.layers.21.block_sparse_moe.experts.router",
+     "model.layers.22.block_sparse_moe.experts.router",
+     "model.layers.23.block_sparse_moe.experts.router"
+    ],
+    "coverage": {
+     "routers": 24,
+     "calls": 4,
+     "rows": 8,
+     "routers_checked": 4,
+     "not_attached": {},
+     "samples_per_call": 2,
+     "one_router_a_step": true,
+     "kernel": {
+      "cuda:0 bfloat16": "Triton"
+     }
+    },
+    "stats": {
+     "layers": 24,
+     "calls": 4,
+     "rows": 8,
+     "wrong_sets": 0,
+     "wrong_weights": 0,
+     "alerts": 0
+    },
+    "not_checked": {}
+   }
+  },
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "identity": [
+   "\n\nIn this scenario, a quick brown fox jumps over a lazy dog, while engineers meticulously check every matrix multiply operation on thousands of",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " are working on the project the numbers are right the quick brown fox jumps over a lazy dog while engineers are working on the project the numbers are right the",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers"
+  ],
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 5.023,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3261.9,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 119.4,
+      "ttft_p99_ms": 635.78,
+      "itl_p50_ms": 3.33,
+      "itl_p99_ms": 7.62,
+      "latency_p50_ms": 559.13,
+      "latency_p99_ms": 1111.87
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.624,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3543.1,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 112.44,
+      "ttft_p99_ms": 126.95,
+      "itl_p50_ms": 3.33,
+      "itl_p99_ms": 30.99,
+      "latency_p50_ms": 583.73,
+      "latency_p99_ms": 614.68
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.673,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3505.9,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 97.96,
+      "ttft_p99_ms": 123.25,
+      "itl_p50_ms": 3.33,
+      "itl_p99_ms": 39.07,
+      "latency_p50_ms": 585.12,
+      "latency_p99_ms": 661.74
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 3505.9,
+     "ttft_p50_ms": 112.44,
+     "ttft_p99_ms": 126.95,
+     "itl_p50_ms": 3.33,
+     "itl_p99_ms": 30.99,
+     "latency_p50_ms": 583.73,
+     "latency_p99_ms": 661.74
+    },
+    "complete": true,
+    "created": "2026-10-25T10:28:00Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 1.45,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 11297.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 796.32,
+      "ttft_p99_ms": 839.82,
+      "itl_p50_ms": 4.92,
+      "itl_p99_ms": 49.42,
+      "latency_p50_ms": 1410.15,
+      "latency_p99_ms": 1418.26
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.942,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17395.2,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 276.76,
+      "ttft_p99_ms": 315.97,
+      "itl_p50_ms": 5.52,
+      "itl_p99_ms": 20.2,
+      "latency_p50_ms": 898.19,
+      "latency_p99_ms": 903.59
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.995,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 16468.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 290.21,
+      "ttft_p99_ms": 367.54,
+      "itl_p50_ms": 5.54,
+      "itl_p99_ms": 49.85,
+      "latency_p50_ms": 949.23,
+      "latency_p99_ms": 957.2
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 16468.8,
+     "ttft_p50_ms": 290.21,
+     "ttft_p99_ms": 367.54,
+     "itl_p50_ms": 5.52,
+     "itl_p99_ms": 49.42,
+     "latency_p50_ms": 949.23,
+     "latency_p99_ms": 957.2
+    },
+    "complete": true,
+    "created": "2026-10-25T10:28:06Z"
+   }
+  },
+  "clean_alerts": 110,
+  "moe_clean": {
+   "layers": 24,
+   "names": [
+    "model.layers.0.block_sparse_moe.experts.routed_experts",
+    "model.layers.1.block_sparse_moe.experts.routed_experts",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "model.layers.4.block_sparse_moe.experts.routed_experts",
+    "model.layers.5.block_sparse_moe.experts.routed_experts",
+    "model.layers.6.block_sparse_moe.experts.routed_experts",
+    "model.layers.7.block_sparse_moe.experts.routed_experts",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "model.layers.9.block_sparse_moe.experts.routed_experts",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "model.layers.12.block_sparse_moe.experts.routed_experts",
+    "model.layers.13.block_sparse_moe.experts.routed_experts",
+    "model.layers.14.block_sparse_moe.experts.routed_experts",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "model.layers.16.block_sparse_moe.experts.routed_experts",
+    "model.layers.17.block_sparse_moe.experts.routed_experts",
+    "model.layers.18.block_sparse_moe.experts.routed_experts",
+    "model.layers.19.block_sparse_moe.experts.routed_experts",
+    "model.layers.20.block_sparse_moe.experts.routed_experts",
+    "model.layers.21.block_sparse_moe.experts.routed_experts",
+    "model.layers.22.block_sparse_moe.experts.routed_experts",
+    "model.layers.23.block_sparse_moe.experts.routed_experts"
+   ],
+   "line": 6.0,
+   "kernel": {
+    "cuda:0 bfloat16 act 0": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "stats": {
+    "layers": 24,
+    "active_calls": 7895,
+    "rows_checked": 15790,
+    "unjudged_outputs": 0,
+    "alerts": 110
+   },
+   "coverage": {
+    "layers": 24,
+    "active_calls": 7895,
+    "layers_checked": 24,
+    "never_checked": [],
+    "not_attached": {},
+    "samples_per_step": 2
+   },
+   "worst": "inf",
+   "worst_layers": [
+    [
+     "model.layers.0.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ],
+    [
+     "model.layers.1.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ],
+    [
+     "model.layers.2.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ],
+    [
+     "model.layers.3.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ],
+    [
+     "model.layers.4.block_sparse_moe.experts.routed_experts",
+     "inf"
+    ]
+   ],
+   "backends": [
+    "TRITON"
+   ],
+   "experts": 32,
+   "routing": {
+    "routers": 24,
+    "names": [
+     "model.layers.0.block_sparse_moe.experts.router",
+     "model.layers.1.block_sparse_moe.experts.router",
+     "model.layers.2.block_sparse_moe.experts.router",
+     "model.layers.3.block_sparse_moe.experts.router",
+     "model.layers.4.block_sparse_moe.experts.router",
+     "model.layers.5.block_sparse_moe.experts.router",
+     "model.layers.6.block_sparse_moe.experts.router",
+     "model.layers.7.block_sparse_moe.experts.router",
+     "model.layers.8.block_sparse_moe.experts.router",
+     "model.layers.9.block_sparse_moe.experts.router",
+     "model.layers.10.block_sparse_moe.experts.router",
+     "model.layers.11.block_sparse_moe.experts.router",
+     "model.layers.12.block_sparse_moe.experts.router",
+     "model.layers.13.block_sparse_moe.experts.router",
+     "model.layers.14.block_sparse_moe.experts.router",
+     "model.layers.15.block_sparse_moe.experts.router",
+     "model.layers.16.block_sparse_moe.experts.router",
+     "model.layers.17.block_sparse_moe.experts.router",
+     "model.layers.18.block_sparse_moe.experts.router",
+     "model.layers.19.block_sparse_moe.experts.router",
+     "model.layers.20.block_sparse_moe.experts.router",
+     "model.layers.21.block_sparse_moe.experts.router",
+     "model.layers.22.block_sparse_moe.experts.router",
+     "model.layers.23.block_sparse_moe.experts.router"
+    ],
+    "coverage": {
+     "routers": 24,
+     "calls": 7739,
+     "rows": 15478,
+     "routers_checked": 24,
+     "not_attached": {},
+     "samples_per_call": 2,
+     "one_router_a_step": true,
+     "kernel": {
+      "cuda:0 bfloat16": "Triton"
+     }
+    },
+    "stats": {
+     "layers": 24,
+     "calls": 7739,
+     "rows": 15478,
+     "wrong_sets": 0,
+     "wrong_weights": 0,
+     "alerts": 0
+    },
+    "not_checked": {}
+   }
+  },
+  "alerts_total": 110,
+  "stop": {
+   "exited_in_s": 0.6,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "nomoe": {
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "identity": [
+   "\n\nIn this scenario, a quick brown fox jumps over a lazy dog, while engineers meticulously check every matrix multiply operation on thousands of",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " are working on the project the numbers are right the quick brown fox jumps over a lazy dog while engineers are working on the project the numbers are right the",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown f",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engine",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers"
+  ],
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.089,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4007.1,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 103.33,
+      "ttft_p99_ms": 126.33,
+      "itl_p50_ms": 3.13,
+      "itl_p99_ms": 5.31,
+      "latency_p50_ms": 504.72,
+      "latency_p99_ms": 562.4
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.093,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4002.6,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 97.55,
+      "ttft_p99_ms": 114.13,
+      "itl_p50_ms": 3.11,
+      "itl_p99_ms": 5.44,
+      "latency_p50_ms": 500.29,
+      "latency_p99_ms": 570.62
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.186,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3913.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 102.79,
+      "ttft_p99_ms": 117.36,
+      "itl_p50_ms": 3.13,
+      "itl_p99_ms": 6.23,
+      "latency_p50_ms": 509.31,
+      "latency_p99_ms": 580.16
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 4002.6,
+     "ttft_p50_ms": 102.79,
+     "ttft_p99_ms": 117.36,
+     "itl_p50_ms": 3.13,
+     "itl_p99_ms": 5.44,
+     "latency_p50_ms": 504.72,
+     "latency_p99_ms": 570.62
+    },
+    "complete": true,
+    "created": "2026-10-25T10:29:23Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "ibm-granite/granite-3.1-1b-a400m-instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.933,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17569.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 290.98,
+      "ttft_p99_ms": 337.28,
+      "itl_p50_ms": 5.63,
+      "itl_p99_ms": 55.18,
+      "latency_p50_ms": 890.72,
+      "latency_p99_ms": 898.72
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.901,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 18175.4,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 280.68,
+      "ttft_p99_ms": 316.44,
+      "itl_p50_ms": 5.54,
+      "itl_p99_ms": 44.99,
+      "latency_p50_ms": 857.56,
+      "latency_p99_ms": 865.58
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.932,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17578.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 262.58,
+      "ttft_p99_ms": 342.08,
+      "itl_p50_ms": 4.98,
+      "itl_p99_ms": 49.38,
+      "latency_p50_ms": 889.54,
+      "latency_p99_ms": 898.55
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 17578.8,
+     "ttft_p50_ms": 280.68,
+     "ttft_p99_ms": 337.28,
+     "itl_p50_ms": 5.54,
+     "itl_p99_ms": 49.38,
+     "latency_p50_ms": 889.54,
+     "latency_p99_ms": 898.55
+    },
+    "complete": true,
+    "created": "2026-10-25T10:29:28Z"
+   }
+  },
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.5,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "eager": {
+  "ready": true,
+  "moe_at_start": {
+   "layers": 24,
+   "names": [
+    "model.layers.0.block_sparse_moe.experts.routed_experts",
+    "model.layers.1.block_sparse_moe.experts.routed_experts",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "model.layers.4.block_sparse_moe.experts.routed_experts",
+    "model.layers.5.block_sparse_moe.experts.routed_experts",
+    "model.layers.6.block_sparse_moe.experts.routed_experts",
+    "model.layers.7.block_sparse_moe.experts.routed_experts",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "model.layers.9.block_sparse_moe.experts.routed_experts",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "model.layers.12.block_sparse_moe.experts.routed_experts",
+    "model.layers.13.block_sparse_moe.experts.routed_experts",
+    "model.layers.14.block_sparse_moe.experts.routed_experts",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "model.layers.16.block_sparse_moe.experts.routed_experts",
+    "model.layers.17.block_sparse_moe.experts.routed_experts",
+    "model.layers.18.block_sparse_moe.experts.routed_experts",
+    "model.layers.19.block_sparse_moe.experts.routed_experts",
+    "model.layers.20.block_sparse_moe.experts.routed_experts",
+    "model.layers.21.block_sparse_moe.experts.routed_experts",
+    "model.layers.22.block_sparse_moe.experts.routed_experts",
+    "model.layers.23.block_sparse_moe.experts.routed_experts"
+   ],
+   "line": 6.0,
+   "kernel": {
+    "cuda:0 bfloat16 act 0": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "stats": {
+    "layers": 24,
+    "active_calls": 0,
+    "rows_checked": 0,
+    "unjudged_outputs": 0,
+    "alerts": 0
+   },
+   "coverage": {
+    "layers": 24,
+    "active_calls": 0,
+    "layers_checked": 0,
+    "never_checked": [
+     "model.layers.0.block_sparse_moe.experts.routed_experts",
+     "model.layers.1.block_sparse_moe.experts.routed_experts",
+     "model.layers.10.block_sparse_moe.experts.routed_experts",
+     "model.layers.11.block_sparse_moe.experts.routed_experts",
+     "model.layers.12.block_sparse_moe.experts.routed_experts",
+     "model.layers.13.block_sparse_moe.experts.routed_experts",
+     "model.layers.14.block_sparse_moe.experts.routed_experts",
+     "model.layers.15.block_sparse_moe.experts.routed_experts",
+     "model.layers.16.block_sparse_moe.experts.routed_experts",
+     "model.layers.17.block_sparse_moe.experts.routed_experts",
+     "model.layers.18.block_sparse_moe.experts.routed_experts",
+     "model.layers.19.block_sparse_moe.experts.routed_experts",
+     "model.layers.2.block_sparse_moe.experts.routed_experts",
+     "model.layers.20.block_sparse_moe.experts.routed_experts",
+     "model.layers.21.block_sparse_moe.experts.routed_experts",
+     "model.layers.22.block_sparse_moe.experts.routed_experts",
+     "model.layers.23.block_sparse_moe.experts.routed_experts",
+     "model.layers.3.block_sparse_moe.experts.routed_experts",
+     "model.layers.4.block_sparse_moe.experts.routed_experts",
+     "model.layers.5.block_sparse_moe.experts.routed_experts",
+     "model.layers.6.block_sparse_moe.experts.routed_experts",
+     "model.layers.7.block_sparse_moe.experts.routed_experts",
+     "model.layers.8.block_sparse_moe.experts.routed_experts",
+     "model.layers.9.block_sparse_moe.experts.routed_experts"
+    ],
+    "not_attached": {},
+    "samples_per_step": 2
+   },
+   "worst": null,
+   "worst_layers": [],
+   "backends": [
+    "TRITON"
+   ],
+   "experts": 32,
+   "routing": {
+    "routers": 24,
+    "names": [
+     "model.layers.0.block_sparse_moe.experts.router",
+     "model.layers.1.block_sparse_moe.experts.router",
+     "model.layers.2.block_sparse_moe.experts.router",
+     "model.layers.3.block_sparse_moe.experts.router",
+     "model.layers.4.block_sparse_moe.experts.router",
+     "model.layers.5.block_sparse_moe.experts.router",
+     "model.layers.6.block_sparse_moe.experts.router",
+     "model.layers.7.block_sparse_moe.experts.router",
+     "model.layers.8.block_sparse_moe.experts.router",
+     "model.layers.9.block_sparse_moe.experts.router",
+     "model.layers.10.block_sparse_moe.experts.router",
+     "model.layers.11.block_sparse_moe.experts.router",
+     "model.layers.12.block_sparse_moe.experts.router",
+     "model.layers.13.block_sparse_moe.experts.router",
+     "model.layers.14.block_sparse_moe.experts.router",
+     "model.layers.15.block_sparse_moe.experts.router",
+     "model.layers.16.block_sparse_moe.experts.router",
+     "model.layers.17.block_sparse_moe.experts.router",
+     "model.layers.18.block_sparse_moe.experts.router",
+     "model.layers.19.block_sparse_moe.experts.router",
+     "model.layers.20.block_sparse_moe.experts.router",
+     "model.layers.21.block_sparse_moe.experts.router",
+     "model.layers.22.block_sparse_moe.experts.router",
+     "model.layers.23.block_sparse_moe.experts.router"
+    ],
+    "coverage": {
+     "routers": 24,
+     "calls": 0,
+     "rows": 0,
+     "routers_checked": 0,
+     "not_attached": {},
+     "samples_per_call": 2,
+     "one_router_a_step": true,
+     "kernel": {
+      "cuda:0 bfloat16": "Triton"
+     }
+    },
+    "stats": {
+     "layers": 24,
+     "calls": 0,
+     "rows": 0,
+     "wrong_sets": 0,
+     "wrong_weights": 0,
+     "alerts": 0
+    },
+    "not_checked": {}
+   }
+  },
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "clean_alerts": 0,
+  "moe_clean": {
+   "layers": 24,
+   "names": [
+    "model.layers.0.block_sparse_moe.experts.routed_experts",
+    "model.layers.1.block_sparse_moe.experts.routed_experts",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "model.layers.4.block_sparse_moe.experts.routed_experts",
+    "model.layers.5.block_sparse_moe.experts.routed_experts",
+    "model.layers.6.block_sparse_moe.experts.routed_experts",
+    "model.layers.7.block_sparse_moe.experts.routed_experts",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "model.layers.9.block_sparse_moe.experts.routed_experts",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "model.layers.12.block_sparse_moe.experts.routed_experts",
+    "model.layers.13.block_sparse_moe.experts.routed_experts",
+    "model.layers.14.block_sparse_moe.experts.routed_experts",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "model.layers.16.block_sparse_moe.experts.routed_experts",
+    "model.layers.17.block_sparse_moe.experts.routed_experts",
+    "model.layers.18.block_sparse_moe.experts.routed_experts",
+    "model.layers.19.block_sparse_moe.experts.routed_experts",
+    "model.layers.20.block_sparse_moe.experts.routed_experts",
+    "model.layers.21.block_sparse_moe.experts.routed_experts",
+    "model.layers.22.block_sparse_moe.experts.routed_experts",
+    "model.layers.23.block_sparse_moe.experts.routed_experts"
+   ],
+   "line": 6.0,
+   "kernel": {
+    "cuda:0 bfloat16 act 0": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "stats": {
+    "layers": 24,
+    "active_calls": 3,
+    "rows_checked": 6,
+    "unjudged_outputs": 0,
+    "alerts": 0
+   },
+   "coverage": {
+    "layers": 24,
+    "active_calls": 3,
+    "layers_checked": 3,
+    "never_checked": [
+     "model.layers.10.block_sparse_moe.experts.routed_experts",
+     "model.layers.11.block_sparse_moe.experts.routed_experts",
+     "model.layers.12.block_sparse_moe.experts.routed_experts",
+     "model.layers.13.block_sparse_moe.experts.routed_experts",
+     "model.layers.14.block_sparse_moe.experts.routed_experts",
+     "model.layers.15.block_sparse_moe.experts.routed_experts",
+     "model.layers.16.block_sparse_moe.experts.routed_experts",
+     "model.layers.17.block_sparse_moe.experts.routed_experts",
+     "model.layers.18.block_sparse_moe.experts.routed_experts",
+     "model.layers.19.block_sparse_moe.experts.routed_experts",
+     "model.layers.20.block_sparse_moe.experts.routed_experts",
+     "model.layers.21.block_sparse_moe.experts.routed_experts",
+     "model.layers.22.block_sparse_moe.experts.routed_experts",
+     "model.layers.23.block_sparse_moe.experts.routed_experts",
+     "model.layers.3.block_sparse_moe.experts.routed_experts",
+     "model.layers.4.block_sparse_moe.experts.routed_experts",
+     "model.layers.5.block_sparse_moe.experts.routed_experts",
+     "model.layers.6.block_sparse_moe.experts.routed_experts",
+     "model.layers.7.block_sparse_moe.experts.routed_experts",
+     "model.layers.8.block_sparse_moe.experts.routed_experts",
+     "model.layers.9.block_sparse_moe.experts.routed_experts"
+    ],
+    "not_attached": {},
+    "samples_per_step": 2
+   },
+   "worst": 0.29893729090690613,
+   "worst_layers": [
+    [
+     "model.layers.1.block_sparse_moe.experts.routed_experts",
+     0.29893729090690613
+    ],
+    [
+     "model.layers.2.block_sparse_moe.experts.routed_experts",
+     0.2471674680709839
+    ],
+    [
+     "model.layers.0.block_sparse_moe.experts.routed_experts",
+     0.215885192155838
+    ],
+    [
+     "model.layers.3.block_sparse_moe.experts.routed_experts",
+     0.0
+    ],
+    [
+     "model.layers.4.block_sparse_moe.experts.routed_experts",
+     0.0
+    ]
+   ],
+   "backends": [
+    "TRITON"
+   ],
+   "experts": 32,
+   "routing": {
+    "routers": 24,
+    "names": [
+     "model.layers.0.block_sparse_moe.experts.router",
+     "model.layers.1.block_sparse_moe.experts.router",
+     "model.layers.2.block_sparse_moe.experts.router",
+     "model.layers.3.block_sparse_moe.experts.router",
+     "model.layers.4.block_sparse_moe.experts.router",
+     "model.layers.5.block_sparse_moe.experts.router",
+     "model.layers.6.block_sparse_moe.experts.router",
+     "model.layers.7.block_sparse_moe.experts.router",
+     "model.layers.8.block_sparse_moe.experts.router",
+     "model.layers.9.block_sparse_moe.experts.router",
+     "model.layers.10.block_sparse_moe.experts.router",
+     "model.layers.11.block_sparse_moe.experts.router",
+     "model.layers.12.block_sparse_moe.experts.router",
+     "model.layers.13.block_sparse_moe.experts.router",
+     "model.layers.14.block_sparse_moe.experts.router",
+     "model.layers.15.block_sparse_moe.experts.router",
+     "model.layers.16.block_sparse_moe.experts.router",
+     "model.layers.17.block_sparse_moe.experts.router",
+     "model.layers.18.block_sparse_moe.experts.router",
+     "model.layers.19.block_sparse_moe.experts.router",
+     "model.layers.20.block_sparse_moe.experts.router",
+     "model.layers.21.block_sparse_moe.experts.router",
+     "model.layers.22.block_sparse_moe.experts.router",
+     "model.layers.23.block_sparse_moe.experts.router"
+    ],
+    "coverage": {
+     "routers": 24,
+     "calls": 2,
+     "rows": 4,
+     "routers_checked": 2,
+     "not_attached": {},
+     "samples_per_call": 2,
+     "one_router_a_step": true,
+     "kernel": {
+      "cuda:0 bfloat16": "Triton"
+     }
+    },
+    "stats": {
+     "layers": 24,
+     "calls": 2,
+     "rows": 4,
+     "wrong_sets": 0,
+     "wrong_weights": 0,
+     "alerts": 0
+    },
+    "not_checked": {}
+   }
+  },
+  "corrupt": [
+   {
+    "layer": "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "mode": "scale",
+    "mark": "model.layers.10.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "verdicts": [
+     "output_wrong"
+    ]
+   },
+   {
+    "layer": "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "mode": "expert",
+    "mark": "model.layers.15.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "verdicts": [
+     "output_wrong"
+    ]
+   },
+   {
+    "layer": "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "mode": "row",
+    "mark": "model.layers.2.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "verdicts": [
+     "output_wrong"
+    ]
+   },
+   {
+    "layer": "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "mode": "scale",
+    "mark": "model.layers.3.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "verdicts": [
+     "not_rechecked",
+     "output_wrong"
+    ]
+   },
+   {
+    "layer": "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "mode": "expert",
+    "mark": "model.layers.8.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "verdicts": [
+     "output_wrong"
+    ]
+   },
+   {
+    "layer": "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "mode": "row",
+    "mark": "model.layers.11.block_sparse_moe.experts.routed_experts",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "verdicts": [
+     "output_wrong"
+    ]
+   }
+  ],
+  "route_corrupt": [
+   {
+    "router": "model.layers.12.block_sparse_moe.experts.router",
+    "mode": "experts",
+    "mark": "model.layers.12.block_sparse_moe.experts.router",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "findings": [
+     "wrong_experts"
+    ],
+    "verdicts": [
+     "output_wrong"
+    ]
+   },
+   {
+    "router": "model.layers.19.block_sparse_moe.experts.router",
+    "mode": "weights",
+    "mark": "model.layers.19.block_sparse_moe.experts.router",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "findings": [
+     "wrong_weights"
+    ],
+    "verdicts": [
+     "not_rechecked",
+     "output_wrong"
+    ]
+   }
+  ],
+  "alerts_total": 18,
+  "stop": {
+   "exited_in_s": 0.5,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "passed": false,
+ "failures": [
+  "M3 (guarded): 110 alerts with no fault",
+  "M3 (guarded): the worst clean MoE score was inf, above 2.0"
+ ],
+ "summary": {
+  "corrupt": [
+   [
+    "scale",
+    "model.layers.10.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.15.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.2.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "scale",
+    "model.layers.3.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ],
+   [
+    "expert",
+    "model.layers.8.block_sparse_moe.experts.routed_experts",
+    true,
+    1
+   ],
+   [
+    "row",
+    "model.layers.11.block_sparse_moe.experts.routed_experts",
+    true,
+    2
+   ]
+  ],
+  "cost": {
+   "16": {
+    "moe_on": 3505.9,
+    "moe_off": 4002.6,
+    "moe_cost": 0.1241
+   },
+   "256": {
+    "moe_on": 16468.8,
+    "moe_off": 17578.8,
+    "moe_cost": 0.0631
+   }
+  },
+  "route_corrupt": [
+   [
+    "experts",
+    "model.layers.12.block_sparse_moe.experts.router",
+    true,
+    1,
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "weights",
+    "model.layers.19.block_sparse_moe.experts.router",
+    true,
+    2,
+    [
+     "not_rechecked",
+     "output_wrong"
+    ]
+   ]
+  ],
+  "clean_worst": {
+   "guarded": "inf",
+   "eager": 0.29893729090690613
+  },
+  "identity_differ": {
+   "plain_vs_guarded": 0,
+   "guarded_vs_nomoe": 0,
+   "plain_vs_nomoe": 0
+  },
+  "reductions": {
+   "plain": {
+    "bf16": true,
+    "fp16": true
+   },
+   "guarded": {
+    "bf16": false,
+    "fp16": false
+   },
+   "nomoe": {
+    "bf16": false,
+    "fp16": false
+   },
+   "eager": {
+    "bf16": false,
+    "fp16": false
+   }
+  },
+  "backends": [
+   "TRITON"
+  ],
+  "on_by_default": false
+ }
+}

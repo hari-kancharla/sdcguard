@@ -211,3 +211,29 @@ def test_a_policy_file_that_isnt_there_is_an_error_not_the_default_policy(tmp_pa
     with pytest.raises(SystemExit):
         qualify.main(_common(out) + ["--candidate", "same=fake/m", "--policy", str(tmp_path / "missing.json")])
     assert "no such file" in capsys.readouterr().err
+
+
+def test_a_qualify_cut_short_leaves_its_record_so_far(tmp_path, monkeypatch):
+    """After each server, RUNS.json and QUALIFY.json say what was measured (complete: false, the decisions of the
+    candidates done): a time limit that stops qualify while it measures a later candidate doesn't lose the earlier
+    ones (the FP8 MoE run of October 25 lost five servers' results that way)."""
+    out = str(tmp_path / "q")
+    real = qualify.run_one
+
+    def run_one(role, name, *a, **k):
+        if name == "later":
+            raise KeyboardInterrupt("stopped from outside")
+        return real(role, name, *a, **k)
+    monkeypatch.setattr(qualify, "run_one", run_one)
+    with pytest.raises(KeyboardInterrupt):
+        qualify.main(["--out", out, "--baseline", "fake/m", "--candidate", "leaky=fake/m --leak",
+                      "--candidate", "later=fake/m",
+                      "--serve-cmd", f"{sys.executable} {os.path.join(HERE, '_fake_vllm.py')}",
+                      "--port", str(_free()), "--metrics-port", str(_free()), "--tokens", "8", "--concurrency", "4",
+                      "--max-tokens", "8", "--rounds", "2", "--startup-timeout", "30", "--stack", "gpu=cpu"])
+    q = json.load(open(os.path.join(out, "QUALIFY.json")))
+    assert q["complete"] is False and q["not_yet_run"] == ["later"]
+    assert q["runs"]["baseline"]["ready"] and q["runs"]["leaky"]["ready"] and "later" not in q["runs"]
+    assert q["decisions"]["leaky"]["decision"] == "REJECT" and q["decisions"]["leaky"]["isolation"] == "LEAK"
+    assert "later" not in q["decisions"]
+    assert json.load(open(os.path.join(out, "RUNS.json")))["complete"] is False
