@@ -325,6 +325,39 @@ class FaultInjection:
                 "stats": dict(ac.stats), "coverage": ac.coverage(), "cap_rows": ac.cap_rows,
                 "worst": _num(worst[0][1]) if worst else None, "worst_layers": [[k, _num(v)] for k, v in worst[:5]]}
 
+    def sdcguard_test_scan_stats(self) -> dict:
+        """The plugin's weight scan in this worker: its coverage and counters ({"entries": 0} when it's off)."""
+        from sdcguard import vllm_plugin
+        ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+        if ws is None:
+            return {"entries": 0}
+        ws.sync()
+        return {"entries": len(ws.entries), "coverage": ws.coverage(), "stats": dict(ws.stats)}
+
+    def sdcguard_test_scan_pause(self, paused: bool) -> dict:
+        """Pause (True) or resume the plugin's weight scan in this worker, to measure its cost on one server.
+        {"scan": whether there is one, "paused": its state now} (a dict: vLLM's /collective_rpc returns other values
+        as strings)."""
+        from sdcguard import vllm_plugin
+        ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+        if ws is None:
+            return {"scan": False, "paused": None}
+        ws.paused = bool(paused)
+        return {"scan": True, "paused": bool(ws.paused)}
+
+    def sdcguard_test_scan_refresh(self, name: str) -> dict:
+        """A new fingerprint for the layer named `name` (after a trial flipped a bit back): the scan compares it again
+        from a clean start. {"refreshed": how many scan entries were refreshed, -1 if the scan is off} (a dict:
+        vLLM's /collective_rpc returns other values as strings)."""
+        from sdcguard import vllm_plugin
+        ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+        if ws is None:
+            return {"refreshed": -1}
+        for n, mod in self.get_model().named_modules():
+            if n == name:
+                return {"refreshed": int(ws.refresh(mod))}
+        return {"refreshed": 0}
+
     def sdcguard_test_reductions(self) -> dict:
         """PyTorch's cuBLAS reduced-precision settings in this worker (False: bf16/fp16 partial sums kept in fp32)."""
         import torch

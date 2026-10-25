@@ -4,7 +4,12 @@ A fused MoE layer computes, for each token x and its top-k experts e_k with rout
 y = sum_k g_k W2_e (act(W1_e x) * (W3_e x)), all experts at once in one kernel, so no single matmul can be checked
 by a checksum from outside. Instead, at each model step one MoE layer (they take turns: the layer whose index is the
 step number modulo the number of MoE layers) recomputes the output of SAMPLES rows of its batch from the layer's
-own input, routing and weights, and compares it with the kernel's output.
+own input, routing and weights, and compares it with the kernel's output. The rows are drawn from the step's real
+rows when the plugin knows them (mark_step's rows, packed above the step number in the layer's step buffer), and a
+row whose top-k experts are all -1 isn't judged: vLLM 0.32 (VLLM_MOE_SKIP_PADDING, on by default) gives the padding
+rows of a CUDA graph's batch no experts, so no matmul computes them and their output is whatever moe_sum adds up
+from the kernel's workspace. A real row given no experts (a router or padding-mask fault) is therefore not judged
+either; such rows among the step's known real rows are counted (unrouted_real_rows, expected 0), not alarmed on.
 
 The recompute follows the rounding of vLLM's Triton MoE kernel (TritonExperts, vLLM 0.31/0.32): the first matmul in
 fp32 rounded to bf16/fp16, the activation rounded before the multiply and the product rounded (vLLM's act_and_mul
@@ -49,11 +54,14 @@ KAPPA = 1.0              # weight of the "every intermediate rounded differently
 FLIPS = 1.0              # worst-placed rounding flips of intermediates the bound allows (KAPPA covers many small)
 OUT_FLIPS = 2.0          # how many experts' rounded outputs may each be one step off at one output
 MOE_SCHEMA = 1
-COLS = 8                 # z|row, z|col, z|bits(y), z|bits(r), z|step, active calls, rows checked, unjudged
-C_ROW, C_COL, C_OUT, C_REF, C_STEP, C_CALLS, C_ROWS, C_UNJ = range(COLS)
+COLS = 9                 # z|row, z|col, z|bits(y), z|bits(r), z|step, active calls, rows checked, unjudged, and
+#                          rows with no experts among the step's known real rows (not judged; expected 0)
+C_ROW, C_COL, C_OUT, C_REF, C_STEP, C_CALLS, C_ROWS, C_UNJ, C_UNROUTED = range(COLS)
 CAP_COLS = 4             # claimed, row, step, score bits
 M32 = 0xFFFFFFFF
 ROW_A, ROW_B = 7919, 104729       # row j at a layer's k-th turn (k = step // layers): (k ROW_A + j ROW_B) % rows
+ROWS_SHIFT = 32                   # the step buffer: the step's real rows (0: unknown) << ROWS_SHIFT | step
+ROWS_MAX = (1 << 31) - 1
 ACT = {"silu": 0, "gelu": 1}
 
 try:
@@ -85,12 +93,27 @@ def _dact(a: torch.Tensor, code: int) -> torch.Tensor:
     return 0.5 * (1.0 + torch.erf(a * 0.7071067811865476)) + a * torch.exp(-0.5 * a * a) * 0.3989422804014327
 
 
-def sample_rows(step: torch.Tensor, m: int, device, nlayers: int = 1) -> torch.Tensor:
-    """The rows a layer's check takes at a step: from the layer's own turn count, so a steady batch has every row
-    taken in turn (from the step number itself, layers that take turns in a number of steps sharing a factor with
-    the batch's rows would only ever see a few of them)."""
+def sample_rows(step: torch.Tensor, m, device, nlayers: int = 1) -> torch.Tensor:
+    """The rows a layer's check takes at a step, of its first m rows (an int, or a tensor for the step's real rows):
+    from the layer's own turn count, so a steady batch has every row taken in turn (from the step number itself,
+    layers that take turns in a number of steps sharing a factor with the batch's rows would only ever see a few of
+    them)."""
     j = torch.arange(SAMPLES, device=device, dtype=torch.int64)
-    return (torch.div(step, max(int(nlayers), 1), rounding_mode="floor") * ROW_A + j * ROW_B) % max(m, 1)
+    mm = m.clamp(min=1) if isinstance(m, torch.Tensor) else max(int(m), 1)
+    return (torch.div(step, max(int(nlayers), 1), rounding_mode="floor") * ROW_A + j * ROW_B) % mm
+
+
+def rows_of(raw: torch.Tensor, m: int) -> torch.Tensor:
+    """The rows a step's samples are drawn from: its real rows packed in the step buffer when known (and at most the
+    call's rows), else all m."""
+    real = (raw >> ROWS_SHIFT) & ROWS_MAX
+    return torch.where(real > 0, real.clamp(max=m), torch.full_like(real, m))
+
+
+def pack_step(step: int, rows: Optional[int] = None) -> int:
+    """The step buffer's value: the step number (low 32 bits) and, above it, the step's real rows (0: unknown)."""
+    r = int(rows) if rows is not None and int(rows) > 0 else 0
+    return (min(r, ROWS_MAX) << ROWS_SHIFT) | (int(step) & M32)
 
 
 def recompute(x_rows: torch.Tensor, ids: torch.Tensor, g: torch.Tensor, w13: torch.Tensor, w2: torch.Tensor,
@@ -162,13 +185,16 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     raw = stepbuf.reshape(-1)[0]
     step = raw & M32
     active = (step % max(nlayers, 1)) == index
-    rows = sample_rows(step, m, x.device, nlayers)
+    rows = sample_rows(step, rows_of(raw, m), x.device, nlayers)
     xr = x.reshape(m, hdim)[rows]
     y = out.reshape(m, hdim)[rows].float()
     ids, g = topk_ids.reshape(m, -1)[rows], topk_w.reshape(m, -1)[rows]
+    pad = (ids == -1).all(-1)                                       # vLLM's padding rows: no experts, nothing computed
     r, cmax, sq, mx = recompute(xr, ids, g, w13, w2, expert_map, act, routed_first, out.dtype)
     z, judged = scores(y, r, cmax, sq, mx, out.dtype)
-    z = torch.where(active, z, torch.zeros_like(z))
+    judged = judged | pad.unsqueeze(-1)                             # (not judged, and not counted as unjudged)
+    z = torch.where(active & ~pad.unsqueeze(-1), z, torch.zeros_like(z))
+    known = ((raw >> ROWS_SHIFT) & ROWS_MAX) > 0                      # the step's real rows were given
     zmax, arg = z.reshape(-1).max(0)
     jrow, col = arg // hdim, arg % hdim
     row = pick(rows, jrow)
@@ -176,13 +202,14 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     bits = lambda v: v.reshape(1).view(torch.int32).to(torch.int64).reshape(()) & M32  # noqa: E731
     zb = bits(zmax) << 32
     keys = torch.stack([zb | row, zb | col, zb | bits(yv), zb | bits(rv), zb | step])
-    keys = torch.where(active, keys, torch.zeros_like(keys))      # an inactive step leaves the state as it was
+    keys = torch.where(active & (zmax > 0), keys, torch.zeros_like(keys))   # (nothing judged: the state as it was)
     srow = state[slot]
     srow[:5] = torch.maximum(srow[:5], keys)
     act64 = active.to(torch.int64)
     srow[C_CALLS] += act64
-    srow[C_ROWS] += act64 * SAMPLES
+    srow[C_ROWS] += act64 * (~pad).sum()
     srow[C_UNJ] += act64 * (~judged).sum()
+    srow[C_UNROUTED] += act64 * (pad & known).sum()
     take = (zmax > line) & (cap_meta[slot, 0] == 0)
     cap_x[slot, :hdim] = torch.where(take, pick(xr, jrow).float(), cap_x[slot, :hdim])
     cap_y[slot, :hdim] = torch.where(take, pick(y, jrow), cap_y[slot, :hdim])
@@ -211,9 +238,13 @@ if HAVE_TRITON:
             return v.to(tl.float16).to(tl.float32)
 
     @triton.jit
-    def _moe_live(stepbuf, nl, idx):
-        step = tl.load(stepbuf) & 0xFFFFFFFF
-        return step, (step % nl) == idx
+    def _moe_live(stepbuf, nl, idx, M):
+        """(step, live, the rows samples are drawn from: the step's real rows when packed above the step, else M)."""
+        raw = tl.load(stepbuf)
+        step = raw & 0xFFFFFFFF
+        real = (raw >> 32) & 0x7FFFFFFF
+        mr = tl.where(real > 0, tl.minimum(real, M), M)
+        return step, (step % nl) == idx, mr
 
     @triton.jit
     def _moe_row(step, j, M, nl):
@@ -231,10 +262,10 @@ if HAVE_TRITON:
                 HAS_MAP: tl.constexpr, ROUTED_FIRST: tl.constexpr, OUT_BF16: tl.constexpr,
                 BN: tl.constexpr, BH: tl.constexpr):
         jk = tl.program_id(0)
-        step, live = _moe_live(stepbuf, nl, idx)
+        step, live, mr = _moe_live(stepbuf, nl, idx, M)
         if live:
             j, k = jk // K, jk % K
-            row = _moe_row(step, j, M, nl)
+            row = _moe_row(step, j, mr, nl)
             e = _moe_expert(ids, emap, row, k, K, HAS_MAP)
             n = tl.program_id(1) * BN + tl.arange(0, BN)
             nm = n < N2
@@ -256,10 +287,10 @@ if HAVE_TRITON:
                   HAS_MAP: tl.constexpr, ROUTED_FIRST: tl.constexpr, OUT_BF16: tl.constexpr, ACT: tl.constexpr,
                   BO: tl.constexpr, BI: tl.constexpr):
         jk = tl.program_id(0)
-        step, live = _moe_live(stepbuf, nl, idx)
+        step, live, mr = _moe_live(stepbuf, nl, idx, M)
         if live:
             j, k = jk // K, jk % K
-            row = _moe_row(step, j, M, nl)
+            row = _moe_row(step, j, mr, nl)
             e = _moe_expert(ids, emap, row, k, K, HAS_MAP)
             o = tl.program_id(1) * BO + tl.arange(0, BO)
             om = o < H
@@ -308,11 +339,17 @@ if HAVE_TRITON:
                      NCOLS: tl.constexpr, SAMPLES_: tl.constexpr, OUT_FLIPS_: tl.constexpr, KAPPA_: tl.constexpr,
                      FLIPS_: tl.constexpr, BO: tl.constexpr, BK: tl.constexpr):
         j = tl.program_id(0)
-        step, live = _moe_live(stepbuf, nl, idx)
+        step, live, mr = _moe_live(stepbuf, nl, idx, M)
         if live:
-            row = _moe_row(step, j, M, nl)
+            row = _moe_row(step, j, mr, nl)
+            kk = tl.arange(0, BK)
+            km = kk < K
+            # a padding row (all its experts -1: no matmul computes it) isn't judged or counted as checked
+            nneg = tl.sum(tl.where(km & (tl.load(ids + row * K + kk, mask=km, other=0) == -1), 1, 0), 0)
+            routed = nneg < K
+            known = ((tl.load(stepbuf) >> 32) & 0x7FFFFFFF) > 0
             o = tl.program_id(1) * BO + tl.arange(0, BO)
-            om = o < H
+            om = (o < H) & routed
             r = tl.zeros([BO], dtype=tl.float32)
             cmax = tl.zeros([BO], dtype=tl.float32)
             sq = tl.zeros([BO], dtype=tl.float32)
@@ -351,7 +388,10 @@ if HAVE_TRITON:
                     tl.atomic_max(sbase + 4, zb | step)
             if (j == 0) & (tl.program_id(1) == 0):
                 tl.atomic_add(sbase + 5, 1)
-                tl.atomic_add(sbase + 6, SAMPLES_)
+            if (tl.program_id(1) == 0) & routed:
+                tl.atomic_add(sbase + 6, 1)
+            if (tl.program_id(1) == 0) & (nneg >= K) & known:
+                tl.atomic_add(sbase + 8, 1)
             if nunj > 0:
                 tl.atomic_add(sbase + 7, nunj.to(tl.int64))
             if pz > line:
@@ -442,8 +482,9 @@ def kernel_usable(device, dtype) -> bool:
 def verify_kernel(device, dtype, act: int = 0) -> tuple:
     """The Triton kernels against the PyTorch check before their first use on a device, dtype and activation: a
     correct layer (both quiet, the same counts and nearly the same scores), one output made wrong (both alarm on its
-    row and column and keep the same row), an expert map with a missing expert, and an inactive step (nothing
-    changes). (ok, why)."""
+    row and column and keep the same row), an expert map with a missing expert, an inactive step (nothing changes),
+    a padding row (all experts -1, garbage output: both quiet, not counted), garbage rows past the step's real rows
+    (both quiet) and a row with no experts among the real rows (quiet, counted apart). (ok, why)."""
     key = (_dev_key(device), dtype, int(act))
     if key in STATUS:
         return STATUS[key]
@@ -462,7 +503,9 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
         g, ids = g.to(device), ids.to(torch.int32).to(device)
         emap = torch.tensor([0, 1, -1, 2, 3, 4], dtype=torch.int32, device=device)
         w13m, w2m = w13[:5].contiguous(), w2[:5].contiguous()
-        for case in ("clean", "wrong", "map", "inactive"):
+        ids_pad = ids.clone()
+        ids_pad[M - 1] = -1                    # row M-1 is sampled at step 3 (rows 0 and M-1 of M = 5)
+        for case in ("clean", "wrong", "map", "inactive", "padding", "real_rows", "unrouted_real"):
             res = []
             for fn in (moe_check_torch, moe_check_triton):
                 st = torch.zeros(1, COLS, dtype=torch.int64, device=device)
@@ -470,14 +513,20 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
                 cx, cy = torch.zeros(1, H, device=device), torch.zeros(1, H, device=device)
                 ci, cg = torch.zeros(1, 8, dtype=torch.int64, device=device), torch.zeros(1, 8, device=device)
                 step = 3 if case != "inactive" else 4
-                sb = torch.full((1,), step, dtype=torch.int64, device=device)
+                given = {"real_rows": 3, "unrouted_real": M}.get(case)
+                sb = torch.full((1,), pack_step(step, given), dtype=torch.int64, device=device)
                 use_map = case == "map"
-                y = _reference_layer(x, ids, g, w13m if use_map else w13, w2m if use_map else w2,
+                cids = ids_pad if case in ("padding", "unrouted_real") else ids
+                y = _reference_layer(x, cids, g, w13m if use_map else w13, w2m if use_map else w2,
                                      emap if use_map else None, act, dtype)
                 if case == "wrong":
                     rows = sample_rows(torch.tensor(step), M, "cpu", 4)
                     y[int(rows[0]), 17] = y[int(rows[0]), 17] * 4 + 1
-                fn(x, y, g, ids, w13m if use_map else w13, w2m if use_map else w2, emap if use_map else None, act,
+                elif case in ("padding", "unrouted_real"):
+                    y[M - 1] = 1000.0
+                elif case == "real_rows":
+                    y[3:] = 1000.0                 # past the 3 real rows: never sampled
+                fn(x, y, g, cids, w13m if use_map else w13, w2m if use_map else w2, emap if use_map else None, act,
                    False, st, 0, sb, 4, 3, cm, cx, cy, ci, cg, MOE_Z)
                 res.append((st.cpu(), cm.cpu(), cx.cpu(), cy.cpu(), ci.cpu(), cg.cpu()))
             (s0, c0, *k0), (s1, c1, *k1) = res
@@ -495,6 +544,10 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
                     raise AssertionError("the kept row differs")
             elif not (z0 <= 1.0 and z1 <= 1.0) or abs(z0 - z1) > 0.5:
                 raise AssertionError(f"{case}: scores of a correct layer differ or are high ({z0} vs {z1})")
+            elif int(s0[0, C_ROWS]) != (1 if case in ("padding", "unrouted_real") else SAMPLES):
+                raise AssertionError(f"{case}: {int(s0[0, C_ROWS])} rows counted as checked")
+            elif int(s0[0, C_UNROUTED]) != (1 if case == "unrouted_real" else 0):
+                raise AssertionError(f"{case}: {int(s0[0, C_UNROUTED])} real rows without experts counted")
         STATUS[key] = (True, "")
     except Exception as e:  # noqa: BLE001
         STATUS[key] = (False, f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}")
@@ -650,7 +703,7 @@ def describe(mod) -> tuple:
 class MoEChecks:
     """The fused MoE layers one ServeGuard also checks (ServeGuard.moe_checks()): add() each, finalize() once before
     the model is compiled or its CUDA graphs captured, mark_step() before each model step (it decides which layer is
-    active), poll() with the guard's reads."""
+    active) and end_step() after, poll() with the guard's reads."""
 
     def __init__(self, guard, line: float = MOE_Z):
         line = float(line)
@@ -665,7 +718,8 @@ class MoEChecks:
         self.worst_seen: dict = {}
         self.checks_seen: dict = {}
         self.finalized = False
-        self.stats = {"layers": 0, "active_calls": 0, "rows_checked": 0, "unjudged_outputs": 0, "alerts": 0}
+        self.stats = {"layers": 0, "active_calls": 0, "rows_checked": 0, "unjudged_outputs": 0,
+                      "unrouted_real_rows": 0, "alerts": 0}
 
     def add(self, mod, name: str) -> Optional[int]:
         if self.finalized:
@@ -740,12 +794,22 @@ class MoEChecks:
                 d.clear()
             self.finalized = False
 
-    def mark_step(self, step: int) -> None:
+    def mark_step(self, step: int, rows: Optional[int] = None) -> None:
+        """Before a model step: its number and, when known, its real rows before padding (the rows samples are
+        drawn from; unknown, all of a call's rows)."""
         step = int(step) & M32
         self._marked = step
         for dev, sb in self._step.items():
-            sb.fill_(step)
+            sb.fill_(pack_step(step, rows))
             self._read_from.setdefault(dev, step)
+
+    def end_step(self) -> None:
+        """After a model step's work is queued: the runs before the next step (warm-up, CUDA graph capture) are
+        checked over all their rows, under the last step's number."""
+        if self._marked is None:
+            return
+        for sb in self._step.values():
+            sb.fill_(pack_step(self._marked))
 
     def _window(self, dev):
         if self._marked is None:
@@ -798,6 +862,7 @@ class MoEChecks:
             self.stats["active_calls"] += keys[C_CALLS]
             self.stats["rows_checked"] += keys[C_ROWS]
             self.stats["unjudged_outputs"] += keys[C_UNJ]
+            self.stats["unrouted_real_rows"] += keys[C_UNROUTED]
             self.checks_seen[lay["name"]] = self.checks_seen.get(lay["name"], 0) + keys[C_CALLS]
             z = _f32(keys[C_ROW] >> 32)
             worst = max(worst, z)

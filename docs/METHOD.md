@@ -2137,6 +2137,34 @@ setting) isolates the MoE checks; nomoe against plain is the plugin without its 
 the linear-layer checks together), and the reported setting shows the cuBLAS part on its own. M2 stays as written,
 against plain vLLM at PyTorch's default.
 
+Result of the third run (October 25, on 64c9d02): failed M3 on the compiled server, for a bug of ours; met M1, M2,
+M4 and M5. With no fault, the guarded server raised 110 alerts, all from the experts' check, 109 with an infinite
+score. Every one had kept a row whose 8 experts were all -1: vLLM 0.32 marks the padding rows of a CUDA graph's
+batch that way (VLLM_MOE_SKIP_PADDING, on by default: the router gives them expert -1), and its Triton kernel then
+computes nothing for them (moe_sum adds up workspace rows no matmul wrote for them), so the check compared leftover
+values in rows no request holds against a recompute of zero. The eager server, whose batches aren't padded, had no
+clean alert (worst score 0.30). Met: all four servers started and the guarded and eager servers checked all 24 MoE
+layers and all 24 routers with the Triton kernels; the guarded server's 64 completions were identical to plain
+vLLM's (and to nomoe's; the plain server ran with PyTorch's reduced-precision cuBLAS setting, the others with the
+plugin's); on the eager server, 6 of 6 wrong kernels were caught by an alert naming the layer (in 1 or 2 rounds) and
+2 of 2 wrong routers by an alert naming the router with the matching finding. The cost of both checks: 12.4% at 16
+requests at once and 6.3% at 256, more than 3%, so they stay opt-in whatever a rerun shows. Fixed since: the
+experts' check draws its rows from the step's real rows when the plugin knows them (the scheduled tokens, as the
+routing check already did; packed above the step number in the layer's step buffer), and a row whose experts are all
+-1 isn't judged or counted as checked (CPU-tested: a padded batch with leftover values in its padding rows gives no
+alert, with the real rows known or not, and a wrong real row is still caught; the Triton and PyTorch versions agree
+through Triton's interpreter, the kernels compile for the A100, L4 and H100 with Triton 3.8.0 and 3.7.1, and the
+first-use comparison on the GPU now includes a padding row and leftover rows past the real ones). What this gives
+up: a real row that a fault leaves with no experts (a router bug, a flipped bit in vLLM's padding mask) gets
+leftover workspace as its output and isn't judged either; such rows among a step's known real rows are counted
+(unrouted_real_rows, expected 0), not alarmed on.
+
+Amendment (October 25, before the next run): the criteria stand as written and the next run is judged on all of
+them. Also reported: over the clean traffic on the guarded and eager servers (from just after each was ready), the
+rows the experts' check judged against the rows it sampled (2 for each active call; with the step's real rows known
+they should match, apart from counts that a read still in flight at the start carried over from startup), and real
+rows without experts (expected 0).
+
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 
 Two new parts are tried on a real, open vLLM bug at once. The plugin's FP8 quantization check
@@ -2510,6 +2538,61 @@ decode probe with any position it couldn't measure is INCONCLUSIVE; and in quali
 missing or incomplete sets no line, so the candidate's decode gaps are INCONCLUSIVE instead of judged by the
 standalone 0.5-nat rule. None changes a verdict of the runs so far: in every one, every case's cache hit was
 confirmed and no position was missing.
+
+### Scheduled weight scan in serving (written October 25, before any run)
+
+The bit-flip run above found that the arithmetic checks name a flipped weight bit only when it changes the weight
+enough to move an output block past their line: all 5 flips of bit 14, 1 of 5 for each of bits 8, 9 and 10, none of
+the others. The vLLM plugin can now also compare the weights themselves with a reference fingerprint
+(`src/sdcguard/serve_weights.py`, SDCGUARD_WEIGHT_SCAN=1, off by default until this run says otherwise): at each read
+of the results, the next layers in turn are fingerprinted on the GPU (two int64 sums of the raw bits: every value,
+and each 4,096-value block's sum weighted by its position; a single bit flip always changes the first) until about
+64 MB of their tensors have been compared, and the comparison is read back at a later read without waiting for the
+GPU. The reference is taken when a layer is registered at load (or refreshed); until a layer's first comparison it
+is provisional, and taken again if its tensors have moved (vLLM 0.32 processes reloaded weights in temporary tensors
+and copies them back). After that, tensors that move, or that share their memory with another layer's (vLLM's CPU
+offloading), aren't compared and are listed. It covers the checked layers (weight and bias; a quantized layer's
+packed weights, scales, zero points and bias) and the bf16 and fp16 linear layers SDCGUARD_SHARE leaves out of the
+arithmetic checks; quantized layers SDCGUARD_SHARE leaves out and layers the arithmetic check can't take are listed as
+not scanned. A changed layer gets one alert (`serve_weights`, verdict `weights_changed`, which `sdcguard decide` reads
+as a weight change) until refresh(). Tested so far on a CPU only (`tests/test_serve_weights.py`,
+`tests/test_vllm_weight_scan.py`).
+
+`experiments/vllm_weight_scan_check.py` (`modal run scripts/modal_vllm.py --phase weight_scan`, one H100, vLLM
+0.32.0, Qwen2.5-1.5B-Instruct in bf16, 112 linear layers, SDCGUARD_SHARE=0.125 so 15 are checked and 97 are in the
+scan alone, attention checks off; about 25 to 35 minutes and $2 to $2.80): two servers, noscan (the scan off) and
+scan (on, 64 MB a read), each answering 64 prompts greedily (32 tokens). On scan, the speed load (sdcguard.perf: 128
+prompts, 128 tokens) one round at a time with the scan on and paused in turn on the same server (one round left out
+first, then on, off, off, on, on, off, off, on: 4 rounds each, at 16 and at 256 requests at once), so the cost isn't
+a difference between two server starts; each pause and resume is confirmed by the worker, and the cost counts as
+measured only if every one took and all 4 rounds each way came back. Then 48 trials: one bit of one weight flipped
+through /collective_rpc (bits 0 to 15, 3 trials each, at a random layer, row and column, seed 0) and the prefix cache
+emptied, rounds of 4 requests at once until a scan alert names the layer or 120 s have passed since just before the
+flip, the bit flipped back, the layer's fingerprint taken again and the prefix cache emptied, so each trial starts
+from a clean model. The trials stop after 3 misses in a row or when the run's 38 minutes are nearly up, what was
+measured is written after each phase and each trial, and a server that fails partway is judged on what it measured
+(the error is recorded and the run doesn't pass).
+
+Criteria:
+- W1: both servers start, and the scan compares all 112 linear layers: none listed as not scanned, and every one
+  compared before the trials.
+- W2: no alert on either server with no fault.
+- W3: all 48 trials run, every flip happens and is named by a scan alert on its layer within 120 s (from just before
+  the flip to the alert's time), no scan alert names a layer with no flip, every flip is undone, and every flipped
+  layer's fingerprint is taken again.
+- W4: the scan server's 64 completions are identical to noscan's.
+
+Reported, not criteria: seconds from each flip to its alert, passes over the model and how long one took, which of
+the flipped layers were in the scan alone, the arithmetic checks' alerts on the flipped layers (also counted up to
+the next trial's flip, since the guard reads their results a read late), alerts that came after 120 s, how often the
+prefix cache couldn't be emptied, and the cost (output tokens per second with the scan on against paused, medians of
+the 4 rounds each way, at 16 and 256 at once). Decided now: if W1 to W4 are met and the scan's measured cost is at
+most 1% at 16 at once, it becomes on by default; otherwise (including a cost not measured) it stays opt-in. Not
+claimed whatever the outcome: other models or GPUs; a change undone before its layer's turn; changes that cancel
+each other within one 4,096-value block (two opposite flips of one bit there); wrong arithmetic with the weights
+right (the arithmetic checks' job); an idle server (the scan moves on only while the server runs model steps);
+quantized layers SDCGUARD_SHARE leaves out, layers the arithmetic check can't take, embeddings, the LM head and the
+KV cache (not scanned).
 
 ### The upgrade gate on cuBLAS issue 6862950
 

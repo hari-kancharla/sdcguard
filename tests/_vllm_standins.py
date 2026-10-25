@@ -49,7 +49,8 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     monkeypatch.setenv("VLLM_CACHE_ROOT", str(tmp_path))
     for k in ("SDCGUARD_REQUIRE", "SDCGUARD_SHARE", "SDCGUARD_OFFSET", "SDCGUARD_WEBHOOK", "SDCGUARD_METRICS_PORT",
               "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z",
-              "SDCGUARD_MOE", "SDCGUARD_FP8", "SDCGUARD_ATTN", "SDCGUARD_ATTN_Z", "SDCGUARD_ATTN_KEEP_KV"):
+              "SDCGUARD_MOE", "SDCGUARD_FP8", "SDCGUARD_ATTN", "SDCGUARD_ATTN_Z", "SDCGUARD_ATTN_KEEP_KV",
+              "SDCGUARD_WEIGHT_SCAN", "SDCGUARD_WEIGHT_SCAN_MB"):
         monkeypatch.delenv(k, raising=False)
     for k, v in extra.items():
         monkeypatch.setenv(k, v)

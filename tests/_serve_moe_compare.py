@@ -32,20 +32,28 @@ def main():
             for emap in (None, torch.tensor([0] + [-1] + list(range(1, E - 1)), dtype=torch.int32)):
                 ww13, ww2 = (w13, w2) if emap is None else (w13[:E - 1].contiguous(), w2[:E - 1].contiguous())
                 y = sm._reference_layer(x, ids, w, ww13, ww2, emap, 0, dt)
-                for step, case in ((4, "clean"), (7, "wrong"), (5, "inactive")):
-                    yy = y.clone()
+                for step, case in ((4, "clean"), (7, "wrong"), (5, "inactive"), (7, "padding")):
+                    yy, cids = y.clone(), ids
+                    rows = sm.sample_rows(torch.tensor(step), min(9, M), "cpu", 3)    # (9 real rows packed in sb)
                     if case == "wrong":
-                        rows = sm.sample_rows(torch.tensor(step), M, "cpu", 3)
                         yy[int(rows[-1]), H - 1] = yy[int(rows[-1]), H - 1] * 8 + 3
-                    a = run(sm.moe_check_torch, x, yy, w, ids, ww13, ww2, emap, step)
-                    b = run(sm.moe_check_triton, x, yy, w, ids, ww13, ww2, emap, step)
+                    elif case == "padding":                     # the row vLLM marked padding: garbage, not judged
+                        cids = ids.clone()
+                        cids[int(rows[-1])] = -1
+                        yy[int(rows[-1])] = 1000.0
+                    a = run(sm.moe_check_torch, x, yy, w, cids, ww13, ww2, emap, step)
+                    b = run(sm.moe_check_triton, x, yy, w, cids, ww13, ww2, emap, step)
                     za, zb = sm._f32(int(a[0][1, 0]) >> 32), sm._f32(int(b[0][1, 0]) >> 32)
                     assert a[0][1, sm.C_CALLS:].tolist() == b[0][1, sm.C_CALLS:].tolist(), (dt, M, case)
                     assert a[0][0].abs().sum() == 0 and b[0][0].abs().sum() == 0
                     if case == "inactive":
                         assert a[0].abs().sum() == 0 and b[0].abs().sum() == 0, (dt, M)
-                    elif case == "clean":
+                    elif case in ("clean", "padding"):
                         assert za < 1.0 and zb < 1.0 and abs(za - zb) < 0.5, (dt, M, za, zb)
+                        routed = sum(case == "clean" or int(r) != int(rows[-1]) for r in rows)
+                        assert int(a[0][1, sm.C_ROWS]) == routed, (dt, M, case, a[0][1].tolist(), routed)
+                        # the real rows are given (9, packed in sb): a row with no experts there is counted apart
+                        assert int(a[0][1, sm.C_UNROUTED]) == sm.SAMPLES - routed, (dt, M, case, a[0][1].tolist())
                     else:
                         assert za > 6 and zb > 6, (dt, M, za, zb)
                         for col in (sm.C_ROW, sm.C_COL, sm.C_STEP):

@@ -373,6 +373,26 @@ class Metrics:
             pass
         self._stack_gauge.labels(**{k: str(info.get(k) or "") for k in labels}).set(1)
 
+    def observe_weights(self, scan, events: list) -> None:
+        """After a read of a guard's weight scan (serve_weights.WeightScan)."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_ws_layers", None) is None:
+            self._ws_layers = Gauge("sdcguard_weight_scan_layers",
+                                    "Layers whose weights the scan compares with their reference fingerprint",
+                                    registry=self.registry)
+            self._ws_passes = Counter("sdcguard_weight_scan_passes",
+                                      "Passes the weight scan completed over the model", registry=self.registry)
+            self._seen_ws = {}
+        self._ws_layers.set(sum(1 for e in scan.entries if not e.get("excluded")))
+        p = int(scan.stats.get("passes", 0))
+        prev = self._seen_ws.get(id(scan), 0)
+        if p > prev:
+            self._ws_passes.inc(p - prev)
+        self._seen_ws[id(scan)] = max(p, prev)
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+
     def observe_norms(self, norms, events: list, worst: float) -> None:
         """After a read of a guard's norm checks (serve_norm.NormChecks)."""
         self.norms.set(len(norms.layers))

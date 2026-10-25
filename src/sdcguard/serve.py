@@ -612,6 +612,7 @@ class ServeGuard:
         self.fp8 = None                            # serve_fp8.Fp8Checks: FP8 layers' quantization (fp8_checks())
         self.route = None                          # serve_route.RouteChecks: MoE routers (route_checks())
         self.attn = None                           # serve_attn.AttnChecks: attention layers (attn_checks())
+        self.wscan = None                          # serve_weights.WeightScan: weights compared with load (weight_scan())
 
     # ---------------------------------------------------------------- setup
     def attach(self, model: torch.nn.Module, share: float = 1.0, offset: int = 0) -> "ServeGuard":
@@ -760,6 +761,12 @@ class ServeGuard:
             mod._sdcguard_name = name
             self._grow(w.device)
         self.stats["layers"] += 1
+        if self.wscan is not None:                     # its weights' reference fingerprint, taken at load
+            try:
+                self.wscan.sync()
+            except Exception as e:  # noqa: BLE001  (the scan never stops a layer's arithmetic check)
+                import logging
+                logging.getLogger("sdcguard").warning("sdcguard: the weight scan couldn't take %s: %s", name, e)
         return slot
 
     def _prepare(self, cs: "LayerChecksums", w: torch.Tensor) -> None:
@@ -901,6 +908,7 @@ class ServeGuard:
             if self.layers:
                 self.poll(wait=True)
         finally:
+            self.wscan = None
             for part in ("norms", "moe", "fp8", "route", "attn"):
                 if getattr(self, part) is not None:
                     try:
@@ -962,6 +970,26 @@ class ServeGuard:
             self.attn = AttnChecks(self, ATTN_Z if line is None else line)
         return self.attn
 
+    def weight_scan(self, budget_mb: Optional[float] = None):
+        """Scheduled weight integrity (serve_weights.WeightScan), made at the first call: at each poll a few
+        registered layers' weights are fingerprinted and compared with their fingerprint at registration, in turn,
+        so a changed weight bit is named within a pass over the model. Layers registered later are taken in at the
+        next poll; scan_weights_of() adds layers the arithmetic checks don't take."""
+        if self.wscan is None:
+            from .serve_weights import DEFAULT_BUDGET_MB, WeightScan
+            self.wscan = WeightScan(self, DEFAULT_BUDGET_MB if budget_mb is None else budget_mb)
+            self.wscan.sync()
+        return self.wscan
+
+    def scan_weights_of(self, module: torch.nn.Module, name: str, tensors=None) -> Optional[int]:
+        """With weight_scan() on, also scan a layer the arithmetic checks don't take (its weight and bias, or
+        tensors(): a callable returning the tensors to compare). Returns the scan entry, or None."""
+        if self.wscan is None:
+            return None
+        from .serve_weights import _bias
+        get = tensors if tensors is not None else (lambda m=module: (getattr(m, "weight", None), _bias(m)))
+        return self.wscan.add(name, get, "unchecked", module)
+
     def moe_checks(self, line: Optional[float] = None):
         """The fused MoE layers this guard checks too (serve_moe.MoEChecks), made at the first call: add() each MoE
         layer and finalize() once, before CUDA graph capture; poll(), mark_step() and detach() take them along."""
@@ -1009,7 +1037,8 @@ class ServeGuard:
                 **({"moe": self.moe.coverage()} if self.moe is not None and self.moe.finalized else {}),
                 **({"fp8_quantization": self.fp8.coverage()} if self.fp8 is not None and self.fp8.layers else {}),
                 **({"moe_routing": self.route.coverage()} if self.route is not None and self.route.layers else {}),
-                **({"attention": self.attn.coverage()} if self.attn is not None and self.attn.finalized else {})}
+                **({"attention": self.attn.coverage()} if self.attn is not None and self.attn.finalized else {}),
+                **({"weights": self.wscan.coverage()} if self.wscan is not None else {})}
 
     def worst_z(self) -> dict:
         """Worst score of each layer since the last poll, without resetting (waits for the GPU). A
@@ -1066,6 +1095,8 @@ class ServeGuard:
         for part in (self.fp8, self.route):
             if part is not None and part.layers:
                 events += part.poll(wait=wait)
+        if self.wscan is not None:
+            events += self.wscan.poll(wait=wait)
         return events
 
     def end_step(self) -> None:
@@ -1074,6 +1105,8 @@ class ServeGuard:
         for part in (self.fp8, self.route, self.attn):
             if part is not None:
                 part.end_step()
+        if self.moe is not None and self.moe.finalized:
+            self.moe.end_step()
 
     def mark_step(self, step: int, rows: Optional[int] = None) -> None:
         """The model step the work queued next belongs to: call it before each step, outside any CUDA graph (a
@@ -1091,9 +1124,11 @@ class ServeGuard:
             w[1] = step
             while len(win) > 256:
                 del win[min(win)]
-        for part in (self.norms, self.moe, self.attn):
+        for part in (self.norms, self.attn):
             if part is not None and part.finalized:
                 part.mark_step(step)
+        if self.moe is not None and self.moe.finalized:
+            self.moe.mark_step(step, rows)
         for part in (self.fp8, self.route):
             if part is not None:
                 part.mark_step(step, rows)
@@ -1449,6 +1484,8 @@ class ServeGuard:
             for part in (self.norms, self.moe):        # (norm and MoE layers aren't counted in the number returned)
                 if part is not None:
                     part.refresh()
+            if self.wscan is not None:
+                self.wscan.refresh()
             return n
 
     def refresh_layer(self, slot: int, weight: Optional[torch.Tensor] = None,
@@ -1459,8 +1496,11 @@ class ServeGuard:
         (_unreadable_weights). A weight passed in (vLLM's reload passes the one it just loaded) is taken as the
         layer's own unless another checked layer's weight uses its memory."""
         with torch.inference_mode(False):             # ordinary tensors, as in add_layer
-            return self._refresh_layer(slot, weight, bias, None if weight is not None else self._unreadable_weights(),
-                                       source)
+            ok = self._refresh_layer(slot, weight, bias, None if weight is not None else self._unreadable_weights(),
+                                     source)
+        if self.wscan is not None:
+            self.wscan.refresh(self.layers[slot]["module"])
+        return ok
 
     def _unreadable_weights(self) -> dict:
         """Slots whose weights the guard can't read back as theirs, with why. Alerts then don't say whether the

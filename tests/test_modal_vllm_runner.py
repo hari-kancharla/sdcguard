@@ -572,3 +572,13 @@ def test_a_rerun_keeps_the_earlier_runs_folder_and_log(runner, tmp_path):
     assert kept[0][:-4] == kept[1] or kept[1][:-4] == kept[0]                  # the same time on both
     assert (tmp_path / "remote-results" / [k for k in kept if k.endswith(".txt")][0]).read_text() == "earlier log"
     runner._set_aside(str(out))                                                # nothing there: no error
+
+
+def test_the_weight_scan_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "weight_scan", _remote("weight_scan: exit code 0 in 28.0 minutes"))
+    runner.main("weight_scan")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "weight_scan", _remote("weight_scan: exit code 1 in 28.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("weight_scan")

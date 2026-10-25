@@ -178,6 +178,15 @@ def _differ(res: dict, a: str, b: str):
     return sum(p != q for p, q in zip(x, y)) + abs(len(x) - len(y))
 
 
+def _rows_judged(r: dict) -> dict:
+    a = (r.get("moe_at_start") or {}).get("stats") or {}
+    b = (r.get("moe_clean") or {}).get("stats") or {}
+    d = {k: (b[k] - a.get(k, 0)) if isinstance(b.get(k), int) else None
+         for k in ("active_calls", "rows_checked", "unrouted_real_rows")}
+    return {"clean_traffic": {**d, "samples": 2 * d["active_calls"] if d["active_calls"] is not None else None},
+            "total": {k: b.get(k) for k in ("active_calls", "rows_checked", "unrouted_real_rows")}}
+
+
 def summarize(res: dict) -> dict:
     g = res.get("guarded") or {}
     cost = {}
@@ -192,6 +201,9 @@ def summarize(res: dict) -> dict:
             "route_corrupt": [(t["mode"], t["router"], t["detected"], t.get("rounds_to_detect"), t.get("verdicts"))
                               for t in (res.get("eager") or {}).get("route_corrupt") or []],
             "clean_worst": {k: ((res.get(k) or {}).get("moe_clean") or {}).get("worst") for k in ("guarded", "eager")},
+            # rows the experts' check judged against rows it sampled (2 an active call; padding rows aren't judged),
+            # over the clean traffic (from just after the server was ready), and real rows without experts (0)
+            "moe_rows": {k: _rows_judged(res.get(k) or {}) for k in ("guarded", "eager")},
             "identity_differ": {f"{a}_vs_{b}": _differ(res, a, b)
                                 for a, b in (("plain", "guarded"), ("guarded", "nomoe"), ("plain", "nomoe"))},
             "reductions": {k: (res.get(k) or {}).get("reductions") for k in ("plain", "guarded", "nomoe", "eager")},

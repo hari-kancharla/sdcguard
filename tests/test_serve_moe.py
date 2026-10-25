@@ -229,3 +229,85 @@ def test_metrics_count_moe_checks_and_alerts(monkeypatch):
     text = generate_latest(met.registry).decode()
     assert "sdcguard_moe_layers_checked 1.0" in text and "sdcguard_moe_checks_executed_total 3.0" in text
     assert 'sdcguard_alerts_total{UUID="",layer="experts"} 1.0' in text
+
+
+def test_padding_rows_of_a_cuda_graph_batch_are_not_judged(monkeypatch, tmp_path):
+    """vLLM 0.32 (VLLM_MOE_SKIP_PADDING, on by default) gives the padding rows of a CUDA graph's batch the experts -1
+    so no matmul computes them (moe_sum adds up workspace rows nothing wrote): garbage there is no fault. The
+    rows are drawn from the step's real rows when the step says how many, and a row with no experts isn't judged or
+    counted either way. (The October 25 GPU run: 110 alerts on such rows in clean traffic on the compiled server.)"""
+    mod, layers = _fake_layers(3, monkeypatch)
+    g = ServeGuard(log_path=str(tmp_path / "alerts.jsonl"))
+    mc = g.moe_checks()
+    for i, lay in enumerate(layers):
+        mc.add(lay, f"model.layers.{i}.mlp.experts")
+    mc.finalize()
+    real, padded = 5, 8
+    x = torch.randn(padded, 128).to(torch.bfloat16)
+
+    def step_through(step, rows):
+        g.mark_step(step, rows)
+        for i, lay in enumerate(layers):
+            w, ids = _route_for(lay, x, i)
+            ids = ids.clone()
+            ids[real:] = -1                                    # as vLLM marks its padding rows
+            out = lay.forward_modular(x=x, topk_weights=w, topk_ids=ids)
+            out[real:] = torch.randn(padded - real, 128).to(out.dtype) * 300   # leftover workspace: anything
+            sm.check_call(lay._sdcguard_moe, x, w, ids, out)
+        g.end_step()
+
+    for step in range(24):                                     # the step's real rows known: drawn from those only
+        step_through(step, real)
+    assert g.poll(wait=True) == [] and max(mc.worst_seen.values()) < 1.0
+    assert mc.stats["rows_checked"] == 24 * sm.SAMPLES and mc.stats["unrouted_real_rows"] == 0
+    before = mc.stats["rows_checked"]
+    for step in range(24, 48):                                 # not known (rows split, warm-up): padding rows skipped
+        step_through(step, None)
+    assert g.poll(wait=True) == [] and max(mc.worst_seen.values()) < 1.0
+    skipped = 24 * sm.SAMPLES - (mc.stats["rows_checked"] - before)
+    assert 0 < skipped < 24 * sm.SAMPLES                      # some samples landed on padding and weren't counted
+    assert mc.stats["unjudged_outputs"] == 0
+    # a real row made wrong is still caught with the rows known
+    layers[0].fault = lambda out: torch.cat([out[:real].flip(0), out[real:]])
+    for step in range(48, 54):
+        step_through(step, real)
+    ev = g.poll(wait=True)
+    assert ev and all(e.detail["where"] == "model.layers.0.mlp.experts" for e in ev)
+    assert ev[0].detail["captured"]["row"] < real and -1 not in ev[0].detail["captured"]["experts"]
+
+
+def test_the_step_buffer_packs_the_real_rows_and_end_step_clears_them():
+    assert sm.pack_step(7, 5) == (5 << 32) | 7 and sm.pack_step(7) == 7 and sm.pack_step(7, 0) == 7
+    assert sm.pack_step((1 << 32) + 3, 2) == (2 << 32) | 3
+    raw = torch.tensor(sm.pack_step(7, 5))
+    assert int(sm.rows_of(raw, 8)) == 5 and int(sm.rows_of(raw, 4)) == 4 and int(sm.rows_of(torch.tensor(7), 8)) == 8
+    mc = sm.MoEChecks(None)
+    mc._step[torch.device("cpu")] = torch.zeros(1, dtype=torch.int64)
+    mc.mark_step(9, 3)
+    assert int(mc._step[torch.device("cpu")]) == (3 << 32) | 9
+    mc.end_step()
+    assert int(mc._step[torch.device("cpu")]) == 9
+
+
+def test_a_real_row_given_no_experts_is_counted_not_judged(monkeypatch):
+    """A row with no experts among the step's known real rows (a router or padding-mask fault: its output is the
+    kernel's leftover workspace) can't be judged; it is counted apart (unrouted_real_rows), not alarmed on."""
+    mod, (lay,) = _fake_layers(1, monkeypatch)
+    g = ServeGuard()
+    mc = g.moe_checks()
+    mc.add(lay, "experts")
+    mc.finalize()
+    x = torch.randn(4, 128).to(torch.bfloat16)
+    w, ids = _route_for(lay, x, 0)
+    ids = ids.clone()
+    ids[:] = -1                                        # every row of the step without experts
+    out = torch.randn(4, 128).to(torch.bfloat16) * 100
+    g.mark_step(0, 4)
+    sm.check_call(lay._sdcguard_moe, x, w, ids, out)
+    g.end_step()
+    assert g.poll(wait=True) == []
+    assert mc.stats["unrouted_real_rows"] == sm.SAMPLES and mc.stats["rows_checked"] == 0
+    g.mark_step(1, None)                               # real rows not given: padding as far as the check knows
+    sm.check_call(lay._sdcguard_moe, x, w, ids, out)
+    g.poll(wait=True)
+    assert mc.stats["unrouted_real_rows"] == sm.SAMPLES

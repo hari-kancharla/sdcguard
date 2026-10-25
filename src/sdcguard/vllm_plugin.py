@@ -28,6 +28,11 @@ nothing). What it does, in every vLLM process:
     checks that those tokens' own KV-cache writes went where attention reads them (serve_attn.py: vLLM's
     FlashAttention and Triton backends, decoder attention with a 16-bit KV cache; SDCGUARD_ATTN_Z sets its line,
     default 4);
+  - with SDCGUARD_WEIGHT_SCAN=1 (off by default until its GPU run), at each read of the results below, compares a
+    few layers' weights with their fingerprint at load, in turn, so a changed weight bit is named within a pass over
+    the model however small its effect (serve_weights.py; the checked layers, quantized ones included, and the bf16
+    linear layers SDCGUARD_SHARE leaves out of the arithmetic checks; SDCGUARD_WEIGHT_SCAN_MB, default 64, is how
+    many megabytes of weights each read compares);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -243,6 +248,8 @@ def _guard(device: Optional[torch.device] = None):
             g = ServeGuard(**kw)
         _STATE["guard"] = g
         g.attribute = _attribute
+        if _weight_scan_on():
+            g.weight_scan(_weight_scan_mb())
         if metrics is not None:               # who and how, for `sdcguard ready` (checks from outside)
             try:
                 from .events import device_identity
@@ -447,6 +454,17 @@ def _summary(r: dict) -> str:
             msg += f"; attention not checked: {why}"
     elif _STATE.get("attn_why"):
         msg += f"; attention not checked: {_STATE['attn_why']}"
+    ws = getattr(_STATE.get("guard"), "wscan", None)
+    if ws is not None:
+        try:
+            ws.sync()
+            msg += (f"; weights compared with their load-time fingerprint on {len(ws.entries)} layers in turn "
+                    f"({ws.stats['bytes'] / 2 ** 30:.2f} GiB, {ws.budget / 2 ** 20:g} MiB a read; "
+                    "SDCGUARD_WEIGHT_SCAN=1)")
+            if ws.not_scanned:
+                msg += f", not on {len(ws.not_scanned)}"
+        except Exception as e:  # noqa: BLE001  (the summary is information)
+            msg += f"; weight scan on, but its coverage couldn't be read ({type(e).__name__})"
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -645,7 +663,9 @@ def _attribute(ev) -> None:
     parts = ["linear layers"] + (["RMSNorm layers"] if _STATE.get("norm_classes") else []) + \
         (["sampled rows of MoE experts and their routing"] if _STATE.get("moe_classes") else []) + \
         (["FP8 input quantization"] if _STATE.get("fp8_classes") else []) + \
-        ([f"sampled attention outputs{where} and those tokens' KV writes"] if attn else [])
+        ([f"sampled attention outputs{where} and those tokens' KV writes"] if attn else []) + \
+        (["the scanned layers' weights against their load-time fingerprints"]
+         if getattr(_STATE.get("guard"), "wscan", None) is not None else [])
     rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
     unchecked = ([f"attention outputs not sampled{also}", *rest, "the rest of the KV cache", "sampling"] if attn else
                  ["attention", *rest, "the KV cache", "sampling"])
@@ -704,6 +724,12 @@ def _from(d: dict) -> str:
 
 def _on_alert(ev) -> None:
     d, i = ev.detail, ev.identity
+    if ev.detector == "serve_weights":
+        log.warning("sdcguard ALERT: the weights of %s on %s (%s, PCI %s, host %s) no longer match their reference "
+                    "fingerprint (%s; %s s since its last clean comparison)", d.get("where"), i.get("gpu_uuid"),
+                    i.get("gpu_name"), i.get("pci_bus_id"), i.get("host"), d.get("kind"),
+                    d.get("seconds_since_last_clean_comparison"))
+        return
     if ev.detector == "serve_norm":
         log.warning("sdcguard ALERT: norm %s on %s (%s, PCI %s, host %s) max z=%s (row %s, column %s, %s: %s, expected "
                     "%s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
@@ -1086,6 +1112,7 @@ def _patch_quant(op, select, inline: bool) -> list:
                 why = _quant_cant_check(self, layer) or _kernel_why
                 if why is None and not again and not select(layer):
                     why = layer._sdcguard_why
+                    _scan_skips(layer, "a quantized layer SDCGUARD_SHARE leaves out (not scanned yet)")
                 if why is None:
                     c = self.config
                     # vLLM's layout of the standard (GPTQ-like) weights, before this kernel changes it
@@ -1291,6 +1318,54 @@ def _attn_on() -> bool:
         log.warning("sdcguard: SDCGUARD_ATTN=%r isn't 0 or 1; attention checks stay on (SDCGUARD_ATTN=0 turns them "
                     "off)", os.environ.get("SDCGUARD_ATTN"))
     return True
+
+
+def _weight_scan_on() -> bool:
+    return os.environ.get("SDCGUARD_WEIGHT_SCAN", "0").strip().lower() in ("1", "true", "on", "yes")
+
+
+def _weight_scan_mb() -> float:
+    """SDCGUARD_WEIGHT_SCAN_MB: megabytes of weights each read compares (default 64; at least 1)."""
+    from .serve_weights import DEFAULT_BUDGET_MB
+    text = os.environ.get("SDCGUARD_WEIGHT_SCAN_MB", "")
+    if not text.strip():
+        return DEFAULT_BUDGET_MB
+    try:
+        v = float(text)
+        if v >= 1:
+            return v
+    except ValueError:
+        pass
+    log.warning("sdcguard: SDCGUARD_WEIGHT_SCAN_MB=%r isn't a number of megabytes of at least 1; using %g", text,
+                DEFAULT_BUDGET_MB)
+    return DEFAULT_BUDGET_MB
+
+
+def _scan_skips(layer, why: str) -> None:
+    """With SDCGUARD_WEIGHT_SCAN=1, list a linear layer the scan doesn't take, with why (so the coverage it reports
+    isn't read as every layer)."""
+    g = _STATE.get("guard")
+    ws = getattr(g, "wscan", None) if g is not None else None
+    if ws is not None and _weight_scan_on():
+        ws.not_scanned[getattr(layer, "prefix", "") or type(layer).__name__] = why
+
+
+def _scan_unchecked(layer, w) -> None:
+    """A linear layer SDCGUARD_SHARE left out of the arithmetic checks: with SDCGUARD_WEIGHT_SCAN=1 its weights are
+    still compared with their load-time fingerprint. A reload of the layer takes a new fingerprint."""
+    if not _weight_scan_on() or not isinstance(w, torch.Tensor):
+        return
+    try:
+        g = _guard(w.device)
+        if g.wscan is None:
+            return
+        if getattr(layer, "_sdcguard_scanned", False):
+            g.wscan.refresh(layer)
+            return
+        if g.scan_weights_of(layer, getattr(layer, "prefix", "") or type(layer).__name__) is not None:
+            layer._sdcguard_scanned = True
+    except Exception as e:  # noqa: BLE001  (never break model loading)
+        log.warning("sdcguard: not scanning the weights of %s: %s", getattr(layer, "prefix", "a layer"), e)
 
 
 def _attn_kernels() -> tuple:
@@ -1763,7 +1838,8 @@ def _publish_stack(runner) -> Optional[dict]:
               "moe": "on" if _STATE.get("moe_classes") else "off",
               "fp8": "on" if _STATE.get("fp8_classes") else "off",
               "attention": {True: "on", False: "outside_graphs", None: "on_unknown_where"}[_attn_kernels()[0]]
-              if (_STATE.get("attn") or {}).get("checked") else "off"}
+              if (_STATE.get("attn") or {}).get("checked") else "off",
+              "weights": "on" if getattr(_STATE.get("guard"), "wscan", None) is not None else "off"}
     info = collect(runner, model, checks)
     _STATE["stack"] = info
     g = _STATE["guard"]
@@ -1887,8 +1963,10 @@ def register() -> None:
             why = _cant_check(layer, w)
             if why is not None:
                 layer._sdcguard_why = why
+                _scan_skips(layer, f"the arithmetic check can't take it: {why}")
                 return
             if not select(layer):
+                _scan_unchecked(layer, w)                        # its weights still watched (SDCGUARD_WEIGHT_SCAN=1)
                 return
             layer._sdcguard_why = FAILED                         # until it's registered
             g = _guard(w.device)
