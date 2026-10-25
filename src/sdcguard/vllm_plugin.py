@@ -30,9 +30,11 @@ nothing). What it does, in every vLLM process:
     default 4);
   - with SDCGUARD_WEIGHT_SCAN=1 (off by default until its GPU run), at each read of the results below, compares a
     few layers' weights with their fingerprint at load, in turn, so a changed weight bit is named within a pass over
-    the model however small its effect (serve_weights.py; the checked layers, quantized ones included, and the bf16
-    linear layers SDCGUARD_SHARE leaves out of the arithmetic checks; SDCGUARD_WEIGHT_SCAN_MB, default 64, is how
-    many megabytes of weights each read compares);
+    the model however small its effect (serve_weights.py; the checked layers, quantized ones included, the bf16
+    linear layers SDCGUARD_SHARE leaves out of the arithmetic checks, and every other parameter of the model:
+    embeddings, the LM head, norm weights, MoE experts' weights; SDCGUARD_WEIGHT_SCAN_MB, default 64, is how many
+    megabytes of weights each read compares; SDCGUARD_WEIGHT_SCAN_AGE, in seconds, raises that as needed so every
+    weight is verified at least that often, up to SDCGUARD_WEIGHT_SCAN_MAX_MB a read, default 1024);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -249,7 +251,7 @@ def _guard(device: Optional[torch.device] = None):
         _STATE["guard"] = g
         g.attribute = _attribute
         if _weight_scan_on():
-            g.weight_scan(_weight_scan_mb())
+            g.weight_scan(_weight_scan_mb(), target_age=_weight_scan_age(), max_mb=_weight_scan_max_mb())
         if metrics is not None:               # who and how, for `sdcguard ready` (checks from outside)
             try:
                 from .events import device_identity
@@ -458,9 +460,13 @@ def _summary(r: dict) -> str:
     if ws is not None:
         try:
             ws.sync()
-            msg += (f"; weights compared with their load-time fingerprint on {len(ws.entries)} layers in turn "
-                    f"({ws.stats['bytes'] / 2 ** 30:.2f} GiB, {ws.budget / 2 ** 20:g} MiB a read; "
-                    "SDCGUARD_WEIGHT_SCAN=1)")
+            other = sum(1 for e in ws.entries if e["kind"] == "other")
+            what = f"{len(ws.entries) - other} layers" + (f" and {other} parts of the model's other parameters"
+                                                          if other else "")
+            per = f"{ws.budget / 2 ** 20:g} MiB a read" + (f", more if needed to verify every weight within "
+                                                           f"{ws.target_age:g}s" if ws.target_age else "")
+            msg += (f"; weights compared with their load-time fingerprint on {what} in turn "
+                    f"({ws.stats['bytes'] / 2 ** 30:.2f} GiB, {per}; SDCGUARD_WEIGHT_SCAN=1)")
             if ws.not_scanned:
                 msg += f", not on {len(ws.not_scanned)}"
         except Exception as e:  # noqa: BLE001  (the summary is information)
@@ -826,7 +832,8 @@ def _rearm() -> None:
 
 
 def _take_new_weights(g) -> None:
-    """After weights changed (_rearm): norm and MoE layers compare with the current weights from here on. Called
+    """After weights changed (_rearm): norm and MoE layers (and the weight scan's other parameters) compare with the
+    current weights from here on. Called
     before each model step and each dummy batch, so neither is judged against the old weights; never inside a
     CUDA-graph capture (it waits for the next call outside one)."""
     if g is None or not _STATE.get("norms_stale"):
@@ -844,6 +851,11 @@ def _take_new_weights(g) -> None:
                 part.refresh()
             except Exception as e:  # noqa: BLE001
                 log.warning("sdcguard: couldn't take the new weights of norm or MoE layers: %s", e)
+    if getattr(g, "wscan", None) is not None:
+        try:
+            g.wscan.refresh(kind="other")       # the scan's other parameters: their new values are the reference
+        except Exception as e:  # noqa: BLE001
+            log.warning("sdcguard: the weight scan couldn't take the new weights of the other parameters: %s", e)
 
 
 def _dummy_seen() -> None:
@@ -1349,6 +1361,174 @@ def _weight_scan_mb() -> float:
     log.warning("sdcguard: SDCGUARD_WEIGHT_SCAN_MB=%r isn't a number of megabytes of at least 1; using %g", text,
                 DEFAULT_BUDGET_MB)
     return DEFAULT_BUDGET_MB
+
+
+def _positive_env(name: str, default: Optional[float], least: float, what: str) -> Optional[float]:
+    text = os.environ.get(name, "")
+    if not text.strip():
+        return default
+    try:
+        v = float(text)
+        if v >= least:
+            return v
+    except ValueError:
+        pass
+    log.warning("sdcguard: %s=%r isn't %s of at least %g; using %s", name, text, what, least, default)
+    return default
+
+
+def _weight_scan_age() -> Optional[float]:
+    """SDCGUARD_WEIGHT_SCAN_AGE: seconds; the scan compares enough each read that every weight is verified at least
+    that often (unset: the byte budget alone)."""
+    return _positive_env("SDCGUARD_WEIGHT_SCAN_AGE", None, 1.0, "a number of seconds")
+
+
+def _weight_scan_max_mb() -> float:
+    """SDCGUARD_WEIGHT_SCAN_MAX_MB: the most a read compares to meet SDCGUARD_WEIGHT_SCAN_AGE (default 1024)."""
+    from .serve_weights import DEFAULT_MAX_MB
+    return _positive_env("SDCGUARD_WEIGHT_SCAN_MAX_MB", DEFAULT_MAX_MB, 1.0, "a number of megabytes")
+
+
+SET_WHILE_SERVING = ("k_scale", "v_scale", "q_scale", "prob_scale")   # attention scales vLLM may set at first use
+
+
+def _param_tensors(name: str, p):
+    """A parameter's tensors, as vLLM's own weight digests take them: a shared-weight parameter's partitions, a
+    tensor subclass's inner tensors (TorchAO), else the parameter itself."""
+    parts = getattr(p, "partitions", None)
+    if isinstance(parts, dict) and parts:
+        for k, v in parts.items():
+            yield from _param_tensors(f"{name}.{k}", v)
+        return
+    try:
+        from torch.utils._python_dispatch import is_traceable_wrapper_subclass
+        wrapped = is_traceable_wrapper_subclass(p)
+    except Exception:  # noqa: BLE001
+        wrapped = False
+    if wrapped:
+        for a in p.__tensor_flatten__()[0]:
+            yield from _param_tensors(f"{name}.{a}", getattr(p, a))
+        return
+    yield name, p
+
+
+def _module_tensors(mod) -> list:
+    """(name, tensor) for a module's own parameters (not its children's), read now."""
+    out = []
+    for pname, p in mod.named_parameters(recurse=False):
+        for tname, t in _param_tensors(pname, p):
+            if isinstance(t, torch.Tensor) and t.numel():
+                out.append((tname, t))
+    return out
+
+
+def _register_scan_rest(runner) -> Optional[dict]:
+    """With SDCGUARD_WEIGHT_SCAN=1, after the model loaded: every parameter no scan entry holds yet (embeddings, the
+    LM head, norm weights, MoE experts' weights, linear layers the arithmetic checks can't take or SDCGUARD_SHARE
+    leaves out when quantized) is scanned too, as kind "other": one entry per module, or per tensor when the module
+    is larger than a read's budget, and per slice of at most that budget when a contiguous tensor is (so no read
+    takes a whole MoE layer at once). A tensor two modules hold (tied embeddings) is scanned once. Not scanned:
+    attention scales vLLM may set at first use, tensors outside the GPU (offloaded), memory that distinct tensors
+    share (vLLM's prefetch offloading), layers the checks found unreadable as their own, and MoE experts' weights
+    when vLLM's expert load balancer moves them (--enable-eplb)."""
+    if not _weight_scan_on() or _STATE.get("scan_rest_done"):
+        return None
+    g = _STATE.get("guard")
+    ws = getattr(g, "wscan", None) if g is not None else None
+    if ws is None:
+        return None
+    _STATE["scan_rest_done"] = True
+    try:
+        model = runner.get_model()
+    except Exception:  # noqa: BLE001
+        model = _model_of(runner)
+    if model is None or not hasattr(model, "named_modules"):
+        return None
+    pc = getattr(runner, "parallel_config", None) or getattr(getattr(runner, "vllm_config", None),
+                                                               "parallel_config", None)
+    eplb = bool(getattr(pc, "enable_eplb", False))     # vLLM's expert load balancer moves experts' weights
+    ws.sync()
+    held = set()
+    for e in ws.entries:
+        for t in e["get"]():
+            if isinstance(t, torch.Tensor) and t.numel():
+                held.add((str(t.device), t.data_ptr()))
+    # memory that more than one distinct tensor points at (vLLM's prefetch offloader points layers N, N + its step,
+    # ... at one GPU buffer and copies each layer's weights in before it runs; a tied tensor is one object): not
+    # scanned, since what is there belongs to whichever layer ran last
+    owners: dict = {}
+    for _, mod in model.named_modules():
+        for _, t in _module_tensors(mod):
+            owners.setdefault((str(t.device), t.data_ptr()), set()).add(id(t))
+    shared = {k for k, ids in owners.items() if len(ids) > 1}
+    # layers the checks' registration found unreadable as their own, or sharing memory, stay out
+    blocked = {n for n, why in ws.not_scanned.items() if "can't be read back" in why or "shares its memory" in why}
+    added, skipped = 0, 0
+    for mname, mod in model.named_modules():
+        if mname in blocked or getattr(mod, "prefix", None) in blocked:
+            continue
+        mine = []
+        for tname, t in _module_tensors(mod):
+            full = f"{mname}.{tname}" if mname else tname
+            key = (str(t.device), t.data_ptr())
+            if key in shared:
+                ws.not_scanned[full] = "shares its memory with another layer's tensors (vLLM's prefetch offloading)"
+                skipped += 1
+                continue
+            if key in held:
+                continue
+            held.add(key)
+            if tname.split(".")[-1] in SET_WHILE_SERVING:
+                ws.not_scanned[full] = "an attention scale vLLM may set at its first use"
+                skipped += 1
+                continue
+            if eplb and type(mod).__name__ in ("RoutedExperts", "FusedMoE"):
+                ws.not_scanned[full] = "an MoE expert's weights, which vLLM's expert load balancer (--enable-eplb) " \
+                                       "moves while serving"
+                skipped += 1
+                continue
+            if t.device.type != "cuda" and torch.cuda.is_available():
+                ws.not_scanned[full] = f"on the {t.device.type}, not the GPU (offloaded)"
+                skipped += 1
+                continue
+            mine.append((tname, t))
+        if not mine:
+            continue
+        for alias in {mname, getattr(mod, "prefix", None)}:
+            if alias:
+                ws.not_scanned.pop(alias, None)        # (a layer listed as not scanned is scanned now)
+
+        def current(m=mod, n=None):
+            return dict(_module_tensors(m)).get(n)
+
+        size = sum(t.numel() * t.element_size() for _, t in mine)
+        base = mname or type(mod).__name__
+        if size <= ws.budget:
+            names = tuple(n for n, _ in mine)
+            if ws.add(base, (lambda m=mod, ns=names: [dict(_module_tensors(m)).get(n) for n in ns]), "other",
+                      mod) is not None:
+                added += 1
+            continue
+        for tname, t in mine:
+            nbytes = t.numel() * t.element_size()
+            if nbytes <= ws.budget or not t.is_contiguous():
+                if ws.add(f"{base}.{tname}", (lambda c=current, n=tname: [c(n=n)]), "other", mod) is not None:
+                    added += 1
+                continue
+            step = max(1, ws.budget // t.element_size())
+            for a in range(0, t.numel(), step):
+                b = min(a + step, t.numel())
+
+                def piece(c=current, n=tname, lo=a, hi=b):
+                    x = c(n=n)
+                    return [x.view(-1)[lo:hi] if isinstance(x, torch.Tensor) and x.is_contiguous() and
+                            x.numel() >= hi else x]
+
+                if ws.add(f"{base}.{tname}[{a}:{b}]", piece, "other", mod) is not None:
+                    added += 1
+    log.info("sdcguard: the weight scan also compares %d entries of the model's other parameters (%d tensors not "
+             "scanned, listed in the coverage report); %.1f GB in all", added, skipped, ws.stats["bytes"] / 1e9)
+    return {"other_entries": added, "not_scanned": skipped}
 
 
 def _scan_skips(layer, why: str) -> None:
@@ -2043,7 +2223,7 @@ def register() -> None:
             def load_model(self, *args, **kwargs):
                 out = orig_load(self, *args, **kwargs)
                 for what, fn in (("norm", _register_norms), ("MoE", _register_moe), ("FP8", _register_fp8),
-                                 ("attention", _register_attn)):
+                                 ("attention", _register_attn), ("other weights to scan", _register_scan_rest)):
                     try:
                         fn(self)
                     except Exception as e:  # noqa: BLE001  (never break model loading)

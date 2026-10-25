@@ -129,3 +129,173 @@ def test_a_layerwise_reload_keeps_left_out_layers_scanned_and_alerts_are_logged_
     assert any(f"the weights of {left_out.prefix}" in r.getMessage() for r in caplog.records)
     d = found[0].detail
     assert "potentially_exposed" in d and d.get("read_window_steps") is not None
+
+
+class _Holder(torch.nn.Module):
+    def __init__(self, **params):
+        super().__init__()
+        for k, v in params.items():
+            setattr(self, k, torch.nn.Parameter(v, requires_grad=False))
+
+
+def _whole_model(M):
+    model = load(Decoder(M, n_layers=2, lm_head=True))
+    torch.manual_seed(5)
+    model.embed = _Holder(weight=torch.randn(1024, 256).to(torch.bfloat16))
+    model.lm_head.weight = model.embed.weight                                   # tied: one tensor, two modules
+    model.norm = _Holder(weight=torch.ones(256, dtype=torch.bfloat16))
+    model.experts = _Holder(w13_weight=torch.randn(4, 256, 1280).to(torch.bfloat16) * 0.02,   # 2.6 MB: 3 slices
+                            w2_weight=torch.randn(4, 640, 64).to(torch.bfloat16) * 0.02)
+    model.attn = _Holder(k_scale=torch.tensor(1.0))
+    return model
+
+
+def test_the_models_other_parameters_are_scanned_too(monkeypatch, tmp_path):
+    """Embeddings and the LM head (tied: scanned once), norm weights, MoE experts' weights (sliced to the read budget),
+    each named when a bit changes or two values are swapped; attention scales vLLM may set at first use aren't
+    scanned, and a reload takes their new values as the reference."""
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1", SDCGUARD_WEIGHT_SCAN_MB="1")
+    model = _whole_model(M)
+    runner = Runner(model)
+    info = plugin._register_scan_rest(runner)
+    g = plugin.guard()
+    names = [e["name"] for e in g.wscan.entries if e["kind"] == "other"]
+    step = (1 << 20) // 2
+    assert names == ["lm_head", "norm", f"experts.w13_weight[0:{step}]", f"experts.w13_weight[{step}:{2 * step}]",
+                     f"experts.w13_weight[{2 * step}:{4 * 256 * 1280}]", "experts.w2_weight"], names
+    assert info == {"other_entries": 6, "not_scanned": 1}
+    assert plugin._register_scan_rest(runner) is None                           # once
+    cov = g.coverage_report()["weights"]
+    assert cov["by_kind"] == {"checked": 2, "other": 6}
+    assert "k_scale" in cov["not_scanned"]["attn.k_scale"] or "attention scale" in cov["not_scanned"]["attn.k_scale"]
+    runner.execute_model(x_in())
+    for _ in range(12):
+        assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]
+    _flip(model.embed.weight, 300, 2)
+    _flip(model.norm.weight, 7, 0)
+    _flip(model.experts.w13_weight, step + 11, 9)
+    w2 = model.experts.w2_weight.view(-1).view(torch.int16)
+    i = int((w2 != w2[0]).nonzero()[0])
+    with torch.no_grad():
+        a, b = int(w2[0]), int(w2[i])
+        w2[0], w2[i] = b, a                                                     # a swap
+    found = set()
+    for _ in range(12):
+        runner.execute_model(x_in())
+        found |= {e.detail["where"] for e in plugin.poll(wait=True) if e.detector == "serve_weights"}
+    assert found == {"lm_head", "norm", f"experts.w13_weight[{step}:{2 * step}]", "experts.w2_weight"}, found
+    with torch.no_grad():                                                       # an intended update, then a reload
+        model.norm.weight.mul_(2)
+    plugin._rearm()
+    for _ in range(12):
+        runner.execute_model(x_in())
+        assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]
+    _flip(model.norm.weight, 3, 1)
+    found = set()
+    for _ in range(12):
+        runner.execute_model(x_in())
+        found |= {e.detail["where"] for e in plugin.poll(wait=True) if e.detector == "serve_weights"}
+    assert found == {"norm"}
+
+
+def test_the_verification_age_settings(monkeypatch, tmp_path, caplog):
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1", SDCGUARD_WEIGHT_SCAN_AGE="30",
+                               SDCGUARD_WEIGHT_SCAN_MAX_MB="256")
+    assert plugin._weight_scan_age() == 30.0 and plugin._weight_scan_max_mb() == 256.0
+    model = load(Decoder(M, n_layers=2, lm_head=False))
+    ws = plugin.guard().wscan
+    assert ws.target_age == 30.0 and ws.max_budget == 256 << 20
+    for bad in ("abc", "0.5"):
+        monkeypatch.setenv("SDCGUARD_WEIGHT_SCAN_AGE", bad)
+        with caplog.at_level(logging.WARNING, logger="sdcguard"):
+            assert plugin._weight_scan_age() is None
+    monkeypatch.delenv("SDCGUARD_WEIGHT_SCAN_AGE")
+    assert plugin._weight_scan_age() is None and plugin._weight_scan_max_mb() == 256.0
+    assert sum("SDCGUARD_WEIGHT_SCAN_AGE" in r.getMessage() for r in caplog.records) == 2
+
+
+def test_parameters_sharing_one_buffer_arent_scanned(monkeypatch, tmp_path):
+    """vLLM's prefetch offloader points layers N, N + its step, ... at one GPU buffer (distinct Parameters, one
+    address) and copies each layer's weights in before it runs: none of them is scanned, each is listed, and the
+    copies raise nothing. A layer the checks found unreadable as its own isn't taken in either."""
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1")
+    model = load(Decoder(M, n_layers=2, lm_head=False))
+    buf = torch.randn(256).to(torch.bfloat16)
+    model.norm_layer0 = _Holder(weight=torch.empty(0))
+    model.norm_layer0.weight = torch.nn.Parameter(buf, requires_grad=False)
+    model.norm_layer2 = _Holder(weight=torch.empty(0))
+    model.norm_layer2.weight = torch.nn.Parameter(buf.view_as(buf), requires_grad=False)
+    model.unreadable = _Holder(weight=torch.randn(8).to(torch.bfloat16))
+    g = plugin.guard()
+    g.wscan.not_scanned["unreadable"] = "its weights can't be read back as its own: a test"
+    runner = Runner(model)
+    plugin._register_scan_rest(runner)
+    ns = g.wscan.not_scanned
+    assert "shares its memory" in ns["norm_layer0.weight"] and "shares its memory" in ns["norm_layer2.weight"]
+    assert "can't be read back" in ns["unreadable"]
+    assert not [e for e in g.wscan.entries if e["kind"] == "other"]
+    runner.execute_model(x_in())
+    for _ in range(3):
+        assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]
+    with torch.no_grad():
+        buf.copy_(torch.randn(256).to(torch.bfloat16))                  # the offloader copies layer 2's weights in
+    for _ in range(3):
+        runner.execute_model(x_in())
+        assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]
+
+
+def test_with_the_expert_load_balancer_on_experts_weights_arent_scanned(monkeypatch, tmp_path):
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1")
+    model = load(Decoder(M, n_layers=2, lm_head=False))
+
+    class RoutedExperts(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.w13_weight = torch.nn.Parameter(torch.randn(2, 8, 4).to(torch.bfloat16), requires_grad=False)
+
+    model.moe = RoutedExperts()
+    runner = Runner(model)
+    runner.parallel_config = types.SimpleNamespace(enable_eplb=True)
+    plugin._register_scan_rest(runner)
+    ns = plugin.guard().coverage_report()["weights"]["not_scanned"]
+    assert "--enable-eplb" in ns["moe.w13_weight"]
+    assert not [e for e in plugin.guard().wscan.entries if e["kind"] == "other"]
+
+
+def test_the_experiments_rpcs_change_a_parameter_and_name_its_scan_entry(monkeypatch, tmp_path):
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiments"))
+    import sdcguard_test_ext as ext
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1", SDCGUARD_WEIGHT_SCAN_MB="1")
+    model = _whole_model(M)
+    runner = Runner(model)
+    plugin._register_scan_rest(runner)
+    fi = ext.FaultInjection()
+    fi.get_model = lambda: model
+    cov = fi.sdcguard_test_scan_uncovered()
+    assert cov["uncovered"] == ["attn.k_scale"] and "attn.k_scale" in cov["not_scanned"], cov
+    runner.execute_model(x_in())
+    plugin.poll(wait=True)
+    step = (1 << 20) // 2
+    r = fi.sdcguard_test_change_param("experts.", "w13_weight", 0.5, "flip", 15)
+    assert r["name"] == "experts.w13_weight" and r["index"] == 4 * 256 * 1280 // 2 and \
+        r["entry"] == f"experts.w13_weight[{step}:{2 * step}]" and r["before"][0] != r["after"][0]
+    back = fi.sdcguard_test_change_param("experts.", "w13_weight", 0.5, "flip", 15, r["index"])
+    assert back["after"] == r["before"]
+    s = fi.sdcguard_test_change_param("norm", "weight", 0.0, "swap")       # all ones: no two neighbours differ
+    assert "error" in s
+    s = fi.sdcguard_test_change_param("embed", "weight", 0.25, "swap")
+    assert s["entry"] == "lm_head" and s["after"] == s["before"][::-1] and s["before"][0] != s["before"][1]
+    found = set()
+    for _ in range(12):
+        runner.execute_model(x_in())
+        found |= {e.detail["where"] for e in plugin.poll(wait=True) if e.detector == "serve_weights"}
+    assert found == {"lm_head"}, found                                    # (the flip was undone before any read)
+    u = fi.sdcguard_test_change_param("embed", "weight", 0.25, "swap", 0, s["index"])
+    assert u["after"] == s["before"]
+    assert fi.sdcguard_test_scan_refresh_entry("lm_head") == {"refreshed": 1}
+    assert fi.sdcguard_test_scan_refresh_entry(f"experts.w13_weight[{step}:{2 * step}]") == {"refreshed": 1}
+    for _ in range(12):
+        runner.execute_model(x_in())
+        assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]

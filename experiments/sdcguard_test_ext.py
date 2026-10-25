@@ -358,6 +358,100 @@ class FaultInjection:
                 return {"refreshed": int(ws.refresh(mod))}
         return {"refreshed": 0}
 
+    def sdcguard_test_change_param(self, prefix: str, suffix: str, frac: float, op: str, bit: int = 0,
+                                   index: int = -1) -> dict:
+        """Change one parameter of the model in place, what a memory fault would do: the first parameter whose name
+        starts with `prefix` and ends with `suffix` (a tied one under any of its names), at
+        flat index int(frac * numel) of its raw integer values, or at `index` when it is 0 or more. op "flip": flip
+        `bit` there; "swap": exchange the value there with the next one, starting from the first index from there
+        whose next value differs (two values exchanged in one 4,096-value block, which the old block-sum
+        fingerprint couldn't see). The same call with index= the returned index undoes it. Returns the parameter's
+        name, the index, the scan entry that holds that value ("" if none), and the raw values before and after."""
+        import torch
+        from sdcguard import vllm_plugin
+        for name, p in self.get_model().named_parameters(remove_duplicate=False):
+            if not (name.startswith(prefix) and name.endswith(suffix)) or not p.numel():
+                continue
+            es = p.element_size()
+            raw = p.data.view(-1).view({1: torch.uint8, 2: torch.int16, 4: torch.int32, 8: torch.int64}[es])
+            n = raw.numel()
+            i = index if index >= 0 else int(frac * n) % n
+            with torch.no_grad():
+                if op == "swap":
+                    if index < 0:
+                        end = min(n - 1, i + (1 << 20))
+                        diff = (raw[i:end] != raw[i + 1:end + 1]).nonzero()
+                        if not diff.numel():
+                            return {"name": name, "error": "no two neighbouring values differ there"}
+                        i += int(diff[0])
+                    before = [int(raw[i]), int(raw[i + 1])]
+                    raw[i], raw[i + 1] = before[1], before[0]
+                    after = [int(raw[i]), int(raw[i + 1])]
+                elif op == "flip":
+                    before = [int(raw[i])]
+                    raw[i] ^= (1 << bit) if bit < es * 8 - 1 or es == 1 else -(1 << bit)
+                    after = [int(raw[i])]
+                else:
+                    return {"name": name, "error": f"op {op!r}"}
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+            addr = p.data.data_ptr() + i * es
+            entry = ""
+            ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+            if ws is not None:
+                for e in ws.entries:
+                    for t in e["get"]():
+                        if isinstance(t, torch.Tensor) and t.numel() and \
+                                t.data_ptr() <= addr < t.data_ptr() + t.numel() * t.element_size():
+                            entry = e["name"]
+                            break
+                    if entry:
+                        break
+            return {"name": name, "index": i, "op": op, "bit": bit, "entry": entry, "before": before,
+                    "after": after, "numel": n}
+        return {}
+
+    def sdcguard_test_scan_refresh_entry(self, name: str) -> dict:
+        """A new fingerprint for the scan entry named `name` (after a trial undid its change). {"refreshed": how many
+        entries were refreshed, -1 if the scan is off}."""
+        from sdcguard import vllm_plugin
+        ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+        if ws is None:
+            return {"refreshed": -1}
+        return {"refreshed": int(ws.refresh(name=name))}
+
+    def sdcguard_test_scan_uncovered(self) -> dict:
+        """The model's parameters (their tensors, as the plugin takes them) that no scan entry holds, and what the
+        scan lists as not scanned: {"uncovered": [names], "not_scanned": {name: why}, "parameters": how many}."""
+        import torch
+        from sdcguard import vllm_plugin
+        ws = getattr(vllm_plugin._STATE.get("guard"), "wscan", None)
+        if ws is None:
+            return {"uncovered": None, "not_scanned": None, "parameters": None}
+        ws.sync()
+        held = []
+        for e in ws.entries:
+            if e["excluded"]:
+                continue
+            for t in e["get"]():
+                if isinstance(t, torch.Tensor) and t.numel():
+                    held.append((str(t.device), t.data_ptr(), t.data_ptr() + t.numel() * t.element_size()))
+        out, count = [], 0
+        for mname, mod in self.get_model().named_modules():
+            for tname, t in vllm_plugin._module_tensors(mod):
+                count += 1
+                lo, hi = t.data_ptr(), t.data_ptr() + t.numel() * t.element_size()
+                # held whole, or in slices that together cover it
+                parts = sorted((a, b) for d, a, b in held if d == str(t.device) and a < hi and b > lo)
+                at = lo
+                for a, b in parts:
+                    if a > at:
+                        break
+                    at = max(at, b)
+                if at < hi:
+                    out.append(f"{mname}.{tname}" if mname else tname)
+        return {"uncovered": out, "not_scanned": dict(ws.not_scanned), "parameters": count}
+
     def sdcguard_test_reductions(self) -> dict:
         """PyTorch's cuBLAS reduced-precision settings in this worker (False: bf16/fp16 partial sums kept in fp32)."""
         import torch

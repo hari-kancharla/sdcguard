@@ -50,7 +50,8 @@ def plugin_env(monkeypatch, tmp_path, **extra):
     for k in ("SDCGUARD_REQUIRE", "SDCGUARD_SHARE", "SDCGUARD_OFFSET", "SDCGUARD_WEBHOOK", "SDCGUARD_METRICS_PORT",
               "SDCGUARD_SHARED_CACHE", "SDCGUARD_OPAQUE", "SDCGUARD_Z", "SDCGUARD_NORMS", "SDCGUARD_NORM_Z",
               "SDCGUARD_MOE", "SDCGUARD_FP8", "SDCGUARD_ATTN", "SDCGUARD_ATTN_Z", "SDCGUARD_ATTN_KEEP_KV",
-              "SDCGUARD_WEIGHT_SCAN", "SDCGUARD_WEIGHT_SCAN_MB"):
+              "SDCGUARD_WEIGHT_SCAN", "SDCGUARD_WEIGHT_SCAN_MB", "SDCGUARD_WEIGHT_SCAN_AGE",
+              "SDCGUARD_WEIGHT_SCAN_MAX_MB"):
         monkeypatch.delenv(k, raising=False)
     for k, v in extra.items():
         monkeypatch.setenv(k, v)
@@ -59,7 +60,8 @@ def plugin_env(monkeypatch, tmp_path, **extra):
                  ("norms_stale", False), ("norms_registered", False), ("moe_classes", []), ("moe_registered", False),
                  ("stack", None), ("fp8_classes", []), ("fp8_registered", False), ("route_classes", []),
                  ("fp8", None), ("fp8_why", None), ("attn_classes", []), ("attn_registered", False), ("attn", None), ("attn_why", None),
-                 ("token_steps", 0), ("dummy_runs", 0), ("dummy_after", None), ("in_dummy", 0)):
+                 ("token_steps", 0), ("dummy_runs", 0), ("dummy_after", None), ("in_dummy", 0),
+                 ("scan_rest_done", False)):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin
 

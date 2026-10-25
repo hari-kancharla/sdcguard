@@ -2638,6 +2638,69 @@ right (the arithmetic checks' job); an idle server (the scan moves on only while
 quantized layers SDCGUARD_SHARE leaves out, layers the arithmetic check can't take, embeddings, the LM head and the
 KV cache (not scanned).
 
+Result (October 25, on 6260af4): every criterion met. Both servers started; the scan compared all 112 linear layers
+(15 checked, 97 in the scan alone; none left out, none never compared); no alert on either server with no fault; all
+48 flips (bits 0 to 15, 3 each) were named by a scan alert on their layer, in a median 0.72 s and at most 1.58 s
+from just before the flip, every flip undone and every layer's fingerprint taken again, no scan alert on a layer
+with no flip, the prefix cache emptied every time; the scan server's 64 completions were identical to noscan's. 42
+of the 48 flipped layers were in the scan alone; the arithmetic checks alerted on 1 flipped layer. A pass over the
+model's 2.6 GB took 1.6 to 4.8 s. Cost, with the scan on against paused on the same server: 4.0% at 16 requests at
+once and 2.1% at 256 (medians of 4 rounds each way), more than 1%, so by the rule above the scan stays opt-in.
+
+Amendment (October 25, after that run, before the next): three changes, and the next run is this experiment
+extended to test them.
+- The fingerprint keys every value by its position. It is now two int64 sums of the raw bits, wrapping modulo 2^64:
+  of every value x_i, and of x_i times k(i), where k(i) is MurmurHash3's 64-bit finalizer applied to i XOR a constant (a
+  bijection, so no two positions share a key). One changed value is always seen (the first sum moves by the change).
+  Two values swapped move the second sum by (b - a)(k(i) - k(j)), which is 0 modulo 2^64 only if k(i) - k(j) is a
+  multiple of 2^49 for 16-bit values (b - a has at most 15 factors of 2): about one pair in 2^49 for keys that behave
+  like random numbers. Other patterns are missed only if both sums cancel, heuristically about one in 2^49. The block
+  sums before missed two opposite changes within one 4,096-value block, and swaps there. The keys are fixed and
+  public: this is for faults, not an adversary. A test checks the torch version against the definition written out
+  in Python integers.
+- It is computed by one Triton kernel per tensor (int64 arithmetic, atomic adds, the same result in any order),
+  launched on the tensor's own device, on GPU generations the other Triton kernels are validated on. Before its
+  first use on each device and element size, the kernel is compared with the PyTorch version; the PyTorch version is
+  used where they differ, without Triton, or from the first failed launch on.
+- The scan holds the model's other parameters too: the embedding (and the LM head, when it shares the embedding's
+  tensor, once), the norms' weights, MoE experts' weights, and quantized or unsupported linear layers it listed as not
+  scanned before. A module larger than one read's budget is held per tensor, and a contiguous tensor larger than
+  the budget in slices of at most the budget, so no read takes a whole MoE layer. Not held: attention scales vLLM
+  may set at first use, tensors outside the GPU, memory that distinct tensors share (vLLM's prefetch offloading),
+  layers the checks found unreadable as their own, and experts' weights when vLLM's expert load balancer moves them
+  (--enable-eplb); all are listed as not scanned. After a weight reload through vLLM's layer-wise reload they take
+  their new values as the reference; an update that changes weights in place without it (vLLM's sparse weight
+  transfer) needs refresh(), or it is reported as a change, as for the linear layers. Also new, and not
+  tested by this run: SDCGUARD_WEIGHT_SCAN_AGE, a verification-age target in seconds; each read then compares enough
+  that a pass takes at most 2/3 of the target at the measured time between reads (a gap over 4 s counts as 4 s), up
+  to SDCGUARD_WEIGHT_SCAN_MAX_MB
+  (default 1024) a read, and the coverage report gives the oldest time since an entry was last found clean.
+
+The next run (`modal run scripts/modal_vllm.py --phase weight_scan`, one H100, about 30 to 45 minutes and $2.40 to
+$3.65, 58-minute limit) keeps everything above, plus 12 trials on scan after the 48 flips, run the same way: bits 0,
+5, 10 and 15 of the embedding, bits 0 and 14 of the final norm, bit 3 of an input norm and bit 9 of a
+post-attention norm, and two values swapped in each of two linear layers and twice in the embedding (seed 1). Each
+is made through /collective_rpc, which also says which scan entry holds the changed value, and each must be named
+by an alert on that entry. Then a third server, moe_scan: ibm-granite/granite-3.1-1b-a400m-instruct in bf16 (24 MoE
+layers), the scan on, SDCGUARD_REQUIRE off since nothing checks its MoE layers in this run. It answers 64 prompts,
+then runs 6 trials in MoE experts' weights the same way: bits 0 and 7 of the first expert matmul's weights, bits 12
+and 15 of the second's, and one swap in each (seed 2). It runs only if at least 10 minutes of the run's 50 are left.
+
+Criteria for the next run, W2 to W4 as written, and:
+- W1: both Qwen servers start; the scan holds all 112 linear layers and at least one entry of other parameters; the
+  worker finds no parameter of the model that no scan entry holds; nothing is listed as not scanned; and every
+  entry was compared before the trials.
+- W5: the kernel passed its first-use comparison on the H100, on both scan servers.
+- W6: all 12 trials outside the linear layers run; each change is made where a scan entry holds it, named by a scan
+  alert on that entry within 120 s of just before the change, undone, and its entry's fingerprint taken again; no
+  scan alert names an entry with no change.
+- W7: moe_scan starts; the experts' weights are held (no parameter unheld, nothing listed as not scanned, every entry
+  compared before the trials); no alert with no fault; and all 6 trials meet what W6 asks.
+
+Reported, not criteria: as before, plus each trial's seconds to its alert, the oldest verification age at the end,
+and how many entries the other parameters take. Decided now: the scan becomes on by default if W1 to W7 are met and
+its measured cost is at most 1% at 16 and at 256 requests at once; otherwise it stays opt-in.
+
 ### The upgrade gate on cuBLAS issue 6862950
 
 `sdcguard gate` keeps a matmul as a case (inputs, the exact call, the conditions it ran under) and runs it again in

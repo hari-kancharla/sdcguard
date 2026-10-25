@@ -2,6 +2,9 @@
 pass over the model and only once, a clean model raises nothing, the byte budget sets how many reads a pass takes,
 an intended update (refresh) isn't called corruption, tensors that moved aren't compared, quantized layers' own
 tensors and layers outside the arithmetic checks are scanned too, and the fingerprint sees every single bit flip."""
+import os
+
+import pytest
 import torch
 import torch.nn as nn
 
@@ -152,13 +155,61 @@ def test_the_fingerprint_sees_every_single_bit_flip_and_is_exact():
     assert torch.equal(fingerprint(None), torch.zeros(2, dtype=torch.int64))
 
 
-def test_a_flip_and_its_cancelling_twin_in_another_block_is_still_seen():
-    t = torch.zeros(2 * BLOCK, dtype=torch.int16)
+def test_cancelling_changes_and_swaps_in_one_block_are_seen():
+    """The old fingerprint (block sums) missed these: two opposite changes in one block, and two values swapped."""
+    torch.manual_seed(3)
+    t = (torch.randn(2 * BLOCK) * 5).to(torch.bfloat16).view(torch.int16)
     ref = fingerprint(t)
-    c = t.clone()
-    c[5] = 1
-    c[BLOCK + 5] = -1                             # the plain sum is unchanged; the block-weighted one isn't
-    assert not torch.equal(fingerprint(c), ref)
+    for i, j in ((5, 6), (0, BLOCK - 1), (17, BLOCK + 17), (BLOCK + 1, 2 * BLOCK - 1)):
+        c = t.clone()
+        c[i] += 1
+        c[j] -= 1                                       # the plain sum is unchanged
+        assert not torch.equal(fingerprint(c), ref), (i, j)
+        if t[i] != t[j]:
+            s = t.clone()
+            s[i], s[j] = t[j], t[i]                     # a swap: the plain sum is unchanged
+            assert not torch.equal(fingerprint(s), ref), (i, j)
+    s = t.clone()
+    s[100:356] = t[1000:1256]                           # a region copied over another
+    assert not torch.equal(fingerprint(s), ref)
+    s = t.clone()
+    s[:BLOCK] = t[BLOCK:]                               # two blocks exchanged
+    s[BLOCK:] = t[:BLOCK]
+    assert not torch.equal(fingerprint(s), ref)
+
+
+def _reference(values) -> list:
+    """The fingerprint written out in Python integers, independently of the torch version: values as signed
+    (16, 32 bits) or unsigned (8 bits) integers, sums modulo 2^64, keys from MurmurHash3's fmix64."""
+    mask = (1 << 64) - 1
+
+    def mix(z):
+        z = (z ^ (z >> 33)) * 0xFF51AFD7ED558CCD & mask
+        z = (z ^ (z >> 33)) * 0xC4CEB9FE1A85EC53 & mask
+        return z ^ (z >> 33)
+
+    a = b = 0
+    for i, x in enumerate(values):
+        a = (a + x) & mask
+        b = (b + x * mix(i ^ 0x2545F4914F6CDD1D)) & mask
+    signed = [v - (1 << 64) if v >= (1 << 63) else v for v in (a, b)]
+    return signed
+
+
+def test_the_fingerprint_is_the_documented_one():
+    torch.manual_seed(4)
+    for dtype, view, bits in ((torch.bfloat16, torch.int16, 16), (torch.float32, torch.int32, 32),
+                              (torch.uint8, torch.uint8, 8)):
+        t = (torch.randn(97) * 1e4).to(dtype) if dtype.is_floating_point else torch.randint(0, 256, (97,)).to(dtype)
+        raw = t.view(view)
+        if bits > 8:
+            raw[0] = -(1 << (bits - 1))                 # the most negative value
+            raw[1] = (1 << (bits - 1)) - 1              # the largest
+        else:
+            raw[0], raw[1] = 0, 255
+        assert fingerprint(t).tolist() == _reference([int(v) for v in raw.tolist()]), dtype
+    t = torch.randn(33, dtype=torch.float64)
+    assert fingerprint(t).tolist() == _reference([int(v) for v in t.view(torch.int64).view(torch.int32).tolist()])
 
 
 def test_eight_byte_tensors_are_fingerprinted_as_pairs_of_32_bit_values():
@@ -176,14 +227,12 @@ def test_eight_byte_tensors_are_fingerprinted_as_pairs_of_32_bit_values():
 def test_the_fingerprint_needs_no_copy_of_the_whole_tensor():
     """It sums in chunks: the same result as one pass over the whole tensor, chunk boundaries included."""
     from sdcguard import serve_weights as sw
-    t = torch.randint(-2 ** 15, 2 ** 15 - 1, (3 * sw.CHUNK + 5 * BLOCK + 3,), dtype=torch.int16)
+    t = torch.randint(-2 ** 15, 2 ** 15 - 1, (2 * sw.CHUNK + 5 * BLOCK + 3,), dtype=torch.int16)
     v = t.to(torch.int64)
-    full = t.numel() - t.numel() % BLOCK
-    sums = v[:full].view(-1, BLOCK).sum(1)
-    w = torch.arange(sums.numel()) % sw.POSITION_MOD + 1
-    tail = v[full:].sum()
-    expect = torch.stack([sums.sum() + tail, (sums * w).sum() + tail * ((full // BLOCK) % sw.POSITION_MOD + 1)])
+    expect = torch.stack([v.sum(), (v * sw.keys(0, v.numel(), v.device)).sum()])
     assert torch.equal(fingerprint(t), expect)
+    k = sw.keys(0, 1 << 16, torch.device("cpu"))
+    assert torch.unique(k).numel() == k.numel()          # no two positions share a key (the mix is a bijection)
 
 
 def test_a_reload_through_temporary_tensors_keeps_the_layer_compared():
@@ -312,3 +361,113 @@ def test_scan_alerts_are_counted_in_the_metrics():
     assert reg.get_sample_value("sdcguard_all_alerts_total") == 1
     assert reg.get_sample_value("sdcguard_weight_scan_layers") == 3
     assert reg.get_sample_value("sdcguard_weight_scan_passes_total") >= 1
+
+
+def test_the_fingerprint_kernel_matches_the_pytorch_version_and_names_a_flip():
+    pytest.importorskip("triton")
+    import subprocess
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    env = dict(os.environ, TRITON_INTERPRET="1", SDCGUARD_FAST_CPU_TEST="1",
+               PYTHONPATH=os.pathsep.join([os.path.join(os.path.dirname(here), "src"), here,
+                                           os.environ.get("PYTHONPATH", "")]))
+    p = subprocess.run([sys.executable, os.path.join(here, "_serve_weights_compare.py")], env=env,
+                       capture_output=True, text=True, timeout=900)
+    assert p.returncode == 0, p.stdout[-3000:] + p.stderr[-3000:]
+    assert "ALL MATCH" in p.stdout
+
+
+def test_without_the_kernel_the_pytorch_version_is_used(monkeypatch):
+    from sdcguard import serve_weights as sw
+    monkeypatch.delenv("TRITON_INTERPRET", raising=False)
+    monkeypatch.delenv("SDCGUARD_FAST_CPU_TEST", raising=False)
+    monkeypatch.setattr(sw, "STATUS", {})
+    t = torch.randn(5000).to(torch.bfloat16)
+    assert not sw.kernel_usable(torch.device("cpu"))
+    assert torch.equal(sw._fingerprints([t], torch.device("cpu"))[0], sw.fingerprint(t))
+    monkeypatch.setattr(sw, "HAVE_TRITON", True)            # (the setting's message, with or without Triton installed)
+    monkeypatch.setenv("SDCGUARD_WEIGHT_SCAN_FAST", "0")
+    assert "turned off" in sw._why_not(torch.device("cpu"))
+    monkeypatch.setattr(sw, "HAVE_TRITON", False)
+    assert sw._why_not(torch.device("cpu")) == "Triton isn't installed"
+
+
+def test_a_kernel_that_fails_its_first_use_comparison_or_a_launch_falls_back(monkeypatch):
+    """A kernel giving another answer at first use isn't used (and says why); one whose later launch raises is
+    turned off on that device and element size, and the tensor's fingerprint comes from the PyTorch version."""
+    from sdcguard import serve_weights as sw
+    monkeypatch.setattr(sw, "STATUS", {})
+    monkeypatch.setattr(sw, "_why_not", lambda device: None)
+    calls = []
+
+    def wrong(t, row):
+        calls.append(1)
+        row += 1                                             # another answer
+
+    monkeypatch.setattr(sw, "_launch", wrong)
+    t = torch.randn(3000).to(torch.bfloat16)
+    ok, why = sw.verify_kernel(torch.device("cpu"), 2)
+    assert not ok and "first-use comparison failed" in why and calls
+    assert torch.equal(sw._fingerprints([t], torch.device("cpu"))[0], sw.fingerprint(t))
+
+    def boom(t, row):
+        raise RuntimeError("launch failed for this variant")
+
+    monkeypatch.setattr(sw, "_launch", boom)
+    sw.STATUS[sw._key(torch.device("cpu"), 4)] = (True, "")  # passed its first use
+    f = torch.randn(3000)
+    assert torch.equal(sw._fingerprints([f], torch.device("cpu"))[0], sw.fingerprint(f))
+    ok, why = sw.STATUS[sw._key(torch.device("cpu"), 4)]
+    assert not ok and "a launch failed" in why and "launch failed for this variant" in why
+    m = _model()
+    g, s = _scan(m)
+    kern = g.coverage_report()["weights"]["kernel"]
+    assert sorted(kern) == ["cpu 2-byte", "cpu 4-byte"], kern
+    assert kern["cpu 2-byte"].startswith("PyTorch (its first-use comparison failed: AssertionError")
+    assert kern["cpu 4-byte"].startswith("PyTorch (a launch failed: RuntimeError")
+
+
+def test_a_verification_age_target_sets_the_bytes_a_read_compares(monkeypatch, caplog):
+    """With a target, each read compares enough that a pass takes at most 2/3 of it at the measured time between
+    reads (never less than the budget, never more than max_mb), the oldest verification age stays under the target,
+    and a target max_mb can't meet is reported (target_met False, one warning)."""
+    import logging
+    from sdcguard import serve_weights as sw
+    clock = [100.0]
+    monkeypatch.setattr(sw.time, "monotonic", lambda: clock[0])
+    m = _model((64, 96, 96, 96, 64, 32))
+    g = ServeGuard().attach(m)
+    s = g.weight_scan(budget_mb=1 / 1024, target_age=3.0)                  # a 1 KB budget
+    total = s.stats["bytes"]
+    for _ in range(12):
+        clock[0] += 0.5                                                     # a read every 0.5 s
+        assert not [e for e in g.poll(wait=True) if e.detector == "serve_weights"]
+    want = total // 4 + 1                                                   # 2 s for a pass: 4 reads
+    assert s.stats["budget_bytes_now"] == max(1024, want) and s.stats["target_met"] is True
+    assert s.oldest_age() <= 3.0 and s.coverage()["oldest_verification_age_seconds"] <= 3.0
+    s2 = sw.WeightScan(g, budget_mb=1 / 1024, target_age=3.0, max_mb=2 / 1024)   # at most 2 KB a read
+    for e in s.entries:
+        s2.add(e["name"], e["get"], e["kind"], e["module"])
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):
+        for _ in range(6):
+            clock[0] += 0.5
+            s2.poll(wait=True)
+    assert s2.stats["target_met"] is False and s2.stats["budget_bytes_now"] == 2048
+    assert sum("can't compare every weight within" in r.getMessage() for r in caplog.records) == 1
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):             # met again, then unmet: no second warning
+        s2.max_budget = 1 << 30
+        clock[0] += 0.5
+        s2.poll(wait=True)
+        assert s2.stats["target_met"] is True
+        s2.max_budget = 2048
+        clock[0] += 0.5
+        s2.poll(wait=True)
+    assert sum("can't compare every weight within" in r.getMessage() for r in caplog.records) == 1
+    clock[0] += 600                                                         # an idle server: the gap counts as 4 s
+    s2.poll(wait=True)
+    assert s2._interval <= 0.8 * 0.5 + 0.2 * 4.0 + 1e-9
+    s3 = sw.WeightScan(g, budget_mb=1 / 1024)                               # no target: the budget alone
+    s3.add("x", s.entries[0]["get"], "checked")
+    clock[0] += 0.5
+    s3.poll(wait=True)
+    assert s3.stats["budget_bytes_now"] == 1024 and s3.stats["target_met"] is None

@@ -970,14 +970,17 @@ class ServeGuard:
             self.attn = AttnChecks(self, ATTN_Z if line is None else line)
         return self.attn
 
-    def weight_scan(self, budget_mb: Optional[float] = None):
+    def weight_scan(self, budget_mb: Optional[float] = None, target_age: Optional[float] = None,
+                    max_mb: Optional[float] = None):
         """Scheduled weight integrity (serve_weights.WeightScan), made at the first call: at each poll a few
         registered layers' weights are fingerprinted and compared with their fingerprint at registration, in turn,
         so a changed weight bit is named within a pass over the model. Layers registered later are taken in at the
-        next poll; scan_weights_of() adds layers the arithmetic checks don't take."""
+        next poll; scan_weights_of() adds layers the arithmetic checks don't take. target_age (seconds): compare
+        enough each read that every weight is verified about that often (up to max_mb a read)."""
         if self.wscan is None:
-            from .serve_weights import DEFAULT_BUDGET_MB, WeightScan
-            self.wscan = WeightScan(self, DEFAULT_BUDGET_MB if budget_mb is None else budget_mb)
+            from .serve_weights import DEFAULT_BUDGET_MB, DEFAULT_MAX_MB, WeightScan
+            self.wscan = WeightScan(self, DEFAULT_BUDGET_MB if budget_mb is None else budget_mb, target_age=target_age,
+                                    max_mb=DEFAULT_MAX_MB if max_mb is None else max_mb)
             self.wscan.sync()
         return self.wscan
 

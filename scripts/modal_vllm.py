@@ -18,7 +18,7 @@
     modal run scripts/modal_vllm.py --phase decisions      # `sdcguard decide` on four server changes: about $4.40-5.70
     modal run scripts/modal_vllm.py --phase isolation      # vLLM #62124 and controls on 0.31 and 0.32, 2 L4s: under $1
     modal run scripts/modal_vllm.py --phase sensitivity    # 80 weight bit flips in a served model, 1 H100: about $2
-    modal run scripts/modal_vllm.py --phase weight_scan    # the weight scan in vllm serve, 48 flips, 1 H100: about $2-3
+    modal run scripts/modal_vllm.py --phase weight_scan    # the weight scan in vllm serve, 66 changes, 1 H100: about $2.40-3.65
     modal run scripts/modal_vllm.py --phase fp8_residuals  # vLLM's FP8 GEMM against exact arithmetic, 1 H100: under $1
     modal run scripts/modal_vllm.py --phase norms          # RMSNorm checks in vllm serve, 1 H100: about $3 to $4
     modal run scripts/modal_vllm.py --phase qualify        # `sdcguard qualify` with its defaults on 1 L4: about $1
@@ -520,7 +520,7 @@ def sensitivity(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=58 * 60)
 def weight_scan(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_weight_scan_check.py: the plugin's weight scan in real `vllm serve` (vLLM 0.32,
     Qwen2.5-1.5B-Instruct, one layer in eight checked, one H100): coverage, no clean alert, flips named, identical
@@ -536,7 +536,7 @@ def weight_scan(force: bool = False, source: Optional[dict] = None) -> str:
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_weight_scan_check.py", "--out", out], f"{out}.txt",
-                    cwd="/root", timeout=42 * 60)
+                    cwd="/root", timeout=55 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -1034,9 +1034,10 @@ ESTIMATES = {
                    "check: about 20 to 30 minutes, roughly $1.60 to $2.40 (45-minute limit, at most about $3.60 at "
                    "requested resources, not a spending cap)",
     "weight_scan": "the plugin's weight scan in real `vllm serve` on 1 H100: Qwen2.5-1.5B with one layer in eight "
-                   "checked, without and with the scan (identical answers, the cost), then 48 weight bit flips each "
-                   "named or not within 120 s: about 25 to 35 minutes, roughly $2 to $2.80 (45-minute limit, at most "
-                   "about $3.60 at requested resources, not a spending cap)",
+                   "checked, without and with the scan (identical answers, the cost), then 48 weight bit flips and 12 "
+                   "changes outside the linear layers each named or not within 120 s, then granite-3.1-1b-a400m with "
+                   "6 changes in MoE experts' weights: about 30 to 45 minutes, roughly $2.40 to $3.65 (58-minute "
+                   "limit, at most about $4.70 at requested resources, not a spending cap)",
     "fp8_residuals": "vLLM's FP8 GEMM against exact arithmetic on 16 layers of a 1.5B model, 1 H100: about 5 to 10 "
                      "minutes, roughly $0.40 to $0.80 (20-minute limit, at most about $1.60 at requested resources, "
                      "not a spending cap)",

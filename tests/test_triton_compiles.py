@@ -179,3 +179,14 @@ def test_the_attention_kernels_compile(shape, dtype):
                                 keep_kv=keep)
             sa.run_case(sa.attn_check_triton, c, b, left=8)
     _compiled(done, "_attn_part", "_attn_judge")
+
+
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16, torch.float32, torch.float64, torch.uint8])
+@pytest.mark.parametrize("n", [1, 4095, 4096, 2 * 4096 + 17, 5_000_000])
+def test_the_weight_scan_kernel_compiles(dtype, n):
+    from sdcguard import serve_weights as sw
+    t = torch.zeros(n, dtype=dtype)
+    row = torch.zeros(2, dtype=torch.int64)
+    with compiling() as done:
+        sw._launch(t, row)
+    _compiled(done, "_fingerprint_kernel")
