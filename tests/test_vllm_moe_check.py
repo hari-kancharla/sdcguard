@@ -32,7 +32,10 @@ def passing():
                       "route_corrupt": [{"mode": m, "router": ROUTERS[k], "mark": ROUTERS[k], "detected": True,
                                          "rounds_to_detect": 1, "findings": [f], "verdicts": ["output_wrong"]}
                                         for k, (m, f) in enumerate((("experts", "wrong_experts"),
-                                                                    ("weights", "wrong_weights")))]}}
+                                                                    ("weights", "wrong_weights")))],
+                      "drop": [{"mode": "drop", "layer": NAMES[6], "mark": NAMES[6], "detected": True,
+                                "rounds_to_detect": 1, "findings": ["real_rows_unrouted"],
+                                "verdicts": ["output_wrong"]}]}}
 
 
 def test_a_run_that_meets_every_criterion_passes():
@@ -68,6 +71,15 @@ def test_each_criterion_fails_on_its_own():
     r = passing()
     r["eager"]["corrupt"][2]["detected"] = False
     cases.append((r, "M4: wrong kernels caught in 5 of 6"))
+    r = passing()
+    r["eager"]["drop"][0]["detected"] = False
+    cases.append((r, "M6: real rows without experts caught in 0 of 1"))
+    r = passing()
+    r["eager"]["drop"][0]["findings"] = ["wrong_experts"]
+    cases.append((r, "M6"))
+    r = passing()
+    r["eager"]["drop"] = []
+    cases.append((r, "M6"))
     r = passing()
     r["guarded"]["moe_at_start"]["routing"]["routers"] = 0
     cases.append((r, "M1 (guarded): the routing of 0 routers"))

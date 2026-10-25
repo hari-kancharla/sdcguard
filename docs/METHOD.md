@@ -1994,6 +1994,37 @@ clean scores 2.65 compiled, 1.00 eager, 2.52 on Qwen3); the 5 exact-naming trial
 4 Qwen3 q/k norm flips were caught. Cost: 7.2% fewer output tokens per second at 16 requests at once, 10.4% at 256.
 Norm checks stay opt-in, for the cost and because they can change a compiled server's answers.
 
+Amendment (October 25, before the next run): finding the cause. That comparison changed three things at once: the norm
+checks, the linear checks on every layer, and PyTorch's cuBLAS reduced-precision setting (the plugin keeps bf16 and
+fp16 partial sums in fp32; the plain server ran with PyTorch's default), and a fresh compile of plain vLLM can change
+its own answers (Round 3: 28 of 256, from Inductor re-tuning a fused add+RMSNorm kernel). The norm check is already
+one opaque custom op, so "make it opaque" isn't the fix. `experiments/vllm_norm_diag.py` (`modal run
+scripts/modal_vllm.py --phase norm_diag`, one H100, vLLM 0.32.0, Qwen2.5-1.5B-Instruct in bf16, prefix caching off;
+about 25 to 35 minutes and $2 to $2.85, 45-minute limit) runs 7 servers one after another, each compiled from an
+empty vLLM, Inductor and Triton caches of its own: plain twice (plain_a, plain_b), plain with the plugin's cuBLAS
+setting (plain_exact), the
+plugin without norm checks (nonorms) and with them (guarded, that run's server), and plain and guarded with
+Inductor's deterministic mode set in vLLM's inductor_compile_config (on torch 2.13 the environment variable alone is
+reset by the first compiled frame, pytorch#198563; vLLM says the mode doesn't guarantee reproducible outputs, and with
+it vLLM also turns off combo-kernel benchmarking). Each
+answers the same 64 prompts greedily (32 tokens, top 5 log-probabilities kept). Reported for the pairs plain_a and
+plain_b, plain_a and plain_exact, plain_exact and nonorms, nonorms and guarded, plain_a and guarded, plain_det and
+guarded_det, plain_a and plain_det: how many completions differ, and at each one's first differing token whether
+both sides preferred their own token by at most 0.25 nat (vLLM's near-tie rule in its tests; tokens compared by id);
+and from each server's compiled code, the Triton kernels that compute an rsqrt (Inductor's wrapper modules, which
+embed every kernel and call the graph's ops, left out), compared by a hash of the source with kernel names taken out,
+and the set of configurations autotuning chose for all kernels. It is a diagnosis: complete when all 7 servers
+answered. Decided now:
+- if plain_a and plain_b differ about as much as plain_a and guarded, a fresh compile explains the difference, and
+  N2's comparison is replaced by one against plain compiled the same way, with the deterministic pair as the check;
+- if plain_a and plain_exact differ, or plain_exact and nonorms, the cuBLAS setting or the linear checks change
+  answers, and that is fixed or stated first;
+- if only nonorms and guarded differ and their norm kernels differ in source, the check changes what Inductor
+  fuses, and the next version observes the norm from outside the compiled graph (the next layer's input, which the
+  linear checks already see); if their norm kernels' sources match and the sets of tuned configurations differ,
+  autotuning is the cause, and the next version is judged on the deterministic pair and on configurations matching;
+- whatever the outcome, the norm checks stay opt-in until a run meets N2 against plain vLLM compiled the same way.
+
 ### Qualify on a real server (written October 24, before any run)
 
 `sdcguard qualify` has only run against stand-in servers. Reading its defaults against decide's while preparing this
@@ -2177,6 +2208,53 @@ them. Also reported: over the clean traffic on the guarded and eager servers (fr
 rows the experts' check judged against the rows it sampled (2 for each active call; with the step's real rows known
 they should match, apart from counts that a read still in flight at the start carried over from startup), and real
 rows without experts (expected 0).
+
+Amendment (October 25, after the fourth run, before the next): the routing's validity. The experts' check skips a row
+whose experts are all -1 (vLLM's CUDA-graph padding rows), so a real row given no experts went unjudged, only counted
+among the two sampled rows. Now the active layer also reads the expert ids of every one of the step's known real rows
+(padding rows come after them), in the same Triton kernel and its PyTorch version: vLLM's routers give every real
+token top_k experts, so a real row with all its experts -1 (no expert computes it) or some of them -1 is wrong
+whatever the numbers, and the read raises an alert naming the layer (finding real_rows_unrouted or
+real_rows_partly_routed, recheck output_wrong, with the count and the last such row, so the request holding it can be
+named). With the real rows unknown nothing is counted. On the CPU: a step whose 4 real rows have no experts raises
+one alert naming the layer and row 3; one expert missing from real row 2 of 3 raises real_rows_partly_routed; the
+same rows with the real rows not given raise nothing; the Triton and PyTorch versions give the same counts and row
+through Triton's interpreter (also over 65 to 300 real rows, past one block of the kernel's loop), and the kernels
+compile for the A100, L4 and H100 with Triton 3.8.0 and 3.7.1. The real rows count as unknown, so nothing is scanned,
+where vLLM runs fewer rows than the scheduler counted or splits them across GPUs: microbatching, sequence parallelism,
+prefill context parallelism (whose MoE layers aren't checked at all: their rows are gathered from other GPUs), and
+speculative decoding's adaptive verification. The next
+MoE run keeps M1 to M5, and its M3 now also counts these alerts on the clean servers, plus:
+- M6: in eager mode, one MoE layer's experts are given the first row of each batch with all its expert ids -1, after
+  the router and its routing check produced them right (sdcguard_test_corrupt_moe "drop": a corrupted id buffer, or
+  a padding mask marking a real row); within 16 rounds of 4 requests at once, an alert names the layer with finding
+  real_rows_unrouted and recheck output_wrong.
+
+### The MoE checks' cost (written October 25, before any run)
+
+The fourth MoE run measured the MoE and routing checks at 6.4% fewer output tokens per second at 16 requests at once
+and 7.6% at 256 (granite-3.1-1b-a400m, one H100), against at most 3% for them to be on by default. At each model
+step, each of the 24 MoE layers launches 3 Triton kernels and each router 1; all but one layer's return at once. At
+the published cost of a node in a straight-line CUDA graph (about 0.55 microseconds), 96 nodes would be about 53
+microseconds, about 1.3% of the 4.1 ms step at 16 at once, so most of the cost is unexplained. Candidates: the grids
+of the kernels that return at once (512 programs each at granite's shapes, every one scheduled to read the step
+buffer and exit; the routing and compare kernels take 2 programs each), the active layer's own work, or what the
+kernels do to the layers' kernels around them.
+
+`experiments/moe_cost_bench.py` (`modal run scripts/modal_vllm.py --phase moe_bench`, one H100, vLLM 0.32's PyTorch
+and Triton, no server; about 4 to 8 minutes and $0.35 to $0.65, 15-minute limit) measures, in CUDA graphs, median
+microseconds per replay over 5 x 200 replays: a graph of 96 kernels that return at once, at grids of 1, 2, 16, 132,
+512 and 4,096 programs; at granite's shapes with 16 and 128 rows, the 24 layers' MoE and routing checks (sdcguard's
+own calls, with random weights and routing) with no layer active and with one active, each kind alone, and the same
+checks interleaved with a stand-in for the layers' own kernels (24 bf16 matmuls) against the stand-in alone. It is a
+measurement, not a test of the checks: complete when every figure is measured. Decided now, from its figures: if what
+the 24 layers' checks with none active add to the stand-in at 16 rows (added_to_work_us) is more than half of the
+measured overhead per step (0.28 ms at 16 at once: 6.4% fewer tokens per second is a step 6.8% longer than 4.14 ms),
+and a 1-program kernel that returns at once costs under a third of a 512-program one, the next
+version takes one 1-program kernel per layer per step (it copies the active layer's sampled rows and checks the
+routing), and the recompute runs once per step for the active layer; if the active layer's own work dominates, that
+work is cut instead; if neither explains it, a profile of the server comes first. The checks stay opt-in until a
+run shows them at 3% or less at 16 at once.
 
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 

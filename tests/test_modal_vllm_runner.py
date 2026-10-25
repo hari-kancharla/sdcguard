@@ -582,3 +582,25 @@ def test_the_weight_scan_run_alone_and_fails_on_a_nonzero_exit(runner, monkeypat
     monkeypatch.setattr(runner, "weight_scan", _remote("weight_scan: exit code 1 in 28.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("weight_scan")
+
+
+def test_the_moe_bench_runs_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "moe_bench", _remote("moe_bench: exit code 0 in 5.0 minutes"))
+    runner.main("moe_bench")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "moe_bench", _remote("moe_bench: exit code 1 in 5.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("moe_bench")
+    assert "$" in runner.ESTIMATES["moe_bench"] and "15-minute limit" in runner.ESTIMATES["moe_bench"]
+
+
+def test_the_norm_diagnosis_runs_alone_and_fails_on_a_nonzero_exit(runner, monkeypatch, capsys):
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    monkeypatch.setattr(runner, "norm_diag", _remote("norm_diag: exit code 0 in 30.0 minutes"))
+    runner.main("norm_diag")
+    assert "Done." in capsys.readouterr().out
+    monkeypatch.setattr(runner, "norm_diag", _remote("norm_diag: exit code 1 in 30.0 minutes"))
+    with pytest.raises(SystemExit, match="exit code 1"):
+        runner.main("norm_diag")
+    assert "45-minute limit" in runner.ESTIMATES["norm_diag"]

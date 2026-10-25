@@ -278,9 +278,24 @@ class FaultInjection:
         three ways, before sdcguard's check sees its output: "scale" (the routed output 1.5 times what it should be),
         "expert" (the kernel given each row's experts shifted by one, so it computes with the wrong ones while the
         check is given the right ones) or "row" (each row given the next row's output, as stale or mixed-up rows
-        would be). sdcguard_test_uncorrupt_moe undoes it. Returns the layer's name, or ""."""
+        would be); or "drop": the first row of each batch reaches the experts with all its expert ids -1, after the
+        router (and its routing check) produced them right, as a corrupted id buffer or a padding mask marking a real
+        row would. sdcguard_test_uncorrupt_moe undoes it. Returns the layer's name, or ""."""
         import torch
         mod = dict(self.get_model().named_modules()).get(name)
+        if mode == "drop" and callable(getattr(type(mod), "forward_modular", None)):
+            cls_fm = type(mod).forward_modular
+
+            def forward_modular(**kwargs):
+                ids = kwargs.get("topk_ids")
+                if isinstance(ids, torch.Tensor) and ids.shape[0]:
+                    ids = ids.clone()
+                    ids[0] = -1
+                    kwargs = {**kwargs, "topk_ids": ids}
+                return cls_fm(mod, **kwargs)
+            mod.forward_modular = forward_modular                  # (vLLM 0.32 calls it with keyword arguments)
+            self._sdcguard_moe_drops = getattr(self, "_sdcguard_moe_drops", []) + [mod]
+            return name
         qm = getattr(mod, "quant_method", None)
         if qm is None or not hasattr(qm, "apply") or mode not in ("scale", "expert", "row"):
             return ""
@@ -308,6 +323,10 @@ class FaultInjection:
             qm.apply = orig
             n += 1
         self._sdcguard_moe_faults = []
+        for mod in getattr(self, "_sdcguard_moe_drops", []):
+            mod.__dict__.pop("forward_modular", None)
+            n += 1
+        self._sdcguard_moe_drops = []
         return n
 
     def sdcguard_test_attn_stats(self) -> dict:

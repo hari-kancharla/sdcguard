@@ -8,8 +8,14 @@ own input, routing and weights, and compares it with the kernel's output. The ro
 rows when the plugin knows them (mark_step's rows, packed above the step number in the layer's step buffer), and a
 row whose top-k experts are all -1 isn't judged: vLLM 0.32 (VLLM_MOE_SKIP_PADDING, on by default) gives the padding
 rows of a CUDA graph's batch no experts, so no matmul computes them and their output is whatever moe_sum adds up
-from the kernel's workspace. A real row given no experts (a router or padding-mask fault) is therefore not judged
-either; such rows among the step's known real rows are counted (unrouted_real_rows, expected 0), not alarmed on.
+from the kernel's workspace.
+
+The routing's validity: the active layer also reads the expert ids of every one of the step's real rows (when the
+plugin knows them; padding rows come after them). vLLM's routers give every real token top_k experts, so a real row
+with all its experts -1 (no expert computes it: its output is leftover workspace) or some of them -1 (some of its
+experts are missing) is wrong whatever the numbers: a router fault, a corrupted id, or vLLM's padding mask marking a
+real row. It raises an alert (finding real_rows_unrouted or real_rows_partly_routed, recheck output_wrong) naming
+the layer, how many such rows the read saw, and the last of them.
 
 The recompute follows the rounding of vLLM's Triton MoE kernel (TritonExperts, vLLM 0.31/0.32): the first matmul in
 fp32 rounded to bf16/fp16, the activation rounded before the multiply and the product rounded (vLLM's act_and_mul
@@ -54,9 +60,11 @@ KAPPA = 1.0              # weight of the "every intermediate rounded differently
 FLIPS = 1.0              # worst-placed rounding flips of intermediates the bound allows (KAPPA covers many small)
 OUT_FLIPS = 2.0          # how many experts' rounded outputs may each be one step off at one output
 MOE_SCHEMA = 1
-COLS = 9                 # z|row, z|col, z|bits(y), z|bits(r), z|step, active calls, rows checked, unjudged, and
-#                          rows with no experts among the step's known real rows (not judged; expected 0)
-C_ROW, C_COL, C_OUT, C_REF, C_STEP, C_CALLS, C_ROWS, C_UNJ, C_UNROUTED = range(COLS)
+COLS = 11                # z|row, z|col, z|bits(y), z|bits(r), z|step, active calls, rows checked, unjudged, real
+#                          rows with no experts and with some experts -1 (of all the step's known real rows), and
+#                          (step << 32) | (the last such row + 1)
+C_ROW, C_COL, C_OUT, C_REF, C_STEP, C_CALLS, C_ROWS, C_UNJ, C_UNROUTED, C_PARTIAL, C_BADROW = range(COLS)
+ROUTE_BLOCK = 64         # real rows read at a time by the routing-validity scan
 CAP_COLS = 4             # claimed, row, step, score bits
 M32 = 0xFFFFFFFF
 ROW_A, ROW_B = 7919, 104729       # row j at a layer's k-th turn (k = step // layers): (k ROW_A + j ROW_B) % rows
@@ -209,7 +217,18 @@ def moe_check_torch(x: torch.Tensor, out: torch.Tensor, topk_w: torch.Tensor, to
     srow[C_CALLS] += act64
     srow[C_ROWS] += act64 * (~pad).sum()
     srow[C_UNJ] += act64 * (~judged).sum()
-    srow[C_UNROUTED] += act64 * (pad & known).sum()
+    # the routing's validity over every known real row: none may have experts -1
+    allid = topk_ids.reshape(m, -1)
+    real = torch.where(known, torch.clamp(((raw >> ROWS_SHIFT) & ROWS_MAX), max=m), torch.zeros_like(raw))
+    isreal = torch.arange(m, device=x.device) < real
+    nneg = (allid == -1).sum(-1)
+    none_ = isreal & (nneg >= allid.shape[1])
+    some = isreal & (nneg > 0) & (nneg < allid.shape[1])
+    srow[C_UNROUTED] += act64 * none_.sum()
+    srow[C_PARTIAL] += act64 * some.sum()
+    last = torch.where(none_ | some, torch.arange(1, m + 1, device=x.device), torch.zeros_like(nneg)).max()
+    srow[C_BADROW] = torch.maximum(srow[C_BADROW], torch.where(active & (last > 0), (step << 32) | last,
+                                                                torch.zeros_like(raw)))
     take = (zmax > line) & (cap_meta[slot, 0] == 0)
     cap_x[slot, :hdim] = torch.where(take, pick(xr, jrow).float(), cap_x[slot, :hdim])
     cap_y[slot, :hdim] = torch.where(take, pick(y, jrow), cap_y[slot, :hdim])
@@ -337,7 +356,7 @@ if HAVE_TRITON:
     def _moe_compare(out, x, ids, gw, C, SQ, MX, state, capm, capx, capy, capi, capg, stepbuf,
                      M, H, K, so, sx, capw, capk, slot, nl, idx, u, spacing, fmax, line,
                      NCOLS: tl.constexpr, SAMPLES_: tl.constexpr, OUT_FLIPS_: tl.constexpr, KAPPA_: tl.constexpr,
-                     FLIPS_: tl.constexpr, BO: tl.constexpr, BK: tl.constexpr):
+                     FLIPS_: tl.constexpr, BO: tl.constexpr, BK: tl.constexpr, BR: tl.constexpr):
         j = tl.program_id(0)
         step, live, mr = _moe_live(stepbuf, nl, idx, M)
         if live:
@@ -390,8 +409,30 @@ if HAVE_TRITON:
                 tl.atomic_add(sbase + 5, 1)
             if (tl.program_id(1) == 0) & routed:
                 tl.atomic_add(sbase + 6, 1)
-            if (tl.program_id(1) == 0) & (nneg >= K) & known:
-                tl.atomic_add(sbase + 8, 1)
+            if (j == 0) & (tl.program_id(1) == 0) & known:
+                # the routing's validity: every known real row's expert ids, BR rows at a time
+                nnone = tl.zeros([BR], dtype=tl.int32)
+                nsome = tl.zeros([BR], dtype=tl.int32)
+                last = tl.zeros([BR], dtype=tl.int64)
+                for r0 in range(0, mr, BR):
+                    rr = r0 + tl.arange(0, BR).to(tl.int64)
+                    rm = rr < mr
+                    blk = tl.load(ids + rr[:, None] * K + kk[None, :], mask=rm[:, None] & km[None, :], other=0)
+                    nn = tl.sum(tl.where(rm[:, None] & km[None, :] & (blk == -1), 1, 0), 1)
+                    bad_none = rm & (nn >= K)
+                    bad_some = rm & (nn > 0) & (nn < K)
+                    nnone += bad_none.to(tl.int32)
+                    nsome += bad_some.to(tl.int32)
+                    last = tl.maximum(last, tl.where(bad_none | bad_some, rr + 1, 0))
+                tn = tl.sum(nnone, 0).to(tl.int64)
+                ts = tl.sum(nsome, 0).to(tl.int64)
+                if tn > 0:
+                    tl.atomic_add(sbase + 8, tn)
+                if ts > 0:
+                    tl.atomic_add(sbase + 9, ts)
+                lr = tl.max(last, 0)
+                if lr > 0:
+                    tl.atomic_max(sbase + 10, (step << 32) | lr)
             if nunj > 0:
                 tl.atomic_add(sbase + 7, nunj.to(tl.int64))
             if pz > line:
@@ -462,7 +503,7 @@ def moe_check_triton(x, out, topk_w, topk_ids, w13, w2, expert_map, act, routed_
                                              cap_ids.shape[1], slot, nlayers, index, float(u), float(sp), float(fm),
                                              float(line), NCOLS=COLS, SAMPLES_=SAMPLES, OUT_FLIPS_=float(OUT_FLIPS),
                                              KAPPA_=float(KAPPA), FLIPS_=float(FLIPS), BO=BOC, BK=_p2(k),
-                                             num_warps=4)
+                                             BR=ROUTE_BLOCK, num_warps=4)
 
 
 def _dev_key(device) -> str:
@@ -484,7 +525,8 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
     correct layer (both quiet, the same counts and nearly the same scores), one output made wrong (both alarm on its
     row and column and keep the same row), an expert map with a missing expert, an inactive step (nothing changes),
     a padding row (all experts -1, garbage output: both quiet, not counted), garbage rows past the step's real rows
-    (both quiet) and a row with no experts among the real rows (quiet, counted apart). (ok, why)."""
+    (both quiet), a real row with no experts and one with an expert missing (both counted, with the last such row,
+    by the routing-validity scan). (ok, why)."""
     key = (_dev_key(device), dtype, int(act))
     if key in STATUS:
         return STATUS[key]
@@ -505,7 +547,9 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
         w13m, w2m = w13[:5].contiguous(), w2[:5].contiguous()
         ids_pad = ids.clone()
         ids_pad[M - 1] = -1                    # row M-1 is sampled at step 3 (rows 0 and M-1 of M = 5)
-        for case in ("clean", "wrong", "map", "inactive", "padding", "real_rows", "unrouted_real"):
+        ids_part = ids.clone()
+        ids_part[1, 0] = -1                    # one expert of real row 1 missing (not sampled at step 3)
+        for case in ("clean", "wrong", "map", "inactive", "padding", "real_rows", "unrouted_real", "partial_real"):
             res = []
             for fn in (moe_check_torch, moe_check_triton):
                 st = torch.zeros(1, COLS, dtype=torch.int64, device=device)
@@ -513,10 +557,10 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
                 cx, cy = torch.zeros(1, H, device=device), torch.zeros(1, H, device=device)
                 ci, cg = torch.zeros(1, 8, dtype=torch.int64, device=device), torch.zeros(1, 8, device=device)
                 step = 3 if case != "inactive" else 4
-                given = {"real_rows": 3, "unrouted_real": M}.get(case)
+                given = {"real_rows": 3, "unrouted_real": M, "partial_real": M}.get(case)
                 sb = torch.full((1,), pack_step(step, given), dtype=torch.int64, device=device)
                 use_map = case == "map"
-                cids = ids_pad if case in ("padding", "unrouted_real") else ids
+                cids = ids_pad if case in ("padding", "unrouted_real") else ids_part if case == "partial_real" else ids
                 y = _reference_layer(x, cids, g, w13m if use_map else w13, w2m if use_map else w2,
                                      emap if use_map else None, act, dtype)
                 if case == "wrong":
@@ -546,8 +590,9 @@ def verify_kernel(device, dtype, act: int = 0) -> tuple:
                 raise AssertionError(f"{case}: scores of a correct layer differ or are high ({z0} vs {z1})")
             elif int(s0[0, C_ROWS]) != (1 if case in ("padding", "unrouted_real") else SAMPLES):
                 raise AssertionError(f"{case}: {int(s0[0, C_ROWS])} rows counted as checked")
-            elif int(s0[0, C_UNROUTED]) != (1 if case == "unrouted_real" else 0):
-                raise AssertionError(f"{case}: {int(s0[0, C_UNROUTED])} real rows without experts counted")
+            elif [int(s0[0, C_UNROUTED]), int(s0[0, C_PARTIAL]), int(s0[0, C_BADROW])] != \
+                    {"unrouted_real": [1, 0, (3 << 32) | M], "partial_real": [0, 1, (3 << 32) | 2]}.get(case, [0, 0, 0]):
+                raise AssertionError(f"{case}: real rows with experts -1 counted as {s0[0, C_UNROUTED:].tolist()}")
         STATUS[key] = (True, "")
     except Exception as e:  # noqa: BLE001
         STATUS[key] = (False, f"{type(e).__name__}: {str(e).splitlines()[0][:200] if str(e) else ''}")
@@ -671,12 +716,12 @@ def describe(mod) -> tuple:
         #              combines across ranks with expert parallelism's all-to-all, with "passthrough" experts, and with
         #              data parallelism without it (its all-gather/reduce-scatter fallback, over expert-weight shards)
         across = bool(getattr(pc, "use_all2all_kernels", False) or getattr(pc, "use_passthrough_all2all", False) or
-                      int(getattr(pc, "dp_size", 1) or 1) > 1)
+                      int(getattr(pc, "dp_size", 1) or 1) > 1 or int(getattr(pc, "pcp_size", 1) or 1) > 1)
     except Exception:  # noqa: BLE001  (properties that can't be read: treated as communicating, unchecked)
         across = True
     if across:
-        return None, ("expert parallelism's all-to-all or data parallelism: the layer's output combines other GPUs' "
-                      "experts or weight shards, which the recompute can't read")
+        return None, ("expert parallelism's all-to-all, data parallelism or prefill context parallelism: the layer's "
+                      "rows or output combine other GPUs', which the recompute can't read")
     backend = getattr(getattr(qm, "unquantized_backend", None), "name", None)
     if backend != "TRITON":
         return None, f"the {backend or 'unknown'} MoE backend (only vLLM's Triton MoE kernel is checked)"
@@ -719,7 +764,7 @@ class MoEChecks:
         self.checks_seen: dict = {}
         self.finalized = False
         self.stats = {"layers": 0, "active_calls": 0, "rows_checked": 0, "unjudged_outputs": 0,
-                      "unrouted_real_rows": 0, "alerts": 0}
+                      "unrouted_real_rows": 0, "partly_routed_real_rows": 0, "alerts": 0}
 
     def add(self, mod, name: str) -> Optional[int]:
         if self.finalized:
@@ -863,12 +908,16 @@ class MoEChecks:
             self.stats["rows_checked"] += keys[C_ROWS]
             self.stats["unjudged_outputs"] += keys[C_UNJ]
             self.stats["unrouted_real_rows"] += keys[C_UNROUTED]
+            self.stats["partly_routed_real_rows"] += keys[C_PARTIAL]
             self.checks_seen[lay["name"]] = self.checks_seen.get(lay["name"], 0) + keys[C_CALLS]
+            routed_ok = not (keys[C_UNROUTED] or keys[C_PARTIAL])
+            if not routed_ok:
+                out.append(self._route_alert(dev, slot, keys, window))
             z = _f32(keys[C_ROW] >> 32)
             worst = max(worst, z)
             self.worst_seen[lay["name"]] = max(self.worst_seen.get(lay["name"], 0.0), z)
             if not (z > self.line):
-                if keys[C_CALLS] and window is not None:
+                if keys[C_CALLS] and window is not None and routed_ok:     # (a routing alert isn't a clean read)
                     self._last_clean[lay["name"]] = list(window)
                 continue
             out.append(self._alert(dev, slot, keys, [int(v) for v in hcap[slot].tolist()], window, z))
@@ -879,6 +928,48 @@ class MoEChecks:
             except Exception:  # noqa: BLE001  (metrics never break serving)
                 pass
         return out
+
+    def _route_alert(self, dev, slot, keys, window) -> SDCEvent:
+        """Real rows of the step with experts -1 (the routing-validity scan): wrong whatever the numbers."""
+        lay = self.layers[slot]
+        none_, some = keys[C_UNROUTED], keys[C_PARTIAL]
+        last = (keys[C_BADROW] & M32) - 1
+        step = (keys[C_BADROW] >> 32) & M32
+        captured = {"row": last, "step": step if self._marked is not None else None} if last >= 0 else None
+        detail = {"where": lay["name"], "kind": "moe_routing",
+                  "finding": "real_rows_unrouted" if none_ else "real_rows_partly_routed",
+                  "real_rows_without_experts": none_, "real_rows_missing_some_experts": some,
+                  "row": last if last >= 0 else None, "captured": captured,
+                  "recheck": {"verdict": "output_wrong",
+                              "why": "a real token's row had expert ids of -1 (vLLM's routers give every real token "
+                                     "top_k experts; -1 is for CUDA-graph padding rows), so the layer's output for it "
+                                     "isn't the sum of its experts"},
+                  "read_window_steps": window, "last_clean_read_steps": self._last_clean.get(lay["name"]),
+                  "reading": "a real row reached the experts with no expert (or some missing): a router fault, a "
+                             "corrupted expert id, or a padding mask that marked a real row"}
+        return self._emit(dev, detail)
+
+    def _emit(self, dev, detail: dict) -> SDCEvent:
+        g = self.guard
+        ident = g._identity if g is not None and hasattr(g, "_identity") else {}
+        key = str(dev)
+        if key not in ident:
+            ident[key] = device_identity(dev)
+        ev = SDCEvent(detector="serve_moe", step=None, detail=detail, identity=dict(ident[key]))
+        self.stats["alerts"] += 1
+        if g is not None:
+            if getattr(g, "attribute", None) is not None:
+                try:
+                    g.attribute(ev)
+                except Exception:  # noqa: BLE001
+                    g.stats["attribution_errors"] = g.stats.get("attribution_errors", 0) + 1
+            g.log.add(ev)
+            if getattr(g, "on_alert", None):
+                try:
+                    g.on_alert(ev)
+                except Exception:  # noqa: BLE001
+                    pass
+        return ev
 
     def _alert(self, dev, slot, keys, cap, window, z) -> SDCEvent:
         g = self.guard

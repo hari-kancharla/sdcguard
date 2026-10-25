@@ -634,6 +634,14 @@ def _rows_split(runner) -> Optional[str]:
     pc = getattr(getattr(runner, "compilation_config", None), "pass_config", None)
     if getattr(pc, "enable_sequence_parallelism", False):
         return "rows are split across tensor-parallel ranks (sequence parallelism)"
+    par = getattr(runner, "parallel_config", None) or getattr(getattr(runner, "vllm_config", None),
+                                                              "parallel_config", None)
+    if int(getattr(par, "prefill_context_parallel_size", 1) or 1) > 1:
+        return "rows are split across prefill context-parallel ranks"
+    spec = getattr(runner, "speculative_config", None) or getattr(getattr(runner, "vllm_config", None),
+                                                                  "speculative_config", None)
+    if getattr(spec, "enable_adaptive_verification", False):
+        return "adaptive verification runs fewer rows than the scheduler counted"
     return None
 
 
@@ -751,6 +759,12 @@ def _on_alert(ev) -> None:
                     "%s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"), i.get("pci_bus_id"),
                     i.get("host"), d.get("max_z"), d.get("row"), d.get("col"), _from(d), d.get("output"),
                     d.get("expected"), (d.get("recheck") or {}).get("verdict"))
+        return
+    if ev.detector == "serve_moe" and d.get("kind") == "moe_routing":
+        log.warning("sdcguard ALERT: MoE routing into %s on %s (%s, PCI %s, host %s): %s (%s real rows without experts, "
+                    "%s missing some; last row %s; %s)", d.get("where"), i.get("gpu_uuid"), i.get("gpu_name"),
+                    i.get("pci_bus_id"), i.get("host"), d.get("finding"), d.get("real_rows_without_experts"),
+                    d.get("real_rows_missing_some_experts"), d.get("row"), (d.get("recheck") or {}).get("verdict"))
         return
     if ev.detector == "serve_moe":
         log.warning("sdcguard ALERT: MoE experts %s on %s (%s, PCI %s, host %s) max z=%s (row %s, column %s, %s: %s, "

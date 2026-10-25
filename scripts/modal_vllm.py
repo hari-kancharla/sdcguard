@@ -772,6 +772,60 @@ def _screen_ops(tag: str, rate: float, what: str, source: Optional[dict], force:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=15 * 60)
+def moe_bench(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/moe_cost_bench.py on an H100, with vLLM 0.32's PyTorch and Triton (no server): what the MoE and
+    routing checks' kernels cost in CUDA graphs, by kind, active or not, and what a kernel that returns at once costs
+    by grid."""
+    t0 = time.monotonic()
+    tag = "moe_bench"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/moe_cost_bench.py", "--out", out], f"{out}.txt", cwd="/root",
+                    timeout=12 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+def norm_diag(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_norm_diag.py: why the compiled server's answers changed with norm checks on (vLLM 0.32,
+    Qwen2.5-1.5B-Instruct, one H100): 7 servers, each compiled from an empty cache, answers and compiled norm
+    kernels compared pair by pair."""
+    t0 = time.monotonic()
+    tag = "norm_diag"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_norm_diag.py", "--out", out], f"{out}.txt", cwd="/root",
+                    timeout=42 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=25 * 60)
 def screen_ops_h100(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/screen_ops_check.py on an H100: sdcguard.screen_ops clean for 5 minutes, then each test with one
@@ -1075,6 +1129,13 @@ ESTIMATES = {
                   "consistency and a memory test) clean for 5 minutes and then with one value made wrong per test, on "
                   "1 H100 and 1 L4 at once: about 8 to 12 minutes each, roughly $0.65 to $1 plus $0.20 to $0.30 "
                   "(25-minute limits, at most about $2 and $0.60 at requested resources, not a spending cap)",
+    "moe_bench": "where the MoE checks' cost goes, measured without vLLM on 1 H100 (kernels in CUDA graphs): about 4 "
+                 "to 8 minutes, roughly $0.35 to $0.65 (15-minute limit, at most about $1.25 at requested resources, "
+                 "not a spending cap)",
+    "norm_diag": "why the compiled server's answers changed with norm checks on, 1 H100: Qwen2.5-1.5B on 7 servers "
+                 "each compiled afresh (plain twice, plain with the plugin's cuBLAS setting, the plugin without and "
+                 "with norm checks, and both in Inductor's deterministic mode): about 25 to 35 minutes, roughly $2 "
+                 "to $2.85 (45-minute limit, at most about $3.65 at requested resources, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 
@@ -1156,6 +1217,16 @@ def main(phase: str = "vllm", force: bool = False):
                     failures.append(str(message))
         elif phase == "fp8_residuals":
             message = fp8_residuals.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "norm_diag":
+            message = norm_diag.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "moe_bench":
+            message = moe_bench.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

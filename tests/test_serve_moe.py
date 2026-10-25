@@ -289,9 +289,11 @@ def test_the_step_buffer_packs_the_real_rows_and_end_step_clears_them():
     assert int(mc._step[torch.device("cpu")]) == 9
 
 
-def test_a_real_row_given_no_experts_is_counted_not_judged(monkeypatch):
-    """A row with no experts among the step's known real rows (a router or padding-mask fault: its output is the
-    kernel's leftover workspace) can't be judged; it is counted apart (unrouted_real_rows), not alarmed on."""
+def test_real_rows_with_experts_missing_raise_an_alert(monkeypatch):
+    """vLLM's routers give every real token top_k experts (-1 is for CUDA-graph padding rows): a known real row with
+    no experts (its output is the kernel's leftover workspace) or one missing is wrong whatever the numbers, so the
+    active layer's scan of the step's real rows alarms on it, naming the layer and the last such row. With the real
+    rows not given, nothing is counted or alarmed on (they may be padding)."""
     mod, (lay,) = _fake_layers(1, monkeypatch)
     g = ServeGuard()
     mc = g.moe_checks()
@@ -305,9 +307,22 @@ def test_a_real_row_given_no_experts_is_counted_not_judged(monkeypatch):
     g.mark_step(0, 4)
     sm.check_call(lay._sdcguard_moe, x, w, ids, out)
     g.end_step()
-    assert g.poll(wait=True) == []
-    assert mc.stats["unrouted_real_rows"] == sm.SAMPLES and mc.stats["rows_checked"] == 0
+    ev = g.poll(wait=True)
+    assert len(ev) == 1 and ev[0].detail["kind"] == "moe_routing" and ev[0].detail["where"] == "experts"
+    d = ev[0].detail
+    assert d["finding"] == "real_rows_unrouted" and d["real_rows_without_experts"] == 4 and d["row"] == 3
+    assert d["recheck"]["verdict"] == "output_wrong" and d["captured"] == {"row": 3, "step": 0}
+    assert mc.stats["unrouted_real_rows"] == 4 and mc.stats["rows_checked"] == 0
     g.mark_step(1, None)                               # real rows not given: padding as far as the check knows
     sm.check_call(lay._sdcguard_moe, x, w, ids, out)
-    g.poll(wait=True)
-    assert mc.stats["unrouted_real_rows"] == sm.SAMPLES
+    assert g.poll(wait=True) == [] and mc.stats["unrouted_real_rows"] == 4
+    w2, ids2 = _route_for(lay, x, 0)
+    ids2 = ids2.clone()
+    ids2[2, 0] = -1                                    # one expert of real row 2 missing
+    g.mark_step(2, 3)                                  # 3 real rows, row 3 padding (its experts are fine here)
+    sm.check_call(lay._sdcguard_moe, x, w2, ids2, out)
+    g.end_step()
+    ev = [e for e in g.poll(wait=True) if e.detail.get("kind") == "moe_routing"]
+    assert len(ev) == 1 and ev[0].detail["finding"] == "real_rows_partly_routed"
+    assert ev[0].detail["real_rows_missing_some_experts"] == 1 and ev[0].detail["row"] == 2
+    assert mc.stats["partly_routed_real_rows"] == 1

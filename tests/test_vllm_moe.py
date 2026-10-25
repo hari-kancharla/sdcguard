@@ -126,3 +126,28 @@ def test_moe_layers_on_an_all_to_all_are_listed_not_checked(monkeypatch, tmp_pat
     assert need is None and "data parallelism" in why
     pc.dp_size, pc.use_passthrough_all2all = 1, True
     assert describe(runner.model.experts[0])[0] is None
+
+
+def test_the_experiments_drop_fault_gives_the_first_row_no_experts_after_the_router():
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "experiments"))
+    import sdcguard_test_ext as ext
+    seen = []
+
+    class RoutedExperts(torch.nn.Module):
+        def forward_modular(self, x, topk_weights, topk_ids, shared_experts=None, shared_experts_input=None):
+            seen.append(topk_ids.clone())
+            return x
+
+    model = torch.nn.Module()
+    model.moe = RoutedExperts()
+    fi = ext.FaultInjection()
+    fi.get_model = lambda: model
+    ids = torch.tensor([[1, 2], [3, 4]], dtype=torch.int32)
+    assert fi.sdcguard_test_corrupt_moe("moe", "drop") == "moe"
+    model.moe.forward_modular(x=torch.zeros(2, 4), topk_weights=torch.ones(2, 2), topk_ids=ids)
+    assert seen[-1].tolist() == [[-1, -1], [3, 4]] and ids.tolist() == [[1, 2], [3, 4]]   # (the router's own kept)
+    assert fi.sdcguard_test_uncorrupt_moe() == 1
+    model.moe.forward_modular(x=torch.zeros(2, 4), topk_weights=torch.ones(2, 2), topk_ids=ids)
+    assert seen[-1].tolist() == [[1, 2], [3, 4]]

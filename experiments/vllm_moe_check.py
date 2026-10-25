@@ -44,6 +44,7 @@ MAX_REQUESTS = 16                        # rounds of BURST requests
 BURST = 4                                # requests at once: the layer sees batches of several rows
 CORRUPT_TRIALS = len(MODES)
 ROUTE_MODES = ("experts", "weights")
+DROP_TRIALS = 1                          # the routing-validity check (amendment of October 25, after the third run)
 COST_LIMIT = 0.03
 IDENTITY = 64
 
@@ -107,6 +108,28 @@ def corrupt_trials(port: int, log_path: str, names: list, prompts: list) -> list
     return rows
 
 
+def drop_trials(port: int, log_path: str, names: list, prompts: list) -> list:
+    """The first row of each batch reaching one MoE layer's experts with no expert (ids -1, after the router and its
+    check produced them right), until an alert names the layer."""
+    rows = []
+    for k in range(DROP_TRIALS):
+        layer = sorted(names)[(11 * k + 6) % len(names)]
+        for p in prompts[:2]:
+            vn._try(port, MODEL, p, 8)
+        time.sleep(3)
+        vn._try(port, MODEL, prompts[0], 4)
+        n0 = len(vn.alerts(log_path))
+        mark = vn.rpc(port, "sdcguard_test_corrupt_moe", [layer, "drop"])
+        hit, sent = _until_alert(port, log_path, n0, layer, prompts)
+        unmark = vn.rpc(port, "sdcguard_test_uncorrupt_moe")
+        rows.append({"layer": layer, "mode": "drop", "mark": mark, "unmark": unmark, "detected": bool(hit),
+                     "rounds_to_detect": sent if hit else None,
+                     "findings": sorted({(a.get("detail") or {}).get("finding") for a in hit} - {None}),
+                     "verdicts": sorted({((a.get("detail") or {}).get("recheck") or {}).get("verdict")
+                                         for a in hit} - {None})})
+    return rows
+
+
 def route_trials(port: int, log_path: str, names: list, prompts: list) -> list:
     rows = []
     for k, mode in enumerate(ROUTE_MODES):
@@ -160,6 +183,7 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             names = (r.get("moe_at_start") or {}).get("names") or []
             if role == "eager" and names:
                 r["corrupt"] = corrupt_trials(port, log_path, names, tp)
+                r["drop"] = drop_trials(port, log_path, names, tp)
             rnames = ((r.get("moe_at_start") or {}).get("routing") or {}).get("names") or []
             if role == "eager" and rnames:
                 r["route_corrupt"] = route_trials(port, log_path, rnames, tp)
@@ -264,7 +288,16 @@ def judge(res: dict) -> tuple:
                                                   (t.get("findings") or []) for t in rr):
             fails.append(f"M5: wrong routers caught in {sum(t['detected'] for t in rr)} of {len(rr)} trials: "
                          f"{[(t['mode'], t['router'], t['detected'], t.get('findings')) for t in rr]}")
+    if e.get("ready"):                       # M6 (amendment of October 25): real rows reaching experts with none
+        dr = e.get("drop") or []
+        if len(dr) != DROP_TRIALS or not all(t["detected"] and t.get("mark") and "real_rows_unrouted" in
+                                             (t.get("findings") or []) and "output_wrong" in (t.get("verdicts") or [])
+                                             for t in dr):
+            fails.append(f"M6: real rows without experts caught in {sum(t['detected'] for t in dr)} of {len(dr)} "
+                         f"trials: {[(t['layer'], t['detected'], t.get('findings')) for t in dr]}")
     s = summarize(res)
+    s["drop"] = [(t["layer"], t["detected"], t.get("rounds_to_detect"), t.get("findings"))
+                 for t in (res.get("eager") or {}).get("drop") or []]
     c16 = (s["cost"].get("16") or {}).get("moe_cost")
     s["on_by_default"] = None if c16 is None else c16 <= COST_LIMIT
     return not fails, fails, s
