@@ -1,0 +1,107 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "cost": {
+   "16": {
+    "attn_on": 4020.5,
+    "attn_off": 4132.8,
+    "attn_cost": 0.0272
+   },
+   "256": {
+    "attn_on": 17542.4,
+    "attn_off": 17416.1,
+    "attn_cost": -0.0073
+   }
+  },
+  "clean": {
+   "guarded": {
+    "worst": 0.4153943955898285,
+    "calls": 8276,
+    "steps": 8283,
+    "samples": 33104,
+    "keys": 11354047,
+    "writes": 33104
+   },
+   "eager": {
+    "worst": 0.23060913383960724,
+    "calls": 1,
+    "steps": 8,
+    "samples": 4,
+    "keys": 100,
+    "writes": 4
+   },
+   "tguarded": {
+    "worst": 0.3824385106563568,
+    "calls": 2565,
+    "steps": 2572,
+    "samples": 10260,
+    "keys": 6762938,
+    "writes": 10260
+   }
+  },
+  "faults": [
+   [
+    "value",
+    "model.layers.4.self_attn.attn",
+    true,
+    2,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "head",
+    "model.layers.13.self_attn.attn",
+    true,
+    1,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "other",
+    "model.layers.22.self_attn.attn",
+    true,
+    2,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "kv",
+    "model.layers.3.self_attn.attn",
+    true,
+    1,
+    [
+     "kv_write_wrong"
+    ],
+    []
+   ],
+   [
+    "short",
+    "model.layers.12.self_attn.attn",
+    true,
+    1,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ]
+  ],
+  "on_by_default": true
+ }
+}
+
+[exit code 0]

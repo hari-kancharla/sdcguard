@@ -1,0 +1,1033 @@
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 02:21:15 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347] 
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.32.0
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347]   █▄█▀ █     █     █     █  model   Qwen/Qwen2.5-1.5B-Instruct
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:347] 
+(APIServer pid=1070) INFO 10-25 02:21:16 [api_utils.py:286] non-default args: {'model_tag': 'Qwen/Qwen2.5-1.5B-Instruct', 'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'dtype': 'bfloat16', 'max_model_len': 4096, 'attention_backend': 'FLASH_ATTN', 'worker_extension_cls': 'sdcguard_test_ext.FaultInjection', 'gpu_memory_utilization': 0.6}
+(APIServer pid=1070) INFO 10-25 02:21:27 [model.py:733] Resolved architecture: Qwen2ForCausalLM
+(APIServer pid=1070) INFO 10-25 02:21:27 [model.py:2152] Using max model len 4096
+(APIServer pid=1070) INFO 10-25 02:21:27 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=8192.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=1070) INFO 10-25 02:21:28 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 1261.36it/s]
+(EngineCore pid=1164) WARNING 10-25 02:21:37 [flashinfer.py:99] FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 02:21:38 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(EngineCore pid=1164) INFO 10-25 02:21:38 [core.py:133] Initializing a V1 LLM engine (v0.32.0) with config: model='Qwen/Qwen2.5-1.5B-Instruct', speculative_config=None, tokenizer='Qwen/Qwen2.5-1.5B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=main, tokenizer_revision=main, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=False, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=Qwen/Qwen2.5-1.5B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::qwen4_exp_ple_short_conv', 'vllm::qwen4_exp_qsa_with_output', 'vllm::qwen4_exp_qsa_prepare_with_output', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=True, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=1164) INFO 10-25 02:21:38 [worker_base.py:317] Injected <class 'sdcguard_test_ext.FaultInjection'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['sdcguard_test_attn_stats', 'sdcguard_test_corrupt_attn', 'sdcguard_test_corrupt_moe', 'sdcguard_test_corrupt_route', 'sdcguard_test_flip', 'sdcguard_test_flip_bit', 'sdcguard_test_flip_expert_bit', 'sdcguard_test_flip_norm_bit', 'sdcguard_test_mark_norm_rows', 'sdcguard_test_mark_rows', 'sdcguard_test_moe_stats', 'sdcguard_test_norm_stats', 'sdcguard_test_reductions', 'sdcguard_test_route_stats', 'sdcguard_test_scale', 'sdcguard_test_steps', 'sdcguard_test_stop_reads', 'sdcguard_test_uncorrupt_attn', 'sdcguard_test_uncorrupt_moe', 'sdcguard_test_uncorrupt_route', 'sdcguard_test_unmark_norm_rows', 'sdcguard_test_unmark_rows']
+(EngineCore pid=1164) INFO 10-25 02:21:38 [parallel_state.py:1906] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_91799057e59647f6833509a1dcf4ca22 backend=nccl
+(EngineCore pid=1164) INFO 10-25 02:21:38 [parallel_state.py:2350] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=1164) INFO 10-25 02:21:38 [gpu_worker.py:518] Using V2 Model Runner
+(EngineCore pid=1164) INFO 10-25 02:21:39 [model_runner.py:392] Loading model from scratch...
+(EngineCore pid=1164) INFO 10-25 02:21:39 [cuda.py:446] Using AttentionBackendEnum.FLASH_ATTN backend.
+(EngineCore pid=1164) INFO 10-25 02:21:39 [flash_attn.py:1117] Using FlashAttention version 3
+(EngineCore pid=1164) INFO 10-25 02:21:41 [base_loader.py:82] Initializing model took 1.700977 seconds
+(EngineCore pid=1164) INFO 10-25 02:21:42 [weight_utils.py:1108] Filesystem type for checkpoints: 9P. Checkpoint size: 2.88 GiB. Available RAM: 1017.30 GiB.
+(EngineCore pid=1164) INFO 10-25 02:21:42 [weight_utils.py:1131] Auto-prefetch is disabled because the filesystem (9P) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  1.69it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  1.69it/s]
+
+(EngineCore pid=1164) INFO 10-25 02:21:42 [default_loader.py:501] Loading weights took 0.72 seconds
+INFO 10-25 02:21:43 sdcguard: Prometheus metrics on port 9400
+(EngineCore pid=1164) INFO 10-25 02:22:18 [model_runner.py:424] Model loading took 3.13 GiB memory and 39.074268 seconds
+(EngineCore pid=1164) INFO 10-25 02:22:18 [topk_topp_sampler.py:96] FlashInfer top-p/top-k sampling disabled via VLLM_USE_FLASHINFER_SAMPLER=0.
+INFO 10-25 02:22:31 sdcguard: checking 28 of 28 attention layers (one layer a step, 4 outputs each) with the Triton kernels, line 4
+INFO 10-25 02:22:31 sdcguard: stack 2ca6e31c74d7f16d (model Qwen/Qwen2.5-1.5B-Instruct, dtype bfloat16, attention FLASH_ATTN, compilation 3, cudagraph FULL_AND_PIECEWISE, vllm 0.32.0, gpu NVIDIA H100 80GB HBM3)
+(EngineCore pid=1164) WARNING 10-25 02:22:31 [torch_utils.py:283] OMP_NUM_THREADS=8 is set; leaving Torch threads at 8 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=1164) INFO 10-25 02:22:31 [utils.py:347] Using LBNHC KV cache layout.
+INFO 10-25 02:22:31 sdcguard: checking 112 of 113 linear layers (85% of their weights); not checked: 1 LM head; attention checked by a sampled recompute on 28 layers (SDCGUARD_ATTN=1)
+(EngineCore pid=1164) INFO 10-25 02:22:31 [monitor.py:40] [backbone] Starting torch.compile
+(EngineCore pid=1164) INFO 10-25 02:22:37 [backends.py:1104] [backbone] Using cache directory: /root/.cache/vllm/sdcguard-c07ff01e0e54/torch_compile_cache/caf7f15cda/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=1164) INFO 10-25 02:22:37 [backends.py:1166] [backbone] Dynamo bytecode transform time: 6.26 s
+(EngineCore pid=1164) INFO 10-25 02:23:13 [backends.py:398] [backbone] Compiling a graph for compile range (1, 8192) takes 35.59 s
+(EngineCore pid=1164) INFO 10-25 02:23:18 [backends.py:927] collected artifacts: 29 entries, 29 artifacts, 55178021 bytes total
+(EngineCore pid=1164) INFO 10-25 02:23:18 [decorators.py:743] [backbone] saved AOT compiled function to /root/.cache/vllm/sdcguard-c07ff01e0e54/torch_compile_cache/torch_aot_compile/041256ba2b66a0c2062392370e82be480fef81d610776e69d8ad7120a18c7b61/rank_0_0/model
+(EngineCore pid=1164) INFO 10-25 02:23:18 [monitor.py:62] [backbone] torch.compile took 46.70 s in total
+(EngineCore pid=1164) INFO 10-25 02:23:18 [monitor.py:91] [backbone] Initial profiling/warmup run took 0.08 s
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:11,  4.26it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:09,  5.04it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:11,  4.27it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:01<00:13,  3.59it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:01<00:11,  3.99it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:10,  4.20it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:09,  4.59it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:09,  4.48it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:02<00:09,  4.55it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:02<00:09,  4.19it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:08,  4.51it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:11,  3.49it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:03<00:09,  3.90it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:03<00:09,  4.03it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:03<00:08,  4.32it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:03<00:08,  4.25it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:04<00:07,  4.49it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:04<00:07,  4.25it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:04<00:06,  4.60it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:04<00:07,  4.34it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:05<00:07,  4.00it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:05<00:06,  4.20it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:05<00:06,  4.21it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:05<00:06,  4.48it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:05<00:05,  4.38it/s]Capturing CUDA graphs (PIECEWISE):  51%|█████     | 26/51 [00:06<00:05,  4.25it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:06<00:05,  4.49it/s]Capturing CUDA graphs (PIECEWISE):  55%|█████▍    | 28/51 [00:06<00:04,  4.80it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:06<00:06,  3.50it/s]Capturing CUDA graphs (PIECEWISE):  59%|█████▉    | 30/51 [00:07<00:05,  3.85it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:07<00:05,  3.81it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:07<00:04,  4.24it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:07<00:04,  4.35it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:08<00:03,  4.68it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:08<00:03,  4.47it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:08<00:03,  4.65it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:08<00:03,  3.98it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:09<00:03,  4.01it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:09<00:02,  4.20it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:09<00:02,  4.36it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:09<00:02,  4.62it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:09<00:01,  4.61it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:10<00:01,  4.89it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:10<00:01,  4.89it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:10<00:01,  5.15it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:10<00:01,  4.50it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:11<00:01,  3.93it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:11<00:00,  4.20it/s]Capturing CUDA graphs (PIECEWISE):  96%|█████████▌| 49/51 [00:11<00:00,  4.30it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:11<00:00,  4.71it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:11<00:00,  4.79it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:11<00:00,  4.32it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/2 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):  50%|█████     | 1/2 [00:00<00:00,  6.45it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00,  6.58it/s]Capturing CUDA graphs (FULL): 100%|██████████| 2/2 [00:00<00:00,  6.55it/s]
+(EngineCore pid=1164) INFO 10-25 02:23:33 [model_runner.py:1127] Graph capturing finished in 13 secs, took 0.41 GiB
+(EngineCore pid=1164) INFO 10-25 02:23:34 [gpu_worker.py:759] Available KV cache memory: 42.05 GiB
+(EngineCore pid=1164) INFO 10-25 02:23:34 [gpu_worker.py:774] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.6000 is equivalent to --gpu-memory-utilization=0.5930 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.6070. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=1164) INFO 10-25 02:23:34 [kv_cache_utils.py:2327] GPU KV cache size: 1,574,864 tokens, Maximum concurrency for 4,096 tokens per request: 384.49x
+(EngineCore pid=1164) INFO 10-25 02:23:34 [kernel_warmup.py:176] JIT kernel warmup starting.
+(EngineCore pid=1164) INFO 10-25 02:23:34 [kernel_warmup.py:189] JIT kernel warmup finished in 0.00s.
+Capturing CUDA graphs (PIECEWISE):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (PIECEWISE):   2%|▏         | 1/51 [00:00<00:12,  4.13it/s]Capturing CUDA graphs (PIECEWISE):   4%|▍         | 2/51 [00:00<00:10,  4.69it/s]Capturing CUDA graphs (PIECEWISE):   6%|▌         | 3/51 [00:00<00:09,  4.98it/s]Capturing CUDA graphs (PIECEWISE):   8%|▊         | 4/51 [00:01<00:13,  3.36it/s]Capturing CUDA graphs (PIECEWISE):  10%|▉         | 5/51 [00:01<00:11,  3.88it/s]Capturing CUDA graphs (PIECEWISE):  12%|█▏        | 6/51 [00:01<00:11,  4.08it/s]Capturing CUDA graphs (PIECEWISE):  14%|█▎        | 7/51 [00:01<00:09,  4.45it/s]Capturing CUDA graphs (PIECEWISE):  16%|█▌        | 8/51 [00:01<00:08,  4.81it/s]Capturing CUDA graphs (PIECEWISE):  18%|█▊        | 9/51 [00:02<00:08,  5.02it/s]Capturing CUDA graphs (PIECEWISE):  20%|█▉        | 10/51 [00:02<00:07,  5.36it/s]Capturing CUDA graphs (PIECEWISE):  22%|██▏       | 11/51 [00:02<00:07,  5.43it/s]Capturing CUDA graphs (PIECEWISE):  24%|██▎       | 12/51 [00:02<00:06,  5.65it/s]Capturing CUDA graphs (PIECEWISE):  25%|██▌       | 13/51 [00:02<00:06,  5.85it/s]Capturing CUDA graphs (PIECEWISE):  27%|██▋       | 14/51 [00:03<00:09,  4.07it/s]Capturing CUDA graphs (PIECEWISE):  29%|██▉       | 15/51 [00:03<00:08,  4.10it/s]Capturing CUDA graphs (PIECEWISE):  31%|███▏      | 16/51 [00:03<00:08,  4.22it/s]Capturing CUDA graphs (PIECEWISE):  33%|███▎      | 17/51 [00:03<00:07,  4.54it/s]Capturing CUDA graphs (PIECEWISE):  35%|███▌      | 18/51 [00:03<00:07,  4.34it/s]Capturing CUDA graphs (PIECEWISE):  37%|███▋      | 19/51 [00:04<00:07,  4.44it/s]Capturing CUDA graphs (PIECEWISE):  39%|███▉      | 20/51 [00:04<00:07,  4.40it/s]Capturing CUDA graphs (PIECEWISE):  41%|████      | 21/51 [00:04<00:06,  4.63it/s]Capturing CUDA graphs (PIECEWISE):  43%|████▎     | 22/51 [00:05<00:08,  3.46it/s]Capturing CUDA graphs (PIECEWISE):  45%|████▌     | 23/51 [00:05<00:07,  3.67it/s]Capturing CUDA graphs (PIECEWISE):  47%|████▋     | 24/51 [00:05<00:07,  3.84it/s]Capturing CUDA graphs (PIECEWISE):  49%|████▉     | 25/51 [00:05<00:06,  4.20it/s]Capturing CUDA graphs (PIECEWISE):  51%|█████     | 26/51 [00:05<00:05,  4.35it/s]Capturing CUDA graphs (PIECEWISE):  53%|█████▎    | 27/51 [00:06<00:05,  4.58it/s]Capturing CUDA graphs (PIECEWISE):  55%|█████▍    | 28/51 [00:06<00:05,  4.29it/s]Capturing CUDA graphs (PIECEWISE):  57%|█████▋    | 29/51 [00:06<00:04,  4.50it/s]Capturing CUDA graphs (PIECEWISE):  59%|█████▉    | 30/51 [00:07<00:06,  3.21it/s]Capturing CUDA graphs (PIECEWISE):  61%|██████    | 31/51 [00:07<00:05,  3.60it/s]Capturing CUDA graphs (PIECEWISE):  63%|██████▎   | 32/51 [00:07<00:05,  3.67it/s]Capturing CUDA graphs (PIECEWISE):  65%|██████▍   | 33/51 [00:07<00:04,  3.98it/s]Capturing CUDA graphs (PIECEWISE):  67%|██████▋   | 34/51 [00:08<00:04,  3.88it/s]Capturing CUDA graphs (PIECEWISE):  69%|██████▊   | 35/51 [00:08<00:04,  3.77it/s]Capturing CUDA graphs (PIECEWISE):  71%|███████   | 36/51 [00:08<00:03,  4.21it/s]Capturing CUDA graphs (PIECEWISE):  73%|███████▎  | 37/51 [00:08<00:03,  4.65it/s]Capturing CUDA graphs (PIECEWISE):  75%|███████▍  | 38/51 [00:09<00:03,  3.90it/s]Capturing CUDA graphs (PIECEWISE):  76%|███████▋  | 39/51 [00:09<00:02,  4.41it/s]Capturing CUDA graphs (PIECEWISE):  78%|███████▊  | 40/51 [00:09<00:02,  4.71it/s]Capturing CUDA graphs (PIECEWISE):  80%|████████  | 41/51 [00:09<00:02,  4.79it/s]Capturing CUDA graphs (PIECEWISE):  82%|████████▏ | 42/51 [00:09<00:01,  5.12it/s]Capturing CUDA graphs (PIECEWISE):  84%|████████▍ | 43/51 [00:09<00:01,  5.01it/s]Capturing CUDA graphs (PIECEWISE):  86%|████████▋ | 44/51 [00:10<00:01,  5.26it/s]Capturing CUDA graphs (PIECEWISE):  88%|████████▊ | 45/51 [00:10<00:01,  5.05it/s]Capturing CUDA graphs (PIECEWISE):  90%|█████████ | 46/51 [00:10<00:00,  5.45it/s]Capturing CUDA graphs (PIECEWISE):  92%|█████████▏| 47/51 [00:10<00:00,  5.75it/s]Capturing CUDA graphs (PIECEWISE):  94%|█████████▍| 48/51 [00:10<00:00,  5.13it/s]Capturing CUDA graphs (PIECEWISE):  96%|█████████▌| 49/51 [00:11<00:00,  4.84it/s]Capturing CUDA graphs (PIECEWISE):  98%|█████████▊| 50/51 [00:11<00:00,  5.24it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:11<00:00,  5.43it/s]Capturing CUDA graphs (PIECEWISE): 100%|██████████| 51/51 [00:11<00:00,  4.47it/s]
+Capturing CUDA graphs (FULL):   0%|          | 0/51 [00:00<?, ?it/s]Capturing CUDA graphs (FULL):   2%|▏         | 1/51 [00:00<00:08,  5.90it/s]Capturing CUDA graphs (FULL):   4%|▍         | 2/51 [00:00<00:07,  6.37it/s]Capturing CUDA graphs (FULL):   6%|▌         | 3/51 [00:00<00:07,  6.18it/s]Capturing CUDA graphs (FULL):   8%|▊         | 4/51 [00:00<00:07,  6.57it/s]Capturing CUDA graphs (FULL):  10%|▉         | 5/51 [00:00<00:06,  6.61it/s]Capturing CUDA graphs (FULL):  12%|█▏        | 6/51 [00:00<00:06,  6.71it/s]Capturing CUDA graphs (FULL):  14%|█▎        | 7/51 [00:01<00:06,  6.76it/s]Capturing CUDA graphs (FULL):  16%|█▌        | 8/51 [00:01<00:06,  6.64it/s]Capturing CUDA graphs (FULL):  18%|█▊        | 9/51 [00:01<00:06,  6.28it/s]Capturing CUDA graphs (FULL):  20%|█▉        | 10/51 [00:01<00:06,  5.89it/s]Capturing CUDA graphs (FULL):  22%|██▏       | 11/51 [00:01<00:06,  6.06it/s]Capturing CUDA graphs (FULL):  24%|██▎       | 12/51 [00:01<00:06,  5.97it/s]Capturing CUDA graphs (FULL):  25%|██▌       | 13/51 [00:02<00:06,  6.15it/s]Capturing CUDA graphs (FULL):  27%|██▋       | 14/51 [00:02<00:05,  6.45it/s]Capturing CUDA graphs (FULL):  29%|██▉       | 15/51 [00:02<00:05,  6.74it/s]Capturing CUDA graphs (FULL):  31%|███▏      | 16/51 [00:02<00:05,  6.84it/s]Capturing CUDA graphs (FULL):  33%|███▎      | 17/51 [00:02<00:04,  6.95it/s]Capturing CUDA graphs (FULL):  35%|███▌      | 18/51 [00:02<00:04,  7.03it/s]Capturing CUDA graphs (FULL):  37%|███▋      | 19/51 [00:02<00:04,  7.01it/s]Capturing CUDA graphs (FULL):  39%|███▉      | 20/51 [00:03<00:04,  7.15it/s]Capturing CUDA graphs (FULL):  41%|████      | 21/51 [00:03<00:04,  7.22it/s]Capturing CUDA graphs (FULL):  43%|████▎     | 22/51 [00:03<00:04,  7.20it/s]Capturing CUDA graphs (FULL):  45%|████▌     | 23/51 [00:03<00:04,  5.99it/s]Capturing CUDA graphs (FULL):  47%|████▋     | 24/51 [00:03<00:04,  5.78it/s]Capturing CUDA graphs (FULL):  49%|████▉     | 25/51 [00:03<00:04,  6.16it/s]Capturing CUDA graphs (FULL):  51%|█████     | 26/51 [00:04<00:04,  6.12it/s]Capturing CUDA graphs (FULL):  53%|█████▎    | 27/51 [00:04<00:03,  6.28it/s]Capturing CUDA graphs (FULL):  55%|█████▍    | 28/51 [00:04<00:03,  6.53it/s]Capturing CUDA graphs (FULL):  57%|█████▋    | 29/51 [00:04<00:03,  6.74it/s]Capturing CUDA graphs (FULL):  59%|█████▉    | 30/51 [00:04<00:03,  6.59it/s]Capturing CUDA graphs (FULL):  61%|██████    | 31/51 [00:04<00:02,  6.81it/s]Capturing CUDA graphs (FULL):  63%|██████▎   | 32/51 [00:04<00:02,  6.92it/s]Capturing CUDA graphs (FULL):  65%|██████▍   | 33/51 [00:05<00:02,  6.93it/s]Capturing CUDA graphs (FULL):  67%|██████▋   | 34/51 [00:05<00:02,  6.99it/s]Capturing CUDA graphs (FULL):  69%|██████▊   | 35/51 [00:05<00:02,  6.97it/s]Capturing CUDA graphs (FULL):  71%|███████   | 36/51 [00:05<00:02,  6.32it/s]Capturing CUDA graphs (FULL):  73%|███████▎  | 37/51 [00:05<00:02,  6.26it/s]Capturing CUDA graphs (FULL):  75%|███████▍  | 38/51 [00:05<00:01,  6.62it/s]Capturing CUDA graphs (FULL):  76%|███████▋  | 39/51 [00:05<00:01,  6.94it/s]Capturing CUDA graphs (FULL):  78%|███████▊  | 40/51 [00:06<00:01,  7.26it/s]Capturing CUDA graphs (FULL):  80%|████████  | 41/51 [00:06<00:01,  7.51it/s]Capturing CUDA graphs (FULL):  82%|████████▏ | 42/51 [00:06<00:01,  7.72it/s]Capturing CUDA graphs (FULL):  84%|████████▍ | 43/51 [00:06<00:01,  7.83it/s]Capturing CUDA graphs (FULL):  86%|████████▋ | 44/51 [00:06<00:00,  7.86it/s]Capturing CUDA graphs (FULL):  88%|████████▊ | 45/51 [00:06<00:00,  7.94it/s]Capturing CUDA graphs (FULL):  90%|█████████ | 46/51 [00:06<00:00,  7.73it/s]Capturing CUDA graphs (FULL):  92%|█████████▏| 47/51 [00:06<00:00,  7.47it/s]Capturing CUDA graphs (FULL):  94%|█████████▍| 48/51 [00:07<00:00,  7.66it/s]Capturing CUDA graphs (FULL):  96%|█████████▌| 49/51 [00:07<00:00,  7.70it/s]Capturing CUDA graphs (FULL):  98%|█████████▊| 50/51 [00:07<00:00,  7.78it/s]Capturing CUDA graphs (FULL): 100%|██████████| 51/51 [00:07<00:00,  7.10it/s]Capturing CUDA graphs (FULL): 100%|██████████| 51/51 [00:07<00:00,  6.80it/s]
+(EngineCore pid=1164) INFO 10-25 02:24:06 [model_runner.py:1127] Graph capturing finished in 20 secs, took 0.30 GiB
+(EngineCore pid=1164) INFO 10-25 02:24:06 [gpu_worker.py:971] CUDA graph pool memory: 0.3 GiB (actual), 0.55 GiB (estimated), difference: 0.25 GiB (84.3%).
+(EngineCore pid=1164) INFO 10-25 02:24:06 [gpu_worker.py:1034] Free memory on device (78.66/79.17 GiB) on startup. Desired GPU memory utilization is (0.6, 47.5 GiB). Actual usage is 4.39 GiB for consumed memory (weights + non-torch), 1.06 GiB for peak activation, and 0.3 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=44676394496` (41.61 GiB) to fit into requested memory, or `--kv-cache-memory=78127738368` (72.76 GiB) to fully utilize gpu memory. Current kv cache memory in use is 42.05 GiB.
+(EngineCore pid=1164) INFO 10-25 02:24:07 [jit_monitor.py:84] Kernel JIT monitor activated; monitored JIT compilations during inference will use mode=warn.
+(EngineCore pid=1164) INFO 10-25 02:24:07 [core.py:395] init engine (profile, create kv cache, warmup model) took 96.65 s (compilation: 46.70 s)
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 973.53it/s]
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(EngineCore pid=1164) INFO 10-25 02:24:08 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=1070) INFO 10-25 02:24:08 [entry.py:136] Supported tasks: ['generate']
+(APIServer pid=1070) WARNING 10-25 02:24:08 [__init__.py:44] SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!
+(APIServer pid=1070) INFO 10-25 02:24:09 [factories.py:89] Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them.
+(APIServer pid=1070) INFO 10-25 02:24:09 [hf.py:648] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=1070) WARNING 10-25 02:24:09 [model.py:1893] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'repetition_penalty': 1.1, 'temperature': 0.7, 'top_k': 20, 'top_p': 0.8}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=1070) INFO 10-25 02:24:09 [entry.py:140] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:186] Available routes are:
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /docs, Methods: GET, HEAD
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /load, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /version, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /kv_event_sources, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /health, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /metrics, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /tokenize, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /detokenize, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/models, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/systemone, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /ping, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /ping, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /invocations, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /reset_prefix_cache, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /reset_mm_cache, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /reset_encoder_cache, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /collective_rpc, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /server_info, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /sleep, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /release_kv_cache_memory, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /wake_up, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /is_sleeping, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /pause, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /resume, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /abort_requests, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /is_paused, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /init_weight_transfer_engine, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /shutdown_weight_transfer_engine, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /start_weight_update, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /start_draft_weight_update, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /update_weights, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /finish_weight_update, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /update_weight_version, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /weight_info, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /weight_checker, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /get_world_size, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/responses, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/completions, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/messages, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /generative_scoring, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/messages/render, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/completions/render, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/responses/render, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=1070) INFO 10-25 02:24:09 [launcher.py:195] Route: /inference/v1/abort_requests, Methods: POST
+INFO:     Started server process [1070]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:53702 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27255 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21086 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25947 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59089 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50051 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42531 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53441 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44089 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38997 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21641 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33273 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37419 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33626 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36414 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27123 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39494 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48136 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35679 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46420 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29769 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51729 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60294 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26589 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19335 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36655 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63635 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17573 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59822 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36250 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32866 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38693 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59828 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50912 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57990 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23003 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38674 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60455 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47492 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28568 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63365 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29752 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59718 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33050 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25964 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17717 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18579 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17904 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45661 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61162 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16800 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52984 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52856 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36083 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63449 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50028 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37672 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33983 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26600 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28871 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55472 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49415 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57953 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42137 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63399 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54132 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29964 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1070) INFO 10-25 02:24:19 [loggers.py:335] Engine 000: Avg prompt throughput: 877.5 tokens/s, Avg generation throughput: 180.5 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.1%, Prefix cache hit rate: 34.9%
+INFO:     127.0.0.1:50743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43449 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22065 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19353 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28487 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37642 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60673 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31488 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46514 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50350 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33351 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60199 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44654 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40705 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23171 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20760 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57712 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57073 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20785 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59628 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17574 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17876 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57629 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49800 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32299 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40012 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29046 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61270 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22183 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35244 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42217 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54304 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18697 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42575 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16114 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27777 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47587 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22430 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54400 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56971 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39076 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23161 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33960 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34574 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54671 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23333 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18899 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50625 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50571 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17300 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45680 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53240 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44963 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39603 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25722 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60387 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40051 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16669 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18213 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26269 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41695 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34787 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64482 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30791 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33172 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53791 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17725 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18589 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59852 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34529 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46307 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29588 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25450 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38890 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22284 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50830 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37845 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58697 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36612 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43864 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37189 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23141 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44004 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18652 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16181 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16921 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53732 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34273 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30990 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43145 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43264 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22990 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17283 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64854 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28060 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19014 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31443 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55076 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36456 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63479 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27579 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37671 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35796 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19050 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42315 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22439 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25881 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42756 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37160 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43204 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28349 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34739 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33765 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65524 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64468 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62153 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34173 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61154 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47737 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1070) INFO 10-25 02:24:29 [loggers.py:335] Engine 000: Avg prompt throughput: 2973.3 tokens/s, Avg generation throughput: 1467.7 tokens/s, Running: 16 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 24.9%
+INFO:     127.0.0.1:29358 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39001 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48344 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25920 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62539 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46994 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53977 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45545 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27067 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65478 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25182 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35446 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41217 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23576 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58342 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43361 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54468 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57502 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24879 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24367 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48874 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32607 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48810 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34916 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20048 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60395 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50967 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32066 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30515 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52617 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19036 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41953 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47033 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31594 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46938 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35348 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50246 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43266 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36455 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63380 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17590 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32832 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42134 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57071 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22029 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61850 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36665 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21894 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43548 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51565 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48410 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17895 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34770 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63062 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52214 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27730 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58704 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20354 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24187 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64137 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59784 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34490 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50399 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53641 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17363 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46853 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48521 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38758 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56407 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30647 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16411 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31830 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63109 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23572 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54717 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22005 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45955 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25258 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54053 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62181 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18883 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31107 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44146 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45137 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29432 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19774 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31680 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56044 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49620 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20744 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51481 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51349 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31918 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16764 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57279 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32286 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17516 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38352 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63859 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34946 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34271 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60804 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21359 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35906 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48874 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39851 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41368 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31534 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30651 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53189 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36204 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57020 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52164 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31023 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32934 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54630 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50381 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58799 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20464 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30830 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20312 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18167 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34219 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48251 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34621 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30052 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19848 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54039 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24871 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47765 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50086 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27626 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37420 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56740 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45321 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54247 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50778 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60371 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31702 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45794 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32637 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37458 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37084 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17009 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23194 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16512 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47661 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20409 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45850 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46816 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60076 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50888 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51958 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31844 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50638 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33286 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57878 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42511 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40731 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41122 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31041 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23828 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29955 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53952 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56149 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34472 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23839 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24599 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32215 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21536 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36717 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61045 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42762 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53699 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45282 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50296 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31505 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25313 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56648 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62992 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45743 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24172 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52459 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22791 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60302 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42498 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63286 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32505 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27153 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62127 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32253 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32941 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32211 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24855 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24293 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29863 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43421 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44251 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65123 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22928 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35756 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16430 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42572 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24454 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47247 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54651 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30101 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33494 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61553 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65174 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26403 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29095 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61971 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41423 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40748 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62344 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17389 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57890 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47756 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59285 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36120 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24862 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36844 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46053 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50529 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62547 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38890 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21395 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56517 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62517 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48796 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61356 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34134 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16709 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43949 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19752 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59845 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23505 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23003 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42567 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37969 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41317 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35291 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19133 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49366 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38883 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54748 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16367 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58749 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53081 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39786 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35410 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56946 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38650 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44757 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22098 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20735 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33071 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48244 - "GET /version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19615 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17400 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36722 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=1070) INFO 10-25 02:24:39 [loggers.py:335] Engine 000: Avg prompt throughput: 406.6 tokens/s, Avg generation throughput: 3622.3 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 55.4%
+INFO:     127.0.0.1:63581 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53204 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22014 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22767 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49363 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55333 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25449 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20387 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29029 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58558 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56657 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38647 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33004 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32712 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52166 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53173 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26865 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31084 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63749 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30644 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28555 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54036 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53439 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63911 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44337 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61728 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51162 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26408 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30023 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21531 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54272 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45262 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64071 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29327 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51179 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36050 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38773 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58424 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34134 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36514 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54068 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62571 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59395 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34522 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43623 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61677 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25039 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41095 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47704 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21871 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25953 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39058 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44391 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37936 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47586 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60081 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57761 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64427 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64066 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33495 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38756 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20092 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36876 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31662 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51902 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58227 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29707 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34753 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21444 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48718 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25946 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31619 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41383 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51663 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27052 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52959 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29614 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31748 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50911 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53355 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54033 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21472 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25774 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59098 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18296 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17080 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53487 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30353 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60347 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37815 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62755 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38410 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43863 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54218 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54161 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30272 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19503 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63491 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28795 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18305 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48759 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44496 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28207 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50140 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47347 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58857 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33446 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39413 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17736 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50513 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56308 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19099 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22436 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54371 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30713 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19745 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19239 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48435 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43645 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49218 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55419 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58970 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32352 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34742 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20632 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26449 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21324 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53143 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42276 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64224 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38494 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48576 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45616 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23707 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20240 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51834 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20149 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49498 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48866 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29484 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44059 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44061 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56079 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40674 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55413 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65055 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35149 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31142 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50193 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55078 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57961 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57979 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17536 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19141 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27713 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29986 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20837 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20564 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20375 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44240 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39584 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59664 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24550 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64294 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38235 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53243 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58614 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22984 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32243 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33724 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47589 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23610 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19336 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18591 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23745 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35788 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21189 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32026 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41053 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19578 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40104 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27710 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44499 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57047 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63613 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22376 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60938 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29593 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42649 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53407 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52378 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31248 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35258 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18707 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50000 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34686 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54079 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31185 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21110 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22443 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41200 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30215 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55625 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36180 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43466 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36081 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33318 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52544 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56164 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54198 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24526 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56390 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47203 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41537 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35967 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29713 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42247 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43310 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29563 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41862 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43988 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17081 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54359 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62905 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41333 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23547 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33788 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38155 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64246 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57624 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36128 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23094 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43307 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24070 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19674 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22034 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38949 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43321 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53460 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54721 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18453 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43974 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53429 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42338 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42284 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23367 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59310 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51351 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48687 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40070 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22727 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39528 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38610 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56141 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23391 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52661 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16379 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56007 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16158 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22399 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40842 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19768 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33543 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43862 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43542 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62961 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47438 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30119 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25300 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33185 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18110 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40996 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48119 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48932 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65488 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52668 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62297 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30918 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54591 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45997 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19497 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44996 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62318 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29480 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19404 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38676 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20255 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35775 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17622 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51455 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48669 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60070 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46512 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28345 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55117 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37610 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42165 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58155 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57465 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53328 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17329 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45769 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50425 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43878 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49673 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20997 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65516 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62438 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61250 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57272 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39094 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56185 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50316 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35605 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24847 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56933 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56820 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28230 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62360 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34046 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52148 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61986 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64814 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19071 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45136 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51072 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23806 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39342 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60532 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55960 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59653 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64322 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36015 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28973 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21388 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49626 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31126 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57941 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27179 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56746 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20670 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40749 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57385 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23854 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21434 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27836 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59867 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45658 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58589 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32751 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57056 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19531 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20747 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35129 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46318 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40437 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65350 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51018 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61513 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54622 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56272 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20425 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37025 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59299 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62177 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25871 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50550 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39210 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63391 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64554 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29263 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:20270 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44074 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42405 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:29320 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58103 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39773 - "GET /version HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26635 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53359 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22346 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=1070) INFO 10-25 02:24:48 [launcher.py:254] [shutdown] API server: shutdown triggered
+(EngineCore pid=1164) INFO 10-25 02:24:48 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGINT
+(APIServer pid=1070) INFO 10-25 02:24:48 [launcher.py:270] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(EngineCore pid=1164) INFO 10-25 02:24:48 [core.py:1635] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=1164) INFO 10-25 02:24:48 [core.py:1666] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=1164) INFO 10-25 02:24:48 [core.py:1499] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=1070) INFO 10-25 02:24:48 [core_client.py:770] [shutdown] MPClient: start timeout=0s
+(APIServer pid=1070) INFO 10-25 02:24:48 [core_client.py:772] [shutdown] MPClient: stopping engine manager
+(APIServer pid=1070) INFO 10-25 02:24:48 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=1070) WARNING 10-25 02:24:48 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1
+(APIServer pid=1070) WARNING 10-25 02:24:48 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 1164
+(APIServer pid=1070) INFO 10-25 02:24:48 [core_client.py:774] [shutdown] MPClient: engine manager stopped
+(APIServer pid=1070) INFO 10-25 02:24:48 [core_client.py:775] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=1070) INFO 10-25 02:24:48 [core_client.py:777] [shutdown] MPClient: complete
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906] AsyncLLM output_handler failed.
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906] Traceback (most recent call last):
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 849, in output_handler
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906]     outputs = await engine_core.get_output_async()
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1235, in get_output_async
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906]     raise self._format_exception(outputs) from None
+(APIServer pid=1070) ERROR 10-25 02:24:48 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=1070) INFO 10-25 02:24:48 [launcher.py:279] [shutdown] API server: engine client stopped
+(APIServer pid=1070) INFO 10-25 02:24:48 [launcher.py:282] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=1070) INFO 10-25 02:24:48 [launcher.py:304] [shutdown] API server: shutting down FastAPI HTTP server
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

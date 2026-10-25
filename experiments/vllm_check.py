@@ -217,6 +217,7 @@ def run_role(role: str, out: str, n_prompts: int, max_tokens: int, model: str, e
              tag: str | None = None, expect_quant: str | None = None):
     os.environ["SDCGUARD"] = "1" if role == "guarded" else "0"
     os.environ["SDCGUARD_POLL_EVERY"] = "1000000000"      # this script reads the results itself
+    os.environ["SDCGUARD_ATTN"] = "0"     # attention checks have their own run (vllm_attn_check.py); not this one
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"           # engine in this process: apply_model reaches it
     os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
     # vLLM caches compiled graphs on disk; a graph compiled in the baseline run has no checks in it, and

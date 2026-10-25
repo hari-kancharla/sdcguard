@@ -1,0 +1,12 @@
+..............................................................ss         [100%]
+=============================== warnings summary ===============================
+tests/test_serve.py: 14 warnings
+  /usr/local/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [2] tests/test_serve.py:383: torch 2.13.0+cu130 has no graph-replay hook, so CUDA graph replay can't be proven here
+62 passed, 2 skipped, 14 warnings in 201.05s (0:03:21)
+
+[exit code 0]

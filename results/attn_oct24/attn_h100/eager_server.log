@@ -1,0 +1,236 @@
+FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 02:26:31 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347] 
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347]        █     █     █▄   ▄█
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.32.0
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347]   █▄█▀ █     █     █     █  model   Qwen/Qwen2.5-1.5B-Instruct
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:347] 
+(APIServer pid=3257) INFO 10-25 02:26:31 [api_utils.py:286] non-default args: {'model_tag': 'Qwen/Qwen2.5-1.5B-Instruct', 'model': 'Qwen/Qwen2.5-1.5B-Instruct', 'dtype': 'bfloat16', 'max_model_len': 4096, 'enforce_eager': True, 'attention_backend': 'FLASH_ATTN', 'worker_extension_cls': 'sdcguard_test_ext.FaultInjection', 'gpu_memory_utilization': 0.6}
+(APIServer pid=3257) INFO 10-25 02:26:32 [model.py:733] Resolved architecture: Qwen2ForCausalLM
+(APIServer pid=3257) INFO 10-25 02:26:32 [model.py:2152] Using max model len 4096
+(APIServer pid=3257) INFO 10-25 02:26:32 [scheduler.py:307] Chunked prefill is enabled with max_num_batched_tokens=8192.
+(APIServer pid=3257) WARNING 10-25 02:26:33 [vllm.py:1703] Enforce eager set, disabling torch.compile, CUDAGraphs, and JIT kernel warmup. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none and --kernel_config.enable_jit_warmup=False
+(APIServer pid=3257) WARNING 10-25 02:26:33 [vllm.py:1727] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(APIServer pid=3257) INFO 10-25 02:26:33 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(APIServer pid=3257) INFO 10-25 02:26:33 [vllm.py:1929] Cudagraph is disabled under eager mode
+(APIServer pid=3257) INFO 10-25 02:26:33 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 1251.49it/s]
+(EngineCore pid=3310) WARNING 10-25 02:26:42 [flashinfer.py:99] FlashInfer kernels are disabled: flashinfer-cubin is not installed and nvcc (CUDA_HOME, CUDA_PATH, PATH or /usr/local/cuda) or ninja (PATH) is missing. Set CUDA_HOME to a CUDA toolkit and put ninja on PATH, or run `vllm download-kernels`.
+INFO 10-25 02:26:44 sdcguard: checking bf16/fp16 linear layers and INT weight-only layers on MarlinLinearKernel and MacheteLinearKernel (alert threshold z=6, share 1.0); fused MoE experts and other quantized layers aren't checked yet, and the first model step logs how many layers that leaves out
+(EngineCore pid=3310) INFO 10-25 02:26:44 [core.py:133] Initializing a V1 LLM engine (v0.32.0) with config: model='Qwen/Qwen2.5-1.5B-Instruct', speculative_config=None, tokenizer='Qwen/Qwen2.5-1.5B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=main, tokenizer_revision=main, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=4096, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=None, quantization_config=None, enforce_eager=True, aux_output_config=AuxOutputConfig(enable_return_routed_experts=False, max_bytes=None), kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, per_request_spec_decode_metrics='none', kv_cache_metrics=False, kv_cache_metrics_sample=0.01, custom_histogram_buckets=None, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=Qwen/Qwen2.5-1.5B-Instruct, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'cudagraph_decoder_replay': True, 'decoder_replay_cudagraph_capture_sizes': [], 'decoder_replay_trim_threshold': 768, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native']), enable_flashinfer_autotune=True, enable_rocm_segmented_attn_autotune=False, enable_cutedsl_warmup=True, enable_jit_warmup=False, moe_backend='auto', sparse_indexer_topk_backend='auto', linear_backend='auto', linear_backend_per_quant=None)
+(EngineCore pid=3310) INFO 10-25 02:26:44 [worker_base.py:317] Injected <class 'sdcguard_test_ext.FaultInjection'> into <class 'vllm.v1.worker.gpu_worker.Worker'> for extended collective_rpc calls ['sdcguard_test_attn_stats', 'sdcguard_test_corrupt_attn', 'sdcguard_test_corrupt_moe', 'sdcguard_test_corrupt_route', 'sdcguard_test_flip', 'sdcguard_test_flip_bit', 'sdcguard_test_flip_expert_bit', 'sdcguard_test_flip_norm_bit', 'sdcguard_test_mark_norm_rows', 'sdcguard_test_mark_rows', 'sdcguard_test_moe_stats', 'sdcguard_test_norm_stats', 'sdcguard_test_reductions', 'sdcguard_test_route_stats', 'sdcguard_test_scale', 'sdcguard_test_steps', 'sdcguard_test_stop_reads', 'sdcguard_test_uncorrupt_attn', 'sdcguard_test_uncorrupt_moe', 'sdcguard_test_uncorrupt_route', 'sdcguard_test_unmark_norm_rows', 'sdcguard_test_unmark_rows']
+(EngineCore pid=3310) INFO 10-25 02:26:44 [parallel_state.py:1906] world_size=1 rank=0 local_rank=0 distributed_init_method=file:///tmp/vllm_dist_8c8d1262ec2945b2b3b03ae3e83da2da backend=nccl
+(EngineCore pid=3310) INFO 10-25 02:26:44 [parallel_state.py:2350] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, ETP rank 0, EP rank N/A, EPLB rank N/A
+(EngineCore pid=3310) INFO 10-25 02:26:44 [gpu_worker.py:518] Using V2 Model Runner
+(EngineCore pid=3310) INFO 10-25 02:26:44 [model_runner.py:392] Loading model from scratch...
+(EngineCore pid=3310) INFO 10-25 02:26:44 [cuda.py:446] Using AttentionBackendEnum.FLASH_ATTN backend.
+(EngineCore pid=3310) INFO 10-25 02:26:44 [flash_attn.py:1117] Using FlashAttention version 3
+(EngineCore pid=3310) INFO 10-25 02:26:45 [base_loader.py:82] Initializing model took 0.257174 seconds
+(EngineCore pid=3310) INFO 10-25 02:26:45 [weight_utils.py:1108] Filesystem type for checkpoints: 9P. Checkpoint size: 2.88 GiB. Available RAM: 1017.60 GiB.
+(EngineCore pid=3310) INFO 10-25 02:26:45 [weight_utils.py:1131] Auto-prefetch is disabled because the filesystem (9P) is not a recognized network FS (NFS/Lustre). If you want to force prefetching, start vLLM with --safetensors-load-strategy=prefetch.
+Loading safetensors checkpoint shards:   0% Completed | 0/1 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  2.11it/s]
+Loading safetensors checkpoint shards: 100% Completed | 1/1 [00:00<00:00,  2.11it/s]
+
+(EngineCore pid=3310) INFO 10-25 02:26:46 [default_loader.py:501] Loading weights took 0.57 seconds
+INFO 10-25 02:26:46 sdcguard: Prometheus metrics on port 9400
+(EngineCore pid=3310) INFO 10-25 02:26:48 [model_runner.py:424] Model loading took 3.13 GiB memory and 4.032396 seconds
+(EngineCore pid=3310) INFO 10-25 02:26:48 [topk_topp_sampler.py:96] FlashInfer top-p/top-k sampling disabled via VLLM_USE_FLASHINFER_SAMPLER=0.
+INFO 10-25 02:26:49 sdcguard: checking 28 of 28 attention layers (one layer a step, 4 outputs each) with the Triton kernels, line 4
+INFO 10-25 02:26:49 sdcguard: stack 81786bf6915a15b0 (model Qwen/Qwen2.5-1.5B-Instruct, dtype bfloat16, attention FLASH_ATTN, compilation 0, cudagraph NONE, vllm 0.32.0, gpu NVIDIA H100 80GB HBM3)
+(EngineCore pid=3310) WARNING 10-25 02:26:49 [torch_utils.py:283] OMP_NUM_THREADS=8 is set; leaving Torch threads at 8 for serving. Multi-threaded torch CPU ops during serving can degrade performance through spin-wait contention and cgroup CPU-quota throttling.
+(EngineCore pid=3310) INFO 10-25 02:26:49 [utils.py:347] Using LBNHC KV cache layout.
+INFO 10-25 02:26:49 sdcguard: checking 112 of 113 linear layers (85% of their weights); not checked: 1 LM head; attention checked by a sampled recompute on 28 layers (SDCGUARD_ATTN=1)
+(EngineCore pid=3310) INFO 10-25 02:26:50 [gpu_worker.py:759] Available KV cache memory: 42.6 GiB
+(EngineCore pid=3310) INFO 10-25 02:26:50 [kv_cache_utils.py:2327] GPU KV cache size: 1,595,408 tokens, Maximum concurrency for 4,096 tokens per request: 389.50x
+(EngineCore pid=3310) INFO 10-25 02:26:51 [gpu_worker.py:1034] Free memory on device (78.66/79.17 GiB) on startup. Desired GPU memory utilization is (0.6, 47.5 GiB). Actual usage is 4.39 GiB for consumed memory (weights + non-torch), 0.51 GiB for peak activation, and 0.0 GiB for CUDAGraph memory. Replace gpu_memory_utilization config with `--kv-cache-memory=45586705920` (42.46 GiB) to fit into requested memory, or `--kv-cache-memory=79038049792` (73.61 GiB) to fully utilize gpu memory. Current kv cache memory in use is 42.6 GiB.
+(EngineCore pid=3310) INFO 10-25 02:26:51 [core.py:402] init engine (profile, create kv cache, warmup model) took 2.38 s
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 1146.99it/s]
+(EngineCore pid=3310) WARNING 10-25 02:26:52 [vllm.py:1703] Enforce eager set, disabling torch.compile, CUDAGraphs, and JIT kernel warmup. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none and --kernel_config.enable_jit_warmup=False
+(EngineCore pid=3310) WARNING 10-25 02:26:52 [vllm.py:1727] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+(EngineCore pid=3310) INFO 10-25 02:26:52 [kernel.py:467] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['vllm_c', 'native'], fused_add_rms_norm=['vllm_c', 'native'], gelu_and_mul_sparse=['triton', 'native'])
+(EngineCore pid=3310) INFO 10-25 02:26:52 [vllm.py:1929] Cudagraph is disabled under eager mode
+(EngineCore pid=3310) INFO 10-25 02:26:52 [compilation.py:317] Enabled custom fusions: norm_quant, act_quant
+(APIServer pid=3257) INFO 10-25 02:26:52 [entry.py:136] Supported tasks: ['generate']
+(APIServer pid=3257) WARNING 10-25 02:26:52 [__init__.py:44] SECURITY WARNING: Development endpoints are enabled! This should NOT be used in production!
+(APIServer pid=3257) INFO 10-25 02:26:52 [factories.py:89] Scale-out endpoints are disabled. Restart vllm serve with --enable-scale-out to enable them.
+(APIServer pid=3257) INFO 10-25 02:26:53 [hf.py:648] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=3257) WARNING 10-25 02:26:53 [model.py:1893] Default vLLM sampling parameters have been overridden by the model's `generation_config.json`: `{'repetition_penalty': 1.1, 'temperature': 0.7, 'top_k': 20, 'top_p': 0.8}`. If this is not intended, please relaunch vLLM instance with `--generation-config vllm`.
+(APIServer pid=3257) INFO 10-25 02:26:53 [entry.py:140] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:186] Available routes are:
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /docs, Methods: GET, HEAD
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /load, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /version, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /kv_event_sources, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /health, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /metrics, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /tokenize, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /detokenize, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/models, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/systemone, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /ping, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /ping, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /invocations, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /reset_prefix_cache, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /reset_mm_cache, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /reset_encoder_cache, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /collective_rpc, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /server_info, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /sleep, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /release_kv_cache_memory, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /wake_up, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /is_sleeping, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /pause, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /resume, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /abort_requests, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /is_paused, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /init_weight_transfer_engine, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /shutdown_weight_transfer_engine, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /start_weight_update, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /start_draft_weight_update, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /update_weights, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /finish_weight_update, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /update_weight_version, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /weight_info, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /weight_checker, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /get_world_size, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/responses, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/completions, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/messages, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /generative_scoring, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/messages/render, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/completions/render, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/responses/render, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/chat/completions/derender, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /v1/completions/derender, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=3257) INFO 10-25 02:26:53 [launcher.py:195] Route: /inference/v1/abort_requests, Methods: POST
+INFO:     Started server process [3257]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:35935 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21608 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53422 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61995 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58423 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47881 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49485 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61341 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39706 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56809 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54809 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61757 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26429 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45176 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48888 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=3257) INFO 10-25 02:27:03 [loggers.py:335] Engine 000: Avg prompt throughput: 57.0 tokens/s, Avg generation throughput: 13.5 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 54.8%
+INFO:     127.0.0.1:63102 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 02:27:03 sdcguard ALERT: attention model.layers.4.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=402.57470703125 (row 0, head 7, dim 5, position 418, kept and rechecked: 1.046875, expected 0.02471439302665839; output_wrong)
+INFO:     127.0.0.1:24063 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38920 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34504 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34004 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 02:27:04 sdcguard ALERT: attention model.layers.4.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=662.5350952148438 (row 2, head 2, dim 5, position 226, kept and rechecked: 1.0859375, expected 0.04367309519445864; output_wrong)
+INFO:     127.0.0.1:45230 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39438 - "POST /collective_rpc HTTP/1.1" 200 OK
+WARNING 10-25 02:27:08 sdcguard ALERT: attention model.layers.4.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=1139.27587890625 (row 0, head 9, dim 5, position 398, kept and rechecked: 1.109375, expected 0.05309424513726049; output_wrong)
+INFO:     127.0.0.1:18614 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33475 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61150 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:25318 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40324 - "POST /collective_rpc HTTP/1.1" 200 OK
+WARNING 10-25 02:27:12 sdcguard ALERT: attention model.layers.13.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=1.0640922240816146e+21 (row 0, head 1, dim 28, position 397, kept and rechecked: -4.236986529430163e+19, expected -2.290315700455742; output_wrong)
+INFO:     127.0.0.1:36914 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54432 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32295 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:30652 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:23904 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63803 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=3257) INFO 10-25 02:27:13 [loggers.py:335] Engine 000: Avg prompt throughput: 90.1 tokens/s, Avg generation throughput: 29.2 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 70.4%
+INFO:     127.0.0.1:55197 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24726 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60482 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58462 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:17836 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54772 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:24822 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:21691 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49245 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62404 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54696 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28907 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48892 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49634 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 02:27:22 sdcguard ALERT: attention model.layers.22.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=4507.3212890625 (row 1, head 2, dim 78, position 225, kept and rechecked: -1.2578125, expected -0.008778943857075748; output_wrong)
+INFO:     127.0.0.1:34114 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:22952 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=3257) INFO 10-25 02:27:23 [loggers.py:335] Engine 000: Avg prompt throughput: 13.7 tokens/s, Avg generation throughput: 28.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 80.5%
+INFO:     127.0.0.1:48458 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27767 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:26140 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52435 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57159 - "POST /collective_rpc HTTP/1.1" 200 OK
+WARNING 10-25 02:27:30 sdcguard ALERT: KV-cache write of model.layers.3.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal): 4 of 4 sampled writes with wrong content, 0 to another slot than their block names (latest: step 339 row 14)
+INFO:     127.0.0.1:45468 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:19528 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:28864 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16569 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43126 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:27609 - "POST /collective_rpc HTTP/1.1" 200 OK
+(APIServer pid=3257) INFO 10-25 02:27:33 [loggers.py:335] Engine 000: Avg prompt throughput: 7.9 tokens/s, Avg generation throughput: 15.6 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 83.7%
+WARNING 10-25 02:27:33 sdcguard ALERT: KV-cache write of model.layers.3.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal): 4 of 4 sampled writes with wrong content, 0 to another slot than their block names (latest: step 367 row 2)
+INFO:     127.0.0.1:32393 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59943 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46560 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57961 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44098 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48225 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:18691 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:16928 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:31425 - "POST /v1/completions HTTP/1.1" 200 OK
+WARNING 10-25 02:27:38 sdcguard ALERT: attention model.layers.12.self_attn.attn on GPU-486cae1b-a348-d936-9acb-ff58cfb4aee1 (NVIDIA H100 80GB HBM3, PCI 00000000:BE:00.0, host modal) max z=32.34574890136719 (row 0, head 7, dim 25, position 416, kept and rechecked: -0.1298828125, expected -0.10553122124540104; output_wrong)
+INFO:     127.0.0.1:61039 - "POST /v1/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60999 - "POST /collective_rpc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36842 - "POST /v1/completions HTTP/1.1" 200 OK
+(APIServer pid=3257) INFO 10-25 02:27:42 [launcher.py:254] [shutdown] API server: shutdown triggered
+(EngineCore pid=3310) INFO 10-25 02:27:42 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGINT
+(APIServer pid=3257) INFO 10-25 02:27:42 [launcher.py:270] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(EngineCore pid=3310) INFO 10-25 02:27:42 [core.py:1635] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=3310) INFO 10-25 02:27:42 [core.py:1666] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=3310) INFO 10-25 02:27:42 [core.py:1499] [shutdown] EngineCore: exiting busy loop
+(APIServer pid=3257) INFO 10-25 02:27:42 [core_client.py:770] [shutdown] MPClient: start timeout=0s
+(APIServer pid=3257) INFO 10-25 02:27:42 [core_client.py:772] [shutdown] MPClient: stopping engine manager
+(APIServer pid=3257) INFO 10-25 02:27:42 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore
+(APIServer pid=3257) WARNING 10-25 02:27:42 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1
+(APIServer pid=3257) WARNING 10-25 02:27:42 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 3310
+(APIServer pid=3257) INFO 10-25 02:27:42 [core_client.py:774] [shutdown] MPClient: engine manager stopped
+(APIServer pid=3257) INFO 10-25 02:27:42 [core_client.py:775] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=3257) INFO 10-25 02:27:42 [core_client.py:777] [shutdown] MPClient: complete
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906] AsyncLLM output_handler failed.
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906] Traceback (most recent call last):
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py", line 849, in output_handler
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906]     outputs = await engine_core.get_output_async()
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906]   File "/usr/local/lib/python3.12/site-packages/vllm/v1/engine/core_client.py", line 1235, in get_output_async
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906]     raise self._format_exception(outputs) from None
+(APIServer pid=3257) ERROR 10-25 02:27:42 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.
+(APIServer pid=3257) INFO 10-25 02:27:42 [launcher.py:279] [shutdown] API server: engine client stopped
+(APIServer pid=3257) INFO 10-25 02:27:42 [launcher.py:282] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=3257) INFO 10-25 02:27:42 [launcher.py:304] [shutdown] API server: shutting down FastAPI HTTP server
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '

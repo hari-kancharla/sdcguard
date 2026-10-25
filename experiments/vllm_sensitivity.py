@@ -85,6 +85,8 @@ def run(out: str, port: int) -> dict:
     env = dict(os.environ)
     env["VLLM_SERVER_DEV_MODE"] = "1"
     env["PYTHONPATH"] = vs.HERE + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    # attention checks have their own run (vllm_attn_check.py); this run's criteria were written without them
+    env["SDCGUARD_ATTN"] = "0"
     env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_SHARE="1", SDCGUARD_LOG=log_path)
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", MODEL, "--port", str(port),
            "--max-model-len", "2048", "--gpu-memory-utilization", "0.6", "--seed", "0",

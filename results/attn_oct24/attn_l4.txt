@@ -1,0 +1,37 @@
+{
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "cost": {},
+  "clean": {
+   "guarded": {
+    "worst": 0.3976658582687378,
+    "calls": 8184,
+    "steps": 8191,
+    "samples": 32736,
+    "keys": 11307701,
+    "writes": 32736
+   },
+   "eager": {
+    "worst": null,
+    "calls": null,
+    "steps": null,
+    "samples": null,
+    "keys": null,
+    "writes": null
+   },
+   "tguarded": {
+    "worst": null,
+    "calls": null,
+    "steps": null,
+    "samples": null,
+    "keys": null,
+    "writes": null
+   }
+  },
+  "faults": [],
+  "on_by_default": null
+ }
+}
+
+[exit code 0]

@@ -60,6 +60,8 @@ def ready_check(out: str, name: str, config: str, decision: str, port: int, metr
     """Start one configuration as a deployment would (the plugin on, its metrics), send a few requests, and ask
     `sdcguard ready --qualified` whether it is the stack the decision accepted."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("SDCGUARD")}
+    # attention checks have their own run (vllm_attn_check.py); this run's criteria were written without them
+    env["SDCGUARD_ATTN"] = "0"
     env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_METRICS_PORT=str(metrics_port))
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", *shlex.split(config), "--port", str(port)]
     log = open(os.path.join(out, f"ready_{name}_server.log"), "w")

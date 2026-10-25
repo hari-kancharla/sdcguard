@@ -363,6 +363,7 @@ def run(variant: str, out: str, model: str, n_prompts: int = PROMPTS) -> int:
     import vllm_check
     os.environ["SDCGUARD"] = "0" if variant.startswith("baseline") else "1"
     os.environ["SDCGUARD_POLL_EVERY"] = "1000000000"
+    os.environ["SDCGUARD_ATTN"] = "0"     # attention checks have their own run (vllm_attn_check.py); not this one
     os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
     os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
     os.environ["VLLM_DISABLE_COMPILE_CACHE"] = "1"

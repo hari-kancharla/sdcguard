@@ -100,6 +100,8 @@ def server(role: str, model: str, out: str, port: int, metrics_port: int):
     for k in [k for k in env if k.startswith("SDCGUARD")]:
         del env[k]
     if role not in ("plain", "q3plain"):
+        # attention checks have their own run (vllm_attn_check.py); this run's criteria were written without them
+        env["SDCGUARD_ATTN"] = "0"
         env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
                    SDCGUARD_METRICS_PORT=str(metrics_port), SDCGUARD_NORMS="0" if role == "nonorms" else "1")
     cmd = [sys.executable, "-m", "vllm.entrypoints.cli.main", "serve", model, "--port", str(port),

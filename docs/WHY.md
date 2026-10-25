@@ -93,9 +93,14 @@ tests (DCGM, gpu-burn). Which of these sdcguard does better on the same failures
   not serving.
 - **Operations outside matmuls.** AEGIS's fingerprint detection, which compares an operation's output with the
   recompute training already does, found 12 of its 18 incidents. sdcguard's recompute check works the same way
-  and is experimental; attention internals, normalization, convolutions and fused MoE are otherwise not covered.
-- **FP8 and fused MoE experts in vLLM.** The plugin checks bf16 and INT4 (Marlin, Machete) linear layers; a
-  decision on an FP8 change gets no arithmetic source from it and says so.
+  and is experimental; in vLLM serving, attention is spot-checked by default (one layer a step recomputes four of
+  its outputs from the KV cache; gross errors only), and RMSNorm layers and fused MoE experts have serving checks
+  you turn on (SDCGUARD_NORMS=1, SDCGUARD_MOE=1; both ran on a GPU with limits, docs/STATUS.md). Beyond these,
+  attention, normalization, convolutions and fused MoE are not covered.
+- **FP8 and fused MoE experts in vLLM.** The plugin checks bf16 and INT4 (Marlin, Machete) linear layers by
+  default. Fused MoE experts have an opt-in sampled check (2 rows of one layer a step), and FP8 layers an opt-in check
+  of their input quantization only (CPU-tested); nothing checks an FP8 matmul's arithmetic, so a decision on an FP8
+  change gets no arithmetic source from it and says so.
 - **A natural defect.** No naturally defective GPU has been tested yet. The evidence is injected faults (in
   software, and in real tensor-core instructions with NVBit) and a real library bug.
 - **Diagnosis.** An alert can come from the checked operation, the check's own computation, the software stack

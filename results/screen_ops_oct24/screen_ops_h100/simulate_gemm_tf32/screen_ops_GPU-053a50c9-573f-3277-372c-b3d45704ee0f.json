@@ -1,0 +1,89 @@
+{
+ "sdcguard": "0.4.0",
+ "torch": "2.13.0+cu130",
+ "device": "cuda",
+ "gpu": {
+  "host": "modal",
+  "rank": null,
+  "device": "cuda",
+  "gpu_uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "pci_bus_id": "00000000:85:00.0",
+  "gpu_index": "0"
+ },
+ "telemetry_before": {
+  "name": "NVIDIA H100 80GB HBM3",
+  "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "serial": "1650324050646",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "96.00.CF.00.01",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "1980",
+  "clocks.mem": "2619",
+  "clocks.max.sm": "1980",
+  "temperature.gpu": "38",
+  "power.draw": "124.75",
+  "power.limit": "700.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "0, 0, No, No"
+ },
+ "seed": 5,
+ "minutes_asked": 0.0,
+ "simulated": "gemm_tf32",
+ "tests": {
+  "gemm_tf32": {
+   "test": "gemm_tf32",
+   "rounds": 1,
+   "values_checked": 4194304,
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5686,
+     "scale_a": -25,
+     "scale_b": -25,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 1.0,
+     "expected": -1.177813402364336e-11
+    }
+   ]
+  }
+ },
+ "skipped": {},
+ "rounds": 1,
+ "minutes": 0.0,
+ "values_checked": 4194304,
+ "wrong": 1,
+ "telemetry_after": {
+  "name": "NVIDIA H100 80GB HBM3",
+  "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "serial": "1650324050646",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "96.00.CF.00.01",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "1980",
+  "clocks.mem": "2619",
+  "clocks.max.sm": "1980",
+  "temperature.gpu": "38",
+  "power.draw": "124.43",
+  "power.limit": "700.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "0, 0, No, No"
+ },
+ "error": null,
+ "result": "FAIL"
+}

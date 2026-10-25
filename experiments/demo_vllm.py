@@ -19,6 +19,7 @@ import time
 
 os.environ.setdefault("SDCGUARD", "1")
 os.environ["SDCGUARD_POLL_EVERY"] = "1"                  # report as soon as possible in a demo
+os.environ.setdefault("SDCGUARD_ATTN", "0")              # as recorded: no attention checks (SDCGUARD_ATTN=1 adds them)
 os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 os.environ["VLLM_ALLOW_INSECURE_SERIALIZATION"] = "1"
 os.environ["VLLM_DISABLE_COMPILE_CACHE"] = "1"

@@ -1,0 +1,279 @@
+....FF.F...F.................................................FFEs        [100%]
+==================================== ERRORS ====================================
+______ ERROR at teardown of test_gpu_compiled_cuda_graphs_catch_a_flip[1] ______
+this test left 1 guard(s) holding the cuBLAS settings (detach or exit them)
+=================================== FAILURES ===================================
+________________ test_the_moe_check_in_a_replayed_graph[torch] _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x2b372dc73410>
+path = 'torch'
+
+    @pytest.mark.parametrize("path", ["torch", "triton"])
+    def test_the_moe_check_in_a_replayed_graph(monkeypatch, path):
+        mod = install_fake_moe(monkeypatch.setitem)
+        lay = mod.RoutedExperts(seed=0).to(DEV)
+        other = mod.RoutedExperts(seed=1).to(DEV)
+        g = ServeGuard()
+        mc = g.moe_checks()
+        assert mc.add(lay, "model.layers.0.mlp.experts") == 0
+        assert mc.add(other, "model.layers.1.mlp.experts") == 1          # two layers: they take turns by step
+        mc.finalize()
+        if path == "triton":
+            ok, why = sm.STATUS.get((sm._dev_key(DEV), torch.bfloat16, 0), (False, "not verified"))
+            assert ok, why
+        fn_check = sm.moe_check_torch if path == "torch" else sm.moe_check_triton
+        x = torch.randn(7, 128, device=DEV).to(torch.bfloat16)
+        w, ids = vllm_topk(torch.randn(7, lay.w13_weight.shape[0], device=DEV), lay.top_k, True)
+>       out = lay.forward_modular(x=x, topk_weights=w, topk_ids=ids)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_gpu_graphs.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_vllm_standins.py:361: in forward_modular
+    out = moe_kernel_like(x, self.w13_weight, self.w2_weight, topk_ids, topk_weights,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = tensor([[ 7.7344e-01,  2.3730e-01, -5.8984e-01, -1.0703e+00, -6.9531e-01,
+          7.1875e-01, -7.1777e-02, -1.1172e+....5625e+00,  1.0781e+00,
+          8.2422e-01, -1.9688e+00,  1.3828e+00]], device='cuda:0',
+       dtype=torch.bfloat16)
+w13 = Parameter containing:
+tensor([[[-0.0564, -0.0576, -0.0125,  ...,  0.0583,  0.0461,  0.0693],
+         [-0.0442, -0.021...
+         [ 0.0300, -0.0276,  0.0148,  ..., -0.0918,  0.0520, -0.0315]]],
+       device='cuda:0', dtype=torch.bfloat16)
+w2 = Parameter containing:
+tensor([[[ 0.0776,  0.1406,  0.0732,  ...,  0.0579, -0.0080, -0.0354],
+         [-0.0554,  0.027...
+         [-0.0723, -0.0723,  0.0913,  ...,  0.0056, -0.0610,  0.0635]]],
+       device='cuda:0', dtype=torch.bfloat16)
+ids = tensor([[2, 6],
+        [2, 5],
+        [4, 3],
+        [5, 1],
+        [4, 0],
+        [5, 2],
+        [6, 7]], device='cuda:0', dtype=torch.int32)
+g = tensor([[0.6003, 0.3997],
+        [0.5700, 0.4300],
+        [0.5423, 0.4577],
+        [0.5008, 0.4992],
+        [0.5047, 0.4953],
+        [0.5113, 0.4887],
+        [0.6568, 0.3432]], device='cuda:0')
+act = 0, dtype = torch.bfloat16, blk = 64, expert_map = None
+
+    def moe_kernel_like(x, w13, w2, ids, g, act=0, dtype=torch.bfloat16, blk=64, expert_map=None):
+        """vLLM's Triton MoE kernel's rounding (TritonExperts, 0.31/0.32), with another order of fp32 additions (blocked
+        partial sums): the first matmul rounded, silu rounded then times the up projection rounded, the second matmul
+        times the routing weight rounded, the experts summed in fp32 and rounded once."""
+        from sdcguard.serve_moe import _act
+        m, h = x.shape
+        out = torch.zeros(m, h)
+        for t in range(m):
+            acc = torch.zeros(h)
+            for k in range(ids.shape[1]):
+                e = int(ids[t, k])
+                if expert_map is not None and e >= 0:
+                    e = int(expert_map[e])
+                if e < 0:
+                    continue
+                w, xf = w13[e].float(), x[t].float()
+                a = sum(w[:, i:i + blk] @ xf[i:i + blk] for i in range(0, h, blk)).to(dtype).float()
+                half = a.shape[0] // 2
+                hv = (_act(a[:half], act).to(dtype).float() * a[half:]).to(dtype).float()
+                w2e = w2[e].float()
+                c = sum(w2e[:, i:i + blk] @ hv[i:i + blk] for i in range(0, half, blk))
+>               acc += (c * float(g[t, k])).to(dtype).float()
+E               RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+
+tests/_vllm_standins.py:315: RuntimeError
+________________ test_the_moe_check_in_a_replayed_graph[triton] ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x2b372d467110>
+path = 'triton'
+
+    @pytest.mark.parametrize("path", ["torch", "triton"])
+    def test_the_moe_check_in_a_replayed_graph(monkeypatch, path):
+        mod = install_fake_moe(monkeypatch.setitem)
+        lay = mod.RoutedExperts(seed=0).to(DEV)
+        other = mod.RoutedExperts(seed=1).to(DEV)
+        g = ServeGuard()
+        mc = g.moe_checks()
+        assert mc.add(lay, "model.layers.0.mlp.experts") == 0
+        assert mc.add(other, "model.layers.1.mlp.experts") == 1          # two layers: they take turns by step
+        mc.finalize()
+        if path == "triton":
+            ok, why = sm.STATUS.get((sm._dev_key(DEV), torch.bfloat16, 0), (False, "not verified"))
+            assert ok, why
+        fn_check = sm.moe_check_torch if path == "torch" else sm.moe_check_triton
+        x = torch.randn(7, 128, device=DEV).to(torch.bfloat16)
+        w, ids = vllm_topk(torch.randn(7, lay.w13_weight.shape[0], device=DEV), lay.top_k, True)
+>       out = lay.forward_modular(x=x, topk_weights=w, topk_ids=ids)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_gpu_graphs.py:157: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_vllm_standins.py:361: in forward_modular
+    out = moe_kernel_like(x, self.w13_weight, self.w2_weight, topk_ids, topk_weights,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+x = tensor([[-6.2500e-01,  1.5156e+00, -2.7930e-01, -4.0039e-01, -4.8633e-01,
+         -4.7461e-01, -7.6172e-01, -4.5508e-....1016e-01,  5.5078e-01,
+         -1.0078e+00,  3.4180e-01,  1.7344e+00]], device='cuda:0',
+       dtype=torch.bfloat16)
+w13 = Parameter containing:
+tensor([[[-0.0564, -0.0576, -0.0125,  ...,  0.0583,  0.0461,  0.0693],
+         [-0.0442, -0.021...
+         [ 0.0300, -0.0276,  0.0148,  ..., -0.0918,  0.0520, -0.0315]]],
+       device='cuda:0', dtype=torch.bfloat16)
+w2 = Parameter containing:
+tensor([[[ 0.0776,  0.1406,  0.0732,  ...,  0.0579, -0.0080, -0.0354],
+         [-0.0554,  0.027...
+         [-0.0723, -0.0723,  0.0913,  ...,  0.0056, -0.0610,  0.0635]]],
+       device='cuda:0', dtype=torch.bfloat16)
+ids = tensor([[7, 2],
+        [4, 7],
+        [7, 4],
+        [6, 5],
+        [6, 4],
+        [7, 3],
+        [5, 2]], device='cuda:0', dtype=torch.int32)
+g = tensor([[0.5286, 0.4714],
+        [0.5531, 0.4469],
+        [0.5806, 0.4194],
+        [0.6095, 0.3905],
+        [0.7165, 0.2835],
+        [0.5639, 0.4361],
+        [0.5515, 0.4485]], device='cuda:0')
+act = 0, dtype = torch.bfloat16, blk = 64, expert_map = None
+
+    def moe_kernel_like(x, w13, w2, ids, g, act=0, dtype=torch.bfloat16, blk=64, expert_map=None):
+        """vLLM's Triton MoE kernel's rounding (TritonExperts, 0.31/0.32), with another order of fp32 additions (blocked
+        partial sums): the first matmul rounded, silu rounded then times the up projection rounded, the second matmul
+        times the routing weight rounded, the experts summed in fp32 and rounded once."""
+        from sdcguard.serve_moe import _act
+        m, h = x.shape
+        out = torch.zeros(m, h)
+        for t in range(m):
+            acc = torch.zeros(h)
+            for k in range(ids.shape[1]):
+                e = int(ids[t, k])
+                if expert_map is not None and e >= 0:
+                    e = int(expert_map[e])
+                if e < 0:
+                    continue
+                w, xf = w13[e].float(), x[t].float()
+                a = sum(w[:, i:i + blk] @ xf[i:i + blk] for i in range(0, h, blk)).to(dtype).float()
+                half = a.shape[0] // 2
+                hv = (_act(a[:half], act).to(dtype).float() * a[half:]).to(dtype).float()
+                w2e = w2[e].float()
+                c = sum(w2e[:, i:i + blk] @ hv[i:i + blk] for i in range(0, half, blk))
+>               acc += (c * float(g[t, k])).to(dtype).float()
+E               RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+
+tests/_vllm_standins.py:315: RuntimeError
+______________ test_the_routing_check_in_a_replayed_graph[triton] ______________
+
+path = 'triton'
+
+    @pytest.mark.parametrize("path", ["torch", "triton"])
+    def test_the_routing_check_in_a_replayed_graph(path):
+        router = type("FusedTopKRouter", (), dict(top_k=4, scoring_func="softmax", renormalize=True,
+                                                  _select_experts=lambda *a, **k: None))()
+        g = ServeGuard()
+        rc = g.route_checks()
+        assert rc.add(router, "model.layers.0.mlp.experts.router", DEV) is not None
+        rc.finalize()
+        lg = torch.randn(16, 64, device=DEV) * 2
+        w, ids = vllm_topk(lg, 4, True)
+        if path == "triton":
+            ok, why = sr.verify_kernel(DEV, lg.dtype)
+>           assert ok, why
+E           AssertionError: AssertionError: expert: the kept rows differ
+E           assert False
+
+tests/test_gpu_graphs.py:189: AssertionError
+______________ test_the_linear_check_in_a_replayed_graph[triton] _______________
+
+path = 'triton'
+
+    @pytest.mark.parametrize("path", ["torch", "triton"])
+    def test_the_linear_check_in_a_replayed_graph(path):
+        m, k, n = 16, 512, 300
+        W = (torch.randn(n, k, device=DEV) / k ** 0.5).to(torch.bfloat16)
+        x = torch.randn(m, k, device=DEV).to(torch.bfloat16)
+        mm = torch.backends.cuda.matmul
+        saved = mm.allow_bf16_reduced_precision_reduction
+        mm.allow_bf16_reduced_precision_reduction = False        # fp32 partial sums, as ServeGuard serves with
+        try:
+            y = x @ W.t()
+        finally:
+            mm.allow_bf16_reduced_precision_reduction = saved
+        cs = LayerChecksums(W, None, 128)
+        if path == "triton":
+>           assert _serve_fast.verified(DEV, torch.bfloat16), _serve_fast.WHY
+E           AssertionError: ['serving first-use comparison (cuda:0, bfloat16): v3 (33, 130, 129, rows per program None) clean: captured rows differ (fast [[3, 8, 1, 34, 1091611317, 0]], plain [[3, 8, 1, 34, 1091611317, 0]])']
+E           assert False
+E            +  where False = <function verified at 0x2b371fe7a160>(device(type='cuda'), torch.bfloat16)
+E            +    where <function verified at 0x2b371fe7a160> = _serve_fast.verified
+E            +    and   torch.bfloat16 = torch.bfloat16
+
+tests/test_gpu_graphs.py:259: AssertionError
+________________ test_gpu_fast_serving_check_agrees_and_is_used ________________
+
+    @cuda
+    @_fp32_partial_sums()
+    def test_gpu_fast_serving_check_agrees_and_is_used():
+        """On a GPU: the Triton check passes its first-use comparison, is used, and gives the PyTorch
+        check's answers on clean and corrupted layers."""
+        from sdcguard import _serve_fast
+        from sdcguard.serve import STATE_COLS, LayerChecksums, check_static_impl
+        dev = torch.device("cuda")
+        for dt in (torch.bfloat16, torch.float16):
+>           assert _serve_fast.verified(dev, dt), _serve_fast.WHY
+E           AssertionError: ['serving first-use comparison (cuda:0, bfloat16): v3 (33, 130, 129, rows per program None) clean: captured rows differ (fast [[3, 8, 1, 34, 1091611317, 0]], plain [[3, 8, 1, 34, 1091611317, 0]])']
+E           assert False
+E            +  where False = <function verified at 0x2b371fe7a160>(device(type='cuda'), torch.bfloat16)
+E            +    where <function verified at 0x2b371fe7a160> = <module 'sdcguard._serve_fast' from '/usr/local/lib/python3.12/site-packages/sdcguard/_serve_fast.py'>.verified
+
+tests/test_serve.py:325: AssertionError
+________________ test_gpu_compiled_cuda_graphs_catch_a_flip[1] _________________
+
+fast = '1'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x2b37546f3440>
+
+    @cuda
+    @pytest.mark.parametrize("fast", ["1", "0"])
+    def test_gpu_compiled_cuda_graphs_catch_a_flip(fast, monkeypatch):
+        """torch.compile(mode="reduce-overhead") (CUDA graphs) with the Triton check inside (fast=1) or the
+        PyTorch check traced into the graph (fast=0): quiet when clean, then a flipped weight bit is caught
+        in a replayed graph."""
+        monkeypatch.setenv("SDCGUARD_SERVE_FAST", fast)
+        torch._dynamo.reset()
+        torch.manual_seed(0)
+        m = nn.Sequential(nn.Linear(512, 1024), nn.GELU(), nn.Linear(1024, 512)).cuda().to(torch.bfloat16)
+        g = ServeGuard().attach(m)
+>       assert all(g.uses_fast(s) == (fast == "1") for s in range(len(g.layers)))
+E       assert False
+E        +  where False = all(<generator object test_gpu_compiled_cuda_graphs_catch_a_flip.<locals>.<genexpr> at 0x2b3759a91700>)
+
+tests/test_serve.py:366: AssertionError
+=============================== warnings summary ===============================
+tests/test_serve.py: 14 warnings
+  /usr/local/lib/python3.12/site-packages/torch/jit/_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_gpu_graphs.py::test_the_moe_check_in_a_replayed_graph[torch]
+FAILED tests/test_gpu_graphs.py::test_the_moe_check_in_a_replayed_graph[triton]
+FAILED tests/test_gpu_graphs.py::test_the_routing_check_in_a_replayed_graph[triton]
+FAILED tests/test_gpu_graphs.py::test_the_linear_check_in_a_replayed_graph[triton]
+FAILED tests/test_serve.py::test_gpu_fast_serving_check_agrees_and_is_used - ...
+FAILED tests/test_serve.py::test_gpu_compiled_cuda_graphs_catch_a_flip[1] - a...
+ERROR tests/test_serve.py::test_gpu_compiled_cuda_graphs_catch_a_flip[1] - Fa...
+SKIPPED [1] tests/test_serve.py:383: torch 2.13.0+cu130 has no graph-replay hook, so CUDA graph replay can't be proven here
+6 failed, 57 passed, 1 skipped, 14 warnings, 1 error in 109.04s (0:01:49)
+
+[exit code 1]

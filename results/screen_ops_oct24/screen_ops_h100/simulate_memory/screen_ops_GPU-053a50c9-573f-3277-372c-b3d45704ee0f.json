@@ -1,0 +1,82 @@
+{
+ "sdcguard": "0.4.0",
+ "torch": "2.13.0+cu130",
+ "device": "cuda",
+ "gpu": {
+  "host": "modal",
+  "rank": null,
+  "device": "cuda",
+  "gpu_uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "pci_bus_id": "00000000:85:00.0",
+  "gpu_index": "0"
+ },
+ "telemetry_before": {
+  "name": "NVIDIA H100 80GB HBM3",
+  "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "serial": "1650324050646",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "96.00.CF.00.01",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "1980",
+  "clocks.mem": "2619",
+  "clocks.max.sm": "1980",
+  "temperature.gpu": "37",
+  "power.draw": "124.34",
+  "power.limit": "700.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "0, 0, No, No"
+ },
+ "seed": 5,
+ "minutes_asked": 0.0,
+ "simulated": "memory",
+ "tests": {
+  "memory": {
+   "test": "memory",
+   "rounds": 2,
+   "values_checked": 24696061952,
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "chunk": 0,
+     "offset": 0,
+     "complement": false,
+     "element": 12345,
+     "got": 1984068480.0,
+     "expected": 1984068608.0
+    }
+   ]
+  }
+ },
+ "skipped": {},
+ "rounds": 1,
+ "minutes": 0.08,
+ "values_checked": 24696061952,
+ "wrong": 1,
+ "telemetry_after": {
+  "name": "NVIDIA H100 80GB HBM3",
+  "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+  "serial": "1650324050646",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "96.00.CF.00.01",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "1980",
+  "clocks.mem": "2619",
+  "clocks.max.sm": "1980",
+  "temperature.gpu": "42",
+  "power.draw": "367.71",
+  "power.limit": "700.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "0, 0, No, No"
+ },
+ "error": null,
+ "result": "FAIL"
+}

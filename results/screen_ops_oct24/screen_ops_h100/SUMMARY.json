@@ -1,0 +1,367 @@
+{
+ "gpu": "NVIDIA H100 80GB HBM3",
+ "capability": [
+  9,
+  0
+ ],
+ "clean": {
+  "sdcguard": "0.4.0",
+  "torch": "2.13.0+cu130",
+  "device": "cuda",
+  "gpu": {
+   "host": "modal",
+   "rank": null,
+   "device": "cuda",
+   "gpu_uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+   "gpu_name": "NVIDIA H100 80GB HBM3",
+   "pci_bus_id": "00000000:85:00.0",
+   "gpu_index": "0"
+  },
+  "telemetry_before": {
+   "name": "NVIDIA H100 80GB HBM3",
+   "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+   "serial": "1650324050646",
+   "pci.bus_id": "[Unknown Error]",
+   "driver_version": "610.57.04",
+   "vbios_version": "96.00.CF.00.01",
+   "ecc.mode.current": "Enabled",
+   "ecc.errors.corrected.volatile.total": "0",
+   "ecc.errors.uncorrected.volatile.total": "0",
+   "clocks.sm": "345",
+   "clocks.mem": "2619",
+   "clocks.max.sm": "1980",
+   "temperature.gpu": "38",
+   "power.draw": "71.89",
+   "power.limit": "700.00",
+   "pstate": "P0",
+   "clocks_throttle_reasons.active": "0x0000000000000001",
+   "remapped_rows": "0, 0, No, No"
+  },
+  "seed": 0,
+  "minutes_asked": 5.0,
+  "simulated": null,
+  "tests": {
+   "gemm_fp64": {
+    "test": "gemm_fp64",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_fp32": {
+    "test": "gemm_fp32",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_tf32": {
+    "test": "gemm_tf32",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_bf16": {
+    "test": "gemm_bf16",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_fp16": {
+    "test": "gemm_fp16",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_fp8": {
+    "test": "gemm_fp8",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "gemm_int8": {
+    "test": "gemm_int8",
+    "rounds": 3660,
+    "values_checked": 15351152640,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "fma_fp32": {
+    "test": "fma_fp32",
+    "rounds": 3660,
+    "values_checked": 61404610560,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "fma_fp64": {
+    "test": "fma_fp64",
+    "rounds": 3660,
+    "values_checked": 61404610560,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "sm_consistency": {
+    "test": "sm_consistency",
+    "rounds": 3660,
+    "values_checked": 76755763200,
+    "wrong": 0,
+    "first_wrong": []
+   },
+   "memory": {
+    "test": "memory",
+    "rounds": 2,
+    "values_checked": 29527900160,
+    "wrong": 0,
+    "first_wrong": []
+   }
+  },
+  "skipped": {},
+  "rounds": 3660,
+  "minutes": 5.04,
+  "values_checked": 336550952960,
+  "wrong": 0,
+  "telemetry_after": {
+   "name": "NVIDIA H100 80GB HBM3",
+   "uuid": "GPU-053a50c9-573f-3277-372c-b3d45704ee0f",
+   "serial": "1650324050646",
+   "pci.bus_id": "[Unknown Error]",
+   "driver_version": "610.57.04",
+   "vbios_version": "96.00.CF.00.01",
+   "ecc.mode.current": "Enabled",
+   "ecc.errors.corrected.volatile.total": "0",
+   "ecc.errors.uncorrected.volatile.total": "0",
+   "clocks.sm": "1980",
+   "clocks.mem": "2619",
+   "clocks.max.sm": "1980",
+   "temperature.gpu": "40",
+   "power.draw": "352.68",
+   "power.limit": "700.00",
+   "pstate": "P0",
+   "clocks_throttle_reasons.active": "0x0000000000000000",
+   "remapped_rows": "0, 0, No, No"
+  },
+  "error": null,
+  "result": "PASS",
+  "path": "/vol/runs_r3/screen_ops_h100/clean/screen_ops_GPU-053a50c9-573f-3277-372c-b3d45704ee0f.json"
+ },
+ "simulated": {
+  "gemm_fp64": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5969,
+     "scale_a": -300,
+     "scale_b": -300,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 1.0,
+     "expected": -2.7066359039324546e-169
+    }
+   ],
+   "error": null
+  },
+  "gemm_fp32": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5275,
+     "scale_a": -25,
+     "scale_b": -25,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 1.0,
+     "expected": 3.1894487051431497e-12
+    }
+   ],
+   "error": null
+  },
+  "gemm_tf32": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5686,
+     "scale_a": -25,
+     "scale_b": -25,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 1.0,
+     "expected": -1.177813402364336e-11
+    }
+   ],
+   "error": null
+  },
+  "gemm_bf16": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5979,
+     "scale_a": -25,
+     "scale_b": -25,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 1.0,
+     "expected": -1.2292389328649733e-12
+    }
+   ],
+   "error": null
+  },
+  "gemm_fp16": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5218,
+     "scale_a": 0,
+     "scale_b": 0,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": -279.0,
+     "expected": -140.0
+    }
+   ],
+   "error": null
+  },
+  "gemm_fp8": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5361,
+     "scale_a": 0,
+     "scale_b": 0,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 37.0,
+     "expected": 18.0
+    }
+   ],
+   "error": null
+  },
+  "gemm_int8": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "set": 0,
+     "seed": 5143,
+     "scale_a": 0,
+     "scale_b": 0,
+     "transposed": false,
+     "shape": [
+      1024,
+      1024
+     ],
+     "element": 777,
+     "got": 664545.0,
+     "expected": 332272.0
+    }
+   ],
+   "error": null
+  },
+  "fma_fp32": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "seed": 35,
+     "element": 5,
+     "got": -3175539.0,
+     "expected": -3175540.0
+    }
+   ],
+   "error": null
+  },
+  "fma_fp64": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "seed": 35,
+     "element": 5,
+     "got": 1545713307847561.0,
+     "expected": 1545713307847560.0
+    }
+   ],
+   "error": null
+  },
+  "sm_consistency": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "function": "exp",
+     "seed": 55,
+     "element": 3,
+     "got": 7.705677509307861,
+     "expected": 3.8528387546539307
+    }
+   ],
+   "error": null
+  },
+  "memory": {
+   "result": "FAIL",
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "chunk": 0,
+     "offset": 0,
+     "complement": false,
+     "element": 12345,
+     "got": 1984068480.0,
+     "expected": 1984068608.0
+    }
+   ],
+   "error": null
+  }
+ },
+ "passed": true,
+ "failures": []
+}

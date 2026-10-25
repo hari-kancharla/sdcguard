@@ -100,7 +100,12 @@ checked on this server (give replicas different `SDCGUARD_OFFSET`s and between t
 On an H100 (October 22, Qwen2.5 1.5B and 7B, 16 and 256 requests at a time) it lowered throughput by 2.5% to 7%,
 the answers were word for word the same as plain vLLM, and a weight bit I flipped on purpose was caught and the
 layer named. Checking every layer lowered throughput by 20% to 22% on the 7B model and by 11% (256 at a time) to
-33% (16 at a time) on the 1.5B. I'm working on making that cheaper.
+33% (16 at a time) on the 1.5B. I'm working on making that cheaper. Those numbers were measured before the attention
+spot check, which is now on by default (`SDCGUARD_ATTN=0` turns it off). On the 1.5B on an H100 (October 24) it took
+another 2.7% at 16 requests at a time on top of a server checking every layer, and nothing measurable at 256. That
+added time would be about 4% of plain vLLM's time per token on the 1.5B, so on the 1.5B with one layer in eight
+expect more than 3% from it at 16 at a time. I haven't measured that, or other models (the 7B takes longer per
+token, so the same added time is likely a smaller share).
 
 When a check fires, sdcguard keeps the exact numbers that failed (copied on the GPU before vLLM reuses the
 memory) and rechecks them in float64 on the CPU, so the alert tells you whether the output was really wrong.
@@ -164,9 +169,14 @@ as Triton kernels.
   real incidents with fp32 checksums, not bf16 ones. The fused fp32 check (`precise="fused"`) matched precise
   mode's sensitivity on October 20 and 21 and passed 40 minutes of clean training on an H100 and an L4.
 - Anything outside the checked matmuls: attention internals, norms, the optimizer. The experimental
-  `recompute=True` check covers activation-checkpointed blocks in training.
-- FP8 layers and fused MoE experts in vLLM. INT4 and INT8 weight-only layers (GPTQ, AWQ on vLLM's Marlin and
-  Machete kernels) are checked.
+  `recompute=True` check covers activation-checkpointed blocks in training. In vLLM serving, attention is
+  spot-checked by default (one layer a step recomputes four of its outputs from the KV cache; gross errors only,
+  on vLLM's FlashAttention 2 and 3 and Triton backends; `SDCGUARD_ATTN=0` turns it off), and RMSNorm layers have
+  an opt-in check (`SDCGUARD_NORMS=1`: it costs 7% to 10% and changed 5 of 64 answers of a compiled server).
+- FP8 matmul arithmetic and most of fused MoE in vLLM. FP8 layers' input quantization has an opt-in check
+  (`SDCGUARD_FP8=1`, CPU-tested; its GPU rerun is pending), and fused MoE experts an opt-in sampled check
+  (`SDCGUARD_MOE=1`: 2 rows of one layer a step; it ran on an eager server, its compiled server's rerun is
+  pending). INT4 and INT8 weight-only layers (GPTQ, AWQ on vLLM's Marlin and Machete kernels) are checked.
 - AMD GPUs.
 - It hasn't caught a naturally bad GPU yet. So far the evidence is injected faults and the cuBLAS bug above.
 

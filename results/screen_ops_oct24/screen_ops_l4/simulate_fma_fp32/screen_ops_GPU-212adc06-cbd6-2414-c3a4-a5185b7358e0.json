@@ -1,0 +1,81 @@
+{
+ "sdcguard": "0.4.0",
+ "torch": "2.13.0+cu130",
+ "device": "cuda",
+ "gpu": {
+  "host": "modal",
+  "rank": null,
+  "device": "cuda",
+  "gpu_uuid": "GPU-212adc06-cbd6-2414-c3a4-a5185b7358e0",
+  "gpu_name": "NVIDIA L4",
+  "pci_bus_id": "00000000:00:06.0",
+  "gpu_index": "0"
+ },
+ "telemetry_before": {
+  "name": "NVIDIA L4",
+  "uuid": "GPU-212adc06-cbd6-2414-c3a4-a5185b7358e0",
+  "serial": "1322823031827",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "95.04.29.00.07",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "2040",
+  "clocks.mem": "6251",
+  "clocks.max.sm": "2040",
+  "temperature.gpu": "76",
+  "power.draw": "39.87",
+  "power.limit": "72.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "1, 0, No, No"
+ },
+ "seed": 5,
+ "minutes_asked": 0.0,
+ "simulated": "fma_fp32",
+ "tests": {
+  "fma_fp32": {
+   "test": "fma_fp32",
+   "rounds": 1,
+   "values_checked": 16777216,
+   "wrong": 1,
+   "first_wrong": [
+    {
+     "round": 0,
+     "seed": 35,
+     "element": 5,
+     "got": 3977198.0,
+     "expected": 3977197.0
+    }
+   ]
+  }
+ },
+ "skipped": {},
+ "rounds": 1,
+ "minutes": 0.0,
+ "values_checked": 16777216,
+ "wrong": 1,
+ "telemetry_after": {
+  "name": "NVIDIA L4",
+  "uuid": "GPU-212adc06-cbd6-2414-c3a4-a5185b7358e0",
+  "serial": "1322823031827",
+  "pci.bus_id": "[Unknown Error]",
+  "driver_version": "610.57.04",
+  "vbios_version": "95.04.29.00.07",
+  "ecc.mode.current": "Enabled",
+  "ecc.errors.corrected.volatile.total": "0",
+  "ecc.errors.uncorrected.volatile.total": "0",
+  "clocks.sm": "2040",
+  "clocks.mem": "6251",
+  "clocks.max.sm": "2040",
+  "temperature.gpu": "76",
+  "power.draw": "40.55",
+  "power.limit": "72.00",
+  "pstate": "P0",
+  "clocks_throttle_reasons.active": "0x0000000000000000",
+  "remapped_rows": "1, 0, No, No"
+ },
+ "error": null,
+ "result": "FAIL"
+}

@@ -1,0 +1,1815 @@
+{
+ "model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "roles": [
+  "plain",
+  "guarded",
+  "noattn",
+  "eager",
+  "tplain",
+  "tguarded"
+ ],
+ "plain": {
+  "backend": "FLASH_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "identity": [
+   " to improve performance.\n\nThe sentence describes an ongoing process where engineers are testing and optimizing matrix multiplication operations across multiple graphics processing units (GPUs) to enhance their efficiency",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over a lazy",
+   " on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of",
+   " right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the essence of",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " work on a new generation of chips that will be able to do millions of calculations per second. The phrase \"check every matrix multiply\" is repeated twice, indicating",
+   " sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with engineers checking each matrix multiplication using thousands of graphics",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog\n\nThe text emphasizes that rigorous testing and verification, including extensive use of parallel processing technologies like GPUs, is crucial for ensuring accuracy",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with",
+   " numbers are right\n\nThe text is repetitive and does not provide any new information. It repeats \"the quick brown fox jumps over a lazy dog\" multiple times,",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " to make sure the numbers are right. The quick brown fox is an example of a common, easily recognizable animal that can be used as a reference point for describing",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across",
+   " numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix"
+  ],
+  "long": [
+   " The entries describe a sequence of operations involving signals, kernels, matrices, vectors, caches, blocks, tokens, layers, and values that are processed through a series of steps or iterations. Each entry represents an individual step in this process, with specific inputs (e.g., signal, kernel) being used to generate outputs (",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence. Each entry represents an operation that involves manipulating data through various components such as kernels, caches, blocks, and queries, using signals for control and direction",
+   " The entries describe a series of operations involving matrices, vectors, caches, blocks, tokens, layers, values, and queries on a system or device. Each entry represents a specific operation with its corresponding parameters and results.\n\nThis is an example of a problem that involves summarizing information from multiple sentences into a single concise statement.",
+   " The entries describe a sequence of operations involving matrices, vectors, and tokens that are used to process data through layers and signals within a neural network architecture. Each entry represents an operation or state transition in this processing flow.\n\nThis summary captures the essence of the provided information by highlighting the nature of the operations (matrix-vector operations),",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence.\n\nThis is an example of a numerical problem that involves summarizing information from a given text into a single sentence. It requires understanding the context provided by",
+   " The entries describe a series of operations involving blocks, tokens, layers, values, queries, signals, kernels, and matrices within a system or process. Each entry represents an individual operation with specific parameters such as block number, token value, layer index, value, query, signal, kernel, and matrix dimensions. These operations",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry corresponds to an operation or state change at a specific point in time, with each entry containing information about the current state of various components involved in the computation",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry represents an operation at a specific point in time, with details such as the layer number, value, query, signal, kernel, matrix, vector,"
+  ],
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 2.837,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 5775.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 44.1,
+      "ttft_p99_ms": 52.0,
+      "itl_p50_ms": 2.42,
+      "itl_p99_ms": 3.19,
+      "latency_p50_ms": 353.48,
+      "latency_p99_ms": 361.26
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 2.707,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 6051.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 32.11,
+      "ttft_p99_ms": 35.47,
+      "itl_p50_ms": 2.39,
+      "itl_p99_ms": 3.25,
+      "latency_p50_ms": 337.86,
+      "latency_p99_ms": 341.51
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 2.691,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 6088.6,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 29.63,
+      "ttft_p99_ms": 34.9,
+      "itl_p50_ms": 2.39,
+      "itl_p99_ms": 3.64,
+      "latency_p50_ms": 335.62,
+      "latency_p99_ms": 339.42
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 6051.5,
+     "ttft_p50_ms": 32.11,
+     "ttft_p99_ms": 35.47,
+     "itl_p50_ms": 2.39,
+     "itl_p99_ms": 3.25,
+     "latency_p50_ms": 337.86,
+     "latency_p99_ms": 341.51
+    },
+    "complete": true,
+    "created": "2026-10-25T02:21:00Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.735,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 22285.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 119.6,
+      "ttft_p99_ms": 277.46,
+      "itl_p50_ms": 6.41,
+      "itl_p99_ms": 12.16,
+      "latency_p50_ms": 657.87,
+      "latency_p99_ms": 688.37
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.761,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 21529.4,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 135.56,
+      "ttft_p99_ms": 313.75,
+      "itl_p50_ms": 6.58,
+      "itl_p99_ms": 11.5,
+      "latency_p50_ms": 669.35,
+      "latency_p99_ms": 709.6
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.774,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 21158.4,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 149.16,
+      "ttft_p99_ms": 320.33,
+      "itl_p50_ms": 6.62,
+      "itl_p99_ms": 12.49,
+      "latency_p50_ms": 686.18,
+      "latency_p99_ms": 721.37
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 21529.4,
+     "ttft_p50_ms": 135.56,
+     "ttft_p99_ms": 313.75,
+     "itl_p50_ms": 6.58,
+     "itl_p99_ms": 12.16,
+     "latency_p50_ms": 669.35,
+     "latency_p99_ms": 709.6
+    },
+    "complete": true,
+    "created": "2026-10-25T02:21:04Z"
+   }
+  },
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.6,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "guarded": {
+  "backend": "FLASH_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "attn_at_start": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "FlashAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 4,
+    "samples": 16,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 56,
+    "bad_blocks": 0,
+    "writes_checked": 16,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 5,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 4,
+    "never_checked": [
+     "model.layers.0.self_attn.attn",
+     "model.layers.10.self_attn.attn",
+     "model.layers.11.self_attn.attn",
+     "model.layers.12.self_attn.attn",
+     "model.layers.13.self_attn.attn",
+     "model.layers.14.self_attn.attn",
+     "model.layers.15.self_attn.attn",
+     "model.layers.16.self_attn.attn",
+     "model.layers.17.self_attn.attn",
+     "model.layers.18.self_attn.attn",
+     "model.layers.19.self_attn.attn",
+     "model.layers.20.self_attn.attn",
+     "model.layers.21.self_attn.attn",
+     "model.layers.22.self_attn.attn",
+     "model.layers.23.self_attn.attn",
+     "model.layers.24.self_attn.attn",
+     "model.layers.25.self_attn.attn",
+     "model.layers.26.self_attn.attn",
+     "model.layers.27.self_attn.attn",
+     "model.layers.5.self_attn.attn",
+     "model.layers.6.self_attn.attn",
+     "model.layers.7.self_attn.attn",
+     "model.layers.8.self_attn.attn",
+     "model.layers.9.self_attn.attn"
+    ],
+    "calls_checked": 4,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 16,
+    "keys_recomputed": 56,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 16
+   },
+   "cap_rows": 4096,
+   "worst": 0.40505358576774597,
+   "worst_layers": [
+    [
+     "model.layers.2.self_attn.attn",
+     0.40505358576774597
+    ],
+    [
+     "model.layers.4.self_attn.attn",
+     0.32572290301322937
+    ],
+    [
+     "model.layers.3.self_attn.attn",
+     0.2703711688518524
+    ],
+    [
+     "model.layers.1.self_attn.attn",
+     0.20076456665992737
+    ],
+    [
+     "model.layers.0.self_attn.attn",
+     0.0
+    ]
+   ],
+   "steps": 4,
+   "marked_steps": 5
+  },
+  "identity": [
+   " to improve performance.\n\nThe sentence describes an ongoing process where engineers are testing and optimizing matrix multiplication operations across multiple graphics processing units (GPUs) to enhance their efficiency",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over a lazy",
+   " on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of",
+   " right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the essence of",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " work on a new generation of chips that will be able to do millions of calculations per second. The phrase \"check every matrix multiply\" is repeated twice, indicating",
+   " sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with engineers checking each matrix multiplication using thousands of graphics",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog\n\nThe text emphasizes that rigorous testing and verification, including extensive use of parallel processing technologies like GPUs, is crucial for ensuring accuracy",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with",
+   " numbers are right\n\nThe text is repetitive and does not provide any new information. It repeats \"the quick brown fox jumps over a lazy dog\" multiple times,",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " to make sure the numbers are right. The quick brown fox is an example of a common, easily recognizable animal that can be used as a reference point for describing",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across",
+   " numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix"
+  ],
+  "long": [
+   " The entries describe a sequence of operations involving signals, kernels, matrices, vectors, caches, blocks, tokens, layers, and values that are processed through a series of steps or iterations. Each entry represents an individual step in this process, with specific inputs (e.g., signal, kernel) being used to generate outputs (",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence. Each entry represents an operation that involves manipulating data through various components such as kernels, caches, blocks, and queries, using signals for control and direction",
+   " The entries describe a series of operations involving matrices, vectors, caches, blocks, tokens, layers, values, and queries on a system or device. Each entry represents a specific operation with its corresponding parameters and results.\n\nThis is an example of a problem that involves summarizing information from multiple sentences into a single concise statement.",
+   " The entries describe a sequence of operations involving matrices, vectors, and tokens that are used to process data through layers and signals within a neural network architecture. Each entry represents an operation or state transition in this processing flow.\n\nThis summary captures the essence of the provided information by highlighting the nature of the operations (matrix-vector operations),",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence.\n\nThis is an example of a numerical problem that involves summarizing information from a given text into a single sentence. It requires understanding the context provided by",
+   " The entries describe a series of operations involving blocks, tokens, layers, values, queries, signals, kernels, and matrices within a system or process. Each entry represents an individual operation with specific parameters such as block number, token value, layer index, value, query, signal, kernel, and matrix dimensions. These operations",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry corresponds to an operation or state change at a specific point in time, with each entry containing information about the current state of various components involved in the computation",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry represents an operation at a specific point in time, with details such as the layer number, value, query, signal, kernel, matrix, vector,"
+  ],
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.912,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3335.3,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 136.84,
+      "ttft_p99_ms": 157.02,
+      "itl_p50_ms": 3.77,
+      "itl_p99_ms": 6.31,
+      "latency_p50_ms": 621.92,
+      "latency_p99_ms": 681.53
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.075,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4020.5,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 30.68,
+      "ttft_p99_ms": 36.75,
+      "itl_p50_ms": 3.74,
+      "itl_p99_ms": 6.24,
+      "latency_p50_ms": 508.22,
+      "latency_p99_ms": 519.23
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.037,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4058.9,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 25.99,
+      "ttft_p99_ms": 35.14,
+      "itl_p50_ms": 3.73,
+      "itl_p99_ms": 6.34,
+      "latency_p50_ms": 503.55,
+      "latency_p99_ms": 512.9
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 4020.5,
+     "ttft_p50_ms": 30.68,
+     "ttft_p99_ms": 36.75,
+     "itl_p50_ms": 3.74,
+     "itl_p99_ms": 6.31,
+     "latency_p50_ms": 508.22,
+     "latency_p99_ms": 519.23
+    },
+    "complete": true,
+    "created": "2026-10-25T02:24:38Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.893,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 18344.9,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 130.71,
+      "ttft_p99_ms": 225.09,
+      "itl_p50_ms": 5.14,
+      "itl_p99_ms": 11.02,
+      "latency_p50_ms": 822.39,
+      "latency_p99_ms": 845.3
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.934,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17542.4,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 130.44,
+      "ttft_p99_ms": 277.12,
+      "itl_p50_ms": 5.23,
+      "itl_p99_ms": 11.13,
+      "latency_p50_ms": 830.67,
+      "latency_p99_ms": 884.25
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.94,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17425.7,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 137.74,
+      "ttft_p99_ms": 282.15,
+      "itl_p50_ms": 5.37,
+      "itl_p99_ms": 10.42,
+      "latency_p50_ms": 828.86,
+      "latency_p99_ms": 889.53
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 17542.4,
+     "ttft_p50_ms": 130.71,
+     "ttft_p99_ms": 277.12,
+     "itl_p50_ms": 5.23,
+     "itl_p99_ms": 11.02,
+     "latency_p50_ms": 828.86,
+     "latency_p99_ms": 884.25
+    },
+    "complete": true,
+    "created": "2026-10-25T02:24:45Z"
+   }
+  },
+  "clean_alerts": 0,
+  "attn_clean": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "FlashAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 8276,
+    "samples": 33104,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 11354047,
+    "bad_blocks": 0,
+    "writes_checked": 33104,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 536,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 28,
+    "never_checked": [],
+    "calls_checked": 8283,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 33104,
+    "keys_recomputed": 11354047,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 33104
+   },
+   "cap_rows": 4096,
+   "worst": 0.4153943955898285,
+   "worst_layers": [
+    [
+     "model.layers.8.self_attn.attn",
+     0.4153943955898285
+    ],
+    [
+     "model.layers.2.self_attn.attn",
+     0.40505358576774597
+    ],
+    [
+     "model.layers.6.self_attn.attn",
+     0.3975376486778259
+    ],
+    [
+     "model.layers.22.self_attn.attn",
+     0.3949820399284363
+    ],
+    [
+     "model.layers.4.self_attn.attn",
+     0.39065325260162354
+    ]
+   ],
+   "steps": 8283,
+   "marked_steps": 8477
+  },
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.6,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "noattn": {
+  "backend": "FLASH_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "speed": {
+   "16": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 16,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 4.89,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 3350.4,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 98.07,
+      "ttft_p99_ms": 159.35,
+      "itl_p50_ms": 3.62,
+      "itl_p99_ms": 6.82,
+      "latency_p50_ms": 610.78,
+      "latency_p99_ms": 695.49
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 3.964,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4132.8,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 31.04,
+      "ttft_p99_ms": 42.26,
+      "itl_p50_ms": 3.6,
+      "itl_p99_ms": 6.39,
+      "latency_p50_ms": 494.93,
+      "latency_p99_ms": 503.11
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 3.897,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 4204.1,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 30.52,
+      "ttft_p99_ms": 38.44,
+      "itl_p50_ms": 3.59,
+      "itl_p99_ms": 5.54,
+      "latency_p50_ms": 486.24,
+      "latency_p99_ms": 494.52
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 4132.8,
+     "ttft_p50_ms": 31.04,
+     "ttft_p99_ms": 42.26,
+     "itl_p50_ms": 3.6,
+     "itl_p99_ms": 6.39,
+     "latency_p50_ms": 494.93,
+     "latency_p99_ms": 503.11
+    },
+    "complete": true,
+    "created": "2026-10-25T02:26:11Z"
+   },
+   "256": {
+    "schema": "sdcguard.perf/1",
+    "url": "http://127.0.0.1:8000",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "server_version": "0.32.0",
+    "load": {
+     "prompts": 128,
+     "prompts_sha256": "db744900b4e53b65d300b853c2f43bbe92f0adaed6fcd579643ddc664986e064",
+     "concurrency": 256,
+     "max_tokens": 128,
+     "rounds": 3,
+     "warmup": 8
+    },
+    "rounds": [
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.941,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17416.1,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 141.6,
+      "ttft_p99_ms": 302.96,
+      "itl_p50_ms": 5.64,
+      "itl_p99_ms": 11.03,
+      "latency_p50_ms": 825.6,
+      "latency_p99_ms": 886.02
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.943,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17374.0,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 155.67,
+      "ttft_p99_ms": 315.8,
+      "itl_p50_ms": 5.72,
+      "itl_p99_ms": 10.46,
+      "latency_p50_ms": 820.84,
+      "latency_p99_ms": 890.53
+     },
+     {
+      "requests": 128,
+      "completed": 128,
+      "errors": 0,
+      "error_samples": [],
+      "seconds": 0.935,
+      "output_tokens": 16384,
+      "output_tokens_per_s": 17524.6,
+      "tokens_counted_by_server": true,
+      "ttft_p50_ms": 139.92,
+      "ttft_p99_ms": 312.31,
+      "itl_p50_ms": 5.62,
+      "itl_p99_ms": 10.31,
+      "latency_p50_ms": 809.25,
+      "latency_p99_ms": 885.9
+     }
+    ],
+    "median": {
+     "output_tokens_per_s": 17416.1,
+     "ttft_p50_ms": 141.6,
+     "ttft_p99_ms": 312.31,
+     "itl_p50_ms": 5.64,
+     "itl_p99_ms": 10.46,
+     "latency_p50_ms": 820.84,
+     "latency_p99_ms": 886.02
+    },
+    "complete": true,
+    "created": "2026-10-25T02:26:17Z"
+   }
+  },
+  "clean_alerts": 0,
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.7,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "eager": {
+  "backend": "FLASH_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "attn_at_start": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "FlashAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 0,
+    "samples": 0,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 0,
+    "bad_blocks": 0,
+    "writes_checked": 0,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 0,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 0,
+    "never_checked": [
+     "model.layers.0.self_attn.attn",
+     "model.layers.1.self_attn.attn",
+     "model.layers.10.self_attn.attn",
+     "model.layers.11.self_attn.attn",
+     "model.layers.12.self_attn.attn",
+     "model.layers.13.self_attn.attn",
+     "model.layers.14.self_attn.attn",
+     "model.layers.15.self_attn.attn",
+     "model.layers.16.self_attn.attn",
+     "model.layers.17.self_attn.attn",
+     "model.layers.18.self_attn.attn",
+     "model.layers.19.self_attn.attn",
+     "model.layers.2.self_attn.attn",
+     "model.layers.20.self_attn.attn",
+     "model.layers.21.self_attn.attn",
+     "model.layers.22.self_attn.attn",
+     "model.layers.23.self_attn.attn",
+     "model.layers.24.self_attn.attn",
+     "model.layers.25.self_attn.attn",
+     "model.layers.26.self_attn.attn",
+     "model.layers.27.self_attn.attn",
+     "model.layers.3.self_attn.attn",
+     "model.layers.4.self_attn.attn",
+     "model.layers.5.self_attn.attn",
+     "model.layers.6.self_attn.attn",
+     "model.layers.7.self_attn.attn",
+     "model.layers.8.self_attn.attn",
+     "model.layers.9.self_attn.attn"
+    ],
+    "calls_checked": 0,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 0,
+    "keys_recomputed": 0,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 0
+   },
+   "cap_rows": 4096,
+   "worst": null,
+   "worst_layers": [],
+   "steps": 0,
+   "marked_steps": 0
+  },
+  "clean_alerts": 0,
+  "attn_clean": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "FlashAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 1,
+    "samples": 4,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 100,
+    "bad_blocks": 0,
+    "writes_checked": 4,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 2,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 8,
+    "never_checked": [
+     "model.layers.0.self_attn.attn",
+     "model.layers.10.self_attn.attn",
+     "model.layers.11.self_attn.attn",
+     "model.layers.12.self_attn.attn",
+     "model.layers.13.self_attn.attn",
+     "model.layers.14.self_attn.attn",
+     "model.layers.15.self_attn.attn",
+     "model.layers.16.self_attn.attn",
+     "model.layers.17.self_attn.attn",
+     "model.layers.18.self_attn.attn",
+     "model.layers.19.self_attn.attn",
+     "model.layers.20.self_attn.attn",
+     "model.layers.21.self_attn.attn",
+     "model.layers.22.self_attn.attn",
+     "model.layers.23.self_attn.attn",
+     "model.layers.24.self_attn.attn",
+     "model.layers.25.self_attn.attn",
+     "model.layers.26.self_attn.attn",
+     "model.layers.27.self_attn.attn",
+     "model.layers.9.self_attn.attn"
+    ],
+    "calls_checked": 8,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 4,
+    "keys_recomputed": 100,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 4
+   },
+   "cap_rows": 4096,
+   "worst": 0.23060913383960724,
+   "worst_layers": [
+    [
+     "model.layers.1.self_attn.attn",
+     0.23060913383960724
+    ],
+    [
+     "model.layers.0.self_attn.attn",
+     0.0
+    ],
+    [
+     "model.layers.2.self_attn.attn",
+     0.0
+    ],
+    [
+     "model.layers.3.self_attn.attn",
+     0.0
+    ],
+    [
+     "model.layers.4.self_attn.attn",
+     0.0
+    ]
+   ],
+   "steps": 8,
+   "marked_steps": 10
+  },
+  "faults": [
+   {
+    "layer": "model.layers.4.self_attn.attn",
+    "mode": "value",
+    "mark": "model.layers.4.self_attn.attn",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "findings": [
+     "output_wrong_or_misread"
+    ],
+    "verdicts": [
+     "output_wrong"
+    ],
+    "where": [
+     [
+      7,
+      5,
+      null,
+      null
+     ],
+     [
+      2,
+      5,
+      null,
+      null
+     ]
+    ],
+    "alerts_other_layers": 0,
+    "other_layers": []
+   },
+   {
+    "layer": "model.layers.13.self_attn.attn",
+    "mode": "head",
+    "mark": "model.layers.13.self_attn.attn",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "findings": [
+     "output_wrong_or_misread"
+    ],
+    "verdicts": [
+     "output_wrong"
+    ],
+    "where": [
+     [
+      1,
+      28,
+      null,
+      null
+     ]
+    ],
+    "alerts_other_layers": 0,
+    "other_layers": []
+   },
+   {
+    "layer": "model.layers.22.self_attn.attn",
+    "mode": "other",
+    "mark": "model.layers.22.self_attn.attn",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 2,
+    "findings": [
+     "output_wrong_or_misread"
+    ],
+    "verdicts": [
+     "output_wrong"
+    ],
+    "where": [
+     [
+      2,
+      78,
+      null,
+      null
+     ]
+    ],
+    "alerts_other_layers": 0,
+    "other_layers": []
+   },
+   {
+    "layer": "model.layers.3.self_attn.attn",
+    "mode": "kv",
+    "mark": "model.layers.3.self_attn.attn",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "findings": [
+     "kv_write_wrong"
+    ],
+    "verdicts": [],
+    "where": [
+     [
+      null,
+      null,
+      9,
+      "key"
+     ]
+    ],
+    "alerts_other_layers": 0,
+    "other_layers": []
+   },
+   {
+    "layer": "model.layers.12.self_attn.attn",
+    "mode": "short",
+    "mark": "model.layers.12.self_attn.attn",
+    "unmark": "1",
+    "detected": true,
+    "rounds_to_detect": 1,
+    "findings": [
+     "output_wrong_or_misread"
+    ],
+    "verdicts": [
+     "output_wrong"
+    ],
+    "where": [
+     [
+      7,
+      25,
+      null,
+      null
+     ]
+    ],
+    "alerts_other_layers": 0,
+    "other_layers": []
+   }
+  ],
+  "alerts_total": 8,
+  "stop": {
+   "exited_in_s": 0.5,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "tplain": {
+  "backend": "TRITON_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "identity": [
+   " to improve performance.\n\nThe sentence is describing a scenario where an engineer is testing and optimizing matrix multiplication algorithms using multiple graphics processing units (GPUs). The quick brown",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over a lazy",
+   " on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of",
+   " right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the essence of",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " work on the code. The summary is that multiple GPUs are used for parallel processing and testing, with a focus on ensuring accuracy through rigorous checks. This approach allows",
+   " sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with engineers checking each matrix multiplication using thousands of graphics",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog\n\nThe text emphasizes that rigorous testing, including extensive use of graphics processing units (GPUs), is crucial for ensuring accuracy in",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with",
+   " numbers are right. The summary is that engineers use multiple graphics processors to ensure accuracy in matrix multiplication calculations. \n\nThis sentence repeats \"the quick brown fox jumps over",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " to make sure the numbers are right. The quick brown fox jumps over a lazy dog as engineers meticulously verify each matrix multiplication across hundreds of graphics processing units to ensure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across",
+   " numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix"
+  ],
+  "long": [
+   " The entries describe a sequence of operations involving signals, kernels, matrices, vectors, caches, blocks, tokens, layers, and values that are processed through a series of steps or iterations. Each entry represents an individual step in this process, with specific inputs (e.g., signal, kernel) being used to generate outputs (",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence. Each entry represents an operation that involves manipulating data through various components such as kernels, caches, blocks, and queries, using signals for control and input",
+   " The entries describe a series of operations involving matrices, vectors, caches, blocks, tokens, layers, values, and queries on a system or device. Each entry represents a specific operation with its corresponding parameters and results.\n\nThe entries provide detailed information about various operations performed by a system or device, including matrices, vectors, caches",
+   " The entries describe a sequence of operations involving matrices, vectors, and tokens that are used to perform calculations or transformations on data. Each entry represents an operation with specific inputs (e.g., \"vector 0\") and outputs (e.g., \"cache 13\"), indicating the state of various components after each step.",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on their position in the sequence.\n\nThis is an example of what I am looking for:\n\nThe following are examples of sentences that have been generated from the given text:\n- \"The",
+   " The entries describe a series of operations involving blocks, tokens, layers, values, queries, signals, kernels, and matrices within a system or process. Each entry represents an individual operation with specific parameters such as block number, token value, layer index, value, query, signal, kernel, and matrix dimensions. These operations",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry corresponds to an operation or state change at a specific point in time, with each entry containing information about the current state of various components such as tokens,",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry represents an operation at a specific point in time, with details such as the layer number, value, query, signal, kernel, matrix, vector,"
+  ],
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.6,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "tguarded": {
+  "backend": "TRITON_ATTN",
+  "ready": true,
+  "reductions": {
+   "bf16": false,
+   "fp16": false
+  },
+  "attn_at_start": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "TritonAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 4,
+    "samples": 16,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 56,
+    "bad_blocks": 0,
+    "writes_checked": 16,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 5,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 4,
+    "never_checked": [
+     "model.layers.0.self_attn.attn",
+     "model.layers.10.self_attn.attn",
+     "model.layers.11.self_attn.attn",
+     "model.layers.12.self_attn.attn",
+     "model.layers.13.self_attn.attn",
+     "model.layers.14.self_attn.attn",
+     "model.layers.15.self_attn.attn",
+     "model.layers.16.self_attn.attn",
+     "model.layers.17.self_attn.attn",
+     "model.layers.18.self_attn.attn",
+     "model.layers.19.self_attn.attn",
+     "model.layers.20.self_attn.attn",
+     "model.layers.21.self_attn.attn",
+     "model.layers.22.self_attn.attn",
+     "model.layers.23.self_attn.attn",
+     "model.layers.24.self_attn.attn",
+     "model.layers.25.self_attn.attn",
+     "model.layers.26.self_attn.attn",
+     "model.layers.27.self_attn.attn",
+     "model.layers.5.self_attn.attn",
+     "model.layers.6.self_attn.attn",
+     "model.layers.7.self_attn.attn",
+     "model.layers.8.self_attn.attn",
+     "model.layers.9.self_attn.attn"
+    ],
+    "calls_checked": 4,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 16,
+    "keys_recomputed": 56,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 16
+   },
+   "cap_rows": 4096,
+   "worst": 0.369230180978775,
+   "worst_layers": [
+    [
+     "model.layers.4.self_attn.attn",
+     0.369230180978775
+    ],
+    [
+     "model.layers.3.self_attn.attn",
+     0.3521914780139923
+    ],
+    [
+     "model.layers.2.self_attn.attn",
+     0.30167293548583984
+    ],
+    [
+     "model.layers.1.self_attn.attn",
+     0.26136744022369385
+    ],
+    [
+     "model.layers.0.self_attn.attn",
+     0.0
+    ]
+   ],
+   "steps": 4,
+   "marked_steps": 5
+  },
+  "identity": [
+   " to improve performance.\n\nThe sentence is describing a scenario where an engineer is testing and optimizing matrix multiplication algorithms using multiple graphics processing units (GPUs). The quick brown",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over a lazy",
+   " on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of",
+   " right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the essence of",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " work on the code. The summary is that multiple GPUs are used for parallel processing and testing, with a focus on ensuring accuracy through rigorous checks. This approach allows",
+   " sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with engineers checking each matrix multiplication using thousands of graphics",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog\n\nThe text emphasizes that rigorous testing, including extensive use of graphics processing units (GPUs), is crucial for ensuring accuracy in",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog, with",
+   " numbers are right. The summary is that engineers use multiple graphics processors to ensure accuracy in matrix multiplication calculations. \n\nThis sentence repeats \"the quick brown fox jumps over",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix",
+   " to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " to make sure the numbers are right. The quick brown fox jumps over a lazy dog as engineers meticulously verify each matrix multiplication across hundreds of graphics processing units to ensure",
+   " jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog",
+   " on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors",
+   " right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox",
+   " engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply",
+   " make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are",
+   " over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while",
+   " thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to",
+   " the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The summary is as follows:\n\nThe quick brown fox jumps over a lazy dog",
+   " sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right",
+   " a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers",
+   " of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make",
+   " quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over",
+   " every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands",
+   " the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the",
+   " lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check",
+   " graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of",
+   " brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right. The quick brown fox jumps over",
+   " matrix multiply on thousands of graphics processors to make sure the numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across",
+   " numbers are right\n\nThe quick brown fox jumps over a lazy dog as engineers meticulously verify matrix multiplies across thousands of graphics processors for accuracy. The summary captures the",
+   " dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every",
+   " processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the",
+   " fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy",
+   " multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics",
+   " are right the quick brown fox jumps over a lazy dog while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown",
+   " while engineers check every matrix multiply on thousands of graphics processors to make sure the numbers are right the quick brown fox jumps over a lazy dog while engineers check every matrix"
+  ],
+  "long": [
+   " The entries describe a sequence of operations involving signals, kernels, matrices, vectors, caches, blocks, tokens, layers, and values that are processed through a series of steps or iterations. Each entry represents an individual step in this process, with specific inputs (e.g., signal, kernel) being used to generate outputs (",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on its position in the sequence. Each entry represents an operation that involves manipulating data through various components such as kernels, caches, blocks, and queries, using signals for control and input",
+   " The entries describe a series of operations involving matrices, vectors, caches, blocks, tokens, layers, values, and queries on a system or device. Each entry represents a specific operation with its corresponding parameters and results.\n\nThe entries provide detailed information about various operations performed by a system or device, including matrices, vectors, caches",
+   " The entries describe a sequence of operations involving matrices, vectors, and tokens that are used to perform calculations or transformations on data. Each entry represents an operation with specific inputs (e.g., \"vector 0\") and outputs (e.g., \"cache 13\"), indicating the state of various components after each step.",
+   " The entries describe a series of operations involving matrices, vectors, and tokens within a system or process, with specific values assigned to each entry based on their position in the sequence.\n\nThis is an example of what I am looking for:\n\nThe following are examples of sentences that have been generated from the given text:\n- \"The",
+   " The entries describe a series of operations involving blocks, tokens, layers, values, queries, signals, kernels, and matrices within a system or process. Each entry represents an individual operation with specific parameters such as block number, token value, layer index, value, query, signal, kernel, and matrix dimensions. These operations",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry corresponds to an operation or state change at a specific point in time, with each entry containing information about the current state of various components such as tokens,",
+   " The entries describe a sequence of operations involving layers, values, queries, signals, kernels, matrices, vectors, caches, and blocks within a neural network architecture. Each entry represents an operation at a specific point in time, with details such as the layer number, value, query, signal, kernel, matrix, vector,"
+  ],
+  "clean_alerts": 0,
+  "attn_clean": {
+   "layers": 28,
+   "names": [
+    "model.layers.0.self_attn.attn",
+    "model.layers.1.self_attn.attn",
+    "model.layers.2.self_attn.attn",
+    "model.layers.3.self_attn.attn",
+    "model.layers.4.self_attn.attn",
+    "model.layers.5.self_attn.attn",
+    "model.layers.6.self_attn.attn",
+    "model.layers.7.self_attn.attn",
+    "model.layers.8.self_attn.attn",
+    "model.layers.9.self_attn.attn",
+    "model.layers.10.self_attn.attn",
+    "model.layers.11.self_attn.attn",
+    "model.layers.12.self_attn.attn",
+    "model.layers.13.self_attn.attn",
+    "model.layers.14.self_attn.attn",
+    "model.layers.15.self_attn.attn",
+    "model.layers.16.self_attn.attn",
+    "model.layers.17.self_attn.attn",
+    "model.layers.18.self_attn.attn",
+    "model.layers.19.self_attn.attn",
+    "model.layers.20.self_attn.attn",
+    "model.layers.21.self_attn.attn",
+    "model.layers.22.self_attn.attn",
+    "model.layers.23.self_attn.attn",
+    "model.layers.24.self_attn.attn",
+    "model.layers.25.self_attn.attn",
+    "model.layers.26.self_attn.attn",
+    "model.layers.27.self_attn.attn"
+   ],
+   "line": 4.0,
+   "backends": [
+    "TritonAttentionImpl"
+   ],
+   "kernel": {
+    "cuda:0 bfloat16": [
+     true,
+     ""
+    ]
+   },
+   "not_checked": {},
+   "calls_not_checked": {},
+   "stats": {
+    "layers": 28,
+    "calls_checked": 2565,
+    "samples": 10260,
+    "skipped": 0,
+    "unjudged": 0,
+    "keys": 6762938,
+    "bad_blocks": 0,
+    "writes_checked": 10260,
+    "writes_wrong": 0,
+    "slots_wrong": 0,
+    "alerts": 0,
+    "reads": 176,
+    "torch_calls": 0,
+    "graph_calls_skipped": 0
+   },
+   "coverage": {
+    "layers": 28,
+    "layers_checked": 28,
+    "never_checked": [],
+    "calls_checked": 2572,
+    "samples_per_call": 4,
+    "one_layer_a_step": true,
+    "kernel": {
+     "cuda:0 bfloat16": [
+      true,
+      ""
+     ]
+    },
+    "not_attached": {},
+    "calls_not_checked": {},
+    "samples": 10260,
+    "keys_recomputed": 6762938,
+    "samples_without_a_token": 0,
+    "samples_not_judged": 0,
+    "writes_checked": 10260
+   },
+   "cap_rows": 4096,
+   "worst": 0.3824385106563568,
+   "worst_layers": [
+    [
+     "model.layers.8.self_attn.attn",
+     0.3824385106563568
+    ],
+    [
+     "model.layers.6.self_attn.attn",
+     0.37237924337387085
+    ],
+    [
+     "model.layers.4.self_attn.attn",
+     0.369230180978775
+    ],
+    [
+     "model.layers.2.self_attn.attn",
+     0.3621978163719177
+    ],
+    [
+     "model.layers.19.self_attn.attn",
+     0.3577679991722107
+    ]
+   ],
+   "steps": 2572,
+   "marked_steps": 2719
+  },
+  "alerts_total": 0,
+  "stop": {
+   "exited_in_s": 0.6,
+   "killed": false,
+   "code": 0
+  }
+ },
+ "passed": true,
+ "failures": [],
+ "summary": {
+  "cost": {
+   "16": {
+    "attn_on": 4020.5,
+    "attn_off": 4132.8,
+    "attn_cost": 0.0272
+   },
+   "256": {
+    "attn_on": 17542.4,
+    "attn_off": 17416.1,
+    "attn_cost": -0.0073
+   }
+  },
+  "clean": {
+   "guarded": {
+    "worst": 0.4153943955898285,
+    "calls": 8276,
+    "steps": 8283,
+    "samples": 33104,
+    "keys": 11354047,
+    "writes": 33104
+   },
+   "eager": {
+    "worst": 0.23060913383960724,
+    "calls": 1,
+    "steps": 8,
+    "samples": 4,
+    "keys": 100,
+    "writes": 4
+   },
+   "tguarded": {
+    "worst": 0.3824385106563568,
+    "calls": 2565,
+    "steps": 2572,
+    "samples": 10260,
+    "keys": 6762938,
+    "writes": 10260
+   }
+  },
+  "faults": [
+   [
+    "value",
+    "model.layers.4.self_attn.attn",
+    true,
+    2,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "head",
+    "model.layers.13.self_attn.attn",
+    true,
+    1,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "other",
+    "model.layers.22.self_attn.attn",
+    true,
+    2,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ],
+   [
+    "kv",
+    "model.layers.3.self_attn.attn",
+    true,
+    1,
+    [
+     "kv_write_wrong"
+    ],
+    []
+   ],
+   [
+    "short",
+    "model.layers.12.self_attn.attn",
+    true,
+    1,
+    [
+     "output_wrong_or_misread"
+    ],
+    [
+     "output_wrong"
+    ]
+   ]
+  ],
+  "on_by_default": true
+ }
+}

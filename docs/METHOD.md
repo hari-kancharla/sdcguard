@@ -1660,14 +1660,14 @@ Not claimed whatever the outcome: anything about other models, GPUs or MPS share
 Result (October 24, on 54c3a69, an H200 with cuBLAS 13.1.1 and driver 610.57.04): CAUGHT. The run hit its 85-minute
 limit in the pin step (criterion 5, reported only: it pinned the 215 flagged shapes one process at a time) before it
 wrote SUMMARY.json, so criteria 1 to 4 were judged afterwards from the files it had saved, by the experiment's own
-judge (`judge`, unchanged), and nothing from criterion 5 on is reported. Both servers served under
+judge (`judge`, unchanged), and criterion 5 isn't reported. Both servers served under
 SDCGUARD_REQUIRE=1 (1). No alert at 100% (2). At 40%, 419 inventoried calls ran algorithm 66 with 4 or more CTAs
 per cluster (345 at 100%, where the bug doesn't show), 14,707 alerts, and all 2,115 alerts with a captured row
 rechecked in float64 on the CPU as wrong (3). The replays of three alerts at their real shapes (qkv_proj 2048x1536,
 o_proj 1536x1536 and gate_up_proj 17920x1536, 1024 rows with CUDA-graph padding) were wrong in 20 of 20 runs at 40%
 and right in 20 of 20 at 100%, each on the kernel the server's inventory shows for that shape at 40% (4); the kept
-slice replayed alone was right in 20 of 20 for all three: the real shape is what reproduces it. Reported:
-`sdcguard kernels test` at 40% gave 214 WRONG and 9 PASSED among the calls it ran, at 100% 241 PASSED and none
+slice replayed alone was right in 20 of 20 for all three: the real shape is what reproduces it. Reported (criterion
+6): `sdcguard kernels test` at 40% gave 214 WRONG and 9 PASSED among the calls it ran, at 100% 241 PASSED and none
 WRONG. Not reported, because they weren't saved: the completions at 40% against 100%, the servers' speed, and the
 pinned server. Changed for any rerun: the verdict is written before the pin step, and the pin step pins the
 most-called shapes first within 15 minutes and lists the rest.
@@ -1812,9 +1812,9 @@ isn't one bit of one weight at a time), other models, or one layer in eight (a f
 caught there).
 
 Result (October 24, on 54c3a69): failed criterion 3, met 1, 2 and 4. The clean quality check was FAIL (mean KL 9e-6,
-top-1 agreement 90%): the server-reference bug written up under "Qualify on a real server". With it, every trial's
-quality check failed too, so "changed the answers" (79 of 80, bit 0 included) measures nothing here and isn't
-reported. What stands: no alert in the 64 clean requests and none on another layer in any trial; detected, by bit:
+top-1 agreement 90%): the server-reference bug written up under "Qualify on a real server". With the clean check
+failing, "changed the answers" (a trial's quality check WARN or FAIL: 79 of 80, bit 0 included) measures nothing
+here and isn't taken as a result. What stands: no alert in the 64 clean requests and none on another layer in any trial; detected, by bit:
 all 5 flips of bit 14 (the exponent's top bit: a typical weight becomes enormous), 1 of 5 each for bits 8, 9 and 10,
 and none for bits 0 to 7, 11 to 13 (in a typical weight these exponent bits are 1, so the flip shrinks it) and 15 (the
 sign). Rerun with the fix before anything about changed answers is said.
@@ -1885,6 +1885,44 @@ No pass line; what each outcome decides, written now:
   alert, the same answers as plain vLLM, injected faults caught).
 Not claimed whatever the outcome: other models, block-scaled FP8, GPUs other than the H100 and L4, kernels other
 than these.
+
+Results (October 24, on 03e27ba; `results/fp8mm_cal_oct24/`; the per-layer arrays stay on the Modal volume; about
+$0.18): 231 layers on the H100 (196 of the 1.5B, 35 of the 7B) and 196 on the L4.
+- The emulator, against vLLM's CUTLASS kernel, on 16 rows of each layer (the first 16 of its 256 sampled rows: tokens
+  of the short prompts, apart from 23 of the 3,696 rows on the H100 and 18 of the 3,136 on the L4, from the first long
+  document): bit for bit on 99.45% of outputs (activations scaled per token) and 98.27% (per tensor) for the 1.5B on
+  the H100, 98.89% and 97.33% for the 7B, 99.23% and 97.65% on the L4; within one bf16 step, 99.93%, 99.77%, 99.85%,
+  99.61%, 99.90% and 99.68%. The largest differences were about 29,000 to 30,000 bf16 steps. Steps are counted
+  through zero, so a difference that large means the two outputs had opposite signs, at least one of them within
+  about 0.002 of zero; how far apart they were in value wasn't recorded. All are below 99.99%, so by the rule written
+  before the run the model is wrong in some detail on both GPUs, and the check would use a fitted tolerance.
+- What the data is. About 90% of the tokens, so of the sampled blocks (90.2% on the H100, 90.7% on the L4), come
+  from the 4 long documents, and those are one paragraph's 42 words shuffled and repeated 40 times
+  (`fp8mm_calibration.long_docs`). The 64 short prompts are the other 10%.
+- The fit (`experiments/fp8mm_fit.py`, `FIT.json`). The rule written before the run names a 52/16 split and asks
+  for a tolerance as small as the clean data allow; the rest was decided after the run. The 16 held-out prompts are
+  drawn with a fixed seed (0), independent of the data: 14 short prompts and two of the long documents (65 and 66;
+  64 and 67 are in training). So the held-out blocks (47.5% of all on the H100, 47.7% on the L4) are 95% long
+  document and the training blocks 86%: the held-out test is mostly the same kind of text again. "As small as the
+  data allow" was read as: for each beta on a grid (0 and 41 values from 1e-5 to 1), the smallest alpha keeping
+  every training score at most 3, and of those pairs the one with the smallest median allowance. No block had a value
+  that wasn't finite or a bf16 noise of 0 (S, A and B are kept in float16). For CUTLASS: alpha 3.9 and beta 0.0056 on
+  the H100 (per token; 3.8 and 0.0056 per tensor), alpha 4.3 and beta 0 on the L4 (4.2 per tensor). The largest
+  held-out clean score was 2.53 and 2.22 on the H100, 2.04 and 2.14 on the L4: at most 3, as asked. The short prompts
+  set the fit (the training worst of 3 was on them), and on the 14 held-out short prompts alone the worst was 1.90
+  and 2.01 on the H100, 1.60 and 2.01 on the L4. For `torch._scaled_mm` without fast accumulation (the comparison
+  kernel, which vLLM doesn't run for these layers) the fit missed its target: held-out worst 3.02 to 3.13, all on the
+  long documents (2.53 to 2.72 on the short prompts).
+- What the tolerance allows, in units of a block's own bf16 noise: 12.5 for the median block on the H100 and 10.7 on
+  the L4 (99th percentile 77 and 30). By layer, about 8 to 13 for most of the 1.5B's layers, 41 for its down
+  projections on the H100 (K = 8960; 27 on the L4), about 17 to 21 for most of the 7B's and 78 for its down
+  projections (K = 18944). The alarm line sits at 6 times those (about 50 to 80 times the bf16 noise for most of the
+  1.5B's layers, 100 to 130 for most of the 7B's). A clean block can score up to 3 by itself, so an error in a
+  block's sum is caught whatever the clean part only above about 9 times (from the per-layer allowances, about 70 to
+  120 times the bf16 noise for most of the 1.5B's layers and 150 to 190 for most of the 7B's; for the median block of
+  each GPU's run (both models on the H100, the 1.5B alone on the L4), `caught_for_sure_in_bf16_noise_units_median`
+  in FIT.json: 113 on the H100 and 96 on the L4, per-token scaling); one between about 3 and 9 times may or may not be. That is far less than the bf16 check catches.
+Not built. As written, no FP8 matmul check is called working until a run on a real server meets criteria of its own.
 
 ### Norm checks in serving (written October 24, before any run)
 
@@ -2197,7 +2235,9 @@ tensors (queries, outputs, KV cache, query_start_loc, seq_lens, block table, slo
 replay, is read at replay (the replay leaves the state an eager call on that batch leaves), and a step outside a
 model step, or another layer's turn, counts nothing.
 
-First run (October 24, on 582f91c, one L4, about $0.05): did not pass. 57 tests passed, 6 failed, 1 skipped. Every
+First run (October 24, on 582f91c, one L4, about $0.05): did not pass. 57 tests passed, 6 failed, 1 skipped, and 1
+error: the compiled-model test of `tests/test_serve.py` that failed (failure 3 below) left its guard holding the
+cuBLAS setting, which the suite's teardown check reports. Every
 capture and replay that reached its check passed: the FP8, norm and attention checks (PyTorch and Triton), the routing
 and linear checks' PyTorch versions, and the fake-tensor test. The failures were outside the graphs: (1) the MoE tests
 never reached the check, because the test's stand-in for vLLM's MoE kernel built its output on the CPU (a bug in the
@@ -2220,6 +2260,11 @@ the compiled-model test (both variants) ran and then skipped at its replay check
 graph replay hook, so it can't prove its replays there (it isn't in G5's files). After this run
 the kernels changed how tied scores update their state (every program at the top score updates, so the state no
 longer depends on the order programs run in), so the next bundle runs this phase again first.
+
+Third run (October 24, on 03e27ba, the tied-score change included, one L4, about $0.09): passed, with the same 62
+tests passing and the same 2 skips (never among the required tests; the runner now lists them in its STATUS.json as
+skipped_other rather than leaving them out). The three runs are in `results/graphs_oct24/`, in the order they ran:
+`graphs_before_20261025_002436` (582f91c, failed), `graphs_before_20261025_021449` (fbfbdaf) and `graphs` (03e27ba).
 
 ### Attention checks in serving (written October 24, before any run)
 
@@ -2312,6 +2357,51 @@ default could answer differently for a reason that has nothing to do with the ch
 themselves change no answer. Whether the plugin's setting changes answers against default vLLM on an L4 isn't tested
 here (on H100s earlier runs found no change: N2, M2).
 
+Results (October 24, on 03e27ba; `results/attn_oct24/`; about $1.30 by the runner's estimate): every criterion met, on
+the H100 and on the L4.
+- A1: every server started. guarded, eager and tguarded on the H100, and guarded on the L4, registered all 28
+  attention layers with the Triton kernels (which passed their first-use comparison on each GPU), on the backend asked
+  for (FlashAttentionImpl; TritonAttentionImpl for tguarded). The compiled servers checked all 28 in their clean load;
+  eager, which ran 8 clean steps before its trials (one layer a step), ran the check on 8 of them there, one call of
+  which was read back before the trials began.
+- A2: the 64 completions and the 8 long ones were identical between plain and guarded on both GPUs, and between
+  tplain and tguarded; every server, plain ones included, reported cuBLAS partial sums kept in fp32 (the amendment
+  above), so this compares answers with the checks and without them at the same cuBLAS setting, not with vLLM's
+  default setting.
+- A3: no alert on any server without a fault. Worst clean scores: 0.42 (guarded, H100), 0.38 (tguarded), 0.40
+  (guarded, L4), against the bound of 1, and 0.23 on eager, from the one clean call (4 samples) read back there. No
+  wrong write, write to another slot, block id outside the cache or sample not judged, and no call left unchecked for
+  a reason (none listed as not checked).
+- A4: the "value", "head", "other" and "kv" faults were each caught by an alert naming their layer with the matching
+  finding within 2 rounds (the "short" fault too, in 1), and no alert named another layer.
+- A5: the alerts of the "value", "head" and "other" trials (and "short") were rechecked in float64 as output_wrong.
+- A6: calls checked were 8,276 of 8,283 model steps with tokens (guarded, H100), 2,565 of 2,572 (tguarded) and
+  8,184 of 8,191 (guarded, L4): the check ran on the steps vLLM replayed as whole CUDA graphs (decode) as well as on
+  those it runs with attention outside the graphs (prefill and mixed steps). The 7 missing each time are
+  calls the GPU had counted but not yet handed back to be judged when the stats were read (the coverage report,
+  which adds those, has exactly one call a step).
+Reported: at 16 requests at once the attention check cost 2.72% of the throughput of a server already checking every
+linear layer (noattn: the same plugin with SDCGUARD_ATTN=0), median against median of three rounds: 4,020.5 output
+tokens per second with it, 4,132.8 without. Round by round it was 0.45%, 2.72% and 3.45%, so the result sits near
+the 3% line. That baseline was itself 32% slower than plain vLLM (6,051.5, the plain server run with the plugin's
+cuBLAS setting, as for A2). The time the attention check added, about 6.8 microseconds of the server's time per
+output token, would be about 4.1% of that plain server's (165), so on a lighter setup of this model (one linear layer
+in eight, say) its share is likely above 3%. That wasn't measured, nor other models (a larger one takes longer per
+token, so the same added time would be a smaller share), nor any cost on the L4 (no noattn server there). At 256 at
+once, -0.73% (within the noise). The rule written before the run: if the check passes and "costs at most 3% at 16 at
+once" (with and without attention checks), it becomes on by default;
+the runner written with it, before the run (`experiments/vllm_attn_check.py`, COST_LIMIT), compares the medians. By
+that rule the attention check is on by default from this commit; SDCGUARD_ATTN=0 turns it off. Not claimed, as
+written: other models or backends, FP8 KV caches, sliding windows, attention sinks, soft caps, small errors, and the
+KV cache's state beyond the sampled tokens' own writes.
+
+Amendment (October 25, after this run): with attention checks on by default, every other runner that starts servers
+with the plugin (`vllm_check.py`, `vllm_serve_check.py`, `vllm_moe_check.py`, `vllm_norm_check.py`,
+`vllm_ready_attrib_check.py`, `vllm_qualify_check.py`, `vllm_change_decisions.py`, `vllm_live_catch.py`,
+`vllm_sensitivity.py`, `machete_diag.py`, `demo_vllm.py` and the gate output check in `scripts/modal_vllm.py`) sets
+SDCGUARD_ATTN=0, and `sdcguard qualify` keeps attention checks off unless asked (`--env SDCGUARD_ATTN=1`). Their
+criteria and results were written without attention checks, so a rerun of any of them runs what it describes.
+
 ### Exact operator tests for screening GPUs (written October 24, before any run)
 
 `sdcguard screen` runs a checked transformer, but checks bf16 and fp16 tensor-core matmuls only, within a noise model.
@@ -2347,6 +2437,13 @@ is about one in a thousand (Meta, July 2025), so these runs check the tests them
 GPUs, a wrong value always found); finding a defective GPU means screening many, which needs an account on a GPU
 marketplace (consumer cards on Vast.ai or Salad cost cents an hour, so many can be screened), with criteria of its
 own before it runs. Not claimed: that these tests find every defective GPU, or any particular fault rate.
+
+Results (October 24, on 03e27ba; `results/screen_ops_oct24/`; about $0.56): both criteria met on both GPUs.
+- S1: all eleven tests ran on the H100 and on the L4 (none skipped), and the clean runs found no wrong value:
+  336,550,952,960 values checked on the H100 in 3,660 rounds, 100,696,850,432 on the L4 in 1,098. Telemetry: no ECC
+  error before or after on either GPU; the L4 reported one memory row remapped at some earlier time after correctable
+  errors (none pending, no remap failure), which is how its memory handles those, not a fault these tests found.
+- S2: in each test, on each GPU, one value made wrong in software was found, the only one, where it was made wrong.
 
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 

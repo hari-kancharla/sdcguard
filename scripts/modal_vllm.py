@@ -290,7 +290,8 @@ OUTPUT_CHECKS = (
     ("same_batch4", [], {}, ["--vllm-arg", "max_num_seqs=4"]),
     ("triton_attention", [], {}, ["--vllm-arg", "attention_backend=TRITON_ATTN"]),
     ("awq", ["--model", "Qwen/Qwen2.5-1.5B-Instruct-AWQ"], {}, []),
-    ("rms_norm_eps_1", [], {"SDCGUARD": "1", "VLLM_ENABLE_V1_MULTIPROCESSING": "0", "SDCGUARD_POLL_EVERY": "1000000000"},
+    ("rms_norm_eps_1", [], {"SDCGUARD": "1", "SDCGUARD_ATTN": "0", "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
+                            "SDCGUARD_POLL_EVERY": "1000000000"},
      ["--vllm-arg", 'hf_overrides={"rms_norm_eps": 1.0}']),
 )
 

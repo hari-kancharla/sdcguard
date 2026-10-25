@@ -1,7 +1,8 @@
 """The vLLM plugin's attention check with stand-ins for vLLM's attention backends, layers and model runner
-(tests/_vllm_standins.py): the patch at register() with SDCGUARD_ATTN=1, registration right after load_model, layers
+(tests/_vllm_standins.py): the patch at register() (on unless SDCGUARD_ATTN=0), registration after load_model, layers
 the check doesn't take listed, one layer checked a step through the guard, a wrong attention kernel caught and named,
-a wrong KV write caught, a failing check turning its layer off without breaking serving, and the summary line."""
+a wrong KV write caught, a failing check turning its layer off without breaking serving, and the summary line, the
+stack and alerts saying where attention is checked (inside CUDA graphs only with its Triton kernels)."""
 import logging
 
 import torch
@@ -117,7 +118,7 @@ def test_a_failing_attention_check_turns_that_layer_off_without_breaking_serving
     assert sum("an attention check failed" in r.getMessage() for r in caplog.records) == 1
 
 
-def test_attention_is_off_unless_sdcguard_attn_is_1(monkeypatch, tmp_path):
+def test_sdcguard_attn_0_turns_attention_off(monkeypatch, tmp_path):
     vp, GM, impls = _setup(monkeypatch, tmp_path, SDCGUARD_ATTN="0")
     vp.register()
     assert vp._STATE["attn_classes"] == [] and not hasattr(impls["FlashAttentionImpl"], "_sdcguard_attn_orig")
@@ -125,6 +126,49 @@ def test_attention_is_off_unless_sdcguard_attn_is_1(monkeypatch, tmp_path):
     runner.load_model()
     runner.execute_model(attn_batches(4, 2, 64, 3, steps=1)[0])
     assert vp.guard() is None or vp.guard().attn is None
+
+
+def test_attention_is_checked_when_sdcguard_attn_is_unset(monkeypatch, tmp_path, caplog):
+    """On by default (its GPU run met its criteria, docs/METHOD.md): unset, the layers are registered and checked one
+    a step; SDCGUARD_ATTN=false or off turns it off too, and an unknown value keeps it on with a warning."""
+    import os
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.delenv("SDCGUARD_ATTN")
+    assert "SDCGUARD_ATTN" not in os.environ
+    vp.register()
+    assert vp._STATE["attn_classes"] == ["FlashAttentionImpl", "TritonAttentionImpl"]
+    runner = GM(_model(impls))
+    runner.load_model()
+    for b in attn_batches(4, 2, 64, 3, steps=4):
+        runner.execute_model(b)
+    assert vp.poll(wait=True) == [] and vp.guard().attn.stats["calls_checked"] == 4
+    assert "attention=outside_graphs" in vp._STATE["stack"]["checks"]         # on the CPU: no Triton kernels
+    for v, on in (("false", False), ("Off", False), ("no", False), ("1", True), ("yes", True)):
+        monkeypatch.setenv("SDCGUARD_ATTN", v)
+        assert vp._attn_on() is on, v
+    monkeypatch.setenv("SDCGUARD_ATTN", "maybe")
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):
+        assert vp._attn_on() is True
+    assert any("isn't 0 or 1" in r.getMessage() for r in caplog.records)
+
+
+def test_a_server_whose_attention_isnt_checkable_doesnt_say_it_is(monkeypatch, tmp_path):
+    """Backends patched but no layer registered (here: microbatching): the stack and the alerts say attention isn't
+    checked."""
+    import types
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(GM, "parallel_config", types.SimpleNamespace(ubatch_size=2), raising=False)
+    vp.register()
+    runner = GM(_model(impls))
+    runner.load_model()
+    assert vp._STATE["attn_classes"] and vp._STATE["attn"]["checked"] == 0
+    assert "attention=off" in vp._STATE["stack"]["checks"]
+    ev = types.SimpleNamespace(detector="serve", detail={})
+    vp._attribute(ev)
+    assert not any("sampled attention outputs" in u for u in ev.detail.get("unknown_impact", []))
+    r = {"checked": 0, "total": 0, "weight_share_checked": 0.0, "unchecked_by_method": {}, "quantized_or_moe": 0,
+         "never_checked": []}
+    assert "attention not checked on any of its 3 layers" in vp._summary(r)
 
 
 def test_the_summary_line_and_the_line_setting(monkeypatch, tmp_path):
@@ -138,7 +182,113 @@ def test_the_summary_line_and_the_line_setting(monkeypatch, tmp_path):
     r = {"checked": 0, "total": 0, "weight_share_checked": 0.0, "unchecked_by_method": {}, "quantized_or_moe": 0,
          "never_checked": []}
     msg = vp._summary(r)
-    assert "attention checked by a sampled recompute on 2 layers (SDCGUARD_ATTN=1), not on 1" in msg
+    assert "attention checked by a sampled recompute on 2 layers outside CUDA graphs only (its Triton kernels aren't " \
+           "in use: cpu bfloat16: the Triton kernels aren't available here) (SDCGUARD_ATTN=0 turns it off), not on 1" \
+           in msg
+
+
+_R = {"checked": 0, "total": 0, "weight_share_checked": 0.0, "unchecked_by_method": {}, "quantized_or_moe": 0,
+      "never_checked": []}
+
+
+def test_without_its_triton_kernels_attention_isnt_said_to_be_checked_inside_cuda_graphs(monkeypatch, tmp_path):
+    """The Triton kernels failed their first-use comparison (here: a CPU, where they aren't used): the PyTorch check
+    runs outside CUDA graphs only, so a compiled server's decode steps aren't checked, and the summary, the stack and
+    alerts say so."""
+    import types
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    vp.register()
+    runner = GM(_model(impls))
+    runner.load_model()
+    assert vp._attn_kernels() == (False, "cpu bfloat16: the Triton kernels aren't available here")
+    assert "attention=outside_graphs" in vp._STATE["stack"]["checks"]
+    assert "outside CUDA graphs only" in vp._summary(dict(_R))
+    ev = types.SimpleNamespace(detector="serve", detail={})
+    vp._attribute(ev)
+    u = " ".join(ev.detail["unknown_impact"])
+    assert "sampled attention outputs outside CUDA graphs and those tokens' KV writes" in u
+    assert "attention outputs not sampled or run inside CUDA graphs" in u
+
+
+def test_with_its_triton_kernels_attention_is_reported_on(monkeypatch, tmp_path):
+    import types
+    from sdcguard import serve_attn
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setitem(serve_attn.STATUS, (serve_attn._dev_key(torch.device("cpu")), torch.bfloat16), (True, ""))
+    monkeypatch.setattr(serve_attn.AttnChecks, "_precompile", lambda self, *a: None)
+    vp.register()
+    runner = GM(_model(impls))
+    runner.load_model()
+    assert vp._attn_kernels() == (True, "")
+    assert vp._STATE["stack"]["checks"].startswith("attention=on,")      # (the keys are sorted)
+    msg = vp._summary(dict(_R))
+    assert "attention checked by a sampled recompute on 2 layers (SDCGUARD_ATTN=0 turns it off)" in msg
+    ev = types.SimpleNamespace(detector="serve", detail={})
+    vp._attribute(ev)
+    assert "sampled attention outputs and those tokens' KV writes" in " ".join(ev.detail["unknown_impact"])
+
+
+def test_a_model_without_attention_layers_says_so(monkeypatch, tmp_path):
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    vp.register()
+    runner = GM(lambda: torch.nn.Sequential(torch.nn.Linear(4, 4)))
+    runner.load_model()
+    assert vp._STATE["attn"] == {"checked": 0, "not_checked": {}}
+    assert "attention not checked: no attention layers found in this model" in vp._summary(dict(_R))
+    assert "attention=off" in vp._STATE["stack"]["checks"]
+
+
+def test_a_model_that_cant_be_found_or_a_failed_registration_says_attention_isnt_checked(monkeypatch, tmp_path):
+    from sdcguard import serve
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    vp.register()
+    GM(lambda: None).load_model()
+    assert "attention not checked: the model to register its attention layers wasn't found" in vp._summary(dict(_R))
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+
+    def broken(self, line=None):
+        raise RuntimeError("no attention checks")
+    monkeypatch.setattr(serve.ServeGuard, "attn_checks", broken)
+    vp.register()
+    GM(_model(impls)).load_model()
+    assert "attention not checked: registering its layers failed (RuntimeError)" in vp._summary(dict(_R))
+    assert "attention=off" in vp._STATE["stack"]["checks"]
+
+
+def test_layers_registered_stay_reported_as_checked_when_reading_their_kernel_status_fails(monkeypatch, tmp_path):
+    from sdcguard import serve_attn
+
+    def broken(self):
+        raise RuntimeError("no status")
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(serve_attn.AttnChecks, "kernel_status", broken)
+    vp.register()
+    runner = GM(_model(impls))
+    runner.load_model()
+    for b in attn_batches(4, 2, 64, 3, steps=4):
+        runner.execute_model(b)
+    assert vp.poll(wait=True) == [] and vp.guard().attn.stats["calls_checked"] == 4
+    assert vp._STATE["attn"]["checked"] == 2 and not vp._STATE.get("attn_why")
+    msg = vp._summary(dict(_R))
+    assert "attention checked by a sampled recompute on 2 layers possibly outside CUDA graphs only (its kernel " \
+           "status couldn't be read (RuntimeError))" in msg
+    assert "attention=on_unknown_where" in vp._STATE["stack"]["checks"]
+    monkeypatch.setattr(serve_attn.AttnChecks, "kernel_status", lambda self: {})
+    assert vp._attn_kernels() == (None, "no kernel status")
+    assert "possibly outside CUDA graphs only (no kernel status)" in vp._summary(dict(_R))
+    import types
+    ev = types.SimpleNamespace(detector="serve", detail={})
+    vp._attribute(ev)
+    assert "sampled attention outputs (perhaps only outside CUDA graphs)" in " ".join(ev.detail["unknown_impact"])
+
+
+def test_a_vllm_without_either_attention_backend_says_attention_isnt_checked(monkeypatch, tmp_path):
+    vp, GM, impls = _setup(monkeypatch, tmp_path)
+    monkeypatch.setattr(vp, "_patch_attn", lambda: [])
+    vp.register()
+    assert vp._STATE["attn_classes"] == []
+    assert "attention not checked: neither of vLLM's FlashAttention and Triton attention backends was found" in \
+        vp._summary(dict(_R))
 
 
 def test_a_dummy_batch_is_not_a_model_step(monkeypatch, tmp_path):

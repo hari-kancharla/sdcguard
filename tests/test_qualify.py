@@ -47,6 +47,16 @@ def test_one_decision_per_candidate_with_its_reason(tmp_path, capsys):
     assert q["stack"]["gpu"] == "cpu" and q["verdict"]["verdict"] == "PASS"
 
 
+def test_servers_run_without_attention_checks_unless_asked(tmp_path):
+    """qualify's GPU run and the runs written on it came before the plugin's attention checks were on by default."""
+    show = [sys.executable, "-c", "import os; print('ATTN=' + os.environ.get('SDCGUARD_ATTN', 'unset'))"]
+    for name, extra, want in (("default", {}, "ATTN=0"), ("asked", {"SDCGUARD_ATTN": "1"}, "ATTN=1")):
+        s = qualify.Server(name, "m", str(tmp_path), _free(), _free(), True, "1", show, extra)
+        s.proc.wait(timeout=60)
+        s.log.close()
+        assert want in open(os.path.join(str(tmp_path), f"{name}_server.log")).read()
+
+
 def test_names_and_tensor_parallel_size_are_read_from_the_configuration():
     assert qualify._parse_config("awq=Qwen/Q --x 1", "c1") == ("awq", "Qwen/Q --x 1")
     assert qualify._parse_config("Qwen/Q --x=1", "c1") == ("c1", "Qwen/Q --x=1")
@@ -128,6 +138,7 @@ def test_a_required_speed_target_missed_reruns_the_same_load_and_only_that(tmp_p
     sh = open(path).read()
     assert "--concurrency 8 --max-tokens 64 --rounds 2" in sh and '"$HERE/perf_prompts.txt"' in sh
     assert "VLLM_X='a b'" in sh and "SDCGUARD_SHARE=1" in sh and "m --x --port $PORT" in sh
+    assert "SDCGUARD_ATTN=0" in sh                       # qualify keeps attention checks off unless asked
     assert "gate model-check" not in sh and "isolation --url" not in sh
     assert os.path.exists(os.path.join(d, "perf_prompts.txt")) and os.path.exists(os.path.join(d, "baseline_perf.json"))
     assert subprocess.run(["sh", "-n", path]).returncode == 0

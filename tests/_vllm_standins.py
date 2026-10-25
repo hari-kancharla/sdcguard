@@ -57,7 +57,7 @@ def plugin_env(monkeypatch, tmp_path, **extra):
                  ("rechecked", None), ("z", None), ("hooked", False), ("step_log", None), ("norm_classes", []),
                  ("norms_stale", False), ("norms_registered", False), ("moe_classes", []), ("moe_registered", False),
                  ("stack", None), ("fp8_classes", []), ("fp8_registered", False), ("route_classes", []),
-                 ("fp8", None), ("fp8_why", None), ("attn_classes", []), ("attn_registered", False), ("attn", None),
+                 ("fp8", None), ("fp8_why", None), ("attn_classes", []), ("attn_registered", False), ("attn", None), ("attn_why", None),
                  ("token_steps", 0), ("dummy_runs", 0), ("dummy_after", None), ("in_dummy", 0)):
         monkeypatch.setitem(vllm_plugin._STATE, k, v)
     return vllm_plugin

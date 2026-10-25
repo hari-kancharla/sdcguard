@@ -55,6 +55,8 @@ def server(role: str, out: str, port: int, metrics_port: int):
     for k in [k for k in env if k.startswith("SDCGUARD")]:
         del env[k]
     if role != "plain":
+        # attention checks have their own run (vllm_attn_check.py); this run's criteria were written without them
+        env["SDCGUARD_ATTN"] = "0"
         env.update(SDCGUARD="1", SDCGUARD_LOG=os.path.join(out, f"{role}_alerts.jsonl"),
                    SDCGUARD_METRICS_PORT=str(metrics_port), SDCGUARD_MOE="0" if role == "nomoe" else "1")
         if role != "nomoe":

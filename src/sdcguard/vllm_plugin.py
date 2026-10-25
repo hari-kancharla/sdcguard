@@ -21,7 +21,9 @@ nothing). What it does, in every vLLM process:
     and compares (serve_moe.py: wrong experts, rows, scaling and non-finite values; vLLM's Triton MoE backend only),
     and one router (they take turns too) recomputes its routing policy for 2 rows from its logits (serve_route.py:
     the experts chosen and their weights; vLLM's top-k, grouped top-k and biased top-k routers);
-  - with SDCGUARD_ATTN=1 (off by default for now), at each model step one attention layer (they take turns)
+  - unless SDCGUARD_ATTN=0 (on by default since its GPU run met its criteria, October 24, 2026, and cost 2.7% at 16
+    requests at once on top of a server checking every linear layer; docs/METHOD.md), at each model step one
+    attention layer (they take turns)
     recomputes 4 of its outputs (one query head of one token each) from the KV cache through the block table, and
     checks that those tokens' own KV-cache writes went where attention reads them (serve_attn.py: vLLM's
     FlashAttention and Triton backends, decoder attention with a 16-bit KV cache; SDCGUARD_ATTN_Z sets its line,
@@ -125,7 +127,8 @@ def _setup_logging() -> None:
 _STATE = {"guard": None, "steps": 0, "op": None, "patched": False, "reported": False, "layers": None,
           "rechecked": None, "exit_hooks": None, "flushed": None, "hooked": False, "z": None, "step_log": None,
           "norm_classes": [], "norms_stale": False, "moe_classes": [], "fp8_classes": [], "route_classes": [],
-          "attn_classes": [], "token_steps": 0, "dummy_runs": 0, "dummy_after": None, "in_dummy": 0}
+          "attn_classes": [], "attn_why": None, "token_steps": 0, "dummy_runs": 0, "dummy_after": None,
+          "in_dummy": 0}
 
 # Why a linear layer isn't checked (layer_report). The quantized methods are reported by their own names.
 NOT_SELECTED = "not selected by SDCGUARD_SHARE"
@@ -429,9 +432,21 @@ def _summary(r: dict) -> str:
             msg += f"; FP8 linear layers' quantization not checked: {_STATE['fp8_why']}"
     if _STATE.get("attn_classes"):
         a = _STATE.get("attn") or {}
-        msg += f"; attention checked by a sampled recompute on {a.get('checked', 0)} layers (SDCGUARD_ATTN=1)"
-        if a.get("not_checked"):
-            msg += f", not on {len(a['not_checked'])}"
+        if a.get("checked"):
+            ok, why = _attn_kernels()
+            where = "" if ok else f" possibly outside CUDA graphs only ({why})" if ok is None else \
+                f" outside CUDA graphs only (its Triton kernels aren't in use: {why})"
+            msg += (f"; attention checked by a sampled recompute on {a['checked']} layers{where} (SDCGUARD_ATTN=0 "
+                    "turns it off)")
+            if a.get("not_checked"):
+                msg += f", not on {len(a['not_checked'])}"
+        elif a.get("not_checked"):
+            msg += f"; attention not checked on any of its {len(a['not_checked'])} layers"
+        else:
+            why = _STATE.get("attn_why") or "its layers weren't registered"
+            msg += f"; attention not checked: {why}"
+    elif _STATE.get("attn_why"):
+        msg += f"; attention not checked: {_STATE['attn_why']}"
     if r["never_checked"]:
         msg += "; never ran their check: " + ", ".join(r["never_checked"][:4]) + (
             " ..." if len(r["never_checked"]) > 4 else "")
@@ -623,13 +638,16 @@ def _attribute(ev) -> None:
     cap = d.get("captured") or {}
     st, row = cap.get("step"), cap.get("row")
     exposed: dict = {}
-    attn = bool(_STATE.get("attn_classes"))
+    attn = bool((_STATE.get("attn") or {}).get("checked"))          # layers registered, not just backends patched
+    graphs = _attn_kernels()[0] if attn else False     # True: inside CUDA graphs too; None: not known
+    where = {True: "", False: " outside CUDA graphs", None: " (perhaps only outside CUDA graphs)"}[graphs]
+    also = {True: "", False: " or run inside CUDA graphs", None: " or perhaps run inside CUDA graphs"}[graphs]
     parts = ["linear layers"] + (["RMSNorm layers"] if _STATE.get("norm_classes") else []) + \
         (["sampled rows of MoE experts and their routing"] if _STATE.get("moe_classes") else []) + \
         (["FP8 input quantization"] if _STATE.get("fp8_classes") else []) + \
-        (["sampled attention outputs and those tokens' KV writes"] if attn else [])
+        ([f"sampled attention outputs{where} and those tokens' KV writes"] if attn else [])
     rest = [p for p, on in (("norms", _STATE.get("norm_classes")), ("MoE experts", _STATE.get("moe_classes"))) if not on]
-    unchecked = (["attention outputs not sampled", *rest, "the rest of the KV cache", "sampling"] if attn else
+    unchecked = ([f"attention outputs not sampled{also}", *rest, "the rest of the KV cache", "sampling"] if attn else
                  ["attention", *rest, "the KV cache", "sampling"])
     d["unknown_impact"] = [
         "requests that reuse prefix-cache (KV) blocks written during these steps can carry a wrong value further",
@@ -1264,6 +1282,35 @@ ATTN_BACKENDS = (("vllm.v1.attention.backends.flash_attn", "FlashAttentionImpl")
                  ("vllm.v1.attention.backends.triton_attn", "TritonAttentionImpl"))
 
 
+def _attn_on() -> bool:
+    """SDCGUARD_ATTN: on unless 0 (or false, off, no); an unknown value keeps it on, with a warning."""
+    v = os.environ.get("SDCGUARD_ATTN", "1").strip().lower()
+    if v in ("0", "false", "off", "no"):
+        return False
+    if v not in ("1", "true", "on", "yes", ""):
+        log.warning("sdcguard: SDCGUARD_ATTN=%r isn't 0 or 1; attention checks stay on (SDCGUARD_ATTN=0 turns them "
+                    "off)", os.environ.get("SDCGUARD_ATTN"))
+    return True
+
+
+def _attn_kernels() -> tuple:
+    """(ok, why): whether the attention check's Triton kernels are in use on every device it checks, so it runs inside
+    CUDA graphs too (True). Without them (they failed their first-use comparison or a launch, or this isn't a CUDA GPU)
+    the PyTorch check runs outside CUDA graphs only, and a compiled server's decode steps go unchecked (False). None
+    when that can't be read."""
+    g = _STATE.get("guard")
+    ac = getattr(g, "attn", None) if g is not None else None
+    try:
+        status = ac.kernel_status() if ac is not None and getattr(ac, "layers", None) else \
+            (_STATE.get("attn") or {}).get("kernel")
+    except Exception as e:  # noqa: BLE001  (a report never breaks serving)
+        return None, f"its kernel status couldn't be read ({type(e).__name__})"
+    if not status:
+        return None, "no kernel status"
+    bad = [f"{k}: {v[1]}" for k, v in status.items() if not v[0]]
+    return (not bad), "; ".join(bad)
+
+
 def _patch_attn() -> list:
     """vLLM's FlashAttention and Triton attention backends: after a registered layer's attention ran, its check
     (serve_attn.check_call). vLLM calls the backend's forward inside an opaque op of its own (eagerly, and while CUDA
@@ -1275,7 +1322,10 @@ def _patch_attn() -> list:
         try:
             cls = getattr(importlib.import_module(mod_name), cname)
             orig = vars(cls)["forward"]
-        except Exception as e:  # noqa: BLE001
+        except ImportError as e:      # (this vLLM build hasn't that backend: nothing of it to check)
+            log.info("sdcguard: vLLM's %s not found (%s); its attention isn't checked", cname, e)
+            continue
+        except Exception as e:  # noqa: BLE001  (there, but not as the check knows it)
             log.warning("sdcguard: vLLM's %s not found (%s: %s); its attention isn't checked", cname,
                         type(e).__name__, e)
             continue
@@ -1323,11 +1373,13 @@ def _register_attn(runner) -> Optional[dict]:
         model = _model_of(runner)
     if model is None or not hasattr(model, "named_modules"):
         log.warning("sdcguard: couldn't find the model to register its attention layers; attention isn't checked")
+        _STATE["attn_why"] = "the model to register its attention layers wasn't found"
         return None
     found = [(n, m) for n, m in model.named_modules() if hasattr(m, "impl") and hasattr(m, "layer_name")]
     if not found:
         log.info("sdcguard: no attention layers found in this model")
         _STATE["attn"] = {"checked": 0, "not_checked": {}}
+        _STATE["attn_why"] = "no attention layers found in this model"
         return None
     if _ubatching(runner):
         # steps can run as microbatches (each layer called once per microbatch), which the attention check hasn't
@@ -1347,18 +1399,24 @@ def _register_attn(runner) -> Optional[dict]:
         ac.add(m, m.impl, str(getattr(m, "layer_name", "") or name or type(m).__name__), dev, dt)
     max_len = int(getattr(mc, "max_model_len", 0) or 0) or 32768
     ac.finalize(max_len=max_len, dtypes=(dt,) if dt in (torch.bfloat16, torch.float16) else (torch.bfloat16,))
-    status = ac.kernel_status()
-    how = "the Triton kernels" if status and all(v[0] for v in status.values()) else \
-        "the PyTorch check outside CUDA graphs only (" + "; ".join(f"{k}: {v[1]}" for k, v in status.items()
-                                                                if not v[0]) + ")"
-    rest: dict = {}
-    for why in ac.unsupported.values():
-        rest[why] = rest.get(why, 0) + 1
-    from .serve_attn import SAMPLES
-    log.info("sdcguard: checking %d of %d attention layers (one layer a step, %d outputs each) with %s, line %g%s",
-             len(ac.layers), len(found), SAMPLES, how, ac.line,
-             "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
-    _STATE["attn"] = {"checked": len(ac.layers), "not_checked": dict(ac.unsupported), "kernel": status}
+    # the layers are checked from here on, so say so before anything else can fail
+    _STATE["attn"] = {"checked": len(ac.layers), "not_checked": dict(ac.unsupported), "kernel": None}
+    try:
+        status = ac.kernel_status()
+        _STATE["attn"]["kernel"] = status
+        how = "the Triton kernels" if status and all(v[0] for v in status.values()) else \
+            "the PyTorch check outside CUDA graphs only (" + "; ".join(f"{k}: {v[1]}" for k, v in status.items()
+                                                                    if not v[0]) + ")"
+        rest: dict = {}
+        for why in ac.unsupported.values():
+            rest[why] = rest.get(why, 0) + 1
+        from .serve_attn import SAMPLES
+        log.info("sdcguard: checking %d of %d attention layers (one layer a step, %d outputs each) with %s, line "
+                 "%g%s", len(ac.layers), len(found), SAMPLES, how, ac.line,
+                 "; not checked: " + ", ".join(f"{n} {w}" for w, n in sorted(rest.items())) if rest else "")
+    except Exception as e:  # noqa: BLE001  (the layers are registered and checked; only the report failed)
+        log.warning("sdcguard: %d attention layers are checked, but reading how failed (%s: %s)", len(ac.layers),
+                    type(e).__name__, e)
     return _STATE["attn"]
 
 
@@ -1704,7 +1762,8 @@ def _publish_stack(runner) -> Optional[dict]:
               "norms": "on" if _STATE.get("norm_classes") else "off",
               "moe": "on" if _STATE.get("moe_classes") else "off",
               "fp8": "on" if _STATE.get("fp8_classes") else "off",
-              "attention": "on" if _STATE.get("attn_classes") else "off"}
+              "attention": {True: "on", False: "outside_graphs", None: "on_unknown_where"}[_attn_kernels()[0]]
+              if (_STATE.get("attn") or {}).get("checked") else "off"}
     info = collect(runner, model, checks)
     _STATE["stack"] = info
     g = _STATE["guard"]
@@ -1870,8 +1929,10 @@ def register() -> None:
             _STATE["route_classes"] = _patch_route()
     if os.environ.get("SDCGUARD_FP8", "0") == "1":
         _STATE["fp8_classes"] = _patch_fp8()
-    if os.environ.get("SDCGUARD_ATTN", "0") == "1":
+    if _attn_on():
         _STATE["attn_classes"] = _patch_attn()
+        if not _STATE["attn_classes"]:
+            _STATE["attn_why"] = "neither of vLLM's FlashAttention and Triton attention backends was found"
     if os.environ.get("SDCGUARD_QUANT", "1") != "0":
         _STATE["quant_kernels"] = _patch_quant(op, select, inline)
 
@@ -1900,6 +1961,8 @@ def register() -> None:
                     except Exception as e:  # noqa: BLE001  (never break model loading)
                         log.warning("sdcguard: registering %s layers failed (%s: %s); they aren't checked", what,
                                     type(e).__name__, e)
+                        if what == "attention" and not (_STATE.get("attn") or {}).get("checked"):
+                            _STATE["attn_why"] = f"registering its layers failed ({type(e).__name__})"
                 try:
                     _publish_stack(self)
                 except Exception as e:  # noqa: BLE001  (the stack is information; never break model loading)

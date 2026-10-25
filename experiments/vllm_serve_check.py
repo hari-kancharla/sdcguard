@@ -209,6 +209,8 @@ def start(role: str, out: str, model: str, port: int, tp: int, sink: Sink, metri
     env["VLLM_SERVER_DEV_MODE"] = "1"                       # /collective_rpc, for the flip
     env["PYTHONPATH"] = HERE + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     if role == "guarded":
+        # attention checks have their own run (vllm_attn_check.py); this run's criteria were written without them
+        env["SDCGUARD_ATTN"] = "0"
         env.update(SDCGUARD="1", SDCGUARD_REQUIRE="1", SDCGUARD_WEBHOOK=f"http://127.0.0.1:{sink.port}/hook",
                    SDCGUARD_WEBHOOK_FORMAT="json", SDCGUARD_METRICS_PORT=str(metrics_port))
     else:

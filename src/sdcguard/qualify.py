@@ -9,7 +9,9 @@ give one decision per candidate with its evidence.
 Each configuration is what follows `vllm serve` (the model and its flags). One at a time, on the same GPUs and port,
 each is started with the sdcguard plugin on (SDCGUARD=1, its metrics and alert log; --share, default 1: every layer,
 since a qualification run is a test and decide's default policy counts the plugin's silence only when it checks at
-least half the weights; --no-plugin leaves it off) and, once it answers. The plugin doesn't refuse to serve a model
+least half the weights; --no-plugin leaves it off; its attention checks stay off unless --env SDCGUARD_ATTN=1, since
+qualify's own GPU run and the runs written on it came before them) and, once it answers. The plugin doesn't refuse to
+serve a model
 whose layers it can't all check (no SDCGUARD_REQUIRE, unless --require): an FP8 or MoE candidate is still started
 and judged, and its decision says what wasn't checked (NOT DECIDED rather than ACCEPT when too little was).
 
@@ -83,6 +85,7 @@ class Server:
         if plugin:
             env.update(SDCGUARD="1", SDCGUARD_SHARE=share, SDCGUARD_METRICS_PORT=str(metrics_port),
                        SDCGUARD_LOG=self.alerts, SDCGUARD_EVIDENCE_DIR=os.path.join(out, f"{name}_evidence"))
+            env["SDCGUARD_ATTN"] = extra_env.get("SDCGUARD_ATTN", "0")      # off unless asked (module docstring)
             if require:
                 env["SDCGUARD_REQUIRE"] = require
         self.cmd = [*serve_cmd, *self.args, "--port", str(port)]
@@ -246,8 +249,8 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
     diff = compare(base, cand) if base and cand else {"differences": [], "why": "no stack recorded for both"}
     serve = " ".join(shlex.quote(x) for x in a.serve_cmd)
     req = getattr(a, "require", None)
-    env = {"SDCGUARD": "1", "SDCGUARD_SHARE": a.share, **({"SDCGUARD_REQUIRE": req} if req else {}),
-           **a.env_map} if not a.no_plugin \
+    env = {"SDCGUARD": "1", "SDCGUARD_SHARE": a.share, "SDCGUARD_ATTN": "0",
+           **({"SDCGUARD_REQUIRE": req} if req else {}), **a.env_map} if not a.no_plugin \
         else dict(a.env_map)
     failing = {"approximation": row.get("approximation") == "OUTSIDE" or row.get("approximation") == "UNMEASURED",
                "isolation": row.get("isolation") in ("LEAK", "UNMEASURED") and not a.no_isolation,
