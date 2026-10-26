@@ -308,6 +308,20 @@ def test_ready_holds_each_worker_to_its_own_weights(tmp_path):
     assert q["verdict"] == "NOT THE QUALIFIED STACK" and q["differences"][0].startswith("worker 1: weights_digest")
 
 
+def test_ready_needs_a_record_for_every_worker_of_the_layout(tmp_path):
+    """A decision whose worker list has a gap ([worker 0, null] for tensor parallelism 2), or fewer records than the
+    stack's parallelism makes, can't stand for the missing worker: INCONCLUSIVE whatever is read, never a match."""
+    w0, w1 = _st(tensor_parallel="2", weights_digest="0" * 16), _st(tensor_parallel="2", weights_digest="1" * 16)
+    gap = _decision_file(tmp_path, [w0, None], "gap.json")
+    for pages in ([_page(w0)], [_page(w0), _page(w1)]):
+        q = ready.qualified(gap, pages)
+        assert q["verdict"] == "INCONCLUSIVE" and "worker 1" in q["why"], q
+    short = _decision_file(tmp_path, [w0], "short.json")
+    q = ready.qualified(short, [_page(w0)])
+    assert q["verdict"] == "INCONCLUSIVE" and "parallelism make 2" in q["why"], q
+    assert ready.qualified(_decision_file(tmp_path, [w0, w1], "full.json"), [_page(w0), _page(w1)])["verdict"] is None
+
+
 def test_ready_refuses_a_decision_without_the_weights_identity_the_server_has(tmp_path):
     """A decision made before the weights' digest was recorded can't be shown to be about these weights: INCONCLUSIVE,
     never a silent match; and the same when the server doesn't publish the digest the decision records, or neither

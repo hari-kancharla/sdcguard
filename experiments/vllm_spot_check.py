@@ -54,6 +54,7 @@ KINDS = ("self_attn.qkv_proj", "self_attn.o_proj", "mlp.gate_up_proj", "mlp.down
 LINEAR_LAYERS = BLOCKS * len(KINDS)
 IDENTITY = 64
 ROUNDS = 40
+SHORT_WORDS = 50               # the compiled-fault trial's prompts, cut so 4 at once (and their decodes) fit a capture
 BURST = 4
 CLEAN_LIMIT = 1.5
 CRITERIA_TRIALS = (("all", 1.02), ("all", 1.02), ("all", 1.02), ("all", 1.05), ("all", 1.05), ("all", 1.05))
@@ -222,10 +223,27 @@ def served_stack(metrics_port: int) -> dict:
     return {k: st.get(k) for k in ("eager", "cudagraph", "compilation")}
 
 
+def _graph_delta(g0, g1) -> dict:
+    """How the server's CUDA-graph wrappers ran between two sdcguard_test_graph_stats reads."""
+    g0, g1 = (g0 if isinstance(g0, dict) else {}), (g1 if isinstance(g1, dict) else {})
+    num = lambda v: v if isinstance(v, int) and not isinstance(v, bool) else 0          # noqa: E731
+    keys = {k for k in (*g0, *g1) if k not in ("hooked", "why")}
+    out = {k: num(g1.get(k, 0)) - num(g0.get(k, 0)) for k in sorted(keys)}
+    out["hooked"] = bool(g0.get("hooked") and g1.get("hooked"))
+    return out
+
+
 def compiled_trial(port: int, log_path: str, prompts: list, deadline: float, layer: str) -> dict:
     """Rounds of BURST requests on the faulted server until a spot alert names its layer (or ROUNDS rounds). Only
     alerts after the trial starts count (the fault is there from load, so warm-up can alert too: those are counted
-    apart), with the layer's checked turns read before and after."""
+    apart), with the layer's checked turns read before and after. The trial starts after a read that waits for the
+    GPU (a request after 3 s idle: every earlier step's results are then in the log), its prompts are cut to
+    SHORT_WORDS words so every step's batch fits a captured size, and how vLLM's CUDA-graph wrappers ran during it is
+    recorded (graphs: replays, captures, forwards with no graph), so a catch is shown to come from graph replays."""
+    prompts = [" ".join(p.split()[:SHORT_WORDS]) for p in prompts] or ["Summarize this in one sentence: the fox"]
+    time.sleep(3)
+    vn._try(port, MODEL, prompts[0], 1)              # (drains: the read at this step waits for the GPU)
+    g0 = vn.rpc(port, "sdcguard_test_graph_stats")
     n0 = len(vn.alerts(log_path))
     before = sum(1 for a in vn.alerts(log_path) if a.get("detector") == "serve_spot" and
                  (a.get("detail") or {}).get("where") == layer)
@@ -246,7 +264,9 @@ def compiled_trial(port: int, log_path: str, prompts: list, deadline: float, lay
     new = vn.alerts(log_path)[n0:]
     hit = [a for a in new if a.get("detector") == "serve_spot" and (a.get("detail") or {}).get("where") == layer]
     turns1 = _turns(port, layer)
+    graphs = _graph_delta(g0, vn.rpc(port, "sdcguard_test_graph_stats"))
     return {"layer": layer, "factor": COMPILED_FACTOR, "detected": bool(hit), "rounds": sent if hit else None,
+            "graphs": graphs,
             "rounds_sent": sent, "cut_by_deadline": cut, "alerts_before_trial": before,
             "alert_steps": [a.get("step") for a in hit[:5]],
             "turns": turns1 - turns0 if isinstance(turns0, int) and isinstance(turns1, int) else None,
@@ -363,6 +383,14 @@ def compiled_served(served: dict) -> bool:
     return str(served.get("eager")).lower() == "false" and served.get("cudagraph") not in (None, "", "NONE", "None")
 
 
+def replayed_only(g: dict) -> bool:
+    """During the trial (_graph_delta), vLLM's CUDA-graph wrappers replayed captured graphs, captured none and ran
+    no forward without a graph: every faulty computation the trial's alert could come from was a replay."""
+    return bool(g.get("hooked")) and sum(v for k, v in g.items() if k.startswith("replay_")) > 0 and \
+        g.get("no_graph", 0) == 0 and not any(v for k, v in g.items() if k.startswith("capture_")) and \
+        not g.get("count_errors")
+
+
 def _caught(t: dict) -> bool:
     return bool(t.get("detected") and _d(t.get("mark")).get("layer") and "output_wrong" in (t.get("verdicts") or []))
 
@@ -441,6 +469,11 @@ def judge(res: dict) -> tuple:
                              f"(or not rechecked as wrong): {t.get('verdicts')}, {t.get('rounds_sent')} rounds")
             elif not (isinstance(t.get("turns"), int) and t["turns"] > 0):
                 fails.append(f"S6: the faulted layer's checked turns didn't go up during the trial ({t.get('turns')})")
+            elif "PIECEWISE" not in str(_d(f.get("served")).get("cudagraph")):
+                fails.append(f"S6: the faulted server's CUDA graph mode {_d(f.get('served')).get('cudagraph')} has "
+                             "no piecewise graphs, whose wrappers show a forward run with no graph")
+            elif not replayed_only(_d(t.get("graphs"))):
+                fails.append(f"S6: the trial can't be shown to have run in CUDA-graph replays only: {t.get('graphs')}")
             if t.get("spot_alerts_other_layers"):
                 fails.append(f"S6: {t['spot_alerts_other_layers']} spot alerts named a layer with no fault")
     s = summarize(res)

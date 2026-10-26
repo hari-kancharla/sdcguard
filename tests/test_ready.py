@@ -7,11 +7,14 @@ import pytest
 from sdcguard import ready
 
 
-def _page(uuid="GPU-a", pid=11, z=6, layers=112, never=0, executed=100, reads=5, weights=1.0):
+def _page(uuid="GPU-a", pid=11, z=6, layers=112, never=0, executed=100, reads=5, weights=1.0, alerts=None,
+          confirmed=None):
     return (f'sdcguard_protection_info{{UUID="{uuid}",pid="{pid}",version="0.4.0",z="{z}",share="1"}} 1.0\n'
             f"sdcguard_layers_checked {layers}\nsdcguard_layers_never_checked {never}\n"
             f"sdcguard_weights_checked_ratio {weights}\nsdcguard_checks_executed_total {executed}\n"
-            f"sdcguard_checks_executed_created 1.7e9\nsdcguard_reads_total {reads}\n")
+            f"sdcguard_checks_executed_created 1.7e9\nsdcguard_reads_total {reads}\n"
+            + (f"sdcguard_all_alerts_total {alerts}\n" if alerts is not None else "")
+            + (f"sdcguard_confirmed_alerts_total {confirmed}\n" if confirmed is not None else ""))
 
 
 class _Server:
@@ -202,6 +205,26 @@ def test_probe_finds_checks_stopped_on_an_idle_server(close, monkeypatch, capsys
     assert '"verdict": "NOT PROTECTED"' in out and "serving unchecked" in out and "probed" in out
 
 
+def test_probe_lets_a_server_that_hasnt_served_yet_become_ready(close, monkeypatch, capsys):
+    """As a readiness probe sees every new server: no request yet, so no checks have run. Without --probe that's
+    INCONCLUSIVE (and no traffic would ever reach it); with --probe the two short requests show the checks running,
+    or not."""
+    monkeypatch.setattr(ready.time, "sleep", lambda s: None)
+    fresh = _page(reads=0, executed=0)
+    v = lambda: _srv(close, "vllm:generation_tokens_total 0\n", "vllm:generation_tokens_total 0\n",  # noqa: E731
+                     "vllm:generation_tokens_total 16\n")
+    assert _run([_srv(close, fresh)], v()) == 2
+    api = _Api()
+    close(api)
+    assert _run([_srv(close, fresh, fresh, _page(reads=1, executed=40))], v(), ["--probe", api.url]) == 0
+    out = capsys.readouterr().out
+    assert api.n == 2 and '"verdict": "PROTECTED"' in out and "hadn't served a request yet" in out
+    api2 = _Api()
+    close(api2)
+    assert _run([_srv(close, fresh)], v(), ["--probe", api2.url]) == 1           # the probe's tokens, no checks
+    assert "serving unchecked" in capsys.readouterr().out
+
+
 def test_a_probe_that_fails_or_counts_no_tokens_is_inconclusive(close, monkeypatch):
     monkeypatch.setattr(ready.time, "sleep", lambda s: None)
     bad = _Api(status=500)
@@ -318,3 +341,62 @@ def test_an_old_decision_is_inconclusive_past_max_age_days(close, tmp_path, caps
     undated = _decision(tmp_path, st, "u.json", created=None)
     assert _run([_live(close, st)], extra=("--qualified", undated, "--max-age-days", "7")) == 2
     assert any("when it was made" in u for u in _verdict(capsys)["unsure"])
+
+
+def _tokens(close):
+    return _srv(close, "vllm:generation_tokens_total 10\n", "vllm:generation_tokens_total 90\n")
+
+
+def test_a_worker_that_confirmed_a_fault_is_taken_out_of_rotation(close, capsys):
+    """A confirmed fault (an output rechecked as wrong, or weights changed) is FAULT FOUND, exit 1, though the checks
+    run: a readiness probe then keeps traffic away from that GPU."""
+    a = _srv(close, _page(alerts=0, confirmed=0), _page(executed=150, alerts=0, confirmed=0))
+    b = _srv(close, _page(uuid="GPU-b", pid=12, alerts=3, confirmed=2),
+             _page(uuid="GPU-b", pid=12, executed=160, alerts=3, confirmed=2))
+    assert _run([a, b], _tokens(close)) == 1
+    out = capsys.readouterr().out
+    assert '"verdict": "FAULT FOUND"' in out and "2 confirmed faults" in out and "take it out of service" in out
+    assert "1 alert not confirmed" in out                      # the third alert: a note
+    # it wins over everything else: an idle server, or one that is also not protected
+    assert _run([_srv(close, _page(alerts=1, confirmed=1))], _srv(close, "vllm:generation_tokens_total 10\n")) == 1
+    assert '"verdict": "FAULT FOUND"' in capsys.readouterr().out
+    assert _run([_srv(close, _page(z=1000, alerts=1, confirmed=1))], _tokens(close)) == 1
+    out = capsys.readouterr().out
+    assert '"verdict": "FAULT FOUND"' in out and "alarm line" in out
+
+
+def test_alerts_not_confirmed_are_notes_unless_strict(close, capsys):
+    pages = (_page(alerts=2, confirmed=0), _page(executed=150, alerts=2, confirmed=0))
+    assert _run([_srv(close, *pages)], _tokens(close)) == 0
+    out = capsys.readouterr().out
+    assert '"verdict": "PROTECTED"' in out and "2 alerts not confirmed" in out and "--strict-alerts" in out
+    assert _run([_srv(close, *pages)], _tokens(close), extra=("--strict-alerts",)) == 1
+    assert '"verdict": "FAULT FOUND"' in capsys.readouterr().out
+    # a plugin from before the confirmed count: its alerts are a note (any alert a fault with --strict-alerts)
+    old = (_page(alerts=1), _page(executed=150, alerts=1))
+    assert _run([_srv(close, *old)], _tokens(close)) == 0 and "too old" in capsys.readouterr().out
+    assert _run([_srv(close, *old)], _tokens(close), extra=("--strict-alerts",)) == 1
+
+
+def test_the_metrics_count_only_alerts_their_own_evidence_confirms():
+    pytest.importorskip("prometheus_client")
+    from prometheus_client import generate_latest
+
+    from sdcguard.alerts import Metrics, confirmed
+    from sdcguard.events import SDCEvent
+    ev = lambda verdict: SDCEvent(detector="serve_spot", step=1, identity={"gpu_uuid": "GPU-q"},   # noqa: E731
+                                  detail={"where": "l0", **({"recheck": {"verdict": verdict}} if verdict else {})})
+    changed = SDCEvent(detector="serve_checksum", step=1, identity={}, detail={"where": "l1",
+                                                                         "weights_changed_since_load": True})
+    events = [ev("output_wrong"), ev("weights_changed"), ev("output_agrees"), ev("output_off"), ev("not_rechecked"),
+              ev(None)]
+    assert [confirmed(e) for e in events] == [True, True, False, False, False, False] and confirmed(changed)
+    m = Metrics()
+
+    class Spot:
+        layers, stats = [1], {"outputs_judged": 4}
+    m.observe_spot(Spot(), events)
+    values, _info = ready.parse(generate_latest(m.registry).decode())
+    assert values["sdcguard_all_alerts_total"] == 6 and values["sdcguard_confirmed_alerts_total"] == 2
+    fresh, _ = ready.parse(generate_latest(Metrics().registry).decode())
+    assert fresh["sdcguard_confirmed_alerts_total"] == 0                 # exported at 0 before any alert

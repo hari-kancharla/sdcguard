@@ -194,7 +194,11 @@ def main():
                             f"sdcguard_layers_checked 112\nsdcguard_layers_never_checked 0\n"
                             f"sdcguard_weights_checked_ratio {ratio}\n"
                             f"sdcguard_checks_executed_total {state['checks']}\n"
-                            f"sdcguard_reads_total {state['reads']}\n" + stack_line).encode()
+                            f"sdcguard_reads_total {state['reads']}\n"
+                            # its one alert (--fault), a changed weight: confirmed by its own evidence
+                            f"sdcguard_all_alerts_total {int(state['faulted'])}\n"
+                            f"sdcguard_confirmed_alerts_total {int(state['faulted'])}\n"
+                            + stack_line).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()

@@ -2742,6 +2742,15 @@ run every input set and shape both ways. The simulations still run one round eac
 wrong value). The bound's floors above were reworded as the bound's arithmetic (they read "always finds"). The time
 limits stay 25 minutes (the experiment's own 20).
 
+Amendment (October 26, after Run 1's smoke test, before Run 1): on the L4 the smoke test's clean run stopped
+INCOMPLETE, no value wrong, when cuBLAS returned CUBLAS_STATUS_NOT_SUPPORTED for the INT8 matmul of the fourth input
+set (M, N, K 272, 2992, 1024, both operands row-major): a library limit for that shape and layout on Ada, which the
+H100 doesn't have, and which stopped every test after it. Now, before the timed run, each matmul set runs once each
+way, unjudged; a layout cuBLAS refuses with its own NOT_SUPPORTED runs for INT8 with the second operand column-major
+(the same product), and one refused both ways is listed in the report (`unsupported`, with cuBLAS's message) and not
+run; any other error still stops the run, INCOMPLETE, since a fault can show as one. S1 counts a case so listed as
+covered, and the report says which; the command line prints it.
+
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 
 vLLM issue #54035, open on the current release: with an FP8 KV cache on Hopper, FlashAttention 3 tiles decode and
@@ -2919,6 +2928,15 @@ run gets a fourth server and a sixth criterion:
   eager trials stop 10 minutes before the experiment's limit to leave it that time, and it isn't started with less
   than 7 minutes left.
   The eager trials can't put a fault inside CUDA graphs; this is the compiled path's positive control.
+  Amended October 26, after the smoke test and a further outside review: the stack's modes show configuration, not
+  that the faulty work ran in a replay. vLLM runs a step with no graph when its batch has more tokens than any
+  captured size, and the trial's prompts (up to 420 words, 4 at once) can make one. The trial now starts after a read
+  that waits for the GPU (a short request after 3 s idle, so every earlier step's results are in the log first), cuts
+  its prompts to 50 words so every step's batch fits a captured size, and counts how vLLM's CUDA-graph code ran during
+  it (the test extension: its graph wrappers' replays and captures, the V2 runner's full-graph replays, and forwards
+  run with no graph). S6 also needs at least one replay, no capture and no forward without a graph during the trial,
+  on a server whose mode has piecewise graphs (vLLM's default, FULL_AND_PIECEWISE, whose piecewise wrappers see every
+  forward that runs without a graph). The smoke test's S6 pass came before this amendment and doesn't stand for it.
 - The cost counts only from speed loads sdcguard.perf calls complete (every request of every round answered, on both
   servers); an incomplete one decides nothing, so spot checks stay opt-in.
 
@@ -3076,8 +3094,12 @@ that the parts run, not a preview of their results.
 
 A part passes when its own judge passes on those counts (the norm diagnosis when it is complete); the cost decisions
 aren't part of it. Decided now: Run 1 is launched only after every part of the smoke test passes; a part that fails
-is fixed and its part run again first (`--phase smoke1 --parts <part> --force`). The smoke test's results are a check of the run, reported as such
-in results/, not measurements: no criterion of Run 1 is met or failed by them.
+is fixed and its part run again first (`--phase smoke1 --parts <part> --force`). The smoke test's results are a check
+of the run, reported as such in results/, not measurements: no criterion of Run 1 is met or failed by them.
+
+Outcome (October 26): 7 of 8 parts passed (weight_scan, moe_bench, norm_diag, moe, spot_h100, spot_l4, screen_h100).
+screen_l4 failed S1: its clean run stopped INCOMPLETE on a cuBLAS NOT_SUPPORTED, with no value wrong (fixed: the
+screen's amendment above). spot_h100 runs again with screen_l4, for S6's amendment above, before Run 1.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

@@ -180,6 +180,19 @@ def chain(*callbacks: Optional[Callable]) -> Optional[Callable]:
     return call
 
 
+CONFIRMED = ("output_wrong", "weights_changed")
+
+
+def confirmed(event) -> bool:
+    """Whether an alert's own evidence shows a fault: its kept output rechecked in float64 and found outside the
+    rounding envelope (output_wrong), or weights that no longer match their fingerprint at load (weights_changed, or
+    weights_changed_since_load on a checksum alert that kept no row).
+    Alerts without a kept row, or whose recheck agrees or can't judge, aren't confirmed."""
+    d = getattr(event, "detail", None) or {}
+    rc = d.get("recheck")
+    return (isinstance(rc, dict) and rc.get("verdict") in CONFIRMED) or d.get("weights_changed_since_load") is True
+
+
 class Metrics:
     """Prometheus metrics for a ServeGuard (needs `pip install prometheus-client`).
 
@@ -190,6 +203,9 @@ class Metrics:
     sdcguard_alerts_total{layer,UUID}       alerts so far; UUID is the GPU's (GPU-...), as dcgm-exporter labels its
                                             GPU series, so the two join on it (empty when unknown)
     sdcguard_all_alerts_total               alerts on any layer (exported at 0, for increase() rules)
+    sdcguard_confirmed_alerts_total         of those, alerts whose own evidence shows a fault: the kept output
+                                            rechecked as wrong in float64, or weights that no longer match their
+                                            fingerprint at load (exported at 0; `sdcguard ready` says FAULT FOUND)
     sdcguard_layers_unchecked{method}       vLLM: linear layers not checked, by reason (quantization method, ...)
     sdcguard_layers_never_checked           vLLM: registered layers whose check never ran (their forward bypasses it)
     sdcguard_weights_checked_ratio          vLLM: share of the model's linear-layer weights whose matmuls are checked
@@ -242,6 +258,8 @@ class Metrics:
         # unlabelled, so it is exported at 0 before the first alert (increase() over a labelled counter that
         # appears at 1 misses that first alert)
         self.alerts_all = Counter("sdcguard_all_alerts", "Alerts on any layer", registry=r)
+        self.confirmed = Counter("sdcguard_confirmed_alerts", "Alerts whose own evidence shows a fault (output "
+                                 "rechecked as wrong, or weights changed since load)", registry=r)
         self.unchecked = Gauge("sdcguard_layers_unchecked", "Linear layers this process doesn't check, by reason",
                                ["method"], registry=r)
         self.never_checked = Gauge("sdcguard_layers_never_checked", "Registered layers whose check never ran",
@@ -266,6 +284,13 @@ class Metrics:
         if port is not None:
             start_http_server(int(port), addr=addr, registry=r)
             self.port = int(port)
+
+    def _count(self, e) -> None:
+        """One alert, of any kind: per layer and GPU, in all, and as confirmed when its own evidence shows a fault."""
+        self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+        self.alerts_all.inc()
+        if confirmed(e):
+            self.confirmed.inc()
 
     def identify(self, uuid: Optional[str], z: float, share: float) -> None:
         """Set sdcguard_protection_info (once per process: a second call replaces the first)."""
@@ -302,8 +327,7 @@ class Metrics:
         self._moe_layers.set(len(moe.layers))
         self._moe_worst.set(float(worst) if worst == worst else 0.0)
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         ex = int(moe.stats.get("active_calls", 0))
         prev = self._seen_moe.get(id(moe), 0)
         if ex > prev:
@@ -321,8 +345,7 @@ class Metrics:
             self._seen_spot = {}
         self._spot_layers.set(len(spot.layers))
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         n = int(spot.stats.get("outputs_judged", 0))
         prev = self._seen_spot.get(id(spot), 0)
         if n > prev:
@@ -340,8 +363,7 @@ class Metrics:
             self._seen_fp8 = {}
         self._fp8_layers.set(len(fp8.layers))
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         n = int(fp8.stats.get("calls", 0))
         prev = self._seen_fp8.get(id(fp8), 0)
         if n > prev:
@@ -359,8 +381,7 @@ class Metrics:
             self._seen_route = {}
         self._route_layers.set(len(route.layers))
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         n = int(route.stats.get("calls", 0))
         prev = self._seen_route.get(id(route), 0)
         if n > prev:
@@ -383,8 +404,7 @@ class Metrics:
         self._attn_layers.set(len(attn.layers))
         self._attn_worst.set(float(worst) if worst == worst else 0.0)
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         calls, writes = int(attn.stats.get("calls_checked", 0)), int(attn.stats.get("writes_checked", 0))
         pc, pw = self._seen_attn.get(id(attn), (0, 0))
         if calls > pc:
@@ -442,16 +462,14 @@ class Metrics:
             self._ws_passes.inc(p - prev)
         self._seen_ws[id(scan)] = max(p, prev)
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
 
     def observe_norms(self, norms, events: list, worst: float) -> None:
         """After a read of a guard's norm checks (serve_norm.NormChecks)."""
         self.norms.set(len(norms.layers))
         self.norm_worst.set(float(worst) if worst == worst else 0.0)
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         ex, un = int(norms.stats.get("calls_checked", 0)), int(norms.stats.get("unjudged_outputs", 0))
         pex, pun = self._seen_norms.get(id(norms), (0, 0))
         if ex > pex:
@@ -475,8 +493,7 @@ class Metrics:
             worst = max(worst, z)
         self.worst.set(worst)
         for e in events:
-            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
-            self.alerts_all.inc()
+            self._count(e)
         ex, un = int(stats.get("checks_executed", 0)), int(stats.get("unjudged_checksums", 0))
         pex, pun = self._seen.get(id(guard), (0, 0))
         if ex > pex:

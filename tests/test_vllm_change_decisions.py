@@ -27,7 +27,8 @@ def _write(out, role, quality="PASS", tps=1000.0, alerts=()):
     if role != "base":
         json.dump(_quality(quality), open(os.path.join(out, f"{role}_quality.json"), "w"))
     json.dump(_perf(tps), open(os.path.join(out, f"{role}_perf16.json"), "w"))
-    open(os.path.join(out, f"{role}_metrics.txt"), "w").write(METRICS)
+    # (the workers count each alert they log, as the plugin's metrics do)
+    open(os.path.join(out, f"{role}_metrics.txt"), "w").write(METRICS + f"sdcguard_all_alerts_total {len(alerts)}\n")
     with open(os.path.join(out, f"{role}_alerts.jsonl"), "w") as f:
         for a in alerts:
             f.write(json.dumps(a) + "\n")

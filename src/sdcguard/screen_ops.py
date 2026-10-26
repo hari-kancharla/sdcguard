@@ -206,6 +206,9 @@ class GemmSet:
         m, n = size
         a, b = _ints(gen, (m, k), p["r"]), _ints(gen, (k, n), p["r"])
         self.name, self.seed, self.device = name, seed, device
+        self.layout = {False: 0, True: 0}       # INT8: 1 puts the second operand in column-major order (probe)
+        self.unsupported: dict = {}             # transposed -> why cuBLAS refuses it on this GPU (probe)
+        self.mnk = [int(m), int(n), int(k)]
         self.exact = a @ b                                    # float64: exact (|sum| < 2^53)
         if name == "int8":
             self.want = self.exact.to(torch.int64).to(torch.int32).to(device)
@@ -222,9 +225,11 @@ class GemmSet:
         p = GEMM[self.name]
         dt = p["dtype"]
         if self.name == "int8":                          # INT8 tensor cores, int32 accumulation and output
+            col = self.layout[transposed]                # (the same product, the second operand column-major)
             if transposed:
-                return torch._int_mm(self.b.t().contiguous(), self.a.t().contiguous()).t(), self.want
-            return torch._int_mm(self.a, self.b), self.want
+                return torch._int_mm(self.b.t().contiguous(), self.a.t() if col else self.a.t().contiguous()).t(), \
+                    self.want
+            return torch._int_mm(self.a, self.b.t().contiguous().t() if col else self.b), self.want
         a = (self.a * 2.0 ** ea).to(dt) if self.name != "fp8" else self.a.float().to(dt)
         b = (self.b * 2.0 ** eb).to(dt) if self.name != "fp8" else self.b.float().to(dt)
         if self.name == "fp8":
@@ -419,6 +424,27 @@ def memory_test(device, share: float, seed: int, found: _Found, chunk_mb: int = 
     return {"bytes": len(chunks) * per * 4}
 
 
+def probe(gs: "GemmSet", transposed: bool) -> Optional[str]:
+    """Run one input set's matmul once (not judged) to find a layout cuBLAS runs on this GPU: None when one does,
+    else why not. Only cuBLAS's own NOT_SUPPORTED counts as unsupported (a library limit for that shape and layout,
+    such as some INT8 shapes in row-major order on Ada); any other error is raised, as a fault can show as one.
+    INT8 tries its second operand in column-major order before giving up."""
+    why = None
+    for lay in ((0, 1) if gs.name == "int8" else (0,)):
+        gs.layout[transposed] = lay
+        try:
+            gs.run(0, 0, transposed)
+            if gs.device.type == "cuda":
+                torch.cuda.synchronize(gs.device)
+            return None
+        except RuntimeError as e:
+            if "NOT_SUPPORTED" not in str(e):
+                raise
+            why = str(e).splitlines()[0][:300]
+    gs.layout[transposed] = 0
+    return why
+
+
 def coverage_rounds(real=REAL) -> int:
     """Rounds for every matmul test to run each of its SETS input sets (two a round) and each realistic-data shape,
     plain and transposed (a shape a round, transposed in every other pass over them)."""
@@ -472,10 +498,22 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
     error = None
     if minutes > 0:
         min_rounds = max(min_rounds, coverage_rounds(real))
-    report["prepare_minutes"] = round((time.time() - t0) / 60, 2)
-    deadline = time.time() + 60.0 * minutes          # testing time: the inputs and their references are ready
+    report["unsupported"] = {}
+    deadline = time.time() + 60.0 * minutes
     rnd = 0
     try:
+        # each set and layout once, unjudged: one cuBLAS refuses on this GPU is listed, not run (probe)
+        for n, ss in sets.items():
+            with _Matmul(GEMM[n[5:]]["tf32"]):
+                for s, gs in enumerate(ss):
+                    for tr in (False, True):
+                        why = probe(gs, tr)
+                        if why:
+                            gs.unsupported[tr] = why
+                            report["unsupported"].setdefault(n, []).append(
+                                {"set": s, "shape": gs.mnk, "transposed": tr, "why": why})
+        report["prepare_minutes"] = round((time.time() - t0) / 60, 2)
+        deadline = time.time() + 60.0 * minutes      # testing time: the inputs and their references are ready
         if "memory" in found:
             memory_test(device, mem_share, seed, found["memory"], limit_gb=mem_limit_gb,
                         inject=12345 if simulate == "memory" else None)
@@ -487,6 +525,8 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
                         gs = ss[s]
                         ea, eb = _scales(n[5:], rnd, s)
                         for tr in (False, True):
+                            if tr in gs.unsupported:
+                                continue
                             y, want = gs.run(ea, eb, tr)
                             if simulate == n and rnd == 0 and s == 0 and not tr:
                                 y = y.clone()
@@ -576,6 +616,10 @@ def main(argv=None) -> int:
             print(f"      {w}")
     for n, why in r["skipped"].items():
         print(f"  {n:16s} skipped: {why}")
+    for n, cases in (r.get("unsupported") or {}).items():
+        for c in cases:
+            print(f"  {n:16s} set {c['set']} (M, N, K {c['shape']}){' transposed' if c['transposed'] else ''} not run: "
+                  f"cuBLAS doesn't support it on this GPU ({c['why'][:120]})")
     if r.get("error"):
         print(f"  stopped by an error: {r['error']} (what was found before it is reported)")
     if r.get("path"):

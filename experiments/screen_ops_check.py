@@ -80,9 +80,13 @@ def judge(res: dict) -> tuple:
     if set(tests) != want:
         fails.append(f"S1: the clean run's tests {sorted(tests)} aren't every test not skipped: missing "
                      f"{sorted(want - set(tests))}, unexpected {sorted(set(tests) - want)}")
+    refused = c.get("unsupported") or {}
     for n, t in tests.items():
-        miss = sorted(map(str, expected_cases(n) - {(tuple(k) if isinstance(k, list) else k, tr)
-                                                    for k, tr in t.get("cases") or []}))
+        # a case cuBLAS refuses on this GPU (its own NOT_SUPPORTED, in both layouts) is listed, not run: covered
+        listed = {(u.get("set"), bool(u.get("transposed"))) for u in refused.get(n) or []
+                  if "NOT_SUPPORTED" in str(u.get("why"))}
+        miss = sorted(map(str, expected_cases(n) - listed - {(tuple(k) if isinstance(k, list) else k, tr)
+                                                             for k, tr in t.get("cases") or []}))
         if miss:
             fails.append(f"S1: {n} didn't run every input set and shape, plain and transposed: missing {miss}")
     for n, t in tests.items():

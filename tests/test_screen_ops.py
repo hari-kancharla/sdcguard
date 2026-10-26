@@ -197,3 +197,50 @@ def test_the_floors_the_module_states():
     bf = [v for (dt, _), v in med.items() if dt == torch.bfloat16]
     fp = [v for (dt, _), v in med.items() if dt == torch.float16]
     assert 0.0125 <= min(bf) and max(bf) <= 0.0195 and 0.0025 <= min(fp) and max(fp) <= 0.0095, med
+
+
+def _refuse(monkeypatch, refuse):
+    """torch._int_mm that raises cuBLAS's NOT_SUPPORTED when refuse(mat1, mat2) says so (as cuBLASLt does for some
+    INT8 shapes and layouts on Ada)."""
+    real = torch._int_mm
+
+    def int_mm(m1, m2):
+        if refuse(m1, m2):
+            raise RuntimeError("CUDA error: CUBLAS_STATUS_NOT_SUPPORTED when calling cublasLtMatmul with "
+                               f"m {m2.shape[1]} n {m1.shape[0]} k {m1.shape[1]}")
+        return real(m1, m2)
+    monkeypatch.setattr(torch, "_int_mm", int_mm)
+
+
+def test_a_layout_cublas_refuses_is_run_the_other_way_or_listed_not_aborted(monkeypatch):
+    """One INT8 set whose row-major second operand cuBLAS refuses runs with it column-major (the same product), every
+    case covered; a set it refuses both ways is listed as unsupported and the rest still runs (PASS); any other error
+    still stops the run (INCOMPLETE), since a fault can show as one."""
+    k4 = max(16, int(so.GEMM["int8"]["k"] * SMALL["shapes"][3][1]) // 16 * 16)    # only the 4th set has this K
+    _refuse(monkeypatch, lambda m1, m2: m1.shape[1] == k4 and m2.stride(1) == 1)    # its row-major second operand
+    r = so.run(torch.device("cpu"), 0.0, None, seed=1, tests=["gemm_int8"], min_rounds=2, **SMALL)
+    cases = {(c[0], c[1]) for c in r["tests"]["gemm_int8"]["cases"]}
+    assert r["result"] == "PASS" and r["unsupported"] == {} and cases == {(s, t) for s in range(4) for t in (0, 1)}
+    _refuse(monkeypatch, lambda m1, m2: m1.shape[1] == k4)                          # set 3 refused both ways
+    r = so.run(torch.device("cpu"), 0.0, None, seed=1, tests=["gemm_int8"], min_rounds=2, **SMALL)
+    assert r["result"] == "PASS" and r["wrong"] == 0
+    assert [(c["set"], c["transposed"]) for c in r["unsupported"]["gemm_int8"]] == [(3, False), (3, True)]
+    assert all("NOT_SUPPORTED" in c["why"] for c in r["unsupported"]["gemm_int8"])
+    assert {(c[0], c[1]) for c in r["tests"]["gemm_int8"]["cases"]} == {(s, t) for s in range(3) for t in (0, 1)}
+
+    def broken(m1, m2):
+        raise RuntimeError("CUDA error: an illegal memory access was encountered")
+    monkeypatch.setattr(torch, "_int_mm", broken)
+    r = so.run(torch.device("cpu"), 0.0, None, seed=1, tests=["gemm_int8"], **SMALL)
+    assert r["result"] == "INCOMPLETE" and "illegal memory access" in r["error"]
+
+
+def test_the_command_line_lists_what_cublas_refused(monkeypatch, tmp_path, capsys):
+    k4 = max(16, int(so.GEMM["int8"]["k"] * SMALL["shapes"][3][1]) // 16 * 16)
+    _refuse(monkeypatch, lambda m1, m2: m1.shape[1] == k4)
+    real = so.run
+    monkeypatch.setattr(so, "run", lambda dev, minutes, out, seed, share, sim, tests: real(
+        dev, 0.0, out, seed, tests=["gemm_int8"], **SMALL))
+    assert so.main(["--minutes", "0", "--out", str(tmp_path), "--device", "cpu"]) == 0
+    out = capsys.readouterr().out
+    assert "PASS" in out and "not run: cuBLAS doesn't support it on this GPU" in out

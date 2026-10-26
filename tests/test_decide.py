@@ -31,7 +31,7 @@ def _perf(tps, spread=0.01, load=None):
 
 
 METRICS = ("sdcguard_layers_checked 28\nsdcguard_checks_executed_total 5000\nsdcguard_reads_total 40\n"
-           "sdcguard_weights_checked_ratio 0.97\n"
+           "sdcguard_weights_checked_ratio 0.97\nsdcguard_all_alerts_total 0\n"
            'sdcguard_protection_info{UUID="GPU-1",share="0.125"} 1\n')
 COV = dc.plugin_coverage([METRICS])
 
@@ -204,11 +204,12 @@ def test_fp8_quantization_findings_are_their_own_section_and_reject():
     fp8 = {"detector": "serve_fp8", "step": None, "detail": {"where": "model.layers.3.mlp.experts (expert inputs)",
                                                              "finding": "scale_from_outside_rows"}}
     cov = {"workers": [{"layers_checked": 10, "checks_executed": 5, "fp8_calls_judged": 40}], "checked": True,
-           "min_weights_checked": 0.9}
+           "min_weights_checked": 0.9, "alerts_counted": 1}     # (the FP8 alert is one the workers counted)
     r = dc.decide(None, quality=None, alerts=[fp8], plugin=cov)
     assert r["decision"] == "REJECT" and r["quantization"]["verdict"] == "WRONG"
     assert "outside the batch" in r["why"][0] and r["arithmetic"]["sources"]["plugin_alerts"]["alerts"] == 0
     assert r["arithmetic"]["verdict"] == "NO FAULT OBSERVED"       # the GEMMs' own checks found nothing
+    cov = {**cov, "alerts_counted": 0}
     clean = dc.decide(None, alerts=[], plugin=cov)
     assert clean["quantization"]["verdict"] == "RIGHT"
     none = dc.decide(None, alerts=[], plugin={**cov, "workers": [{**cov["workers"][0], "fp8_calls_judged": None}]})
@@ -355,7 +356,8 @@ def test_alerts_the_workers_counted_but_no_record_shows_are_missing_evidence_not
     """Positive alert counters with an empty or cut-short alert file must not read as no fault: the plugin's alerts
     then aren't a source, and with nothing else the decision isn't ACCEPT. Unreadable lines of the file show the same
     way. More records than counted (alerts read after the metrics) is a note, not missing evidence."""
-    counted = lambda n: dc.plugin_coverage([METRICS + f"sdcguard_all_alerts_total {n}\n"])  # noqa: E731
+    bare = METRICS.replace("sdcguard_all_alerts_total 0\n", "")
+    counted = lambda n: dc.plugin_coverage([bare + f"sdcguard_all_alerts_total {n}\n"])  # noqa: E731
     clean = dc.decide(quality=_quality(), alerts=[], plugin=counted(0))
     assert clean["decision"] == "ACCEPT" and clean["arithmetic"]["verdict"] == "NO FAULT OBSERVED"
     lost = dc.decide(quality=_quality(), alerts=[], plugin=counted(3))
@@ -372,6 +374,15 @@ def test_alerts_the_workers_counted_but_no_record_shows_are_missing_evidence_not
     assert len(recs) == 2 and recs[1] == {"unreadable": 2}
     cut = dc.decide(quality=_quality(), alerts=recs, plugin=counted(2))
     assert cut["decision"] != "ACCEPT" and any("aren't readable records" in u for u in cut["arithmetic"]["unresolved"])
+    # no counter at all (an older plugin, or metrics cut short), or one that isn't a count: nothing to check the
+    # records against, so the plugin's alerts aren't a source either (the second outside review's finding)
+    for page in (bare, bare + "sdcguard_all_alerts_total NaN\n", bare + "sdcguard_all_alerts_total -1\n"):
+        none = dc.decide(quality=_quality(), alerts=[], plugin=dc.plugin_coverage([page]))
+        assert none["decision"] != "ACCEPT" and none["arithmetic"]["verdict"] == "INCONCLUSIVE", page
+        assert any("don't show how many alerts it counted" in u for u in none["arithmetic"]["unresolved"])
+    two = dc.plugin_coverage([METRICS, bare])                     # one of two workers without it
+    assert two["alerts_counted"] is None and dc.decide(quality=_quality(), alerts=[], plugin=two)["decision"] != \
+        "ACCEPT"
     unread = dc.plugin_coverage([METRICS.replace("sdcguard_reads_total 40", "sdcguard_reads_total 0")])
     assert unread["checked"] is False                                            # checks never read back: no source
     assert dc.decide(quality=_quality(), alerts=[], plugin=unread)["decision"] != "ACCEPT"

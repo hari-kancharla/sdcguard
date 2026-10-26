@@ -63,8 +63,66 @@ def _hook_load(spec: str) -> None:
         GM._sdcguard_test_fault = True
 
 
+_GRAPHS: dict = {}
+
+
+def _hook_graphs() -> None:
+    """Count how vLLM's CUDA-graph wrappers run (the compiled-fault server's evidence that its traffic replayed
+    captured graphs): each wrapper call by the forward context's mode, as a replay or a capture of that wrapper's own
+    graph (replay_FULL, capture_PIECEWISE, ...), a call passed on to the wrapper of another mode (passed_on), or a
+    forward with no graph at all (no_graph: mode NONE, such as a batch of more tokens than any captured size)."""
+    try:
+        from vllm.compilation import cuda_graph as cg
+        from vllm.config import CUDAGraphMode
+        from vllm.forward_context import get_forward_context, is_forward_context_available
+    except Exception as e:  # noqa: BLE001
+        _GRAPHS.update(hooked=False, why=f"{type(e).__name__}: {e}"[:300])
+        return
+    W = cg.CUDAGraphWrapper
+    if getattr(W, "_sdcguard_test_graphs", False):
+        return
+    orig = W.__call__
+
+    def __call__(self, *args, **kwargs):
+        try:
+            if is_forward_context_available():
+                fc = get_forward_context()
+                mode = fc.cudagraph_runtime_mode
+                if mode == CUDAGraphMode.NONE:
+                    key = "no_graph"
+                elif mode != self.runtime_mode:
+                    key = "passed_on"
+                else:
+                    e = self.concrete_cudagraph_entries.get(fc.batch_descriptor)
+                    key = (f"replay_{mode.name}" if e is not None and e.cudagraph is not None else
+                           f"capture_{mode.name}")
+                _GRAPHS[key] = _GRAPHS.get(key, 0) + 1
+        except Exception:  # noqa: BLE001  (counting must never change what runs)
+            _GRAPHS["count_errors"] = _GRAPHS.get("count_errors", 0) + 1
+        return orig(self, *args, **kwargs)
+    W.__call__ = __call__
+    W._sdcguard_test_graphs = True
+    # vLLM's V2 runner replays FULL graphs itself, not through the wrapper (its PIECEWISE graphs and its forwards with
+    # no graph still go through the compiled model's piecewise wrappers above)
+    try:
+        from vllm.v1.worker.gpu import cudagraph_utils as cu
+        M = cu.CudaGraphManager
+        if not getattr(M, "_sdcguard_test_graphs", False):
+            orig_full = M.run_fullgraph
+
+            def run_fullgraph(self, desc, *a, **k):
+                _GRAPHS["replay_FULL"] = _GRAPHS.get("replay_FULL", 0) + 1
+                return orig_full(self, desc, *a, **k)
+            M.run_fullgraph = run_fullgraph
+            M._sdcguard_test_graphs = True
+    except Exception:  # noqa: BLE001  (the V1 runner: its FULL replays go through the wrapper)
+        pass
+    _GRAPHS["hooked"] = True
+
+
 if _os.environ.get("SDCGUARD_TEST_COMPILED_FAULT"):
     _hook_load(_os.environ["SDCGUARD_TEST_COMPILED_FAULT"])
+    _hook_graphs()
 
 
 def _num(v: float):
@@ -239,6 +297,11 @@ class FaultInjection:
     def sdcguard_test_compiled_fault(self) -> dict:
         """What SDCGUARD_TEST_COMPILED_FAULT applied at model load ({} without it)."""
         return dict(_COMPILED_FAULT)
+
+    def sdcguard_test_graph_stats(self) -> dict:
+        """How vLLM's CUDA-graph wrappers have run so far on this worker (_hook_graphs; {} without the compiled
+        fault)."""
+        return dict(_GRAPHS)
 
     def sdcguard_test_unmark_rows(self) -> int:
         n = 0

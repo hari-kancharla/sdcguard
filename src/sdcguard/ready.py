@@ -18,9 +18,18 @@ worker it was told to expect:
     server's /metrics) show it produced tokens and a worker's checks didn't go up, that worker is serving
     unchecked. If they show no tokens in between, the server is idle and the answer is IDLE: everything else
     holds, but nothing shows the checks would run for the next request (stopped checks look the same on an idle
-    server); --probe sends two short requests and reads again, which turns IDLE into PROTECTED or NOT PROTECTED.
+    server); --probe sends two short requests and reads again, which turns IDLE into PROTECTED or NOT PROTECTED
+    (and does the same for a server that hasn't served a request yet, whose checks have never run: as a readiness
+    probe, without --probe, a new server would stay INCONCLUSIVE and never get traffic).
     Without --vllm, checks that didn't go up can mean an idle server or stopped checks, so the answer is
     INCONCLUSIVE: pass --vllm (and --probe) for a definite one.
+
+A worker that has confirmed a fault makes the answer FAULT FOUND, whatever else holds: an alert whose own evidence
+shows a wrong result (its kept output rechecked in float64 outside the rounding envelope, or weights that no longer
+match their fingerprint at load; sdcguard_confirmed_alerts_total). Used as a readiness probe, that takes the server
+out of rotation until it restarts (the count starts again at 0): screen or replace the GPU first (`sdcguard check`),
+and see the alert log for where and which requests. Alerts that aren't confirmed (no row kept, or a recheck that
+agrees or can't judge) are listed as notes; --strict-alerts makes any alert FAULT FOUND.
 
 With --qualified DECISION.json (a decision `sdcguard qualify` or `sdcguard decide` wrote), it also says whether this
 server is the stack that decision accepted: every worker's sdcguard_stack_info (what the plugin read from inside the
@@ -43,7 +52,8 @@ longer than any it tested, and with --vllm, requests served with longer prompts 
 with --strict-conditions.
 
 Exit codes: 0 PROTECTED or IDLE (a readiness probe on an idle server must pass, or no traffic ever reaches it;
-use --probe to have IDLE checked), 1 NOT PROTECTED (or, with --qualified, NOT THE QUALIFIED STACK or NOT QUALIFIED),
+use --probe to have IDLE checked), 1 FAULT FOUND or NOT PROTECTED (or, with --qualified, NOT THE QUALIFIED STACK or
+NOT QUALIFIED),
 2 INCONCLUSIVE (couldn't tell: no checks read back yet, a worker
 restarted between the reads, checks that didn't go up with no vLLM metrics to say the server was idle). For a
 Kubernetes readiness probe any nonzero code keeps traffic away, so the probe's timeoutSeconds must be longer than
@@ -166,9 +176,10 @@ def _checks(text) -> dict:
 
 
 def _deployed(d: dict) -> tuple:
-    """(the stack the plugin read on the qualified server's first worker, every worker's), from a decision."""
+    """(the stack the plugin read on the qualified server's first worker, every worker's), from a decision. Each
+    worker keeps its position: one whose record is missing or unreadable is None there."""
     cand = ((d.get("scope") or {}).get("stacks") or {}).get("candidate") or {}
-    workers = [w for w in cand.get("deployed_workers") or [] if isinstance(w, dict)] \
+    workers = [w if isinstance(w, dict) and w else None for w in cand.get("deployed_workers")] \
         if isinstance(cand.get("deployed_workers"), list) else []
     return cand.get("deployed") or None, workers
 
@@ -265,12 +276,21 @@ def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None,
     except (TypeError, ValueError):
         layout = None
     want_n = len(recorded) if recorded else layout
+    missing = [i for i, w in enumerate(recorded) if w is None]
+    if missing:
+        unknown.append(f"the decision has no readable stack recorded for worker{'s' if len(missing) > 1 else ''} "
+                       f"{', '.join(map(str, missing))}: what ran there can't be compared")
+    if recorded and layout is not None and len(recorded) != layout:
+        unknown.append(f"the decision records {len(recorded)} workers, but the stack's tensor and pipeline "
+                       f"parallelism make {layout}")
     if want_n is not None and len(texts) != want_n:
         unknown.append(f"{len(texts)} workers read, the qualification ran on {want_n} (" +
                        ("one stack recorded for each" if recorded else "its tensor and pipeline parallelism") +
                        "): read every worker (--workers, or one --url each)")
     for i, t in enumerate(texts):
         live = from_metrics(t or "")
+        if i < len(recorded) and recorded[i] is None:
+            continue                                  # (no record to compare it with: unknown above)
         # each worker against its own record (with tensor parallelism, its own shard's weights)
         want = recorded[i] if i < len(recorded) and recorded[i] else was
         c = compare(want, live)
@@ -379,17 +399,20 @@ def _num(text) -> Optional[float]:
 
 def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Optional[dict], *,
           max_z: float = 6.0, layers: Optional[int] = None, min_weights: Optional[float] = None,
-          gpus: Optional[list] = None, z_from: str = "--max-z", weights_from: str = "--min-weights") -> dict:
+          gpus: Optional[list] = None, z_from: str = "--max-z", weights_from: str = "--min-weights",
+          strict_alerts: bool = False) -> dict:
     """first, second: per worker (url, values, info, error) from the two reads; vllm_*: vLLM's values or None.
-    z_from, weights_from: where max_z and min_weights came from, for the problems' text.
-    Returns {"verdict", "problems", "unsure", "notes", "workers"}."""
-    problems, unsure, notes, workers = [], [], [], []
-    idle = False
+    z_from, weights_from: where max_z and min_weights came from, for the problems' text. strict_alerts: any alert,
+    confirmed or not, is a fault found.
+    Returns {"verdict", "problems", "unsure", "notes", "workers", "faults"}."""
+    problems, unsure, notes, workers, faults = [], [], [], [], []
+    idle = fresh = False
     for (url, a, ia, ea), (_u, b, ib, eb) in zip(first, second):
         w = {"url": url, "gpu": ia.get("UUID") or None, "pid": ia.get("pid") or None,
              "layers_checked": a.get("sdcguard_layers_checked"),
              "checks_executed": b.get("sdcguard_checks_executed_total", a.get("sdcguard_checks_executed_total"))}
         workers.append(w)
+        faults += _alerts(url, b or a, w, notes, strict_alerts)
         for err in (ea, eb):
             if err:
                 problems.append(f"{url}: no answer ({err}): the plugin didn't load, SDCGUARD_METRICS_PORT isn't "
@@ -420,7 +443,9 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
                 unsure.append(f"{url}: the worker changed between the two reads (pid {ia.get('pid')} -> "
                               f"{ib.get('pid')}): restarted")
             if not (b.get("sdcguard_reads_total", 0.0) > 0 and b.get("sdcguard_checks_executed_total", 0.0) > 0):
-                unsure.append(f"{url}: no check results read back yet (still warming up?)")
+                fresh = True
+                unsure.append(f"{url}: no check results read back yet (a server that hasn't served a request: "
+                              "--probe sends two)")
     reported = [w["gpu"] for w in workers if w["gpu"]]
     if len(reported) != len(set(reported)):
         twice = sorted({g for g in reported if reported.count(g) > 1})
@@ -453,8 +478,30 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
     elif not all(grew):
         unsure.append("executed checks didn't go up between the reads on every worker: the server is idle, or its "
                       "checks stopped, and without --vllm these can't be told apart")
-    verdict = "NOT PROTECTED" if problems else ("INCONCLUSIVE" if unsure else ("IDLE" if idle else "PROTECTED"))
-    return {"verdict": verdict, "problems": problems, "unsure": unsure, "notes": notes, "workers": workers}
+    verdict = "FAULT FOUND" if faults else ("NOT PROTECTED" if problems else
+                                            ("INCONCLUSIVE" if unsure else ("IDLE" if idle else "PROTECTED")))
+    return {"verdict": verdict, "problems": faults + problems, "unsure": unsure, "notes": notes, "workers": workers,
+            "faults": faults, "fresh": fresh}
+
+
+def _alerts(url: str, v: dict, w: dict, notes: list, strict: bool) -> list:
+    """A worker's alerts so far (the later read's counters): the faults it has confirmed, as problems; alerts it
+    hasn't confirmed, as notes (problems with strict)."""
+    total, conf = v.get("sdcguard_all_alerts_total"), v.get("sdcguard_confirmed_alerts_total")
+    w["alerts"], w["confirmed_alerts"] = total, conf
+    out = []
+    if conf is not None and conf > 0:
+        out.append(f"{url}: {conf:g} confirmed fault{'s' if conf != 1 else ''} (an output rechecked as wrong in "
+                   "float64, or weights changed since load): this worker computed wrong results; take it out of "
+                   "service and screen its GPU (the alert log says where, and which requests)")
+    rest = (total or 0.0) - (conf or 0.0)
+    if rest > 0:
+        why = (f"{url}: {rest:g} alert{'s' if rest != 1 else ''} not confirmed by {'their' if rest != 1 else 'its'} "
+               "own evidence (no row kept, or a recheck that agrees or couldn't judge)" if conf is not None else
+               f"{url}: {rest:g} alert{'s' if rest != 1 else ''}, from a plugin too old to tell confirmed ones apart")
+        (out if strict else notes).append(why + ("" if strict else "; see the alert log (--strict-alerts counts any "
+                                                 "alert as a fault)"))
+    return out
 
 
 def probe(base: str, model: Optional[str] = None, timeout: float = 60.0) -> Optional[str]:
@@ -509,6 +556,8 @@ def main(argv=None) -> int:
                    "what the qualification tested (longer contexts, longer prompts) is INCONCLUSIVE, not a note")
     p.add_argument("--max-age-days", type=float, metavar="DAYS", help="with --qualified: a decision made longer ago "
                    "than this is INCONCLUSIVE (the decision's policy, ready.max_age_days, can set a smaller limit)")
+    p.add_argument("--strict-alerts", action="store_true", help="any alert is FAULT FOUND, not only ones whose own "
+                   "evidence confirms a wrong result")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -532,13 +581,16 @@ def main(argv=None) -> int:
     # with --qualified, the stricter of the command line and what the qualification required
     lim = inherited(a.qualified, a.max_z, a.min_weights)
     held = dict(max_z=lim["max_z"], min_weights=lim["min_weights"], z_from=lim["z_from"],
-                weights_from=lim["weights_from"])
+                weights_from=lim["weights_from"], strict_alerts=a.strict_alerts)
     r = judge(first, second, vllm_first, vllm_second, layers=a.layers, gpus=gpus, **held)
     if a.vllm and vllm_first is None:
         r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read")
         if r["verdict"] in ("PROTECTED", "IDLE"):
             r["verdict"] = "INCONCLUSIVE"
-    if r["verdict"] == "IDLE" and a.probe:
+    # an idle server, or one that hasn't served a request yet (as a readiness probe sees every new server: no traffic
+    # reaches it until the probe passes), is shown its checks running by two short requests
+    if a.probe and vllm_first is not None and (r["verdict"] == "IDLE" or (r["verdict"] == "INCONCLUSIVE"
+                                                                          and r["fresh"] and not r["problems"])):
         why = probe(a.probe)
         if why:
             r["unsure"].append(why)
@@ -552,7 +604,8 @@ def main(argv=None) -> int:
                 r["verdict"] = "INCONCLUSIVE"
             else:
                 r2 = judge(second, third, vllm_second, v3[0], layers=a.layers, gpus=gpus, **held)
-                r2["notes"].insert(0, "probed: two short requests were sent because the server was idle")
+                r2["notes"].insert(0, "probed: two short requests were sent because the server was idle" +
+                                   (" and hadn't served a request yet" if r["fresh"] else ""))
                 if r2["verdict"] == "IDLE":   # vLLM counted no tokens for the probe: it can't show anything
                     r2["verdict"] = "INCONCLUSIVE"
                     r2["unsure"].append("vLLM counted no tokens for the probe requests")
@@ -579,7 +632,7 @@ def main(argv=None) -> int:
         else:                       # NOT THE QUALIFIED STACK, NOT QUALIFIED, NOT PROTECTED (weaker checks)
             r["problems"] += [q["why"], *q["differences"]] + \
                 ([f"weaker than the qualification: {x}" for x in q.get("weaker") or []] if q["differences"] else [])
-            if r["verdict"] != "NOT PROTECTED":
+            if r["verdict"] not in ("FAULT FOUND", "NOT PROTECTED"):
                 r["verdict"] = q["verdict"]
     if a.json:
         print(json.dumps(r, indent=1))
@@ -591,7 +644,7 @@ def main(argv=None) -> int:
             print(f"  unsure: {line}")
         for line in r["notes"]:
             print(f"  note: {line}")
-    return {"PROTECTED": 0, "IDLE": 0, "NOT PROTECTED": 1, "NOT THE QUALIFIED STACK": 1,
+    return {"PROTECTED": 0, "IDLE": 0, "FAULT FOUND": 1, "NOT PROTECTED": 1, "NOT THE QUALIFIED STACK": 1,
             "NOT QUALIFIED": 1}.get(r["verdict"], 2)
 
 

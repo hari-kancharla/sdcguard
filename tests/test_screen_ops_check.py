@@ -60,6 +60,13 @@ def test_the_judge_needs_every_test_and_every_shape():
     tests = {**base["clean"]["tests"], "gemm_fp16": t}
     assert any("gemm_fp16 didn't run every input set" in f
                for f in sc.judge({**base, "clean": {**base["clean"], "tests": tests}})[1])
+    # the same case listed as one cuBLAS refuses on this GPU (its own NOT_SUPPORTED) is covered; with another reason,
+    # or listed under another set, it isn't
+    for why, sset, ok in (("CUBLAS_STATUS_NOT_SUPPORTED when calling cublasLtMatmul", 3, True),
+                          ("out of memory", 3, False), ("CUBLAS_STATUS_NOT_SUPPORTED", 2, False)):
+        clean = {**base["clean"], "tests": tests,
+                 "unsupported": {"gemm_fp16": [{"set": sset, "shape": [32, 48, 1024], "transposed": True, "why": why}]}}
+        assert any("gemm_fp16 didn't run every input set" in f for f in sc.judge({**base, "clean": clean})[1]) != ok
     t = dict(base["clean"]["tests"]["gemm_fp16_real"])
     t["cases"] = t["cases"][:1]
     tests = {**base["clean"]["tests"], "gemm_fp16_real": t}

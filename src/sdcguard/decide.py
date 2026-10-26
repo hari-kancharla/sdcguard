@@ -119,6 +119,12 @@ def _finite(v) -> Optional[float]:
     return v if isinstance(v, (int, float)) and v == v and v not in (float("inf"), float("-inf")) else None
 
 
+def _count(v) -> Optional[float]:
+    """A counter's value, or None when it isn't a finite count (absent, NaN, infinite or negative)."""
+    v = _finite(v)
+    return v if v is not None and v >= 0 else None
+
+
 def plugin_coverage(metrics: list) -> dict:
     """What the vLLM plugin checked, from each worker's /metrics text read at the end of the run: its arithmetic
     checks, and its scheduled weight scan (SDCGUARD_WEIGHT_SCAN=1: the sdcguard_weight_scan_* series, absent when the
@@ -143,7 +149,7 @@ def plugin_coverage(metrics: list) -> dict:
                         "weight_scan_oldest_age_seconds": _finite(v.get("sdcguard_weight_scan_oldest_age_seconds")),
                         "weight_scan_left_out": v.get("sdcguard_weight_scan_left_out"),
                         "weight_scan_target_age_seconds": _finite(v.get("sdcguard_weight_scan_target_age_seconds")),
-                        "alerts_counted": v.get("sdcguard_all_alerts_total", v.get("sdcguard_all_alerts")),
+                        "alerts_counted": _count(v.get("sdcguard_all_alerts_total", v.get("sdcguard_all_alerts"))),
                         "share": info.get("share"), "gpu": info.get("UUID")})
     ratios = [w["weights_checked_ratio"] for w in workers]
     counted = [w["alerts_counted"] for w in workers]
@@ -307,8 +313,8 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
         if n["unreadable"]:
             gap = f"{n['unreadable']} lines of the alert file aren't readable records"
         elif plugin is not None and counted is None:
-            notes.append("the workers' metrics don't show how many alerts they counted (sdcguard_all_alerts_total: "
-                         "an older plugin), so the alert records can't be checked against them")
+            gap = ("a worker's metrics don't show how many alerts it counted (sdcguard_all_alerts_total: an older "
+                   "plugin, or metrics cut short), so the alert records can't be checked against them")
         elif counted is not None and counted > records:
             gap = f"the workers counted {counted:g} alerts but only {records} alert records were given (an alert file " \
                   "cut short or lost)"

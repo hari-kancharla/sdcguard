@@ -35,7 +35,9 @@ def passing():
                         "served": {"eager": "False", "cudagraph": "FULL_AND_PIECEWISE", "compilation": "VLLM_COMPILE"},
                         "compiled_fault": {"layer": layer, "factor": 1.02, "applied": True, "width": 2048},
                         "trial": {"layer": layer, "detected": True, "rounds": 2, "verdicts": ["output_wrong"],
-                                  "spot_alerts_other_layers": 0, "checksum_alerts": 0, "turns": 1}}}
+                                  "spot_alerts_other_layers": 0, "checksum_alerts": 0, "turns": 1,
+                                  "graphs": {"hooked": True, "replay_FULL": 60, "replay_PIECEWISE": 280,
+                                             "passed_on": 10, "no_graph": 0}}}}
 
 
 def test_the_trials_are_fixed():
@@ -95,6 +97,12 @@ def test_each_criterion_fails_on_its_own():
     r = passing(); r["faulted"]["served"] = {"eager": "True", "cudagraph": "NONE"}; cases.append((r, "S6"))
     r = passing(); r["faulted"]["served"] = {}; cases.append((r, "S6"))         # (no stack published)
     r = passing(); r["faulted"]["trial"]["turns"] = 0; cases.append((r, "S6"))
+    # the trial must show graph replays only: a forward with no graph, a capture, no replay, or no hook fails it
+    for g in ({"no_graph": 3}, {"capture_FULL": 1}, {"replay_FULL": 0, "replay_PIECEWISE": 0}, {"hooked": False},
+              {"count_errors": 1}):
+        r = passing(); r["faulted"]["trial"]["graphs"].update(g); cases.append((r, "S6"))
+    r = passing(); del r["faulted"]["trial"]["graphs"]; cases.append((r, "S6"))
+    r = passing(); r["faulted"]["served"]["cudagraph"] = "FULL"; cases.append((r, "S6"))   # no piecewise wrappers
     r = passing(); r["eager"]["trials"][one[0]]["changed"] = [{"step": 7, "error": "IndexError: x"}]
     cases.append((r, "S5"))                                        # a hook error isn't a wrong value made
     for r, crit in cases:
@@ -168,6 +176,99 @@ def test_the_compiled_trial_stops_at_its_layers_alert(monkeypatch):
     sent[0] = 10 ** 6                                # (no new alert during these rounds)
     t = vsc.compiled_trial(8000, "x", ["p"] * 8, vsc.time.monotonic() + 3600, layer)
     assert not t["detected"] and t["alerts_before_trial"] == 1 and t["rounds_sent"] == vsc.ROUNDS
+
+
+def test_the_compiled_trial_drains_first_cuts_its_prompts_and_records_how_graphs_ran(monkeypatch):
+    layer = vsc.compiled_layer()
+    sent, stats = [], [{"hooked": True, "replay_FULL": 5, "no_graph": 40, "turns": {layer: 0}}]
+
+    def try_(port, model, prompt, n):
+        sent.append((prompt, n))
+        stats[0] = {**stats[0], "replay_FULL": stats[0]["replay_FULL"] + 1}
+        return {"text": "x"}
+    log = [{"detector": "serve_spot", "detail": {"where": layer, "recheck": {"verdict": "output_wrong"}}}]
+    reads = []
+
+    def rpc(port, method, *a):
+        reads.append((method, len(sent)))
+        return {**stats[0], "turns": {layer: len(sent)}}
+    monkeypatch.setattr(vsc.vn, "rpc", rpc)
+    monkeypatch.setattr(vsc.vn, "_try", try_)
+    monkeypatch.setattr(vsc.vn, "alerts", lambda path: list(log) if len(sent) > 2 else [])
+    monkeypatch.setattr(vsc.time, "sleep", lambda s: None)
+    t = vsc.compiled_trial(8000, "x", ["Summarize this in one sentence: " + "word " * 300] * 8,
+                           vsc.time.monotonic() + 3600, layer)
+    assert sent[0][1] == 1 and ("sdcguard_test_graph_stats", 1) in reads      # the drain, then the baseline
+    assert all(len(p.split()) <= vsc.SHORT_WORDS for p, _n in sent)
+    assert t["graphs"]["hooked"] and t["graphs"]["replay_FULL"] == len(sent) - 1 and t["graphs"]["no_graph"] == 0
+    assert vsc.replayed_only(t["graphs"]) and t["detected"]
+    assert vsc._graph_delta({"hooked": True, "no_graph": 2}, {"hooked": True, "no_graph": 5, "replay_FULL": 3}) == \
+        {"hooked": True, "no_graph": 3, "replay_FULL": 3}
+
+
+def test_the_graph_counter_tells_replays_captures_and_forwards_without_a_graph(monkeypatch):
+    """_hook_graphs on a stand-in for vLLM's CUDAGraphWrapper: how each call is counted, and the call goes on."""
+    import enum
+    import types
+    ext = _ext()
+
+    class Mode(enum.Enum):
+        NONE, PIECEWISE, FULL = 0, 1, 2
+
+    fc = types.SimpleNamespace(cudagraph_runtime_mode=Mode.NONE, batch_descriptor="b4")
+
+    class Entry:
+        def __init__(self, g):
+            self.cudagraph = g
+
+    class Wrapper:
+        def __init__(self, mode):
+            self.runtime_mode, self.concrete_cudagraph_entries = mode, {}
+
+        def __call__(self, x):
+            return x + 1
+    mods = {"vllm": types.ModuleType("vllm"), "vllm.compilation": types.ModuleType("vllm.compilation"),
+            "vllm.compilation.cuda_graph": types.ModuleType("vllm.compilation.cuda_graph"),
+            "vllm.config": types.ModuleType("vllm.config"), "vllm.forward_context": types.ModuleType("fc")}
+    mods["vllm.compilation.cuda_graph"].CUDAGraphWrapper = Wrapper
+    mods["vllm.config"].CUDAGraphMode = Mode
+    mods["vllm.forward_context"].get_forward_context = lambda: fc
+    mods["vllm.forward_context"].is_forward_context_available = lambda: True
+    mods["vllm.compilation"].cuda_graph = mods["vllm.compilation.cuda_graph"]
+    for k, v in mods.items():
+        monkeypatch.setitem(sys.modules, k, v)
+    monkeypatch.setattr(ext, "_GRAPHS", {})
+    ext._hook_graphs()
+    full, piece = Wrapper(Mode.FULL), Wrapper(Mode.PIECEWISE)
+    assert full(1) == 2                                         # mode NONE: no graph
+    fc.cudagraph_runtime_mode = Mode.FULL
+    assert full(1) == 2 and piece(1) == 2                       # FULL: a capture (no graph yet); passed on
+    full.concrete_cudagraph_entries["b4"] = Entry(object())
+    full(1)
+    full(1)                                                     # two replays
+    assert ext._GRAPHS == {"hooked": True, "no_graph": 1, "capture_FULL": 1, "passed_on": 1, "replay_FULL": 2}
+    # the V2 runner's FULL replays, through its CudaGraphManager (a subclass's super() call reaches the hook)
+    class Manager:
+        def run_fullgraph(self, desc):
+            return desc
+
+    class ModelManager(Manager):
+        def run_fullgraph(self, desc):
+            return super().run_fullgraph(desc) + 1
+    mods["vllm.v1"] = types.ModuleType("vllm.v1")
+    mods["vllm.v1.worker"] = types.ModuleType("vllm.v1.worker")
+    mods["vllm.v1.worker.gpu"] = types.ModuleType("vllm.v1.worker.gpu")
+    mods["vllm.v1.worker.gpu.cudagraph_utils"] = types.ModuleType("cu")
+    mods["vllm.v1.worker.gpu.cudagraph_utils"].CudaGraphManager = Manager
+    mods["vllm.v1.worker.gpu"].cudagraph_utils = mods["vllm.v1.worker.gpu.cudagraph_utils"]
+    for k, v in mods.items():
+        monkeypatch.setitem(sys.modules, k, v)
+    monkeypatch.setattr(ext, "_GRAPHS", {})
+    Wrapper._sdcguard_test_graphs = False
+    monkeypatch.setattr(Wrapper, "__call__", lambda self, x: x + 1)
+    ext._hook_graphs()
+    assert ModelManager().run_fullgraph(1) == 2 and ext._GRAPHS == {"hooked": True, "replay_FULL": 1}
+    assert ext.FaultInjection().sdcguard_test_graph_stats() == ext._GRAPHS
 
 
 def test_compiled_served_reads_the_servers_own_stack():
