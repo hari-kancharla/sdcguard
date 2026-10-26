@@ -37,8 +37,13 @@ nothing). What it does, in every vLLM process:
     the model however small its effect (serve_weights.py; the checked layers, quantized ones included, the bf16
     linear layers SDCGUARD_SHARE leaves out of the arithmetic checks, and every other parameter of the model:
     embeddings, the LM head, norm weights, MoE experts' weights; SDCGUARD_WEIGHT_SCAN_MB, default 64, is how many
-    megabytes of weights each read compares; SDCGUARD_WEIGHT_SCAN_AGE, in seconds, raises that as needed so every
-    weight is verified at least that often, up to SDCGUARD_WEIGHT_SCAN_MAX_MB a read, default 1024);
+    megabytes of weights each read compares; SDCGUARD_WEIGHT_SCAN_AGE, in seconds, raises that as needed so a
+    pass over the weights is scheduled to take at most 2/3 of it at the measured time between reads, up to
+    SDCGUARD_WEIGHT_SCAN_MAX_MB a read, default 1024: a schedule, not a guarantee; the scan's coverage reports the
+    actual oldest verification age and whether it is within the target);
+  - once the model has loaded, reads what the server runs (sdcguard.stack, published as sdcguard_stack_info for
+    `sdcguard qualify` and `sdcguard ready --qualified`): among it the commit its model revision resolved to and one
+    digest of every parameter (the weight scan's fingerprint, one pass over the weights at load, scan on or off);
   - every SDCGUARD_POLL_EVERY model steps (default 16), reads the per-layer results back without
     stalling the GPU and logs an alert for any layer whose output didn't match its checksums (that read
     reports the previous one, so an alert shows up one read later); and after the first model step that ends
@@ -1414,8 +1419,9 @@ def _positive_env(name: str, default: Optional[float], least: float, what: str) 
 
 
 def _weight_scan_age() -> Optional[float]:
-    """SDCGUARD_WEIGHT_SCAN_AGE: seconds; the scan compares enough each read that every weight is verified at least
-    that often (unset: the byte budget alone)."""
+    """SDCGUARD_WEIGHT_SCAN_AGE: seconds; the scan compares enough each read that a pass is scheduled to verify every
+    weight at least that often (a schedule from the measured time between reads, not a guarantee: the coverage
+    report gives the actual oldest verification age; unset: the byte budget alone)."""
     return _positive_env("SDCGUARD_WEIGHT_SCAN_AGE", None, 1.0, "a number of seconds")
 
 
@@ -1429,23 +1435,9 @@ SET_WHILE_SERVING = ("k_scale", "v_scale", "q_scale", "prob_scale")   # attentio
 
 
 def _param_tensors(name: str, p):
-    """A parameter's tensors, as vLLM's own weight digests take them: a shared-weight parameter's partitions, a
-    tensor subclass's inner tensors (TorchAO), else the parameter itself."""
-    parts = getattr(p, "partitions", None)
-    if isinstance(parts, dict) and parts:
-        for k, v in parts.items():
-            yield from _param_tensors(f"{name}.{k}", v)
-        return
-    try:
-        from torch.utils._python_dispatch import is_traceable_wrapper_subclass
-        wrapped = is_traceable_wrapper_subclass(p)
-    except Exception:  # noqa: BLE001
-        wrapped = False
-    if wrapped:
-        for a in p.__tensor_flatten__()[0]:
-            yield from _param_tensors(f"{name}.{a}", getattr(p, a))
-        return
-    yield name, p
+    """A parameter's tensors (serve_weights.param_tensors, which the weights' digest at load uses too)."""
+    from .serve_weights import param_tensors
+    return param_tensors(name, p)
 
 
 def _module_tensors(mod) -> list:
@@ -2067,14 +2059,26 @@ def _publish_stack(runner) -> Optional[dict]:
               "attention": {True: "on", False: "outside_graphs", None: "on_unknown_where"}[_attn_kernels()[0]]
               if (_STATE.get("attn") or {}).get("checked") else "off",
               "weights": "on" if getattr(_STATE.get("guard"), "wscan", None) is not None else "off"}
+    # the lines the checks that are on alert at (and the weight scan's verification-age target), so that
+    # `sdcguard ready --qualified` can hold a server to the ones its qualification ran with
+    g = _STATE.get("guard")
+    for key, detector, v in (("norm_z", "norms", getattr(getattr(g, "norms", None), "line", None)),
+                             ("attn_z", "attention", getattr(getattr(g, "attn", None), "line", None)),
+                             ("weight_scan_age", "weights", getattr(getattr(g, "wscan", None), "target_age", None))):
+        if checks[detector] != "off" and isinstance(v, (int, float)):
+            checks[key] = f"{v:g}"
     info = collect(runner, model, checks)
     _STATE["stack"] = info
     g = _STATE["guard"]
     if g is not None and g.metrics is not None and hasattr(g.metrics, "stack"):
         g.metrics.stack(info)
     log.info("sdcguard: stack %s (%s)", info.get("fingerprint"),
-             ", ".join(f"{k} {info[k]}" for k in ("model", "dtype", "quantization", "attention", "moe", "compilation",
-                                                  "cudagraph", "vllm", "gpu") if info.get(k)))
+             ", ".join(f"{k} {info[k]}" for k in ("model", "model_commit", "weights_digest", "dtype", "quantization",
+                                                  "lora", "attention", "moe", "compilation", "cudagraph", "vllm",
+                                                  "gpu") if info.get(k)))
+    if (info.get("lora") or "off") != "off":
+        log.info("sdcguard: LoRA adapters are enabled: they load per request, so the weights digest (%s) is of the "
+                 "base model only", info.get("weights_digest"))
     return info
 
 

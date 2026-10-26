@@ -677,5 +677,53 @@ def test_run1_is_one_call_and_reports_every_part(runner, monkeypatch, capsys):
     with pytest.raises(SystemExit) as e:
         runner.main("run1")
     assert "norm_diag: exit code 1" in str(e.value) and "spot_l4: no result" in str(e.value)
-    assert set(runner.RUN1) == {"weight_scan", "moe_bench", "norm_diag", "spot_h100", "spot_l4", "screen_ops_h100",
-                                "screen_ops_l4", "fp8_moe"}
+    assert set(runner.RUN1) == {"weight_scan", "moe_bench", "norm_diag", "moe", "spot_h100", "spot_l4",
+                                "screen_ops_h100", "screen_ops_l4", "fp8_moe"}
+
+
+def test_the_source_fingerprint_carries_the_criteria(runner, monkeypatch, tmp_path):
+    """A result's STATUS.json records the code and the criteria (docs/METHOD.md) it ran under."""
+    import hashlib
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("x = 1\n")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "METHOD.md").write_text("criteria\n")
+    monkeypatch.setattr(runner, "LOCAL", tmp_path)
+    s = runner._source()
+    assert s["files"] == 1 and s["criteria"] == {"docs/METHOD.md": hashlib.sha256(b"criteria\n").hexdigest()}
+    (tmp_path / "docs" / "METHOD.md").write_text("criteria changed\n")
+    assert runner._source()["criteria"] != s["criteria"] and runner._source()["sha256"] == s["sha256"]
+
+
+def test_the_smoke_test_is_one_call_over_every_part(runner, monkeypatch, capsys):
+    """Run 1's smoke test: one call starts every part (6 on H100s, 2 on L4s) from inside Modal; a part that fails
+    or gives no result fails the phase; each part's limit fits inside its function's."""
+    monkeypatch.setattr(runner, "bundle", _remote(_archive()))
+    parts = (*runner.SMOKE_H100, *runner.SMOKE_L4)
+    assert set(parts) == set(runner.SMOKE_LIMITS) and len(parts) == 8
+    assert all(runner.SMOKE_LIMITS[p] <= 28 for p in runner.SMOKE_H100)          # (function: 30 minutes)
+    assert all(runner.SMOKE_LIMITS[p] <= 15 for p in runner.SMOKE_L4)            # (function: 17 minutes)
+    ok = {p: f"smoke_{p}: exit code 0 in 9.0 minutes" for p in parts}
+    monkeypatch.setattr(runner, "smoke1", _remote(ok))
+    runner.main("smoke1")
+    assert "Done." in capsys.readouterr().out
+    bad = dict(ok, moe="smoke_moe: exit code 1 in 12.0 minutes")
+    bad.pop("screen_l4")
+    monkeypatch.setattr(runner, "smoke1", _remote(bad))
+    with pytest.raises(SystemExit) as e:
+        runner.main("smoke1")
+    assert "smoke_moe: exit code 1" in str(e.value) and "smoke_screen_l4: no result" in str(e.value)
+    seen = {}
+
+    class One:
+        @staticmethod
+        def remote(force, src, parts):
+            seen["parts"], seen["force"] = parts, force
+            return {"moe": "smoke_moe: exit code 0 in 9.0 minutes"}
+    monkeypatch.setattr(runner, "smoke1", One)
+    runner.main("smoke1", True, "moe")                    # a fixed part again, alone
+    assert seen == {"parts": ["moe"], "force": True}
+    with pytest.raises(SystemExit, match="--parts goes with --phase smoke1"):
+        runner.main("run1", False, "moe")
+    with pytest.raises(SystemExit, match="--parts goes with"):
+        runner.main("smoke1", False, "nope")

@@ -24,6 +24,10 @@ class _Backend:
 class _Attn(torch.nn.Module):
     attn_backend = _Backend
 
+    def __init__(self):
+        super().__init__()
+        self.w = torch.nn.Parameter(torch.arange(8.0).to(torch.bfloat16), requires_grad=False)   # weights to digest
+
 
 class _HFConfig:
     def __init__(self, **over):
@@ -81,7 +85,7 @@ def test_the_metrics_label_round_trip():
 
 
 def test_compare_names_what_differs():
-    a = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "fingerprint": "x"}
+    a = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "weights_digest": "0" * 16, "fingerprint": "x"}
     b = {**a, "attention": "TRITON_ATTN", "fingerprint": "y"}
     c = stack.compare(a, b)
     assert c["same"] is False and c["differences"] == ["attention: 'FLASH_ATTN' qualified, 'TRITON_ATTN' now"]
@@ -90,7 +94,7 @@ def test_compare_names_what_differs():
 
 
 def _decision(tmp_path, decision="ACCEPT", deployed=True):
-    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0"}
+    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "weights_digest": "0123456789abcdef"}
     st["fingerprint"] = stack.fingerprint(st)
     d = {"decision": decision, "scope": {"stacks": {"candidate": {"vllm": "0.32.0",
                                                                     **({"deployed": st} if deployed else {})}}}}
@@ -143,6 +147,11 @@ def test_qualify_records_the_deployed_stack_and_ready_holds_a_server_to_it(tmp_p
     assert ready.qualified(dec, [_page(st_same)])["verdict"] is None
     q = ready.qualified(dec, [_page(st_triton)])
     assert q["verdict"] == "NOT THE QUALIFIED STACK" and any("attention" in d for d in q["differences"])
+    # every worker's stack is recorded, and other weights under the same name and config are another stack
+    cand = json.load(open(dec))["scope"]["stacks"]["candidate"]
+    assert cand["deployed_workers"][0]["weights_digest"] == st_same["weights_digest"]
+    q = ready.qualified(dec, [_page({**st_same, "weights_digest": "fedcba9876543210"})])
+    assert q["verdict"] == "NOT THE QUALIFIED STACK" and q["differences"][0].startswith("worker 0: weights_digest")
 
 
 def test_the_plugin_publishes_the_stack_whenever_its_guard_is_made(monkeypatch, tmp_path):
@@ -173,7 +182,8 @@ def test_the_plugin_publishes_the_stack_whenever_its_guard_is_made(monkeypatch, 
 
 
 def test_a_deployment_beyond_what_was_tested_is_named(tmp_path):
-    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "max_model_len": "32768"}
+    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "max_model_len": "32768",
+          "weights_digest": "0123456789abcdef"}
     st["fingerprint"] = stack.fingerprint(st)
     d = {"decision": "ACCEPT", "scope": {"stacks": {"candidate": {"deployed": st}},
                                          "tested": {"max_prompt_tokens": 600, "max_context_tokens": 760,
@@ -217,3 +227,134 @@ def test_a_changed_model_config_is_another_stack_and_ready_names_it():
     moved = stack.collect(*_runner(hf=_HFConfig(_name_or_path="/elsewhere")))
     assert moved["fingerprint"] == good["fingerprint"] and good["generation_config"] == "auto"
     assert stack.collect(*_runner(gen="vllm"))["fingerprint"] != good["fingerprint"]
+
+
+# ---------------------------------------------------------------- the model's weights and revision are the stack too
+class _Rev(str):
+    """huggingface_hub's ResolvedRevision, as vLLM 0.32 keeps model_config.revision: the revision asked for as a str
+    ("main"), the commit it resolved to as .resolved."""
+
+    def __new__(cls, asked, resolved):
+        s = super().__new__(cls, asked)
+        s.resolved = resolved
+        return s
+
+
+def test_changed_weights_or_another_commit_are_another_stack():
+    """An external review changed one model parameter, keeping its name and the config, and the fingerprint stayed
+    the same; so it did with another resolved commit (the revision stays "main", and the config's hash drops
+    _commit_hash)."""
+    torch.manual_seed(0)
+    lin = torch.nn.Linear(16, 8).to(torch.bfloat16)
+    r, _ = _runner()
+    m = torch.nn.Sequential(_Attn(), lin)
+    a = stack.collect(r, m)
+    assert len(a["weights_digest"]) == 16 and stack.collect(r, m) == a       # the same weights: the same stack
+    with torch.no_grad():
+        lin.weight.view(-1).view(torch.int16)[5] ^= 1                         # one bit of one weight
+    b = stack.collect(r, m)
+    assert b["weights_digest"] != a["weights_digest"] and b["fingerprint"] != a["fingerprint"]
+    c = stack.compare(a, b)
+    assert c["same"] is False and any(d.startswith("weights_digest:") for d in c["differences"])
+    r1, _ = _runner()
+    r1.vllm_config.model_config.revision = _Rev("main", "a" * 40)
+    r2, _ = _runner()
+    r2.vllm_config.model_config.revision = _Rev("main", "b" * 40)
+    s1, s2 = stack.collect(r1, m), stack.collect(r2, m)
+    assert s1["revision"] == s2["revision"] == "main" and s1["model_commit"] == "a" * 40
+    assert s1["fingerprint"] != s2["fingerprint"]
+    assert any(d.startswith("model_commit:") for d in stack.compare(s1, s2)["differences"])
+    hf = _HFConfig()
+    hf._commit_hash = "c" * 40                                                # an older transformers keeps it here
+    assert stack.collect(*_runner(hf=hf))["model_commit"] == "c" * 40
+    assert "model_commit" not in stack.collect(*_runner())                    # a local checkpoint: none to read
+
+
+def test_lora_is_recorded_and_its_adapters_are_said_not_covered():
+    r, m = _runner()
+    assert stack.collect(r, m)["lora"] == "off"
+    r.vllm_config.lora_config = NS(max_loras=4, max_lora_rank=16, default_mm_loras=None)
+    s = stack.collect(r, m)
+    assert s["lora"].startswith("on") and "max_loras=4" in s["lora"] and "not in the weights digest" in s["lora"]
+    assert s["fingerprint"] != stack.collect(*_runner())["fingerprint"]
+
+
+def _decision_file(tmp_path, workers, name="d.json"):
+    d = {"decision": "ACCEPT", "scope": {"stacks": {"candidate": {"deployed": workers[0],
+                                                                  "deployed_workers": workers}}}}
+    p = tmp_path / name
+    p.write_text(json.dumps(d))
+    return str(p)
+
+
+def _st(**kv):
+    s = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "lora": "off", **kv}
+    s["fingerprint"] = stack.fingerprint(s)
+    return s
+
+
+def test_ready_holds_each_worker_to_its_own_weights(tmp_path):
+    """With tensor parallelism each worker holds its own shard, so each has its own digest: qualify records every
+    worker's stack and ready compares worker by worker."""
+    w0, w1 = _st(tensor_parallel="2", weights_digest="0" * 16), _st(tensor_parallel="2", weights_digest="1" * 16)
+    path = _decision_file(tmp_path, [w0, w1])
+    assert ready.qualified(path, [_page(w0), _page(w1)])["verdict"] is None
+    changed = _st(tensor_parallel="2", weights_digest="2" * 16)
+    q = ready.qualified(path, [_page(w0), _page(changed)])
+    assert q["verdict"] == "NOT THE QUALIFIED STACK" and q["differences"][0].startswith("worker 1: weights_digest")
+
+
+def test_ready_refuses_a_decision_without_the_weights_identity_the_server_has(tmp_path):
+    """A decision made before the weights' digest was recorded can't be shown to be about these weights: INCONCLUSIVE,
+    never a silent match; and the same when the server doesn't publish the digest the decision records, or neither
+    records one."""
+    old = _st()
+    live = _st(weights_digest="0" * 16, model_commit="a" * 40)
+    q = ready.qualified(_decision_file(tmp_path, [old]), [_page(live)])
+    assert q["verdict"] == "INCONCLUSIVE" and "weights" in q["why"] and "older sdcguard" in q["why"]
+    q = ready.qualified(_decision_file(tmp_path, [live], "new.json"), [_page(old)])
+    assert q["verdict"] == "INCONCLUSIVE" and "doesn't publish" in q["why"]
+    q = ready.qualified(_decision_file(tmp_path, [old], "neither.json"), [_page(old)])
+    assert q["verdict"] == "INCONCLUSIVE" and "neither" in q["why"]
+    # a real difference elsewhere still says what differs
+    q = ready.qualified(_decision_file(tmp_path, [old], "other.json"), [_page({**live, "attention": "TRITON_ATTN"})])
+    assert q["verdict"] == "NOT THE QUALIFIED STACK"
+
+
+def test_the_plugin_publishes_the_weights_digest_at_load_with_the_scan_on_or_off(monkeypatch, tmp_path):
+    """One digest of every parameter, taken once when the model has loaded (the scan's fingerprint, on the CPU
+    stand-in its PyTorch version): the same with the weight scan on or off, another when a weight differs, and left
+    out, without breaking the load, when it can't be read."""
+    from _vllm_standins import Decoder, install_fake_vllm, load, plugin_env
+
+    def start(factory, **env):
+        UL, GM = install_fake_vllm(monkeypatch.setitem)
+        monkeypatch.setattr(GM, "__init__", lambda self, f: setattr(self, "factory", f), raising=False)
+        monkeypatch.setattr(GM, "load_model", lambda self: setattr(self, "model", load(self.factory(UL))),
+                            raising=False)
+        vp = plugin_env(monkeypatch, tmp_path, **env)
+        vp.register()
+        runner = GM(factory)
+        runner.load_model()
+        return vp, runner
+
+    def flipped(UL):
+        d = Decoder(UL)
+        with torch.no_grad():
+            d.layers[2].weight.view(-1).view(torch.int16)[7] ^= 1 << 3
+        return d
+
+    vp, _ = start(Decoder)
+    off = vp._STATE["stack"]["weights_digest"]
+    vp, _ = start(Decoder, SDCGUARD_WEIGHT_SCAN="1")
+    assert vp._STATE["stack"]["weights_digest"] == off and len(off) == 16
+    vp, _ = start(flipped)
+    assert vp._STATE["stack"]["weights_digest"] != off
+
+    from sdcguard import serve_weights
+
+    def broken(model):
+        raise RuntimeError("unreadable")
+    monkeypatch.setattr(serve_weights, "model_digest", broken)
+    vp, runner = start(Decoder)
+    assert runner.model is not None and vp._STATE["stack"] and "weights_digest" not in vp._STATE["stack"]

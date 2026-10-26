@@ -22,7 +22,14 @@ Each answers the same 64 prompts greedily (32 tokens, the top 5 log-probabilitie
 each pair below: how many completions differ, and for each difference, at its first differing token, whether each
 side preferred its own token by at most 0.25 nat (vLLM's own near-tie rule in its tests); and from each server's
 compiled code, its Triton kernels that compute an rsqrt (the norms), each by a hash of its source with the kernel's
-name taken out, and the set of configurations Inductor's autotuning chose (all kernels).
+name taken out, the set of configurations Inductor's autotuning chose (all kernels), and which configuration each
+kernel got (by its source hash, from the .best_config file Inductor keys to that kernel's file), so a kernel tuned
+differently on two servers is named. These locate where two servers differ; they point to a cause, they don't prove
+one.
+
+The run is complete only when every server started, answered all 64 prompts with a usable completion (its text, 32
+token ids and 32 top-5 log-probability tables), and left compiled norm kernels to read; a server whose startup
+would run past the run's time isn't started.
 
     python experiments/vllm_norm_diag.py --out runs/norm_diag
 """
@@ -52,6 +59,8 @@ IDENTITY = 64
 TOKENS = 32
 NEAR_TIE = 0.25
 RUN_S = 40 * 60                          # inside the Modal phase's 45 minutes
+ANSWER_S = 4 * 60                        # 64 completions, reading the compiled code, stopping the server
+MIN_START_S = 8 * 60                     # a fresh compile (2 to 4 minutes on an H100) and ANSWER_S
 
 
 def server(role: str, out: str, port: int, metrics_port: int):
@@ -89,9 +98,23 @@ def complete(port: int, prompt: str) -> dict:
             return {"error": f"HTTP {status}: {str(r)[:200]}"}
         c = r["choices"][0]
         lp = c.get("logprobs") or {}
-        return {"text": c["text"], "tokens": lp.get("tokens") or [], "top": lp.get("top_logprobs") or []}
+        out = {"text": c["text"], "tokens": lp.get("tokens") or [], "top": lp.get("top_logprobs") or []}
+        why = unusable(out)
+        return {"error": f"unusable completion: {why}", **out} if why else out
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+
+def unusable(c: dict):
+    """Why a completion can't be compared (None if it can): its text, TOKENS token ids, TOKENS top-5 tables."""
+    if not isinstance(c.get("text"), str):
+        return "no text"
+    toks, top = c.get("tokens"), c.get("top")
+    if not isinstance(toks, list) or len(toks) != TOKENS:
+        return f"{len(toks) if isinstance(toks, list) else 'no'} tokens, not {TOKENS}"
+    if not isinstance(top, list) or len(top) != TOKENS or not all(isinstance(t, dict) and t for t in top):
+        return f"top log-probabilities for {len(top) if isinstance(top, list) else 'no'} tokens, not {TOKENS}"
+    return None
 
 
 def first_divergence(a: dict, b: dict) -> dict:
@@ -115,14 +138,16 @@ def first_divergence(a: dict, b: dict) -> dict:
 
 
 def compare(x: list, y: list) -> dict:
-    if not x or not y:
-        return {"compared": False}
-    diffs = []
-    for k, (a, b) in enumerate(zip(x, y)):
-        if a.get("error") or b.get("error"):
-            diffs.append({"prompt": k, "error": a.get("error") or b.get("error")})
-        elif a.get("text") != b.get("text"):
-            diffs.append({"prompt": k, **first_divergence(a, b)})
+    """compared: both servers gave IDENTITY usable completions (else the count of those that failed, and no
+    comparison: a failed request isn't a different answer)."""
+    if len(x) != IDENTITY or len(y) != IDENTITY:
+        return {"compared": False, "why": f"{len(x)} and {len(y)} completions, not {IDENTITY} each"}
+    bad = [k for k, (a, b) in enumerate(zip(x, y)) if a.get("error") or b.get("error")]
+    if bad:
+        return {"compared": False, "failed": len(bad), "why": f"{len(bad)} prompts without a usable completion on one "
+                f"side (first: prompt {bad[0]}: {x[bad[0]].get('error') or y[bad[0]].get('error')})"}
+    diffs = [{"prompt": k, **first_divergence(a, b)} for k, (a, b) in enumerate(zip(x, y))
+             if a.get("text") != b.get("text")]
     return {"compared": True, "differ": len(diffs), "all_near_ties": all(d.get("near_tie") for d in diffs),
             "diffs": diffs}
 
@@ -174,6 +199,59 @@ def tuned_configs(root: str) -> list:
     return sorted(out)
 
 
+def best_config_path(path: str) -> Optional[str]:
+    """Where Inductor keeps the tuned configuration of the kernel in the file `path`, by PyTorch's own code
+    (AutotuneCache: a hash of the file's name and torch's own key, in the kernel's folder; the function that names it
+    changed between versions), or None where it can't be told."""
+    try:
+        from torch._inductor.runtime.autotune_cache import AutotuneCache as A
+        key = A._prepare_key(path)
+        if hasattr(A, "_make_local_cache_key"):
+            return A._make_local_cache_key(os.path.dirname(path), key)
+        c = A.__new__(A)
+        c.local_cache = None
+        c._setup_local_cache({"autotune_local_cache": True}, os.path.dirname(path), key)
+        return c.local_cache[1] if c.local_cache else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def configs_by_kernel(root: str) -> dict:
+    """{source hash with names taken out (as norm_kernels): the sorted tuned configurations of the kernels with that
+    source} for every Triton kernel of a server's compiled code whose .best_config file is found (best_config_path):
+    two kernels can differ by name only, each tuned on its own."""
+    out = {}
+    for path in glob.glob(os.path.join(root, "**", "*.py"), recursive=True):
+        try:
+            src = open(path, errors="replace").read()
+            if "@triton.jit" not in src or "async_compile.triton(" in src or "def call(" in src:
+                continue
+            bc = best_config_path(path)
+            if not bc or not os.path.exists(bc):
+                continue
+            c = json.load(open(bc))
+        except Exception:  # noqa: BLE001  (a file that can't be read or paired is left out)
+            continue
+        body = "\n".join(line for line in src.splitlines() if not line.lstrip().startswith("#"))
+        norm = _NAME.sub("KERNEL", body)
+        norm = re.sub(r"'kernel_name': '[^']*'|'backend_hash': '[^']*'|'cache_key': '[^']*'", "", norm)
+        if isinstance(c, dict):
+            c = {k: v for k, v in c.items() if k not in ("time_taken_ms", "triton_cache_hash", "found_by_coordesc")}
+        h = hashlib.sha256(norm.encode()).hexdigest()[:16]
+        out[h] = sorted(out.get(h, []) + [json.dumps(c, sort_keys=True)])
+    return out
+
+
+def tuned_by_kernel_diff(a: dict, b: dict) -> dict:
+    """The kernels both servers compiled (same source) that autotuning gave different configurations (compared as
+    the sorted list of configurations of the kernels with that source on each server)."""
+    if not a or not b:
+        return {"compared": False}
+    both = sorted(set(a) & set(b))
+    diff = [{"kernel": h, "first": a[h], "second": b[h]} for h in both if a[h] != b[h]]
+    return {"compared": True, "kernels_in_both": len(both), "tuned_differently": diff, "same": not diff}
+
+
 def kernel_diff(a: dict, b: dict) -> dict:
     if not a or not b:
         return {"compared": False}
@@ -195,14 +273,17 @@ def run(out: str, port: int, metrics_port: int) -> dict:
     ps = vs.prompts(IDENTITY)
     res: dict = {"model": MODEL}
     for role in ROLES:
-        if time.monotonic() + 5 * 60 > deadline:
-            res[role] = {"skipped": "the run's time was nearly up"}
+        # startup (a fresh compile) plus 64 completions must fit before the deadline: the wait for readiness ends
+        # ANSWER_S before it, and a server isn't started with less than MIN_START_S left
+        left = deadline - time.monotonic()
+        if left < MIN_START_S:
+            res[role] = {"skipped": f"the run's time was nearly up ({left / 60:.1f} minutes left)"}
             continue
         proc, log = server(role, out, port, metrics_port)
         r: dict = {}
         res[role] = r
         try:
-            r["ready"] = vs.wait_ready(port, proc, timeout=1200)
+            r["ready"] = vs.wait_ready(port, proc, timeout=max(60.0, min(1200.0, left - ANSWER_S)))
             if not r["ready"]:
                 continue
             r["reductions"] = vn.rpc(port, "sdcguard_test_reductions")
@@ -217,6 +298,7 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             root = os.path.join(out, role)
             r["norm_kernels"] = norm_kernels(root, keep=os.path.join(root, "norm_kernels"))
             r["tuned_configs"] = tuned_configs(root)
+            r["tuned_by_kernel"] = configs_by_kernel(root)
             for d in ("vllm_cache", "inductor", "triton"):
                 shutil.rmtree(os.path.join(root, d), ignore_errors=True)
             with open(os.path.join(out, "PARTIAL.json"), "w") as f:
@@ -232,14 +314,27 @@ def summarize(res: dict) -> dict:
         pairs[f"{a}_vs_{b}"] = {"answers": {k: v for k, v in c.items() if k != "diffs"},
                                 "first_divergences": c.get("diffs"),
                                 "norm_kernels": kernel_diff(ra.get("norm_kernels") or {}, rb.get("norm_kernels") or {}),
-                                "tuned_configs": config_diff(ra.get("tuned_configs"), rb.get("tuned_configs"))}
-    roles = {k: {"ready": (res.get(k) or {}).get("ready"), "skipped": (res.get(k) or {}).get("skipped"),
-                 "error": (res.get(k) or {}).get("error"), "reductions": (res.get(k) or {}).get("reductions"),
-                 "alerts": (res.get(k) or {}).get("alerts"),
-                 "norm_kernels": len((res.get(k) or {}).get("norm_kernels") or {})} for k in ROLES}
-    complete_ = all(roles[k]["ready"] and not roles[k]["error"] for k in ROLES) and \
-        all(p["answers"].get("compared") for p in pairs.values())
-    return {"complete": complete_, "roles": roles, "pairs": pairs}
+                                "tuned_configs": config_diff(ra.get("tuned_configs"), rb.get("tuned_configs")),
+                                "tuned_by_kernel": tuned_by_kernel_diff(ra.get("tuned_by_kernel") or {},
+                                                                        rb.get("tuned_by_kernel") or {})}
+    roles = {}
+    for k in ROLES:
+        r = res.get(k) or {}
+        ans = r.get("answers") or []
+        roles[k] = {"ready": r.get("ready"), "skipped": r.get("skipped"), "error": r.get("error"),
+                    "reductions": r.get("reductions"), "alerts": r.get("alerts"),
+                    "usable_answers": sum(1 for a in ans if not a.get("error")), "answers": len(ans),
+                    "norm_kernels": len(r.get("norm_kernels") or {}),
+                    "tuned_by_kernel": len(r.get("tuned_by_kernel") or {})}
+    why = [f"{k}: " + ("didn't start" + (f" ({v['skipped']})" if v["skipped"] else "") if not v["ready"] else
+                       f"stopped with an error ({v['error']})" if v["error"] else
+                       f"{v['usable_answers']} of {IDENTITY} usable completions" if v["usable_answers"] != IDENTITY
+                       else "no compiled norm kernel found")
+           for k, v in roles.items()
+           if not v["ready"] or v["error"] or v["usable_answers"] != IDENTITY or not v["norm_kernels"]]
+    why += [f"{name}: not compared ({p['answers'].get('why')})" for name, p in pairs.items()
+            if not p["answers"].get("compared")]
+    return {"complete": not why, "incomplete_because": why, "roles": roles, "pairs": pairs}
 
 
 def main(argv=None) -> int:

@@ -1,7 +1,8 @@
 # Method
 
 How the numbers in the README were measured. Raw output is in [results/](../results/); runs since October 19
-record the code fingerprint they ran.
+record the code fingerprint they ran, and runs from Run 1 on (October 26) also the SHA-256 of this file as it was
+when they ran (each STATUS.json's source.criteria), so a result carries the criteria it was judged by.
 Unless noted: NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1 (CUDA 13.0), Triton 3.8.0.
 
 Measurements below belong to the implementations and workloads that produced them. In particular, the
@@ -2025,6 +2026,21 @@ answered. Decided now:
   autotuning is the cause, and the next version is judged on the deterministic pair and on configurations matching;
 - whatever the outcome, the norm checks stay opt-in until a run meets N2 against plain vLLM compiled the same way.
 
+Amendment (October 26, before the run; an outside review of the code found these): "complete when all 7 servers
+answered" was weaker in the code than in words. A request that failed was counted as a differing completion and the
+pair still as compared, so seven servers whose every request failed would have been called complete (reproduced on
+the CPU); and a server could be started with just over five minutes left and then wait 20 for its compile. Now the
+diagnosis is complete only when every server started, gave 64 usable completions (its text, 32 token ids and 32 top-5
+log-probability tables), and left compiled norm kernels to read, and every pair was compared on all 64; a failed
+request makes the pair not compared, never different. A server isn't started with less than 8 minutes left, and its
+wait for readiness ends 4 minutes before the run's own limit (for the 64 completions and reading its compiled code).
+The set of tuned configurations loses which kernel got which, so each server's report also maps each kernel (by its
+source hash, names taken out) to its configuration, read from the .best_config file Inductor keys to that kernel's
+file (named by PyTorch's own code), and each pair lists the kernels with the same source tuned differently. These
+outcomes locate where servers differ and point to a cause; they don't prove one (similar counts of differences in two
+pairs needn't have one cause), and the rules above read accordingly: each says what is tried next, not what is
+established.
+
 ### Qualify on a real server (written October 24, before any run)
 
 `sdcguard qualify` has only run against stand-in servers. Reading its defaults against decide's while preparing this
@@ -2241,6 +2257,12 @@ MoE run keeps M1 to M5, and its M3 now also counts these alerts on the clean ser
   a padding mask marking a real row); within 16 rounds of 4 requests at once, an alert names the layer with finding
   real_rows_unrouted and recheck output_wrong.
 
+Amendment (October 26, before the run): that next MoE run is part of Run 1 (`scripts/modal_vllm.py`, phase moe in
+RUN1; an outside review found Run 1 had left it out, so M6 would have stayed untested), on the same H100 setup, with
+its 50-minute limit (about 12 to 20 minutes and $1 to $1.60 expected: the fourth run took 10.4 minutes). Its cost
+decision now reads only speed loads sdcguard.perf calls complete on both servers; an incomplete one decides nothing.
+The decision rule (3% at 16 at once) and M1 to M6 are unchanged.
+
 ### The MoE checks' cost (written October 25, before any run)
 
 The fourth MoE run measured the MoE and routing checks at 6.4% fewer output tokens per second at 16 requests at once
@@ -2266,6 +2288,17 @@ version takes one 1-program kernel per layer per step (it copies the active laye
 routing), and the recompute runs once per step for the active layer; if the active layer's own work dominates, that
 work is cut instead; if neither explains it, a profile of the server comes first. The checks stay opt-in until a
 run shows them at 3% or less at 16 at once.
+
+Amendment (October 26, before the run; an outside review of the code found this): the bench's layer outputs were
+random values unrelated to their inputs, weights and routing, so with one layer active its check judged a wrong output
+and took the alarm path (keeping a row), which isn't what a healthy server pays, and state written in one measurement
+carried into the next. Now each layer's output is what vLLM's MoE kernel computes from its input, weights and routing
+(serve_moe._reference_layer), every measurement starts from cleared state, and after the healthy graphs their state
+must show no alarm (no score over the line, no row kept, no routing mismatch) and the active layer judged (none with no
+layer active). The fault path is measured on its own: one active layer with a wrong output, its state and kept-row
+slots cleared inside the graph before each replay so every replay takes the alarm path, against a graph of the
+clearing alone; its state must show the alarm. The run is complete only when every figure was measured and the
+fixtures behaved so. The rule above is unchanged and reads the healthy figures.
 
 ### An FP8 MoE bug from detection to remedy (written October 24, before any run)
 
@@ -2395,6 +2428,13 @@ FP8 on this GPU and the check's cost). eager's quality FAIL (mean KL 3.71e-2) wa
 isolation check, fp8pc and the repro folder weren't run. F1 to F6 can't be judged, so the run isn't counted. Fixed
 since: the runner calls nothing after a broken connection (it says to fetch the results later), and the rerun is a
 part of Run 1, started from inside Modal rather than by the launching computer. The criteria are unchanged.
+
+Amendment (October 26, before the rerun; an outside review of the code found this): a qualify past its time limit was
+killed outright, so its own cleanup never ran, and the servers it starts (each in a session of its own) kept running,
+holding the GPU and the port the repro folder's rerun uses next. Now qualify and the rerun run with a bounded wait:
+past the limit, SIGINT first (qualify's cleanup stops its servers and its record so far stays written), SIGKILL after
+120 seconds, then any server still serving on the port stopped and listed in the result (tested on the CPU with real
+processes). The criteria are unchanged.
 
 ### Every check inside a captured CUDA graph (written October 24, before any run)
 
@@ -2649,8 +2689,8 @@ scaled by 1/sqrt(K)) in three shapes, one a round in turn (16 x 4096 with K = 4,
 256 x 3072 with K = 8,960), alternately transposed. Each is checked two ways: 256 distinct sampled outputs against a
 float64 reference computed on the CPU from the sampled inputs as the GPU held them, scored as the spot check scores
 them (serve_spot: output rounding plus 6 times the fp32 accumulation's error model; a correct output scores at most 1,
-over 2 is wrong, which always finds a median output moved by more than 1.3% to 1.9% in bf16 or 0.3% to 0.9% in fp16,
-by K), and every output against the same matmul run again,
+over 2 is wrong; by the bound's arithmetic, a median output of Gaussian-like data moved by more than 1.3% to 1.9% in
+bf16 or 0.3% to 0.9% in fp16, by K, is over the line), and every output against the same matmul run again,
 bit for bit (cuBLAS gives the same bits for the same call on the same GPU, so any value that changes between two
 identical runs is found, however small). The report keeps each realistic-data test's worst score. These add to
 each round's time, so the exact tests get fewer rounds in the same minutes than on October 24 (reported). On the CPU
@@ -2681,6 +2721,18 @@ Salad run screens with these tests, its own criteria written before it; if S3 fa
 tests' results are reported, not part of a verdict, until a rerun with criteria of its own. Not claimed: that these
 tests find every defective GPU, that the bound holds on GPUs other than these two (consumer Ampere cards among them),
 or any fault rate.
+
+Amendment (October 26, before the run; an outside review of the code found these): as written, the screen could pass
+without running what it advertises. Its five minutes were timed from the start, so building the inputs and their CPU
+references used up testing time; only one round was required, which runs two of the four input sets and one of the
+three realistic-data shapes; and the judge took any set of tests (an empty clean run passed it on the CPU). Now the
+minutes are timed from when the inputs and references are ready (the report gives the preparation's minutes apart),
+a clean run runs at least as many rounds as it takes every matmul test to run each of its 4 input sets and each
+realistic-data test each of its 3 shapes, plain and transposed (screen_ops.coverage_rounds: 6), each test reports the
+cases it ran, and S1 also needs the clean run's tests to be exactly every test not skipped, each matmul test having
+run every input set and shape both ways. The simulations still run one round each (they need only find their one
+wrong value). The bound's floors above were reworded as the bound's arithmetic (they read "always finds"). The time
+limits stay 25 minutes (the experiment's own 20).
 
 ### An FP8 KV-cache decode bug through qualify (written October 24, before any run)
 
@@ -2821,6 +2873,52 @@ and at 256 requests at once, spot checks become on by default; otherwise they st
 outcome: outputs not sampled, faults under the floor above, quantized layers and layers the checksum check doesn't
 take, other models and GPUs.
 
+Amendment (October 26, before the run; an outside review of the code found these): the bound itself could hide a
+wrong output. The norms |x_row| and |w_col| were sums of squares in fp32, which overflow to infinity for rows of
+large values (bf16 holds up to about 3.4e38; squares overflow from about 1.8e19) and underflow to zero for columns
+of small ones, and an infinite bound scores a wrong output 0, as if right: with inputs 2^100 times larger and weights
+2^100 times smaller (the same products) an output 100% off scored 0 on the CPU. Now the kernel keeps each norm as a
+scale times a sum of squares of values divided by it (the largest magnitude so far, as BLAS's nrm2 does), the PyTorch
+version computes them in float64, and an output whose reference or bound isn't finite is counted unjudged, never
+clean. The kernel's first-use comparison on each GPU adds that case in bf16 (inputs scaled by 2^100, weights by
+2^-100, one sampled output wrong: both versions must alarm on it); the CPU tests add it and a cancelling row whose
+bound overflows fp32 (unjudged, in both versions). Three gaps in what the run would show are closed as well, and the
+run gets a fourth server and a sixth criterion:
+
+- S1 also needs, on the spot and eager servers, every one of the 112 layers' turns read back to go up during the
+  measured traffic (spot: from a baseline read after a short request and a read of the results 2 s later, so the
+  start-up runs are in it, to the read after the 64 prompts and the speed load; eager: over its 16 prompts), not
+  just at warm-up, and the Triton kernel still in use after that traffic.
+- S5 (H100 eager, new): one sampled output 2% too large at each of the layer's turns, the sampled output of largest
+  magnitude in that turn (sdcguard_test_spot_one: before the checks, at the layer's turns only, the rest of the layer
+  right), on 3 layers drawn with seed 2: each caught within 40 rounds by a spot alert naming the layer, rechecked as
+  output_wrong, with the changed values recorded. A known sampled single wrong value, so this measures the check's
+  sensitivity to an isolated value in its sample, not its chance of sampling one. One of the three (layer 27's
+  qkv_proj) has a bias, whose rounding term raises the floor (2.5% for a median output at K = 1,536): in a CPU
+  simulation of that layer, its largest sampled output 2% too large scored a median of 2.55 against the line of 2,
+  over the line at about 97% of turns, so the margin there is thin per turn though the layer gets several turns.
+  These trials run right after S4's, before the reported ones. Reported, not criteria: the same with the sampled
+  output of median magnitude (3 layers).
+- S6 (H100, new): a fourth server, faulted, compiled with CUDA graphs and spot checks on, with one layer's outputs 2%
+  too large from model load on, before vLLM traces the model, so the fault is in the compiled graph and its CUDA
+  graphs (SDCGUARD_TEST_COMPILED_FAULT, read by the test extension at load; the layer drawn with seed 1; a compile
+  cache of its own on local disk, so no clean graph loads in its place): all 112 layers spot-checked with the
+  Triton kernel at startup and still after its trial, the layer caught within 40 rounds by a spot alert rechecked as
+  output_wrong, and no spot alert naming another layer. The eager trials stop 10 minutes before the experiment's
+  limit to leave it that time, and it isn't started with less than 7 minutes left.
+  The eager trials can't put a fault inside CUDA graphs; this is the compiled path's positive control.
+- The cost counts only from speed loads sdcguard.perf calls complete (every request of every round answered, on both
+  servers); an incomplete one decides nothing, so spot checks stay opt-in.
+
+The trials of S4 and the reported ones keep their layers (the new ones are drawn with their own seed). With the fourth
+server the H100 part's limit is 55 minutes (about 35 to 45 minutes and $2.80 to $3.65 expected), the experiment's own
+50; the L4 part keeps its 30-minute limit with the experiment's own 25 (it was 40, past the function's limit: the
+review found it). What S4 to S6 can show, if met: whole-layer faults of 2% and 5% caught in eager mode, a single
+sampled wrong value of 2% caught, and a whole-layer fault caught through compiled CUDA graphs. Not shown by this
+run: a transient wrong value outside the sample (the column order covers every column only over N / 8 turns, so a
+fault that is gone before its column comes up isn't seen), the stated floors as guarantees (they remain the bound's
+arithmetic for Gaussian-like data), and other models, GPUs and quantized layers.
+
 ### Scheduled weight scan in serving (written October 25, before any run)
 
 The bit-flip run above found that the arithmetic checks name a flipped weight bit only when it changes the weight
@@ -2912,7 +3010,10 @@ extended to test them.
   tested by this run: SDCGUARD_WEIGHT_SCAN_AGE, a verification-age target in seconds; each read then compares enough
   that a pass takes at most 2/3 of the target at the measured time between reads (a gap over 4 s counts as 4 s), up
   to SDCGUARD_WEIGHT_SCAN_MAX_MB
-  (default 1024) a read, and the coverage report gives the oldest time since an entry was last found clean.
+  (default 1024) a read, and the coverage report gives the oldest time since an entry was last found clean. That is a
+  schedule, not a guarantee (amended October 26 after an outside review): the report's target_met says only that the
+  schedule's bytes a read can meet the target at the measured time between reads; oldest_within_target says whether
+  the measured oldest age is within it.
 
 The next run (`modal run scripts/modal_vllm.py --phase weight_scan`, one H100, about 30 to 45 minutes and $2.40 to
 $3.65, 58-minute limit) keeps everything above, plus 12 trials on scan after the 48 flips, run the same way: bits 0,
@@ -2938,6 +3039,27 @@ Criteria for the next run, W2 to W4 as written, and:
 Reported, not criteria: as before, plus each trial's seconds to its alert, the oldest verification age at the end,
 and how many entries the other parameters take. Decided now: the scan becomes on by default if W1 to W7 are met and
 its measured cost is at most 1% at 16 and at 256 requests at once; otherwise it stays opt-in.
+
+### Run 1's smoke test (written October 26, before it and before Run 1)
+
+Most first GPU runs of a new experiment here failed on bugs of ours that only a real GPU inside a real `vllm serve`
+shows (servers that didn't start, a kernel that didn't compile, a fallback that broke CUDA graph capture, false alarms
+on padding rows, a time limit), after CPU tests and reviews had passed. So before Run 1 its parts run scaled down to
+minutes, each on its own GPU at the same time, through the same code, each judged by its own judge on the scaled-down
+counts (`experiments/smoke_run1.py`; `modal run --detach scripts/modal_vllm.py --phase smoke1`; 6 H100s and 2 L4s;
+about 25 minutes and $4 to $5.50 expected, about $9.50 if every part ran to its limit at requested resources, an
+estimate, not a spending cap): the weight scan's 3 servers with 2 weight bit flips, 2 other-parameter changes and 1
+MoE expert change; moe_bench with 20 replays a figure; the norm diagnosis's plain_a and guarded servers on 4 prompts;
+the MoE checks' 4 servers with 1 wrong kernel, 1 wrong router and 1 real row without experts; the spot checks' 4
+servers on the H100 (the compiled fault among them) with one trial of each kind, and the spot server on the L4; the
+screen on both GPUs with a 0.2-minute clean run (still its 6 rounds' coverage) and its 15 simulations. Every speed
+load is cut to 16 prompts of 16 tokens, at most 8 at once, one round. FP8 MoE isn't in it: its last attempt started
+all its servers on this code, and its one change since (the bounded wait) is tested on the CPU with real processes.
+
+A part passes when its own judge passes on those counts (the norm diagnosis when it is complete); the cost decisions
+aren't part of it. Decided now: Run 1 is launched only after every part of the smoke test passes; a part that fails
+is fixed and its part run again first (`--phase smoke1 --parts <part> --force`). The smoke test's results are a check of the run, reported as such
+in results/, not measurements: no criterion of Run 1 is met or failed by them.
 
 ### The upgrade gate on cuBLAS issue 6862950
 

@@ -10,6 +10,7 @@ each request. Flags of its own change what it does:
   --fail      exit at once (a server that doesn't start)
   --prefix-bug       a prompt whose prefix came from the prefix cache is answered as if from another context
   --decode-gap X     decode log-probabilities X nats off once the KV holds 97 tokens or more (vLLM #54035's shape)
+  --weights-digest D the digest of the weights its sdcguard_stack_info publishes (other weights: another digest)
 
 Its prefix cache: a request's prompt shares 16-token blocks with earlier prompts under the same cache_salt;
 vllm:prefix_cache_hits_total on its own /metrics counts the tokens read from it.
@@ -41,6 +42,7 @@ def main():
     ap.add_argument("--decode-gap", type=float, default=0.0)
     ap.add_argument("--no-enable-prefix-caching", action="store_true")
     ap.add_argument("--no-vllm-metrics", action="store_true", help="no /metrics page (its counters can't be read)")
+    ap.add_argument("--weights-digest", default="0123456789abcdef", help="the weights' digest its stack publishes")
     a, _ = ap.parse_known_args()
     if a.fail:
         sys.exit(3)
@@ -182,6 +184,7 @@ def main():
                 ratio = round(min(1.0, share) * 0.97, 4)
                 from sdcguard.stack import fingerprint
                 st = {"model": a.model, "dtype": "bfloat16", "attention": a.attention_backend, "vllm": "0.0.fake",
+                      "weights_digest": a.weights_digest, "lora": "off",
                       **({"quantization": a.quantization} if a.quantization else {})}
                 st["fingerprint"] = fingerprint(st)
                 stack_line = "sdcguard_stack_info{" + ",".join(f'{k}="{v}"' for k, v in st.items()) + "} 1.0\n"

@@ -55,6 +55,15 @@ def expected_skips(cap) -> set:
     return out
 
 
+def expected_cases(name: str) -> set:
+    """The (input set or shape, transposed) cases a clean run of a matmul test must cover (none for the others)."""
+    if name in so.REAL_DTYPE:
+        return {(tuple(shape), tr) for shape in so.REAL for tr in (False, True)}
+    if name.startswith("gemm_"):
+        return {(s, tr) for s in range(so.SETS) for tr in (False, True)}
+    return set()
+
+
 def judge(res: dict) -> tuple:
     fails = []
     c = res.get("clean") or {}
@@ -66,7 +75,17 @@ def judge(res: dict) -> tuple:
         bad = {n: t["wrong"] for n, t in (c.get("tests") or {}).items() if t.get("wrong")}
         fails.append(f"S1: the clean run was {c.get('result')} ({c.get('wrong')} wrong values: {bad}; error "
                      f"{c.get('error')})")
-    for n, t in (c.get("tests") or {}).items():
+    tests = c.get("tests") or {}
+    want = set(ALL) - skipped
+    if set(tests) != want:
+        fails.append(f"S1: the clean run's tests {sorted(tests)} aren't every test not skipped: missing "
+                     f"{sorted(want - set(tests))}, unexpected {sorted(set(tests) - want)}")
+    for n, t in tests.items():
+        miss = sorted(map(str, expected_cases(n) - {(tuple(k) if isinstance(k, list) else k, tr)
+                                                    for k, tr in t.get("cases") or []}))
+        if miss:
+            fails.append(f"S1: {n} didn't run every input set and shape, plain and transposed: missing {miss}")
+    for n, t in tests.items():
         if not t.get("values_checked") or not t.get("rounds"):
             fails.append(f"S1: {n} checked nothing")
         if n in so.REAL_DTYPE:

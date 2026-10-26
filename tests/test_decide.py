@@ -228,3 +228,124 @@ def test_a_latency_limit_without_its_measurement_is_never_met():
     assert "ttft_p99_ms: the policy limits it" in dc.render(r)        # the reason is in the decision text
     ok = dc.decide(pol, quality=_quality(), alerts=[], plugin=COV, perf_before=_perf(1000), perf_after=_perf(1000))
     assert ok["performance"]["verdict"] == "MEETS" and ok["decision"] == "ACCEPT"
+
+
+# ---------------------------------------------------------------- what counts as a source of no fault
+FP8 = _line(64, 16, 128).replace("Adesc=[type=R_16BF", "Adesc=[type=R_8F_E4M3").replace(
+    "Bdesc=[type=R_16BF", "Bdesc=[type=R_8F_E4M3")
+
+
+def _runs_clean(line):
+    """A stand-in for the kernel test's worker: every call right, and cuBLASLt logging the workload's kernel."""
+    def runner(todo, repeats, log_dir, cpu_reference):
+        res = [{**t, "runs": [{"wrong": 0, "unwritten": 0, "worst_error_over_bound": 0.1}] * repeats} for t in todo]
+        return {"results": res, "gpu": "cpu", "device": "cpu"}, [line] * repeats
+    return runner
+
+
+def test_a_kernel_test_that_judged_no_call_is_not_a_source():
+    """An external review's case: `sdcguard kernels test` of an inventory whose one call is FP8 (not rerun) reports 0
+    calls passed and 1 not run. With a passing quality check, decide said NO FAULT OBSERVED and ACCEPT, though no
+    arithmetic was tested."""
+    kt = kernels.test_calls(kernels.inventory([FP8]), runner=lambda *a: pytest.fail("nothing should run"))
+    assert kt["counts"] == {"PASSED": 0, "WRONG": 0, "OTHER KERNEL": 0, "NOT RUN": 1} and not kt["warning"]
+    r = dc.decide(quality=_quality(), kernel_test=kt)
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and r["decision"] == "NOT DECIDED"
+    assert r["arithmetic"]["sources"]["kernel_test"]["counts_as_source"] is False
+    assert "no call" in r["arithmetic"]["unresolved"][0] and "1 not run" in r["arithmetic"]["unresolved"][0]
+    # one call run and judged on the workload's own kernel is a source
+    line = _line(64, 16, 128)
+    kt = kernels.test_calls(kernels.inventory([line, FP8]), runner=_runs_clean(line))
+    assert kt["counts"]["PASSED"] == 1 and kt["counts"]["NOT RUN"] == 1
+    r = dc.decide(quality=_quality(), kernel_test=kt)
+    assert r["arithmetic"]["verdict"] == "NO FAULT OBSERVED" and r["decision"] == "ACCEPT"
+    assert r["arithmetic"]["sources"]["kernel_test"]["counts_as_source"] is True
+    # calls right only on another kernel than the workload's don't vouch for the workload's kernel
+    other = {"counts": {"PASSED": 0, "WRONG": 0, "OTHER KERNEL": 1, "NOT RUN": 0},
+             "calls": [{"verdict": "OTHER KERNEL", "call": "k | m=1", "runs": 3, "runs_wrong": 0}]}
+    r = dc.decide(quality=_quality(), kernel_test=other)
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and "another kernel" in " ".join(r["arithmetic"]["notes"])
+
+
+def test_an_empty_gate_or_kernel_report_is_not_a_source():
+    for given in ({"gate": {}}, {"kernel_test": {}}, {"gate": {}, "kernel_test": {"counts": {}, "calls": []}}):
+        r = dc.decide(quality=_quality(), **given)
+        assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and r["decision"] == "NOT DECIDED", given
+    r = dc.decide(quality=_quality(), gate={})
+    assert "no case" in r["arithmetic"]["unresolved"][0]
+    assert r["arithmetic"]["sources"]["gate_cases"]["counts_as_source"] is False
+    # beside a source that tested something, an empty one is a note, not a reason
+    r = dc.decide(quality=_quality(), gate={}, alerts=[], plugin=COV)
+    assert r["arithmetic"]["verdict"] == "NO FAULT OBSERVED" and r["decision"] == "ACCEPT"
+    assert any("no case" in n for n in r["arithmetic"]["notes"])
+
+
+def test_unknown_verdicts_and_counts_that_disagree_are_unresolved_and_faults_stay_faults():
+    r = dc.decide(quality=_quality(), gate={"c1": {"verdict": "PASSED"}, "c2": {"verdict": "LOOKS FINE"}})
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and "LOOKS FINE" in " ".join(r["arithmetic"]["unresolved"])
+    r = dc.decide(quality=_quality(), gate={"c1": {"verdict": "PASSED"}, "c2": None})
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE"
+    row = {"verdict": "PASSED", "call": "k | m=1", "runs": 3, "runs_wrong": 0}
+    agree = {"PASSED": 1, "WRONG": 0, "OTHER KERNEL": 0, "NOT RUN": 0}
+    assert dc.decide(quality=_quality(), kernel_test={"counts": agree, "calls": [row]})["arithmetic"]["verdict"] \
+        == "NO FAULT OBSERVED"
+    r = dc.decide(quality=_quality(), kernel_test={"counts": {**agree, "PASSED": 2}, "calls": [row]})
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and "disagree" in " ".join(r["arithmetic"]["unresolved"])
+    r = dc.decide(quality=_quality(), kernel_test={"counts": agree, "calls": [row, {**row, "verdict": "MAYBE"}]})
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE" and "MAYBE" in " ".join(r["arithmetic"]["unresolved"])
+    r = dc.decide(quality=_quality(), kernel_test={"counts": agree, "calls": [{**row, "runs": 0}]})
+    assert r["arithmetic"]["verdict"] == "INCONCLUSIVE"
+    # a confirmed wrong output is a fault whatever else is missing or unreadable
+    wrong = {"counts": {"WRONG": 5}, "calls": [{"verdict": "WRONG", "runs": 3, "runs_wrong": 2, "call": "k"}]}
+    r = dc.decide(quality=_quality(), gate={}, kernel_test=wrong)
+    assert r["arithmetic"]["verdict"] == "FAULT" and r["decision"] == "REJECT"
+    r = dc.decide(quality=_quality(), gate={"c1": {"verdict": "REGRESSED", "why": "x"}, "c2": {"verdict": "??"}})
+    assert r["arithmetic"]["verdict"] == "FAULT"
+
+
+# ---------------------------------------------------------------- weights: verified, or only no change seen
+SCAN = ("sdcguard_weight_scan_layers 30\nsdcguard_weight_scan_never_compared 0\nsdcguard_weight_scan_changed 0\n"
+        "sdcguard_weight_scan_oldest_age_seconds 42.5\nsdcguard_weight_scan_left_out 2\n"
+        "sdcguard_weight_scan_passes_total 3\n")
+
+
+def test_weights_are_verified_only_when_the_scheduled_scan_covered_them():
+    """An external review: "Weights UNCHANGED" was said whenever the checksum checks ran with no weight alert, though
+    the absence of such an alert doesn't verify a weight (most changed bits never move an output past the line)."""
+    r = dc.decide(quality=_quality(), alerts=[], plugin=COV)            # the checksum checks alone
+    w = r["weights"]
+    assert w["verdict"] == "NO CHANGE SEEN" and "SDCGUARD_WEIGHT_SCAN" in w["why"] and "not verified" in w["why"]
+    assert r["decision"] == "ACCEPT"
+    text = dc.render(r)
+    assert "UNCHANGED" not in text and "VERIFIED" not in text and "NO CHANGE SEEN" in text
+    two = dc.plugin_coverage([METRICS + SCAN, METRICS.replace("GPU-1", "GPU-2") + SCAN])
+    assert two["weight_scan"]["complete"] and two["weight_scan"]["oldest_age_seconds"] == 42.5
+    w = dc.decide(quality=_quality(), alerts=[], plugin=two)["weights"]
+    assert w["verdict"] == "VERIFIED" and "fingerprints verified" in w["why"] and "42" in w["why"]
+    assert "leaves out 4 tensors" in w["why"] and w["oldest_verification_age_seconds"] == 42.5
+    assert w["oldest_within_target"] is None                              # no SDCGUARD_WEIGHT_SCAN_AGE target set
+    # with an age target, the measured oldest age is held against it (not the schedule's prediction)
+    late = dc.plugin_coverage([METRICS + SCAN + "sdcguard_weight_scan_target_age_seconds 30\n"])
+    w = dc.decide(quality=_quality(), alerts=[], plugin=late)["weights"]
+    assert w["verdict"] == "VERIFIED" and w["oldest_within_target"] is False
+    assert "older than the verification-age target (worker 0: 42 s, its target 30 s)" in w["why"]
+    on_time = dc.plugin_coverage([METRICS + SCAN + "sdcguard_weight_scan_target_age_seconds 60\n"])
+    assert dc.decide(quality=_quality(), alerts=[], plugin=on_time)["weights"]["oldest_within_target"] is True
+    # the scan on one worker only, or with entries it never compared, verifies nothing
+    half = dc.plugin_coverage([METRICS + SCAN, METRICS])
+    w = dc.decide(quality=_quality(), alerts=[], plugin=half)["weights"]
+    assert w["verdict"] == "NO CHANGE SEEN" and "worker 1" in w["why"]
+    partial = dc.plugin_coverage([METRICS + SCAN.replace("never_compared 0", "never_compared 4")])
+    w = dc.decide(quality=_quality(), alerts=[], plugin=partial)["weights"]
+    assert w["verdict"] == "NO CHANGE SEEN" and "4 of its entries never compared" in w["why"]
+    # a mismatch the scan counted is a change, even with its alert missing from the log
+    bad = dc.plugin_coverage([METRICS + SCAN.replace("changed 0", "changed 1")])
+    r = dc.decide(quality=_quality(), alerts=[], plugin=bad)
+    assert r["weights"]["verdict"] == "CHANGED" and r["decision"] == "REJECT"
+    assert dc.decide(quality=_quality(), alerts=[])["weights"]["verdict"] == "UNMEASURED"
+    assert dc.decide(quality=_quality(), alerts=None, plugin=two)["weights"]["verdict"] == "UNMEASURED"
+
+
+def test_the_policy_can_say_how_long_a_decision_stands():
+    assert dc.policy_with_defaults(None)["ready"] == {"max_age_days": None}
+    assert dc.policy_with_defaults({"ready": {"max_age_days": 7}})["ready"]["max_age_days"] == 7

@@ -23,8 +23,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 
 MODEL = "ibm-granite/granite-3.1-1b-a400m-instruct"
 COMPILE = json.dumps({"cudagraph_capture_sizes": [1, 2, 4, 8], "cudagraph_mode": "FULL_AND_PIECEWISE"})
@@ -42,6 +44,99 @@ MOE_LAYERS = 24
 STARTUP_S = 900
 QUALIFY_S = 150 * 60
 RERUN_S = 25 * 60
+
+
+def _cmdline(pid) -> list:
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode(errors="replace").split("\0")
+    except OSError:
+        return []
+
+
+def servers_on(port: int) -> list:
+    """The pids of vLLM processes: API servers whose command line serves on --port `port`, and vLLM's engine
+    processes, which rename themselves ("VLLM::EngineCore") and so keep no port in their command line, from /proc.
+    (stop_servers stops only those that weren't running before: other vLLM processes on the machine are left alone.)"""
+    out = []
+    for d in os.listdir("/proc") if os.path.isdir("/proc") else []:
+        if not d.isdigit() or int(d) == os.getpid():
+            continue
+        args = _cmdline(d)
+        if not args:
+            continue
+        api = "serve" in args and any(a == "--port" and args[i + 1:i + 2] == [str(port)] for i, a in enumerate(args))
+        if api or args[0].startswith("VLLM::"):
+            out.append(int(d))
+    return out
+
+
+def _alive(group: int) -> bool:
+    try:
+        os.killpg(group, 0)
+        return True
+    except OSError:
+        return False
+
+
+def stop_servers(port: int, grace: float = 30.0, before=()) -> list:
+    """Stop every vLLM process still running (servers_on) that isn't in before (those running before the command
+    began): their process groups, SIGTERM, then SIGKILL after grace seconds, waiting until no process of those groups
+    is left (the engine holds the GPU's memory until it exits); the pids found."""
+    pids = [p for p in servers_on(port) if p not in set(before)]
+    groups = set()
+    for pid in pids:
+        try:
+            groups.add(os.getpgid(pid))
+        except OSError:
+            pass
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        for g in groups:
+            try:
+                os.killpg(g, sig)
+            except OSError:
+                pass
+        t0 = time.monotonic()
+        while any(_alive(g) for g in groups) and time.monotonic() - t0 < grace:
+            time.sleep(1)
+        if not any(_alive(g) for g in groups):
+            break
+    return pids
+
+
+def run_bounded(cmd, timeout: float, port: int, env=None) -> dict:
+    """Run cmd (in its own session) for at most timeout seconds. Past it: SIGINT first, so qualify's own cleanup
+    stops its servers and its record so far stays written (Python runs its finally blocks), SIGKILL after 120 s,
+    then any server still on port stopped too (qualify starts each server in a session of its own, which a kill of
+    qualify's group doesn't reach). Its output goes to a file, not a pipe, so a child left holding it can't stall
+    the wait. {"code", "output", "timed_out", "stray": the pids of servers left running}."""
+    import tempfile
+    timed_out = False
+    before = servers_on(port)
+    with tempfile.TemporaryFile("w+", errors="replace") as f:
+        # SIGINT back to its default in the child: a process started from a background job inherits it ignored, and
+        # Python then never raises KeyboardInterrupt, so no cleanup would run
+        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT, env=env, start_new_session=True,
+                             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+        try:
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            for sig, wait in ((signal.SIGINT, 120), (signal.SIGKILL, 30)):
+                try:
+                    os.killpg(p.pid, sig)
+                except OSError:
+                    pass
+                try:
+                    p.wait(timeout=wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+        f.seek(0)
+        out = f.read()
+    stray = stop_servers(port, before=before)
+    return {"code": None if timed_out else p.returncode, "output": out[-6000:], "timed_out": timed_out,
+            "stray": stray}
 
 
 def _alerts(path: str) -> list:
@@ -81,13 +176,10 @@ def run(out: str, port: int, metrics_port: int) -> dict:
            "--stack", "gpu=L4", "--startup-timeout", str(STARTUP_S)]
     for name, cfg in CANDIDATES.items():
         cmd += ["--candidate", f"{name}={cfg}"]
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=QUALIFY_S)
-        res: dict = {"cmd": cmd, "exit_code": p.returncode, "output": (p.stdout + p.stderr)[-6000:]}
-    except subprocess.TimeoutExpired as e:      # still judged (and written): what qualify saved by then
-        out_s = (e.stdout or b"") + (e.stderr or b"")
-        res = {"cmd": cmd, "exit_code": None, "error": f"qualify ran past {QUALIFY_S} s",
-               "output": (out_s.decode(errors="replace") if isinstance(out_s, bytes) else out_s)[-6000:]}
+    q = run_bounded(cmd, QUALIFY_S, port)
+    res: dict = {"cmd": cmd, "exit_code": q["code"], "output": q["output"], "stray_servers": q["stray"]}
+    if q["timed_out"]:                          # still judged (and written): what qualify saved by then
+        res["error"] = f"qualify ran past {QUALIFY_S} s"
     try:
         q = json.load(open(os.path.join(out, "QUALIFY.json")))
     except (OSError, ValueError) as e:
@@ -110,15 +202,11 @@ def run(out: str, port: int, metrics_port: int) -> dict:
                            for name in ("baseline", *CANDIDATES)}
     rp = (res["decisions"].get("fp8pt") or {}).get("repro")
     if rp and os.path.exists(os.path.join(rp, "rerun.sh")):
-        try:
-            r = subprocess.run(["sh", os.path.join(rp, "rerun.sh")], capture_output=True, text=True,
-                               timeout=RERUN_S,
-                               env=dict(os.environ, PORT=str(port), MPORT=str(metrics_port), PY=sys.executable))
-            code, text = r.returncode, (r.stdout + r.stderr)[-3000:]
-        except subprocess.TimeoutExpired:
-            code, text = None, f"rerun.sh ran past {RERUN_S} s"
+        r = run_bounded(["sh", os.path.join(rp, "rerun.sh")], RERUN_S, port,
+                        env=dict(os.environ, PORT=str(port), MPORT=str(metrics_port), PY=sys.executable))
+        code, text = r["code"], (f"rerun.sh ran past {RERUN_S} s; " if r["timed_out"] else "") + r["output"][-3000:]
         iso = os.path.join(rp, "rerun_isolation.json")
-        res["repro"] = {"exit_code": code, "output": text,
+        res["repro"] = {"exit_code": code, "output": text, "stray_servers": r["stray"],
                         "isolation": json.load(open(iso)).get("verdict") if os.path.exists(iso) else None,
                         "fp8_alerts": len([a for a in _alerts(os.path.join(rp, "rerun_alerts.jsonl"))
                                            if a.get("detector") == "serve_fp8"])}

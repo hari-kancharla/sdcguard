@@ -17,11 +17,21 @@ kernel backend, a parallelism or batching setting), with its questions kept apar
 1. Arithmetic: did the operations that were checked compute correctly? Against a recompute (in float64, or on the
    CPU with the kernel's own rounding steps for MoE experts), never against the old stack, so a faulty baseline
    can't make a faulty candidate look right.
-     FAULT              an output shown wrong: a plugin alert whose CPU recheck says output_wrong (or the layer's
-                        weights changed in memory), a kept case REGRESSED or still wrong, a kernel test call WRONG
-     NO FAULT OBSERVED  none of those, from at least one source; with what each source covered (the plugin's alerts
-                        count only with its metrics showing checks ran on every worker)
-     INCONCLUSIVE       an alert the recheck couldn't confirm or clear, a case INCONCLUSIVE, or no source
+     FAULT              an output shown wrong: a plugin alert whose CPU recheck says output_wrong, a kept case
+                        REGRESSED or still wrong, a kernel test call WRONG
+     NO FAULT OBSERVED  none of those, from at least one source that tested something; with what each source covered.
+                        A source counts only with evidence of checks that ran and were judged: the plugin's alerts with
+                        its metrics showing checks ran on every worker, a gate report with at least one case judged, a
+                        kernel test with at least one call run and judged on the workload's own kernel (an empty
+                        report, or one whose calls were all not run, tests nothing)
+     INCONCLUSIVE       an alert the recheck couldn't confirm or clear, a case INCONCLUSIVE, a verdict this doesn't
+                        know, a kernel test whose counts disagree with its rows, or no source that tested anything
+1a. Weights: do the model's weights still match what was loaded? CHANGED (an alert, or the weight scan's metrics, show
+   a weight changed since load), VERIFIED (the scheduled weight scan, SDCGUARD_WEIGHT_SCAN=1, compared every entry it
+   holds on every worker with its fingerprint at load and found no mismatch; with how long ago the least recently
+   verified one was, and what it leaves out), NO CHANGE SEEN (only the arithmetic checks ran: no alert showed a
+   change, but their checksums see a changed weight only once it moves an output past their line, so that is no
+   verification), UNMEASURED (no plugin coverage, or no alerts).
 1b. Quantization: were FP8 layers' inputs quantized from the step's own rows, by their recipe? From the plugin's FP8
    quantization check (SDCGUARD_FP8=1): WRONG (a scale taken over rows outside the batch, a wrong scale, wrong FP8
    values), RIGHT, or UNMEASURED. Kept apart from the arithmetic: the GEMM can be right on wrongly made operands.
@@ -46,8 +56,8 @@ The decision: REJECT when the arithmetic shows a FAULT, the quantization is WRON
 the isolation check shows a LEAK, the consistency check is INCONSISTENT, or a required performance target MISSES;
 ACCEPT when the arithmetic
 shows NO FAULT OBSERVED, the approximation is WITHIN, and performance MEETS (or isn't required); otherwise NOT
-DECIDED, with what is missing. ACCEPT means no reason to reject was found within the scope listed, not that the
-stack is correct everywhere.
+DECIDED, with what is missing. A changed weight REJECTs too. ACCEPT means no reason to reject was found within the
+scope listed, not that the stack is correct everywhere.
 
 Policy (JSON), with these defaults:
     {"arithmetic": {"min_weights_checked": 0.5},
@@ -55,7 +65,9 @@ Policy (JSON), with these defaults:
      "performance": {"required": false, "min_throughput_gain": 0.0, "max_ttft_p99_increase": null,
                      "max_itl_p99_increase": null},
      "isolation": {"required": false},
-     "consistency": {"required": false}}
+     "consistency": {"required": false},
+     "ready": {"max_age_days": null}}
+ready.max_age_days: how many days the decision stands for `sdcguard ready --qualified` (older: INCONCLUSIVE).
 Stdlib only: this runs anywhere the files are.
 """
 from __future__ import annotations
@@ -74,7 +86,8 @@ DEFAULT_POLICY = {"arithmetic": {"min_weights_checked": 0.5},
                   "performance": {"required": False, "min_throughput_gain": 0.0, "max_ttft_p99_increase": None,
                                   "max_itl_p99_increase": None},
                   "isolation": {"required": False},
-                  "consistency": {"required": False}}
+                  "consistency": {"required": False},
+                  "ready": {"max_age_days": None}}
 # what none of the sources can see, whatever they say (the plugin checks linear layers; the cases and the kernel test
 # rerun GEMMs; the quality check sees the model's output distributions)
 NOT_CHECKED = ("attention, normalization, sampling and other non-GEMM kernels: only through the quality check",
@@ -98,8 +111,18 @@ def policy_with_defaults(p: Optional[dict]) -> dict:
 
 
 # ---------------------------------------------------------------- 1. arithmetic
+_GATE_JUDGED = {"PASSED", "FIXED", "REGRESSED", "UNCHANGED"}       # the gate's verdicts on a case run on both sides
+_KERNEL_VERDICTS = ("PASSED", "WRONG", "OTHER KERNEL", "NOT RUN")   # kernels.test_calls: a row's verdicts, its counts
+
+
+def _finite(v) -> Optional[float]:
+    return v if isinstance(v, (int, float)) and v == v and v not in (float("inf"), float("-inf")) else None
+
+
 def plugin_coverage(metrics: list) -> dict:
-    """What the vLLM plugin checked, from each worker's /metrics text read at the end of the run."""
+    """What the vLLM plugin checked, from each worker's /metrics text read at the end of the run: its arithmetic
+    checks, and its scheduled weight scan (SDCGUARD_WEIGHT_SCAN=1: the sdcguard_weight_scan_* series, absent when the
+    scan is off)."""
     from .ready import parse
     workers = []
     for text in metrics:
@@ -112,19 +135,131 @@ def plugin_coverage(metrics: list) -> dict:
                         "fp8_layers_checked": v.get("sdcguard_fp8_layers_checked"),
                         "fp8_calls_judged": v.get("sdcguard_fp8_calls_judged_total",
                                                   v.get("sdcguard_fp8_calls_judged")),
+                        "weight_scan_layers": v.get("sdcguard_weight_scan_layers"),
+                        "weight_scan_passes": v.get("sdcguard_weight_scan_passes_total",
+                                                    v.get("sdcguard_weight_scan_passes")),
+                        "weight_scan_never_compared": v.get("sdcguard_weight_scan_never_compared"),
+                        "weight_scan_changed": v.get("sdcguard_weight_scan_changed"),
+                        "weight_scan_oldest_age_seconds": _finite(v.get("sdcguard_weight_scan_oldest_age_seconds")),
+                        "weight_scan_left_out": v.get("sdcguard_weight_scan_left_out"),
+                        "weight_scan_target_age_seconds": _finite(v.get("sdcguard_weight_scan_target_age_seconds")),
                         "share": info.get("share"), "gpu": info.get("UUID")})
     ratios = [w["weights_checked_ratio"] for w in workers]
     return {"workers": workers,
             "checked": bool(workers) and all((w["layers_checked"] or 0) > 0 and (w["checks_executed"] or 0) > 0
                                              for w in workers),
-            "min_weights_checked": min(ratios) if ratios and None not in ratios else None}
+            "min_weights_checked": min(ratios) if ratios and None not in ratios else None,
+            "weight_scan": _scan_coverage(workers)}
+
+
+def _scan_coverage(workers: list) -> dict:
+    """The weight scan over all workers: whether it ran on every one, and compared every entry it holds there."""
+    gaps = []
+    for i, w in enumerate(workers):
+        if not (w.get("weight_scan_layers") or 0) > 0:
+            gaps.append(f"worker {i} shows no weight scan")
+        elif w.get("weight_scan_never_compared") is None or w.get("weight_scan_oldest_age_seconds") is None:
+            gaps.append(f"worker {i}'s metrics don't show what its weight scan compared (an older sdcguard)")
+        elif w["weight_scan_never_compared"] > 0:
+            gaps.append(f"worker {i}'s weight scan had {w['weight_scan_never_compared']:g} of its entries never "
+                        "compared")
+    ages = [w.get("weight_scan_oldest_age_seconds") for w in workers]
+    # the measured oldest age against the age target where one is set (not the schedule's prediction of it)
+    late = []
+    for i, w in enumerate(workers):
+        age, target = w.get("weight_scan_oldest_age_seconds"), w.get("weight_scan_target_age_seconds")
+        if age is not None and target is not None and age > target:
+            late.append(f"worker {i}: {age:.0f} s, its target {target:g} s")
+    targets = [w for w in workers if w.get("weight_scan_target_age_seconds") is not None]
+    return {"ran": bool(workers) and all((w.get("weight_scan_layers") or 0) > 0 for w in workers),
+            "complete": bool(workers) and not gaps, "gaps": gaps,
+            "oldest_within_target": (not late) if targets else None, "past_target": late,
+            "entries": sum(w.get("weight_scan_layers") or 0 for w in workers),
+            "changed": sum(w.get("weight_scan_changed") or 0 for w in workers),
+            "left_out": sum(w.get("weight_scan_left_out") or 0 for w in workers),
+            "oldest_age_seconds": max(ages) if ages and None not in ages else None}
+
+
+def _gate_source(gate, faults: list, unsure: list, notes: list) -> tuple:
+    """`gate compare --json` (case -> verdict): (its summary, why it doesn't count as a source or None). A case counts
+    when it has a verdict on a case that ran on both sides; one this doesn't know is unresolved, never clean."""
+    cases = gate if isinstance(gate, dict) else {}
+    n = {"cases": len(cases), "verdicts": {}, "judged": 0}
+    if not isinstance(gate, dict):
+        unsure.append(f"the gate report isn't a map of cases to verdicts ({type(gate).__name__})")
+    for cid, v in cases.items():
+        v = v if isinstance(v, dict) else {}
+        vv = v.get("verdict")
+        n["verdicts"][str(vv)] = n["verdicts"].get(str(vv), 0) + 1
+        if vv in _GATE_JUDGED:
+            n["judged"] += 1
+        if vv == "REGRESSED" or (vv == "UNCHANGED" and v.get("flavor") != "avoided"):
+            faults.append(f"kept case {cid}: {vv} ({str(v.get('why', ''))[:160]})")
+        elif vv == "UNCHANGED":
+            # right on the candidate, on another kernel: no fault on it here, and the old one isn't shown fixed
+            notes.append(f"kept case {cid}: right on the candidate only because another kernel ran (avoided, not "
+                         "shown fixed): it can come back if the old kernel is picked again")
+        elif vv == "INCONCLUSIVE":
+            unsure.append(f"kept case {cid}: INCONCLUSIVE ({str(v.get('why', ''))[:160]})")
+        elif vv not in ("PASSED", "FIXED"):
+            unsure.append(f"kept case {cid}: verdict {vv!r}, not one the gate gives (PASSED, FIXED, REGRESSED, "
+                          "UNCHANGED, INCONCLUSIVE), so it can't count as clean")
+    n["counts_as_source"] = n["judged"] > 0
+    why = None if n["judged"] else ("the gate report has no case" if not cases else
+                                    f"the gate report has no case judged on both stacks ({n['cases']} cases)")
+    return n, why
+
+
+def _kernel_source(kt, faults: list, unsure: list, notes: list) -> tuple:
+    """`sdcguard kernels test` (kernels.test_calls): (its summary, why it doesn't count as a source or None). It counts
+    when at least one call ran and was judged on the kernel the workload ran (PASSED or WRONG with runs); calls not
+    run, or right only on another kernel, test nothing of the workload's. Counts that disagree with the rows, and row
+    verdicts this doesn't know, are unresolved."""
+    kt = kt if isinstance(kt, dict) else {}
+    c = kt.get("counts") if isinstance(kt.get("counts"), dict) else {}
+    rows = [r for r in (kt.get("calls") or []) if isinstance(r, dict)]
+    seen = dict.fromkeys(_KERNEL_VERDICTS, 0)
+    judged = 0
+    for row in rows:
+        v, runs = row.get("verdict"), row.get("runs")
+        ran = isinstance(runs, int) and runs > 0
+        if v == "WRONG":
+            faults.append(f"kernel test: {row.get('runs_wrong')} of {runs} runs wrong for {row.get('call')}")
+        if v not in seen:
+            unsure.append(f"kernel test: verdict {v!r} for {row.get('call')}, not one the kernel test gives "
+                          f"({', '.join(_KERNEL_VERDICTS)}), so it can't count as clean")
+            continue
+        seen[v] += 1
+        if v in ("PASSED", "WRONG") and not ran:
+            unsure.append(f"kernel test: {row.get('call')} is {v} with no run recorded")
+        elif v == "PASSED" and row.get("runs_wrong"):
+            unsure.append(f"kernel test: {row.get('call')} is PASSED with {row.get('runs_wrong')} runs wrong")
+        elif v in ("PASSED", "WRONG"):
+            judged += 1
+    want = {**seen, "NOT RUN": seen["NOT RUN"] + len(kt.get("not_run") or [])}
+    off = [f"{k} {c.get(k, 0)} counted, {want.get(k, 0)} in its rows" for k in sorted(set(want) | set(c))
+           if c.get(k, 0) != want.get(k, 0)]
+    if off:
+        unsure.append("kernel test: its counts disagree with its rows (" + "; ".join(off) + ")")
+    if seen["OTHER KERNEL"]:
+        notes.append(f"kernel test: {seen['OTHER KERNEL']} calls were right here only on another kernel than the "
+                     "workload ran (other conditions: run it where the workload runs): the workload's kernel wasn't "
+                     "tested for them")
+    if kt.get("warning"):
+        unsure.append("kernel test: " + kt["warning"])
+    n = {"counts": c, "gpu": kt.get("gpu"), "judged": judged, "counts_as_source": judged > 0}
+    why = None if judged else (f"the kernel test ran and judged no call on the workload's kernel ({want['PASSED']} "
+                               f"passed, {want['WRONG']} wrong, {want['OTHER KERNEL']} on another kernel, "
+                               f"{want['NOT RUN']} not run)")
+    return n, why
 
 
 def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kernel_test: Optional[dict] = None,
                plugin: Optional[dict] = None, min_weights_checked: Optional[float] = 0.5) -> dict:
     """plugin: plugin_coverage() of the candidate's run. Alerts count as a source of 'no fault' only when the
-    coverage shows checks ran on every worker; a confirmed wrong output is a fault whatever the coverage."""
-    faults, unsure, notes, sources, weights = [], [], [], {}, []
+    coverage shows checks ran on every worker, the gate's cases only when one was judged, the kernel test only when
+    one call ran and was judged; a confirmed wrong output is a fault whatever the rest shows."""
+    faults, unsure, notes, sources, weights, empty = [], [], [], {}, [], []
     if alerts is not None:
         n = {"alerts": len(alerts), "confirmed_wrong": 0, "weights_changed": 0, "cleared": 0, "unconfirmed": 0,
              "coverage": plugin}
@@ -164,44 +299,45 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
             n["counts_as_source"] = True
         sources["plugin_alerts"] = n
     if gate is not None:
-        n = {"cases": len(gate), "verdicts": {}}
-        for cid, v in gate.items():
-            vv = (v or {}).get("verdict", "INCONCLUSIVE")
-            n["verdicts"][vv] = n["verdicts"].get(vv, 0) + 1
-            if vv == "REGRESSED" or (vv == "UNCHANGED" and (v or {}).get("flavor") != "avoided"):
-                faults.append(f"kept case {cid}: {vv} ({(v or {}).get('why', '')[:160]})")
-            elif vv == "UNCHANGED":
-                # right on the candidate, on another kernel: no fault on it here, and the old one isn't shown fixed
-                notes.append(f"kept case {cid}: right on the candidate only because another kernel ran (avoided, not "
-                             "shown fixed): it can come back if the old kernel is picked again")
-            elif vv == "INCONCLUSIVE":
-                unsure.append(f"kept case {cid}: INCONCLUSIVE ({(v or {}).get('why', '')[:160]})")
-        sources["gate_cases"] = n
+        sources["gate_cases"], why = _gate_source(gate, faults, unsure, notes)
+        if why:
+            empty.append(why + ": it tested nothing, so it isn't a source")
     if kernel_test is not None:
-        c = kernel_test.get("counts") or {}
-        sources["kernel_test"] = {"counts": c, "gpu": kernel_test.get("gpu")}
-        for row in kernel_test.get("calls") or []:
-            if row.get("verdict") == "WRONG":
-                faults.append(f"kernel test: {row['runs_wrong']} of {row['runs']} runs wrong for {row['call']}")
-        if kernel_test.get("warning"):
-            unsure.append("kernel test: " + kernel_test["warning"])
+        sources["kernel_test"], why = _kernel_source(kernel_test, faults, unsure, notes)
+        if why:
+            empty.append(why + ": it isn't a source")
+    counting = [k for k, src in sources.items() if src.get("counts_as_source")]
     if faults:
         v = "FAULT"
+        notes += empty
     elif not sources:
         v, unsure = "INCONCLUSIVE", ["no arithmetic source was given"]
+    elif not counting:
+        v, unsure = "INCONCLUSIVE", empty + unsure
     elif unsure:
         v = "INCONCLUSIVE"
+        notes += empty
     else:
         v = "NO FAULT OBSERVED"
+        notes += empty
     return {"verdict": v, "faults": faults, "unresolved": unsure, "notes": notes, "sources": sources,
             "weights_changed": weights}
 
 
-def weights_section(a: dict, plugin: Optional[dict]) -> dict:
-    """Weight integrity: do the checked layers' weights still match their checksums at load? CHANGED (an alert
-    showed a layer's weights changed since load: a corrupted or overwritten weight, whatever the arithmetic did with
-    it), UNCHANGED (the plugin's checks ran on every worker and none showed it), UNMEASURED (no plugin coverage)."""
+def weights_section(a: dict, plugin: Optional[dict], alerts_given: bool = True) -> dict:
+    """Weight integrity: do the model's weights still match what was loaded?
+      CHANGED        an alert showed a layer's weights changed since load (a corrupted or overwritten weight,
+                     whatever the arithmetic did with it), or the weight scan's metrics count a mismatch
+      VERIFIED       fingerprints verified: the scheduled weight scan (SDCGUARD_WEIGHT_SCAN=1) ran on every worker,
+                     compared every entry it holds with its fingerprint at load and found no mismatch; with how long
+                     before the metrics were read the least recently verified entry was found clean, and how many
+                     tensors it leaves out (each worker's coverage report lists them)
+      NO CHANGE SEEN only the arithmetic checks ran (or the scan didn't cover every entry on every worker) and no alert
+                     showed a change: their checksums see a changed weight only once it moves an output past the
+                     line, so this verifies no weight
+      UNMEASURED     no plugin coverage, or no alerts given."""
     changed = a.get("weights_changed") or []
+    scan = (plugin or {}).get("weight_scan") or {}
     if changed:
         layers: dict = {}
         for w in changed:
@@ -214,10 +350,34 @@ def weights_section(a: dict, plugin: Optional[dict]) -> dict:
                + (f", first at step {min(first)}" if first else "")
                + "): a corrupted or overwritten weight, not wrong arithmetic")
         return {"verdict": "CHANGED", "layers": names, "alerts": len(changed), "why": why}
-    if plugin is not None and plugin.get("checked"):
-        return {"verdict": "UNCHANGED", "why": "no checked layer's weights differed from their checksums at load"}
-    return {"verdict": "UNMEASURED", "why": "no plugin coverage was given" if plugin is None else
-            "the plugin's metrics show a worker with no checked layer or no check run"}
+    if scan.get("changed"):
+        return {"verdict": "CHANGED", "layers": [], "alerts": 0,
+                "why": f"the weight scan's metrics count {scan['changed']:g} entries whose tensors no longer match "
+                       "their fingerprint at load (their alerts aren't in the alerts given)"}
+    if plugin is None:
+        return {"verdict": "UNMEASURED", "why": "no plugin coverage was given"}
+    if not alerts_given:
+        return {"verdict": "UNMEASURED", "why": "no alerts were given"}
+    if scan.get("complete"):
+        age = scan.get("oldest_age_seconds")
+        late = scan.get("past_target") or []
+        return {"verdict": "VERIFIED", "entries": scan.get("entries"), "left_out": scan.get("left_out"),
+                "oldest_verification_age_seconds": age, "oldest_within_target": scan.get("oldest_within_target"),
+                "why": f"fingerprints verified: the weight scan compared every one of its {scan.get('entries'):g} "
+                       "entries on every worker with its fingerprint at load and found no mismatch; the least "
+                       f"recently verified was found clean {age:.0f} s before the metrics were read"
+                       + (f", older than the verification-age target ({'; '.join(late)})" if late else "")
+                       + f"; it leaves out {scan.get('left_out') or 0:g} tensors (listed in each worker's coverage "
+                       "report)"}
+    if plugin.get("checked"):
+        how = ("the scheduled weight scan (SDCGUARD_WEIGHT_SCAN=1) didn't run" if not any(
+            (w.get("weight_scan_layers") or 0) > 0 for w in plugin.get("workers") or []) else
+            "the weight scan didn't verify every entry: " + "; ".join(scan.get("gaps") or []))
+        return {"verdict": "NO CHANGE SEEN", "why": "no alert showed a changed weight, but the weights were not "
+                f"verified: {how}, and the arithmetic checks' checksums see a changed weight only once it moves an "
+                "output past their line"}
+    return {"verdict": "UNMEASURED", "why": "the plugin's metrics show a worker with no checked layer or no check run, "
+            "and no weight scan that verified every entry"}
 
 
 # ---------------------------------------------------------------- 2. approximation
@@ -366,7 +526,8 @@ def scope(kernels_before: Optional[dict], kernels_after: Optional[dict], kernel_
                                                   for k in d["new"] if k.get("issues")]
         tested = set()
         if kernel_test is not None:
-            tested = {r["call"].split(" | ")[0] for r in kernel_test.get("calls") or [] if r.get("runs")}
+            tested = {str(r.get("call", "")).split(" | ")[0] for r in kernel_test.get("calls") or []
+                      if isinstance(r, dict) and r.get("runs")}
         out["added_kernels_not_tested"] = [k["key"] for k in d["new"] if k["key"] not in tested]
     else:
         out["kernels"] = None
@@ -405,7 +566,7 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
            consistency=None, consistency_baseline=None) -> dict:
     pol = policy_with_defaults(pol)
     a = arithmetic(alerts, gate, kernel_test, plugin, pol["arithmetic"]["min_weights_checked"])
-    wt = weights_section(a, plugin) if alerts is not None else {"verdict": "UNMEASURED", "why": "no alerts were given"}
+    wt = weights_section(a, plugin, alerts is not None)
     qz = quantization_section(alerts, plugin)
     q = approximation(quality, pol)
     p = performance(perf_before, perf_after, pol)
@@ -462,8 +623,7 @@ def render(r: dict) -> str:
         lines.append(f"   {name}: {json.dumps(src, default=str)}")
     wt = r.get("weights") or {}
     if wt:
-        lines.append(f"1a. Weight integrity (the checked layers' weights against their checksums at load): "
-                     f"{wt.get('verdict')}")
+        lines.append(f"1a. Weight integrity (the model's weights against what was loaded): {wt.get('verdict')}")
         lines.append(f"   {wt.get('why')}")
     qz = r.get("quantization") or {}
     if qz and qz.get("verdict") != "UNMEASURED":

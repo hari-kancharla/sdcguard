@@ -211,6 +211,18 @@ class Metrics:
     sdcguard_fp8_calls_judged_total         FP8 quantizations judged, counted on the GPU
     sdcguard_stack_info{model,...,fingerprint}  1: what this server runs, read from inside it (sdcguard.stack), for
                                             `sdcguard qualify` and `sdcguard ready --qualified`
+    sdcguard_weight_scan_layers             entries the weight scan (SDCGUARD_WEIGHT_SCAN=1) compares with their
+                                            fingerprint at load (each a layer's tensors, or a slice of a large one)
+    sdcguard_weight_scan_passes_total       passes the weight scan completed over them
+    sdcguard_weight_scan_never_compared     of those entries, ones whose comparison hasn't come back yet
+    sdcguard_weight_scan_changed            entries found changed since load (each alerts once)
+    sdcguard_weight_scan_oldest_age_seconds seconds since the least recently verified entry was found clean (since
+                                            it was registered, if not yet; NaN with nothing to compare)
+    sdcguard_weight_scan_left_out           tensors the scan leaves out (shared or offloaded memory, scales set at
+                                            first use, ...: listed in the coverage report)
+    sdcguard_weight_scan_target_age_seconds its verification-age target (SDCGUARD_WEIGHT_SCAN_AGE; NaN when unset),
+                                            to compare with the measured oldest age above
+    `sdcguard decide` calls the weights VERIFIED only from these: every entry compared, none changed, on every worker
     """
 
     def __init__(self, port: Optional[int] = None, registry=None, addr: str = "0.0.0.0"):
@@ -382,8 +394,26 @@ class Metrics:
                                     registry=self.registry)
             self._ws_passes = Counter("sdcguard_weight_scan_passes",
                                       "Passes the weight scan completed over the model", registry=self.registry)
+            self._ws_never = Gauge("sdcguard_weight_scan_never_compared",
+                                   "Scan entries whose comparison hasn't come back yet", registry=self.registry)
+            self._ws_changed = Gauge("sdcguard_weight_scan_changed", "Scan entries found changed since load",
+                                     registry=self.registry)
+            self._ws_age = Gauge("sdcguard_weight_scan_oldest_age_seconds",
+                                 "Seconds since the least recently verified scan entry was found clean",
+                                 registry=self.registry)
+            self._ws_left_out = Gauge("sdcguard_weight_scan_left_out", "Tensors the weight scan leaves out",
+                                      registry=self.registry)
+            self._ws_target = Gauge("sdcguard_weight_scan_target_age_seconds",
+                                    "The weight scan's verification-age target (NaN when unset)",
+                                    registry=self.registry)
             self._seen_ws = {}
         self._ws_layers.set(sum(1 for e in scan.entries if not e.get("excluded")))
+        self._ws_never.set(sum(1 for e in scan.entries if not e.get("compared") and not e.get("excluded")))
+        self._ws_changed.set(sum(1 for e in scan.entries if e.get("alerted")))
+        age = scan.oldest_age()
+        self._ws_age.set(float("nan") if age is None else float(age))
+        self._ws_left_out.set(len(scan.not_scanned))
+        self._ws_target.set(float(scan.target_age) if scan.target_age else float("nan"))
         p = int(scan.stats.get("passes", 0))
         prev = self._seen_ws.get(id(scan), 0)
         if p > prev:

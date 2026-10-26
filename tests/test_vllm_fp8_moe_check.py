@@ -55,14 +55,11 @@ def test_fp8pc_not_starting_is_reported_not_failed():
 def test_the_qualify_command_has_the_check_on_and_the_policy(monkeypatch, tmp_path):
     seen = {}
 
-    class Done:
-        returncode, stdout, stderr = 0, "", ""
-
-    def fake_run(cmd, **kw):
+    def fake_run(cmd, timeout, port, env=None):
         seen["cmd"] = cmd
-        return Done()
+        return {"code": 0, "output": "", "timed_out": False, "stray": []}
 
-    monkeypatch.setattr(vf.subprocess, "run", fake_run)
+    monkeypatch.setattr(vf, "run_bounded", fake_run)
     res = vf.run(str(tmp_path), 8000, 9400)
     cmd = seen["cmd"]
     assert "no QUALIFY.json" in res["error"]
@@ -93,9 +90,9 @@ def test_each_servers_fp8_coverage_is_read_from_its_metrics(tmp_path):
 def test_a_qualify_past_its_limit_still_gives_a_judged_result(monkeypatch, tmp_path):
     """qualify and the repro folder fit inside the Modal function's 190 minutes, and one that runs past its limit
     leaves an error to judge instead of no SUMMARY.json."""
-    def late(cmd, **kw):
-        raise vf.subprocess.TimeoutExpired(cmd, kw.get("timeout"), output=b"started", stderr=b"")
-    monkeypatch.setattr(vf.subprocess, "run", late)
+    def late(cmd, timeout, port, env=None):
+        return {"code": None, "output": "started", "timed_out": True, "stray": []}
+    monkeypatch.setattr(vf, "run_bounded", late)
     res = vf.run(str(tmp_path), 8000, 9400)
     assert res["exit_code"] is None and res["error"].startswith(f"qualify ran past {vf.QUALIFY_S} s; no QUALIFY.json")
     assert res["output"] == "started"
@@ -110,13 +107,13 @@ def test_a_cut_short_qualify_is_judged_on_its_record_so_far(tmp_path, monkeypatc
     qualify didn't finish and that no repro folder was written, instead of calling every server not started."""
     out = str(tmp_path)
 
-    def late(cmd, **kw):
+    def late(cmd, timeout, port, env=None):
         with open(os.path.join(out, "QUALIFY.json"), "w") as f:
             json.dump({"runs": {"baseline": {"ready": True}, "again": {"ready": True}, "fp8pt": {"ready": True}},
                        "decisions": {"fp8pt": {"decision": "REJECT", "isolation": "LEAK"}}, "complete": False,
                        "not_yet_run": ["eager", "fp8pc"]}, f)
-        raise vf.subprocess.TimeoutExpired(cmd, kw.get("timeout"), output=b"", stderr=b"")
-    monkeypatch.setattr(vf.subprocess, "run", late)
+        return {"code": None, "output": "", "timed_out": True, "stray": []}
+    monkeypatch.setattr(vf, "run_bounded", late)
     res = vf.run(out, 8000, 9400)
     assert res["qualify_complete"] is False and res["not_yet_run"] == ["eager", "fp8pc"]
     ok, fails, s = vf.judge(res)
@@ -124,3 +121,57 @@ def test_a_cut_short_qualify_is_judged_on_its_record_so_far(tmp_path, monkeypatc
     assert not any(f.startswith("F1: baseline") or f.startswith("F1: fp8pt") or f.startswith("F2") for f in fails)
     assert "F6: qualify didn't finish, so it wrote no repro folder to rerun" in fails
     assert s["qualify_complete"] is False and s["not_yet_run"] == ["eager", "fp8pc"]
+
+
+def test_a_command_past_its_limit_is_interrupted_and_its_escaped_servers_stopped(tmp_path):
+    """The real thing, on processes: a stand-in for qualify that starts a stand-in server in a session of its own
+    (as qualify does), cleans up on SIGINT only if told to, and outlives its limit. Past the limit it gets SIGINT
+    (its finally block runs), and a server it left behind on the port is found and stopped."""
+    import subprocess
+    import textwrap
+    port = 18431
+    srv = tmp_path / "srv.py"
+    srv.write_text("import time\nwhile True:\n    time.sleep(1)\n")
+    for clean in (True, False):
+        mark = tmp_path / f"cleaned_{clean}"
+        q = tmp_path / f"q_{clean}.py"
+        q.write_text(textwrap.dedent(f"""
+            import subprocess, sys, time
+            p = subprocess.Popen([sys.executable, {str(srv)!r}, "serve", "--port", "{port}"], start_new_session=True)
+            try:
+                time.sleep(600)
+            finally:
+                if {clean}:
+                    p.kill()
+                open({str(mark)!r}, "w").write("1")
+        """))
+        r = vf.run_bounded([sys.executable, str(q)], 3, port)
+        assert r["timed_out"] and r["code"] is None and mark.exists()        # its finally block ran
+        assert (r["stray"] == []) if clean else (len(r["stray"]) == 1)      # an escaped server: found
+        assert vf.servers_on(port) == []                                      # and nothing left on the port
+    r = vf.run_bounded([sys.executable, "-c", "print('hi')"], 30, port)
+    assert r == {"code": 0, "output": "hi\n", "timed_out": False, "stray": []}
+
+
+def test_the_sweep_finds_renamed_engines_and_leaves_earlier_ones_alone(tmp_path):
+    """vLLM's engine renames itself (VLLM::EngineCore), so the sweep finds it by that name too; one that was already
+    running before the command began isn't the command's and is left alone."""
+    import subprocess
+    import textwrap
+    port = 18432
+    # a stand-in with "VLLM::EngineCore" as its command line, as setproctitle leaves it
+    old = subprocess.Popen(["bash", "-c", "exec -a VLLM::EngineCore sleep 600"], start_new_session=True)
+    import time
+    t0 = time.monotonic()
+    while old.pid not in vf.servers_on(port) and time.monotonic() - t0 < 10:      # (until bash has exec'd)
+        time.sleep(0.05)
+    try:
+        q = tmp_path / "q.py"
+        q.write_text("import subprocess\nsubprocess.Popen(['bash', '-c', 'exec -a VLLM::EngineCore sleep 600'], "
+                     "start_new_session=True)\n")
+        r = vf.run_bounded([sys.executable, str(q)], 30, port)
+        assert len(r["stray"]) == 1 and old.pid not in r["stray"] and old.poll() is None
+        assert old.pid in vf.servers_on(port)
+    finally:
+        old.kill()
+        old.wait()

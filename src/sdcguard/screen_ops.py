@@ -119,8 +119,15 @@ class _Found:
     def __init__(self, name: str):
         self.name, self.wrong, self.checked, self.rounds, self.first = name, 0, 0, 0, []
         self.worst: Optional[float] = None               # the largest score, for tests judged against a bound
+        self.cases: set = set()                          # (input set or shape, transposed) the test ran
+
+    def _case(self, where: dict) -> None:
+        k = where.get("set", tuple(where["shape"]) if "shape" in where and "set" not in where else None)
+        if k is not None and "transposed" in where:
+            self.cases.add((k, bool(where["transposed"])))
 
     def add(self, got: torch.Tensor, want: torch.Tensor, where: dict) -> None:
+        self._case(where)
         g, w = got.reshape(-1), want.reshape(-1)
         bad = g.view(_int_view(g.dtype)) != w.view(_int_view(w.dtype)) if g.dtype == w.dtype else g != w
         n = int(bad.sum())
@@ -134,6 +141,7 @@ class _Found:
         """Sampled values judged against a bound: z [S] is each one's distance from its reference in units of the
         bound, and over the line is wrong (NaN too). at: tensors [S] reported with a wrong value (its row, column,
         value and reference)."""
+        self._case(where)
         self.checked += z.numel()
         if z.numel():
             top = float(torch.nan_to_num(z.float(), nan=float("inf")).max())
@@ -149,6 +157,8 @@ class _Found:
     def result(self) -> dict:
         out = {"test": self.name, "rounds": self.rounds, "values_checked": self.checked, "wrong": self.wrong,
                "first_wrong": self.first}
+        if self.cases:
+            out["cases"] = sorted([list(k) if isinstance(k, tuple) else k, t] for k, t in self.cases)
         if self.worst is not None:
             out["worst_score"] = round(self.worst, 4) if self.worst != float("inf") else repr(self.worst)
         return out
@@ -409,10 +419,18 @@ def memory_test(device, share: float, seed: int, found: _Found, chunk_mb: int = 
     return {"bytes": len(chunks) * per * 4}
 
 
+def coverage_rounds(real=REAL) -> int:
+    """Rounds for every matmul test to run each of its SETS input sets (two a round) and each realistic-data shape,
+    plain and transposed (a shape a round, transposed in every other pass over them)."""
+    return max(-(-SETS // 2), 2 * len(real), 1)
+
+
 def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, seed: int = 0, mem_share: float = 0.5,
         simulate: Optional[str] = None, tests=None, size=SIZE, fma_n: int = FMA_N, sm_n: int = SM_N,
         mem_limit_gb: float = 32.0, shapes=SHAPES, real=REAL, min_rounds: int = 1) -> dict:
-    """Run the tests on one device for about `minutes` (at least min_rounds rounds). simulate: a test name whose first
+    """Run the tests on one device for about `minutes` of testing, timed from when the inputs and their references
+    are ready, and with minutes > 0 for at least as many rounds as it takes every test to run each of its input sets
+    and shapes, plain and transposed (coverage_rounds), and at least min_rounds. simulate: a test name whose first
     result is made wrong in one value (a demo of what a failure looks like, never a GPU fault); a realistic-data
     test's name with ".repeat" makes the value wrong in its second run only, which the repeat finds. shapes: each
     input set's (M, N) (None: size) and its K as a share of the precision's largest; real: the realistic-data
@@ -452,7 +470,10 @@ def run(device: torch.device, minutes: float, out_dir: Optional[str] = None, see
                 report["skipped"][n] = why
                 del found[n]
     error = None
-    deadline = t0 + 60.0 * minutes
+    if minutes > 0:
+        min_rounds = max(min_rounds, coverage_rounds(real))
+    report["prepare_minutes"] = round((time.time() - t0) / 60, 2)
+    deadline = time.time() + 60.0 * minutes          # testing time: the inputs and their references are ready
     rnd = 0
     try:
         if "memory" in found:

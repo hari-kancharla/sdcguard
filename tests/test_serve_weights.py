@@ -445,6 +445,7 @@ def test_a_verification_age_target_sets_the_bytes_a_read_compares(monkeypatch, c
     want = total // 4 + 1                                                   # 2 s for a pass: 4 reads
     assert s.stats["budget_bytes_now"] == max(1024, want) and s.stats["target_met"] is True
     assert s.oldest_age() <= 3.0 and s.coverage()["oldest_verification_age_seconds"] <= 3.0
+    assert s.coverage()["oldest_within_target"] is True                    # measured, not just scheduled
     s2 = sw.WeightScan(g, budget_mb=1 / 1024, target_age=3.0, max_mb=2 / 1024)   # at most 2 KB a read
     for e in s.entries:
         s2.add(e["name"], e["get"], e["kind"], e["module"])
@@ -464,10 +465,12 @@ def test_a_verification_age_target_sets_the_bytes_a_read_compares(monkeypatch, c
         s2.poll(wait=True)
     assert sum("can't compare every weight within" in r.getMessage() for r in caplog.records) == 1
     clock[0] += 600                                                         # an idle server: the gap counts as 4 s
-    s2.poll(wait=True)
+    assert s2.coverage()["oldest_within_target"] is False                   # 10 minutes unread: the schedule can't
+    s2.poll(wait=True)                                                      # make an age it doesn't measure true
     assert s2._interval <= 0.8 * 0.5 + 0.2 * 4.0 + 1e-9
     s3 = sw.WeightScan(g, budget_mb=1 / 1024)                               # no target: the budget alone
     s3.add("x", s.entries[0]["get"], "checked")
     clock[0] += 0.5
     s3.poll(wait=True)
     assert s3.stats["budget_bytes_now"] == 1024 and s3.stats["target_met"] is None
+    assert s3.coverage()["oldest_within_target"] is None

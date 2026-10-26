@@ -18,7 +18,7 @@ def _stats(impl="FlashAttentionImpl", worst=0.3, steps=500):
 
 def passing():
     ident, long = ["a"] * va.IDENTITY, ["b"] * va.LONG
-    speed = lambda v: {"16": {"median": {"output_tokens_per_s": v}}}  # noqa: E731
+    speed = lambda v: {"16": {"median": {"output_tokens_per_s": v}, "complete": True}}  # noqa: E731
     hit = {"value": "output_wrong_or_misread", "head": "output_wrong_or_misread", "other": "output_wrong_or_misread",
            "kv": "kv_write_wrong", "short": "output_wrong_or_misread"}
     fp32 = {"bf16": False, "fp16": False}               # cuBLAS partial sums in fp32 on both sides of A2
@@ -182,3 +182,10 @@ def test_plain_servers_run_with_the_plugins_cublas_setting(monkeypatch, tmp_path
         env = dict(os.environ, PYTHONPATH=exp, SDCGUARD_TEST_EXACT=flag)
         out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, timeout=300)
         assert out.stdout.strip() == want, out.stdout + out.stderr
+
+
+def test_an_incomplete_speed_run_decides_nothing():
+    r = passing()
+    r["guarded"]["speed"]["16"]["complete"] = False      # a round with failed requests
+    ok, fails, s = va.judge(r)
+    assert s["on_by_default"] is None and s["cost"]["16"]["complete"] is False

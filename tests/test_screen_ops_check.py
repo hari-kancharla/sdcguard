@@ -22,7 +22,7 @@ def _small_real(monkeypatch):
 
 
 def _results():
-    clean = so.run(torch.device("cpu"), 0.0, None, seed=0, tests=sc.ALL, **SMALL)   # (the realistic-data ones too)
+    clean = so.run(torch.device("cpu"), 1e-4, None, seed=0, tests=sc.ALL, **SMALL)  # (the realistic-data ones too)
     sims = {}
     for t in sc.sims(clean["tests"]):
         base = t.split(".")[0]
@@ -36,14 +36,46 @@ def test_a_clean_run_and_caught_simulations_pass():
     assert {"gemm_bf16_real", "gemm_fp16_real"} <= set(res["clean"]["tests"]) <= set(res["simulated"])
     assert {"gemm_bf16_real.repeat", "gemm_fp16_real.repeat"} <= set(res["simulated"])
     assert res["simulated"]["gemm_fp16_real.repeat"]["first_wrong"][0]["check"] == "repeat"
-    res["clean"]["skipped"] = dict(TURING)                                         # as on a Turing GPU (7.0)
+    _as_turing(res)
     ok, fails = sc.judge(res)
     assert ok, fails
+    assert res["clean"]["rounds"] >= so.coverage_rounds(SMALL["real"]) == 4
+
+
+def _as_turing(res):
+    """As on a Turing GPU (7.0): the tests it can't run are skipped, and not in the clean run."""
+    res["clean"]["skipped"] = dict(TURING)
+    res["clean"]["tests"] = {n: t for n, t in res["clean"]["tests"].items() if n not in TURING}
+
+
+def test_the_judge_needs_every_test_and_every_shape():
+    base = _results()
+    _as_turing(base)
+    r = {**base, "clean": {**base["clean"], "tests": {}}}              # an empty clean run doesn't pass
+    assert any("aren't every test" in f for f in sc.judge(r)[1])
+    tests = {k: v for k, v in base["clean"]["tests"].items() if k != "fma_fp64"}
+    assert any("missing ['fma_fp64']" in f for f in sc.judge({**base, "clean": {**base["clean"], "tests": tests}})[1])
+    t = dict(base["clean"]["tests"]["gemm_fp16"])
+    t["cases"] = [c for c in t["cases"] if c != [3, True]]               # one input set never transposed
+    tests = {**base["clean"]["tests"], "gemm_fp16": t}
+    assert any("gemm_fp16 didn't run every input set" in f
+               for f in sc.judge({**base, "clean": {**base["clean"], "tests": tests}})[1])
+    t = dict(base["clean"]["tests"]["gemm_fp16_real"])
+    t["cases"] = t["cases"][:1]
+    tests = {**base["clean"]["tests"], "gemm_fp16_real": t}
+    assert any("gemm_fp16_real didn't run every" in f
+               for f in sc.judge({**base, "clean": {**base["clean"], "tests": tests}})[1])
+
+
+def test_one_round_doesnt_cover_the_shapes_and_testing_time_starts_after_the_references():
+    r = so.run(torch.device("cpu"), 0.0, None, seed=0, tests=["gemm_fp16", "gemm_fp16_real"], **SMALL)
+    assert r["rounds"] == 1 and len(r["tests"]["gemm_fp16"]["cases"]) == 4      # sets 0 and 1, both ways
+    assert "prepare_minutes" in r
 
 
 def test_each_criterion_fails_on_its_own():
     base = _results()
-    base["clean"]["skipped"] = dict(TURING)
+    _as_turing(base)
     r = {**base, "capability": [9, 0]}
     assert any("S1: tests skipped" in f for f in sc.judge(r)[1])          # an H100 must run them all
     r = {**base, "clean": {**base["clean"], "result": "FAIL", "wrong": 2}}
@@ -57,14 +89,15 @@ def test_each_criterion_fails_on_its_own():
     tests = {**base["clean"]["tests"], "gemm_fp16_real": {**base["clean"]["tests"]["gemm_fp16_real"],
                                                           "worst_score": 1.6}}
     assert any("S3: gemm_fp16_real" in f for f in sc.judge({**base, "clean": {**base["clean"], "tests": tests}})[1])
-    fw = dict(base["simulated"]["gemm_bf16_real"]["first_wrong"][0], col=-1)
-    sims = {**base["simulated"], "gemm_bf16_real": {"result": "FAIL", "wrong": 1, "first_wrong": [fw]}}
-    assert any("S2: gemm_bf16_real located" in f for f in sc.judge({**base, "simulated": sims})[1])
-    fw = dict(base["simulated"]["gemm_bf16_real"]["first_wrong"][0], seed=1)        # found in another round's data
-    sims = {**base["simulated"], "gemm_bf16_real": {"result": "FAIL", "wrong": 1, "first_wrong": [fw]}}
-    assert any("S2: gemm_bf16_real found a value somewhere else" in f for f in sc.judge({**base, "simulated": sims})[1])
+    # (gemm_bf16_real is skipped on this Turing-like run: its fp16 twin stands for both)
+    fw = dict(base["simulated"]["gemm_fp16_real"]["first_wrong"][0], col=-1)
+    sims = {**base["simulated"], "gemm_fp16_real": {"result": "FAIL", "wrong": 1, "first_wrong": [fw]}}
+    assert any("S2: gemm_fp16_real located" in f for f in sc.judge({**base, "simulated": sims})[1])
+    fw = dict(base["simulated"]["gemm_fp16_real"]["first_wrong"][0], seed=1)        # found in another round's data
+    sims = {**base["simulated"], "gemm_fp16_real": {"result": "FAIL", "wrong": 1, "first_wrong": [fw]}}
+    assert any("S2: gemm_fp16_real found a value somewhere else" in f for f in sc.judge({**base, "simulated": sims})[1])
     fw = dict(base["simulated"]["gemm_fp16_real.repeat"]["first_wrong"][0], element=0)
     sims = {**base["simulated"], "gemm_fp16_real.repeat": {"result": "FAIL", "wrong": 1, "first_wrong": [fw]}}
     assert any("S2: gemm_fp16_real.repeat located" in f for f in sc.judge({**base, "simulated": sims})[1])
-    sims = {k: v for k, v in base["simulated"].items() if k != "gemm_bf16_real.repeat"}
-    assert any("S2: gemm_bf16_real.repeat" in f for f in sc.judge({**base, "simulated": sims})[1])
+    sims = {k: v for k, v in base["simulated"].items() if k != "gemm_fp16_real.repeat"}
+    assert any("S2: gemm_fp16_real.repeat" in f for f in sc.judge({**base, "simulated": sims})[1])

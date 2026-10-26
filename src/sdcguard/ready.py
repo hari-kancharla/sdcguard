@@ -24,12 +24,23 @@ worker it was told to expect:
 
 With --qualified DECISION.json (a decision `sdcguard qualify` or `sdcguard decide` wrote), it also says whether this
 server is the stack that decision accepted: every worker's sdcguard_stack_info (what the plugin read from inside the
-server: model, dtype, quantization, attention and MoE backends, compilation and CUDA graph modes, parallelism,
-versions, GPU, kernel-steering environment) against the stack recorded in the decision. A different stack is NOT
-THE QUALIFIED STACK, listing what differs; a decision that wasn't ACCEPT is NOT QUALIFIED; a server or decision with
-no stack recorded makes the answer INCONCLUSIVE. On the qualified stack it also says where the server goes beyond
-what the qualification exercised (the decision records it): contexts longer than any it tested, and with --vllm,
-requests served with longer prompts than it sent; notes, or INCONCLUSIVE with --strict-conditions.
+server: model, its resolved revision and a digest of its weights as loaded, dtype, quantization, LoRA, attention and
+MoE backends, compilation and CUDA graph modes, parallelism, versions, GPU, kernel-steering environment) against the
+stack recorded in the decision for that worker. A different stack is NOT THE QUALIFIED STACK, listing what differs;
+a decision that wasn't ACCEPT is NOT QUALIFIED; a server or decision with no stack recorded, or a decision older than
+the weights' digest (or a server that doesn't publish one), makes the answer INCONCLUSIVE.
+
+The checks are held to what the qualification ran with, too (checker settings aren't the stack, so they're compared
+here): the share of weights checked must reach the larger of --min-weights and the decision's policy
+(arithmetic.min_weights_checked), the alarm line must be at most the smaller of --max-z and the line the
+qualification ran at; every detector it ran with (norms, MoE, FP8, spot checks, attention, the weight scan) must be on
+now, at a line no higher than then (norm_z, attn_z, the weight scan's age target). Weaker checks are NOT PROTECTED,
+listing what's weaker; another sdcguard version than the qualification's is INCONCLUSIVE (its checks may differ); a
+requirement the decision doesn't record is left to the command line, with a note. --max-age-days (or the decision's
+policy, ready.max_age_days; the smaller applies) makes a decision older than that INCONCLUSIVE. On the qualified
+stack it also says where the server goes beyond what the qualification exercised (the decision records it): contexts
+longer than any it tested, and with --vllm, requests served with longer prompts than it sent; notes, or INCONCLUSIVE
+with --strict-conditions.
 
 Exit codes: 0 PROTECTED or IDLE (a readiness probe on an idle server must pass, or no traffic ever reaches it;
 use --probe to have IDLE checked), 1 NOT PROTECTED (or, with --qualified, NOT THE QUALIFIED STACK or NOT QUALIFIED),
@@ -136,10 +147,98 @@ def outside_tested(tested: dict, live: Optional[dict], vllm_text: Optional[str])
     return out
 
 
-def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None) -> dict:
-    """Is the server whose workers' metrics pages are `texts` the stack the decision at decision_path accepted?
-    {"verdict": None (it is) | "NOT THE QUALIFIED STACK" | "NOT QUALIFIED" | "INCONCLUSIVE", "why", "differences",
-    "outside_tested": where it goes beyond what the qualification exercised (vllm_text: vLLM's own metrics)}."""
+# The detectors a qualification runs with (sdcguard.stack's checks, as the vLLM plugin publishes them) and how strong
+# each setting is: a server running one weaker than its qualification did isn't checked as it was qualified.
+DETECTORS = ("norms", "moe", "fp8", "spot", "attention", "weights")
+_STRENGTH = {"off": 0, "outside_graphs": 1, "on_unknown_where": 1, "on": 2}
+_LINES = {"norm_z": ("norms", "the norm check's line"), "attn_z": ("attention", "the attention check's line"),
+          "weight_scan_age": ("weights", "the weight scan's verification-age target, in seconds")}
+
+
+def _checks(text) -> dict:
+    """sdcguard_stack_info's checks label ("attention=off,moe=on,z=6,...") as a dict."""
+    out = {}
+    for part in str(text or "").split(","):
+        k, sep, v = part.partition("=")
+        if sep and k.strip():
+            out[k.strip()] = v.strip()
+    return out
+
+
+def _deployed(d: dict) -> tuple:
+    """(the stack the plugin read on the qualified server's first worker, every worker's), from a decision."""
+    cand = ((d.get("scope") or {}).get("stacks") or {}).get("candidate") or {}
+    workers = [w for w in cand.get("deployed_workers") or [] if isinstance(w, dict)] \
+        if isinstance(cand.get("deployed_workers"), list) else []
+    return cand.get("deployed") or None, workers
+
+
+def requirements(d: Optional[dict]) -> dict:
+    """What a decision required of the checks, for `ready --qualified` to hold a server to: the policy's least share
+    of weights checked, the alarm line and detectors the qualification ran with (its stack's checks), the checker's
+    version, and how many days the decision stands (policy ready.max_age_days). A requirement the decision doesn't
+    record is None and named in "unrecorded" (the command line's value applies)."""
+    d = d if isinstance(d, dict) else {}
+    pol = d.get("policy") if isinstance(d.get("policy"), dict) else {}
+    was, _ = _deployed(d)
+    checks = _checks((was or {}).get("checks"))
+    out = {"min_weights": _num((pol.get("arithmetic") or {}).get("min_weights_checked")),
+           "max_z": _num(checks.get("z")), "checks": checks, "sdcguard": (was or {}).get("sdcguard") or None,
+           "max_age_days": _num((pol.get("ready") or {}).get("max_age_days")), "created": d.get("created")}
+    out["unrecorded"] = [what for key, what in (
+        ("min_weights", "the least share of weights checked (policy arithmetic.min_weights_checked)"),
+        ("max_z", "the alarm line"), ("sdcguard", "the checker's version")) if out[key] is None]
+    if not any(k in checks for k in DETECTORS):
+        out["unrecorded"].append("the detectors the qualification ran with")
+    return out
+
+
+def _weaker(want: dict, have: dict) -> tuple:
+    """(what the live checks `have` run weaker than the qualification's `want`, what can't be compared)."""
+    weaker, unknown = [], []
+    for k in DETECTORS:
+        if k not in want:
+            continue
+        w = _STRENGTH.get(want[k])
+        if k not in have:
+            if w != 0:
+                unknown.append(f"{k}: the server doesn't say whether these checks run; the qualification's were "
+                               f"{want[k]}")
+            continue
+        h = _STRENGTH.get(have[k])
+        if w is None or h is None:
+            unknown.append(f"{k}: {have[k]!r} now, {want[k]!r} in the qualification (a setting this doesn't know)")
+        elif h < w:
+            weaker.append(f"{k} checks {have[k]} now, {want[k]} in the qualification")
+    for k, (detector, what) in _LINES.items():
+        if k not in want or not _STRENGTH.get(have.get(detector)) or not _STRENGTH.get(want.get(detector)):
+            continue                          # (a detector off on either side is judged above)
+        w, h = _num(want[k]), _num(have.get(k))
+        if h is None and k == "weight_scan_age":
+            weaker.append(f"{what}: none now, {want[k]} in the qualification")
+        elif h is None:
+            unknown.append(f"{what}: not published now, {want[k]} in the qualification")
+        elif w is not None and h > w:
+            weaker.append(f"{what}: {have[k]} now, {want[k]} in the qualification")
+    return weaker, unknown
+
+
+def _age_days(created) -> Optional[float]:
+    import calendar
+    try:
+        return (time.time() - calendar.timegm(time.strptime(str(created), "%Y-%m-%dT%H:%M:%SZ"))) / 86400.0
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None,
+              max_age_days: Optional[float] = None) -> dict:
+    """Is the server whose workers' metrics pages are `texts` the stack the decision at decision_path accepted, and
+    are its checks at least those the qualification ran with?
+    {"verdict": None (it is) | "NOT THE QUALIFIED STACK" | "NOT PROTECTED" (weaker checks) | "NOT QUALIFIED" |
+    "INCONCLUSIVE", "why", "differences", "weaker", "notes", "outside_tested": where it goes beyond what the
+    qualification exercised (vllm_text: vLLM's own metrics)}. max_age_days: the command line's; the decision's
+    policy (ready.max_age_days) can make it smaller."""
     from .stack import compare, from_metrics
     try:
         with open(decision_path) as f:
@@ -147,31 +246,109 @@ def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None) 
     except (OSError, ValueError) as e:
         return {"verdict": "INCONCLUSIVE", "why": f"the decision {decision_path} couldn't be read ({e})",
                 "differences": []}
+    if not isinstance(d, dict):
+        return {"verdict": "INCONCLUSIVE", "why": f"the decision {decision_path} isn't a decision", "differences": []}
     if d.get("decision") != "ACCEPT":
         return {"verdict": "NOT QUALIFIED", "why": f"the decision given is {d.get('decision')}, not ACCEPT",
                 "differences": []}
-    was = (((d.get("scope") or {}).get("stacks") or {}).get("candidate") or {}).get("deployed")
+    was, recorded = _deployed(d)
     if not was:
         return {"verdict": "INCONCLUSIVE", "differences": [],
                 "why": "the decision doesn't record the stack the plugin saw (made without the plugin, or by an older "
                        "sdcguard)"}
-    diffs, unknown = [], []
+    req = requirements(d)
+    diffs, unknown, weaker, notes = [], [], [], []
     for i, t in enumerate(texts):
         live = from_metrics(t or "")
-        c = compare(was, live)
+        # each worker against its own record (with tensor parallelism, its own shard's weights)
+        want = recorded[i] if i < len(recorded) and recorded[i] else was
+        c = compare(want, live)
         if c["same"] is None:
             unknown.append(f"worker {i}: {c['why']}")
         elif not c["same"]:
             diffs += [f"worker {i}: {x}" for x in c["differences"]]
+        if not live:
+            continue
+        if req["checks"]:
+            have = _checks(live.get("checks"))
+            if not have:
+                if any(_STRENGTH.get(req["checks"].get(k)) != 0 for k in DETECTORS if k in req["checks"]):
+                    unknown.append(f"worker {i}: the server doesn't publish which checks it runs (an older plugin), "
+                                   "so they can't be held to the qualification's")
+            else:
+                wk, uk = _weaker(req["checks"], have)
+                weaker += [f"worker {i}: {x}" for x in wk]
+                unknown += [f"worker {i}: {x}" for x in uk]
+                if (_num(have.get("share")) or 0) < (_num(req["checks"].get("share")) or 0):
+                    notes.append(f"worker {i}: checks a share {have.get('share')} of the layers, the qualification "
+                                 f"{req['checks'].get('share')} (what's held is the share of weights checked)")
+        if req["sdcguard"] and (live.get("sdcguard") or None) != req["sdcguard"]:
+            unknown.append(f"worker {i}: sdcguard {live.get('sdcguard') or 'unknown'} now, {req['sdcguard']} in the "
+                           "qualification: its checks can't be shown to be the ones qualified (qualify again)")
+    for what in req["unrecorded"]:
+        notes.append(f"the decision doesn't record (or set) {what}: left to the command line")
+    limits = []
+    if max_age_days is not None:
+        limits.append((max_age_days, f"--max-age-days {max_age_days:g}"))
+    if req["max_age_days"] is not None:
+        limits.append((req["max_age_days"], f"the decision's policy ready.max_age_days {req['max_age_days']:g}"))
+    age = _age_days(req["created"])
+    if limits:
+        lim, src = min(limits)
+        if age is None:
+            unknown.append(f"the decision doesn't say when it was made (created: {req['created']!r}), so it can't be "
+                           f"shown to be within {src}")
+        elif age > lim:
+            unknown.append(f"the decision was made {age:.0f} days ago ({req['created']}), past {src}: qualify again")
+    if age is not None:
+        notes.append(f"the decision was made {age:.0f} days ago ({req['created']})")
+    base = {"weaker": weaker, "notes": notes, "requirements": req}
     if diffs:
-        return {"verdict": "NOT THE QUALIFIED STACK", "differences": diffs,
+        return {**base, "verdict": "NOT THE QUALIFIED STACK", "differences": diffs,
                 "why": f"{len(diffs)} difference(s) from the stack the decision accepted"}
+    if weaker:
+        return {**base, "verdict": "NOT PROTECTED", "differences": [],
+                "why": "the qualified stack, but checked weaker than its qualification was: " + "; ".join(weaker)}
     if unknown or not texts:
-        return {"verdict": "INCONCLUSIVE", "differences": [], "why": "; ".join(unknown) or "no worker read"}
+        return {**base, "verdict": "INCONCLUSIVE", "differences": [], "why": "; ".join(unknown) or "no worker read"}
     live = from_metrics(texts[0] or "") if texts else None
-    return {"verdict": None, "differences": [], "fingerprint": was.get("fingerprint"),
+    return {**base, "verdict": None, "differences": [], "fingerprint": was.get("fingerprint"),
             "outside_tested": outside_tested((d.get("scope") or {}).get("tested") or {}, live, vllm_text),
-            "why": f"the stack the decision accepted (fingerprint {was.get('fingerprint')}) on every worker"}
+            "why": f"the stack the decision accepted (fingerprint {was.get('fingerprint')}) on every worker, checked "
+                   "at least as its qualification was"}
+
+
+def inherited(path: Optional[str], max_z: float, min_weights: Optional[float]) -> dict:
+    """The stricter of the command line's alarm line and least share of weights checked and the decision's at path:
+    {"max_z", "z_from", "min_weights", "weights_from", "note"}."""
+    out = {"max_z": max_z, "z_from": "--max-z", "min_weights": min_weights, "weights_from": "--min-weights",
+           "note": None}
+    if not path:
+        return out
+    try:
+        with open(path) as f:
+            req = requirements(json.load(f))
+    except (OSError, ValueError):
+        return out
+    held = []
+    if req["max_z"] is not None:
+        held.append(f"alarm line at most {req['max_z']:g}")
+        if req["max_z"] < max_z:
+            out.update(max_z=req["max_z"], z_from="the qualification's line")
+    if req["min_weights"] is not None:
+        held.append(f"at least {req['min_weights']:.0%} of the weights checked")
+        if min_weights is None or req["min_weights"] > min_weights:
+            out.update(min_weights=req["min_weights"],
+                       weights_from="the qualification's policy (arithmetic.min_weights_checked)")
+    on = [k for k in DETECTORS if _STRENGTH.get(req["checks"].get(k), 0) > 0]
+    if on:
+        held.append("these detectors on: " + ", ".join(on))
+    if req["sdcguard"]:
+        held.append(f"sdcguard {req['sdcguard']}")
+    if held:
+        out["note"] = ("held to the qualification's requirements (the stricter of each and the command line): "
+                       + "; ".join(held))
+    return out
 
 
 def _raw(url: str, timeout: float = 2.0) -> str:
@@ -191,8 +368,9 @@ def _num(text) -> Optional[float]:
 
 def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Optional[dict], *,
           max_z: float = 6.0, layers: Optional[int] = None, min_weights: Optional[float] = None,
-          gpus: Optional[list] = None) -> dict:
+          gpus: Optional[list] = None, z_from: str = "--max-z", weights_from: str = "--min-weights") -> dict:
     """first, second: per worker (url, values, info, error) from the two reads; vllm_*: vLLM's values or None.
+    z_from, weights_from: where max_z and min_weights came from, for the problems' text.
     Returns {"verdict", "problems", "unsure", "notes", "workers"}."""
     problems, unsure, notes, workers = [], [], [], []
     idle = False
@@ -215,7 +393,7 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
                 continue
             z = _num(ia.get("z"))
             if z is None or not z <= max_z:
-                problems.append(f"{url}: alarm line z={ia.get('z')}, above --max-z {max_z:g}")
+                problems.append(f"{url}: alarm line z={ia.get('z')}, above {z_from} {max_z:g}")
             n = a.get("sdcguard_layers_checked", 0.0)
             if not n > 0:
                 problems.append(f"{url}: no linear layer is checked")
@@ -226,7 +404,7 @@ def judge(first: list, second: list, vllm_first: Optional[dict], vllm_second: Op
                                 "registered layers whose check never ran")
             ws = a.get("sdcguard_weights_checked_ratio")
             if min_weights is not None and not (ws is not None and ws >= min_weights):
-                problems.append(f"{url}: share of weights checked {ws}, below --min-weights {min_weights:g}")
+                problems.append(f"{url}: share of weights checked {ws}, below {weights_from} {min_weights:g}")
             if ia.get("pid") != ib.get("pid") or ia.get("UUID") != ib.get("UUID"):
                 unsure.append(f"{url}: the worker changed between the two reads (pid {ia.get('pid')} -> "
                               f"{ib.get('pid')}): restarted")
@@ -318,6 +496,8 @@ def main(argv=None) -> int:
                    "qualify): also require this server to be the stack it accepted")
     p.add_argument("--strict-conditions", action="store_true", help="with --qualified: a server that goes beyond "
                    "what the qualification tested (longer contexts, longer prompts) is INCONCLUSIVE, not a note")
+    p.add_argument("--max-age-days", type=float, metavar="DAYS", help="with --qualified: a decision made longer ago "
+                   "than this is INCONCLUSIVE (the decision's policy, ready.max_age_days, can set a smaller limit)")
     p.add_argument("--json", action="store_true")
     a = p.parse_args(argv)
     urls = list(a.url) or ([f"http://{a.host}:{a.port + i}/metrics" for i in range(a.workers)]
@@ -338,8 +518,11 @@ def main(argv=None) -> int:
         else:
             vllm_first, vllm_second = v1[0], v2[0]
     gpus = [g.strip() for g in a.gpus.split(",") if g.strip()] if a.gpus else None
-    r = judge(first, second, vllm_first, vllm_second, max_z=a.max_z, layers=a.layers, min_weights=a.min_weights,
-              gpus=gpus)
+    # with --qualified, the stricter of the command line and what the qualification required
+    lim = inherited(a.qualified, a.max_z, a.min_weights)
+    held = dict(max_z=lim["max_z"], min_weights=lim["min_weights"], z_from=lim["z_from"],
+                weights_from=lim["weights_from"])
+    r = judge(first, second, vllm_first, vllm_second, layers=a.layers, gpus=gpus, **held)
     if a.vllm and vllm_first is None:
         r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read")
         if r["verdict"] in ("PROTECTED", "IDLE"):
@@ -357,16 +540,18 @@ def main(argv=None) -> int:
                 r["unsure"].append(f"vLLM's metrics at {a.vllm} couldn't be read after the probe")
                 r["verdict"] = "INCONCLUSIVE"
             else:
-                r2 = judge(second, third, vllm_second, v3[0], max_z=a.max_z, layers=a.layers,
-                           min_weights=a.min_weights, gpus=gpus)
+                r2 = judge(second, third, vllm_second, v3[0], layers=a.layers, gpus=gpus, **held)
                 r2["notes"].insert(0, "probed: two short requests were sent because the server was idle")
                 if r2["verdict"] == "IDLE":   # vLLM counted no tokens for the probe: it can't show anything
                     r2["verdict"] = "INCONCLUSIVE"
                     r2["unsure"].append("vLLM counted no tokens for the probe requests")
                 r = r2
     if a.qualified:
-        q = qualified(a.qualified, [_raw(u) for u in urls], _raw(a.vllm) if a.vllm else None)
+        q = qualified(a.qualified, [_raw(u) for u in urls], _raw(a.vllm) if a.vllm else None, a.max_age_days)
         r["qualified"] = q
+        if lim["note"]:
+            r["notes"].append(lim["note"])
+        r["notes"] += q.get("notes") or []
         if q["verdict"] is None:
             r["notes"].append(q["why"])
             for x in q.get("outside_tested") or []:
@@ -380,8 +565,9 @@ def main(argv=None) -> int:
             r["unsure"].append(q["why"])
             if r["verdict"] in ("PROTECTED", "IDLE"):
                 r["verdict"] = "INCONCLUSIVE"
-        else:                                        # NOT THE QUALIFIED STACK, NOT QUALIFIED
-            r["problems"] += [q["why"], *q["differences"]]
+        else:                       # NOT THE QUALIFIED STACK, NOT QUALIFIED, NOT PROTECTED (weaker checks)
+            r["problems"] += [q["why"], *q["differences"]] + \
+                ([f"weaker than the qualification: {x}" for x in q.get("weaker") or []] if q["differences"] else [])
             if r["verdict"] != "NOT PROTECTED":
                 r["verdict"] = q["verdict"]
     if a.json:

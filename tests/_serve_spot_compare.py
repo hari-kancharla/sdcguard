@@ -53,6 +53,40 @@ def main():
                         assert torch.equal(a[1][1], c[1][1]) and torch.equal(a[1][2], c[1][2])
                         assert torch.equal(a[1][3][:2], c[1][3][:2])
                     n += 1
+    # inputs scaled by 2^100 and weights by 2^-100 (the same products): float32 squares overflow and underflow, and
+    # the kernel's scaled norms must score like the PyTorch check's float64 ones; then a cancelling row whose bound
+    # overflows float32 (both count it unjudged, never clean)
+    x = (torch.randn(9, 300, generator=g) * 2.0 ** 100).to(torch.bfloat16)
+    w = (torch.randn(40, 300, generator=g) * 0.05 * 2.0 ** -100).to(torch.bfloat16)
+    y = torch.nn.functional.linear(x, w)
+    for step, case in ((4, "clean"), (7, "wrong")):
+        yy = y.clone()
+        if case == "wrong":
+            rows, rmask, cols = sp.sampled(torch.tensor(step), 3, 9, 40)
+            yy[int(rows[0]), int(cols[3])] *= 2.0
+        a = run(sp.spot_check_torch, x, yy, w, None, step)
+        c = run(sp.spot_check_triton, x, yy, w, None, step)
+        za, zc = sp._f32(int(a[0][1, 0]) >> 32), sp._f32(int(c[0][1, 0]) >> 32)
+        assert a[0][1, sp.C_CALLS:].tolist() == c[0][1, sp.C_CALLS:].tolist(), case
+        assert int(a[0][1, sp.C_JUDGED]) == 9 * sp.SPOT_COLS, case
+        if case == "clean":
+            assert za <= 1.0 and zc <= 1.0 and abs(za - zc) < 0.25, (za, zc)
+        else:
+            assert za > sp.SPOT_Z and zc > sp.SPOT_Z, (za, zc)
+            assert int(a[0][1, sp.C_COL]) & sp.M32 == int(c[0][1, sp.C_COL]) & sp.M32
+        n += 1
+    x = torch.zeros(2, 64, dtype=torch.bfloat16)
+    x[:, :2] = 1e20
+    w = torch.zeros(16, 64, dtype=torch.bfloat16)
+    w[:, 0], w[:, 1] = 1e20, -1e20
+    y = torch.zeros(2, 16, dtype=torch.bfloat16)
+    y[0, :] = 5.0                                       # (wrong: the exact outputs are 0)
+    a = run(sp.spot_check_torch, x, y, w, None, 4)
+    c = run(sp.spot_check_triton, x, y, w, None, 4)
+    for st in (a[0], c[0]):
+        assert int(st[1, sp.C_JUDGED]) == 0 and int(st[1, sp.C_UNJ]) == 2 * sp.SPOT_COLS, st[1].tolist()
+        assert int(st[1, 0]) == 0
+    n += 1
     print(f"ALL MATCH ({n} cases)")
 
 

@@ -27,7 +27,18 @@ d = tempfile.mkdtemp()
 code = b.main(["--out", d])
 s = json.load(open(d + "/SUMMARY.json"))
 assert code == 0 and s["complete"], s
-assert set(s["checks"]) == {"5_none_active", "5_one_active"} and s["exit"]["2"]["us_per_kernel"] == 0.5
+assert set(s["checks"]) == {"5_none_active", "5_one_active", "5_one_active_wrong"}, s["checks"]
+assert s["exit"]["2"]["us_per_kernel"] == 0.5 and s["fixtures_ok"]
+ok = s["checks"]["5_one_active"]
+assert ok["quiet"] and ok["judged"] and ok["state_after"]["moe_calls"] > 0, ok
+assert s["checks"]["5_none_active"]["state_after"]["moe_calls"] == 0
+bad = s["checks"]["5_one_active_wrong"]
+assert bad["alarmed"] and bad["state_after"]["moe_kept"] == 1, bad
+# a healthy fixture that alarms makes the run incomplete
+real = b._layers
+b._layers = lambda rows, active, wrong=False: real(rows, active, wrong=active or wrong)
+d2 = tempfile.mkdtemp()
+assert b.main(["--out", d2]) == 1 and not json.load(open(d2 + "/SUMMARY.json"))["complete"]
 print("OK", len(calls))
 """
 

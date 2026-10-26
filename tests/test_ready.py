@@ -212,3 +212,109 @@ def test_a_probe_that_fails_or_counts_no_tokens_is_inconclusive(close, monkeypat
     close(api)
     v = _srv(close, "vllm:generation_tokens_total 10\n")          # vLLM never counts the probe's tokens
     assert _run([_srv(close, _page())], v, ["--probe", api.url]) == 2
+
+
+# ---------------------------------------------------------------- --qualified: the checks the qualification required
+CHECKS = "attention=off,fp8=off,moe=on,norms=off,share=1,spot=off,weights=off,z=6"
+
+
+def _stack(**over):
+    from sdcguard import stack
+    st = {"model": "m", "vllm": "0.32.0", "weights_digest": "0123456789abcdef", "lora": "off", "sdcguard": "0.5.0",
+          "checks": CHECKS, **over}
+    st = {k: v for k, v in st.items() if v is not None}
+    st["fingerprint"] = stack.fingerprint(st)
+    return st
+
+
+def _stack_line(st):
+    return "sdcguard_stack_info{" + ",".join(f'{k}="{v}"' for k, v in st.items()) + "} 1.0\n"
+
+
+def _decision(tmp_path, st, name="d.json", policy=None, created="now"):
+    import json
+    import time
+    d = {"decision": "ACCEPT", "scope": {"stacks": {"candidate": {"deployed": st}}},
+         "policy": policy if policy is not None else {"arithmetic": {"min_weights_checked": 0.5}}}
+    if created == "now":
+        d["created"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    elif created is not None:
+        d["created"] = created
+    p = tmp_path / name
+    p.write_text(json.dumps(d))
+    return str(p)
+
+
+def _live(close, st, **page):
+    line = _stack_line(st)
+    return _srv(close, _page(**page) + line, _page(**{**page, "executed": 150}) + line)
+
+
+def _verdict(capsys):
+    import json
+    return json.loads(capsys.readouterr().out)
+
+
+def test_ready_holds_a_server_to_the_checks_its_qualification_required(close, tmp_path, capsys):
+    """An external review cut the share of weights checked to 12.5% while the decision's policy required 50%: the
+    stack still matched, and ready said PROTECTED with its own defaults. ready now takes the stricter of its command
+    line and the decision on the share of weights checked, the alarm line and the detectors run."""
+    st = _stack()
+    dec = _decision(tmp_path, st)
+    assert _run([_live(close, st, weights=0.125)], extra=("--qualified", dec)) == 1
+    r = _verdict(capsys)
+    assert r["verdict"] == "NOT PROTECTED" and any("0.125" in p and "min_weights_checked" in p for p in r["problems"])
+    assert _run([_live(close, st)], extra=("--qualified", dec)) == 0
+    assert any("held to the qualification's requirements" in n for n in _verdict(capsys)["notes"])
+    # the command line's value when it is the stricter one
+    assert _run([_live(close, st, weights=0.6)], extra=("--qualified", dec, "--min-weights", "0.9")) == 1
+    capsys.readouterr()
+    # a qualification run at a stricter alarm line holds the server to it
+    strict = _stack(checks=CHECKS.replace("z=6", "z=4"))
+    assert _run([_live(close, strict)], extra=("--qualified", _decision(tmp_path, strict, "z.json"))) == 1
+    assert any("above the qualification's line 4" in p for p in _verdict(capsys)["problems"])
+    # a detector the qualification ran with, off now
+    weaker = _stack(checks=CHECKS.replace("moe=on", "moe=off"))
+    assert _run([_live(close, weaker)], extra=("--qualified", dec)) == 1
+    r = _verdict(capsys)
+    assert r["verdict"] == "NOT PROTECTED" and any("moe" in p and "weaker" in p for p in r["problems"])
+    # running more checks than the qualification did is fine
+    more = _stack(checks=CHECKS.replace("norms=off", "norms=on,norm_z=6"))
+    assert _run([_live(close, more)], extra=("--qualified", dec)) == 0
+    capsys.readouterr()
+    # another checker version: its checks can't be shown to be the ones qualified
+    other = _stack(sdcguard="0.4.9")
+    assert _run([_live(close, other)], extra=("--qualified", dec)) == 2
+    assert any("0.4.9" in u for u in _verdict(capsys)["unsure"])
+
+
+def test_a_decision_that_doesnt_record_a_requirement_leaves_it_to_the_command_line(close, tmp_path, capsys):
+    st = _stack(checks=None, sdcguard=None)
+    dec = _decision(tmp_path, st, policy={})
+    assert _run([_live(close, st, weights=0.125)], extra=("--qualified", dec)) == 0
+    notes = " ".join(_verdict(capsys)["notes"])
+    assert "left to the command line" in notes and "detectors" in notes
+    # a server that doesn't say which checks it runs: unknown only when the qualification ran a detector
+    quiet = _stack(checks=None)
+    off = _stack(checks=CHECKS.replace("moe=on", "moe=off"))
+    assert _run([_live(close, quiet)], extra=("--qualified", _decision(tmp_path, off, "off.json"))) == 0
+    capsys.readouterr()
+    assert _run([_live(close, quiet)], extra=("--qualified", _decision(tmp_path, _stack(), "on.json"))) == 2
+    assert any("doesn't publish which checks" in u for u in _verdict(capsys)["unsure"])
+
+
+def test_an_old_decision_is_inconclusive_past_max_age_days(close, tmp_path, capsys):
+    import time
+    st = _stack()
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 30 * 86400))
+    dec = _decision(tmp_path, st, created=old)
+    assert _run([_live(close, st)], extra=("--qualified", dec)) == 0
+    assert any("30 days ago" in n for n in _verdict(capsys)["notes"])
+    assert _run([_live(close, st)], extra=("--qualified", dec, "--max-age-days", "7")) == 2
+    assert any("--max-age-days 7" in u for u in _verdict(capsys)["unsure"])
+    by_policy = _decision(tmp_path, st, "p.json", policy={"ready": {"max_age_days": 7}}, created=old)
+    assert _run([_live(close, st)], extra=("--qualified", by_policy)) == 2
+    assert any("ready.max_age_days" in u for u in _verdict(capsys)["unsure"])
+    undated = _decision(tmp_path, st, "u.json", created=None)
+    assert _run([_live(close, st)], extra=("--qualified", undated, "--max-age-days", "7")) == 2
+    assert any("when it was made" in u for u in _verdict(capsys)["unsure"])

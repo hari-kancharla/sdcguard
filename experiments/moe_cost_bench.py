@@ -11,12 +11,20 @@ replays them:
            nothing, by grid
   checks   granite-3.1-1b-a400m's shapes (24 layers, 32 experts, hidden 1024, intermediate 512, top 8), 16 and 128
            rows: a graph of the 24 layers' MoE checks and routing checks (sdcguard's own kernels, the same calls the
-           plugin makes) with no layer active and with one active, and each kind alone
+           plugin makes) with no layer active and with one active, and each kind alone, on correct layers: each
+           layer's output is what vLLM's MoE kernel computes from its input, weights and routing
+           (serve_moe._reference_layer), so a healthy server's checks are what is timed
   work     the same checks interleaved with a stand-in for the layers' own kernels (24 bf16 matmuls), against the
            stand-in alone: what the checks add when they sit between other kernels
+  fault    one active layer whose output is wrong (random values), its state and kept-row slots cleared inside the
+           graph before each replay so every replay takes the alarm path, against a graph of the clearing alone:
+           the cost of a step that finds a fault, reported apart from the healthy cost
 
+Every measurement starts from cleared state. After the healthy graphs, their state must show no alarm (no score over
+the line, no row kept, no routing mismatch), and the fault graph's must show one: otherwise the run is not complete.
 Every figure is microseconds per graph replay (CUDA events over 200 replays after 20 left out, the median of 5 such
-measurements). Nothing here is a criterion of the checks; the run is complete when every figure was measured.
+measurements). Nothing here is a criterion of the checks; the run is complete when every figure was measured and
+the healthy and fault fixtures behaved as above.
 
     python experiments/moe_cost_bench.py --out runs/moe_bench
 """
@@ -87,8 +95,10 @@ def exit_costs() -> dict:
     return res
 
 
-def _layers(rows: int, active: bool):
-    """24 layers' check arguments at granite's shapes (random weights and routing), as the plugin arms them."""
+def _layers(rows: int, active: bool, wrong: bool = False):
+    """24 layers' check arguments at granite's shapes (random weights and routing), as the plugin arms them, each
+    layer's output computed from its input, weights and routing as vLLM's kernel computes it (wrong: random values
+    instead, a fault in every layer, of which only the active one is judged)."""
     from sdcguard import serve_moe as sm
     from sdcguard import serve_route as sr
     dev = torch.device(DEV)
@@ -112,7 +122,10 @@ def _layers(rows: int, active: bool):
         logits = torch.randn(rows, E, generator=gen, device=dev).to(torch.bfloat16)
         w, ids = torch.topk(torch.softmax(logits.float(), -1), K, -1)
         w = w / w.sum(-1, keepdim=True)
-        y = torch.randn(rows, H, generator=gen, device=dev).to(torch.bfloat16)
+        if wrong:
+            y = torch.randn(rows, H, generator=gen, device=dev).to(torch.bfloat16)
+        else:
+            y = sm._reference_layer(x, ids.to(torch.int32), w, w13, w2, None, 0, torch.bfloat16)
         moe = (x, y, w, ids.to(torch.int32), w13, w2, None, 0, False, mst, i, msb, nl, i, *mcap, sm.MOE_Z)
         route = (logits, w, ids.to(torch.int32), K, sr.SCORING["softmax"], True, None, 0, 0, 1.0, rrows, rsb, rst, i,
                  nl, i, *rcap)
@@ -120,16 +133,50 @@ def _layers(rows: int, active: bool):
     return out
 
 
+def _state(lays) -> list:
+    """Every state and kept-row tensor the layers' checks write (shared by all layers)."""
+    m, r = lays[0]
+    return [m[9], *m[14:19], r[12], *r[16:20]]
+
+
+def _clear(lays) -> None:
+    for t in _state(lays):
+        t.zero_()
+
+
+def alarms(lays) -> dict:
+    """What the checks' state shows: the worst MoE score over the 24 layers, rows kept, routing mismatches."""
+    from sdcguard import serve_moe as sm
+    from sdcguard import serve_route as sr
+    m, r = lays[0]
+    mst, rst = m[9].cpu(), r[12].cpu()
+    worst = max(sm._f32(int(v) >> 32) for v in mst[:, sm.C_ROW].tolist())
+    return {"moe_worst": round(worst, 4), "moe_over_line": worst > sm.MOE_Z, "moe_kept": int(m[14][:, 0].ne(0).sum()),
+            "route_set": int(rst[:, sr.C_SET].sum()), "route_weight": int(rst[:, sr.C_WEIGHT].sum()),
+            "route_kept": int(r[16][:, 0].ne(0).sum()), "moe_calls": int(mst[:, sm.C_CALLS].sum())}
+
+
+def _quiet(a: dict) -> bool:
+    return not a["moe_over_line"] and not a["moe_kept"] and not a["route_set"] and not a["route_weight"] and \
+        not a["route_kept"]
+
+
 def check_costs() -> dict:
     from sdcguard import serve_moe as sm
     from sdcguard import serve_route as sr
     res = {}
+
+    def timed(lays, fn) -> float:
+        _clear(lays)
+        return graph_us(fn)
+
     for rows in ROWS:
         for active in (False, True):
             lays = _layers(rows, active)
-            both = graph_us(lambda: [(sm.moe_check_triton(*m), sr.route_check_triton(*r)) for m, r in lays])
-            moe = graph_us(lambda: [sm.moe_check_triton(*m) for m, _ in lays])
-            route = graph_us(lambda: [sr.route_check_triton(*r) for _, r in lays])
+            both = timed(lays, lambda: [(sm.moe_check_triton(*m), sr.route_check_triton(*r)) for m, r in lays])
+            seen = alarms(lays)
+            moe = timed(lays, lambda: [sm.moe_check_triton(*m) for m, _ in lays])
+            route = timed(lays, lambda: [sr.route_check_triton(*r) for _, r in lays])
             wa = torch.randn(rows, H, device=DEV).to(torch.bfloat16)
             wb = torch.randn(H, H, device=DEV).to(torch.bfloat16)
             wc = torch.empty(rows, H, device=DEV, dtype=torch.bfloat16)
@@ -140,13 +187,34 @@ def check_costs() -> dict:
                     torch.mm(wa, wb, out=wc)
                     sr.route_check_triton(*r)
                     sm.moe_check_triton(*m)
-            mixed = graph_us(interleaved)
+            mixed = timed(lays, interleaved)
+            seen_mixed = alarms(lays)
             res[f"{rows}_{'one_active' if active else 'none_active'}"] = {
                 "checks_us": both, "moe_us": moe, "route_us": route, "work_us": work, "work_and_checks_us": mixed,
-                "added_to_work_us": round(mixed - work, 3)}
+                "added_to_work_us": round(mixed - work, 3), "state_after": seen, "state_after_interleaved": seen_mixed,
+                "quiet": _quiet(seen) and _quiet(seen_mixed),
+                "judged": (seen["moe_calls"] > 0) == active}
             del lays
             if DEV == "cuda":
                 torch.cuda.empty_cache()
+        bad = _layers(rows, True, wrong=True)
+        st = _state(bad)
+        clear_only = graph_us(lambda: [t.zero_() for t in st])
+
+        def fault():
+            for t in st:
+                t.zero_()
+            for m, r in bad:
+                sr.route_check_triton(*r)
+                sm.moe_check_triton(*m)
+        fault_us = timed(bad, fault)
+        seen = alarms(bad)
+        res[f"{rows}_one_active_wrong"] = {"checks_and_clear_us": fault_us, "clear_us": clear_only,
+                                           "checks_us": round(fault_us - clear_only, 3), "state_after": seen,
+                                           "alarmed": bool(seen["moe_over_line"] and seen["moe_kept"])}
+        del bad
+        if DEV == "cuda":
+            torch.cuda.empty_cache()
     return res
 
 
@@ -163,8 +231,12 @@ def main(argv=None) -> int:
         res["checks"] = check_costs()
     except Exception as e:  # noqa: BLE001  (what was measured is written)
         res["error"] = f"{type(e).__name__}: {str(e)[:400]}"
-    res["complete"] = "error" not in res and len(res.get("exit") or {}) > len(GRIDS) - 1 and \
-        len(res.get("checks") or {}) == 2 * len(ROWS)
+    ch = res.get("checks") or {}
+    healthy = [v for k, v in ch.items() if not k.endswith("_wrong")]
+    faults = [v for k, v in ch.items() if k.endswith("_wrong")]
+    res["fixtures_ok"] = len(healthy) == 2 * len(ROWS) and len(faults) == len(ROWS) and \
+        all(v.get("quiet") and v.get("judged") for v in healthy) and all(v.get("alarmed") for v in faults)
+    res["complete"] = "error" not in res and len(res.get("exit") or {}) > len(GRIDS) - 1 and res["fixtures_ok"]
     with open(os.path.join(a.out, "SUMMARY.json"), "w") as f:
         json.dump(res, f, indent=1)
     print(json.dumps(res, indent=1))

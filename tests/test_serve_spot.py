@@ -232,6 +232,41 @@ def test_a_fault_over_the_stated_floor_is_always_caught_and_the_stated_floors():
         assert abs(float(rel.median()) - share) <= 0.1 * share, (dt, k, bias, float(rel.median()), share)
 
 
+def test_extreme_scales_neither_hide_a_wrong_output_nor_pass_an_unbounded_one_as_clean():
+    """Inputs 2^100 times larger and weights 2^100 times smaller give the same products, but their float32 squares
+    overflow and underflow: a wrong output must still be caught, a right one stay quiet; and where the bound itself
+    can't be computed (a cancelling row whose norm overflows float32) the outputs are unjudged, not clean."""
+    g = torch.Generator().manual_seed(3)
+    x = (torch.randn(6, 256, generator=g) * 2.0 ** 100).to(torch.bfloat16)
+    w = (torch.randn(24, 256, generator=g) * 0.05 * 2.0 ** -100).to(torch.bfloat16)
+    y = torch.nn.functional.linear(x, w)
+    for wrong in (False, True):
+        yy = y.clone()
+        rows, _, cols = sp.sampled(torch.tensor(4), 3, 6, 24)
+        if wrong:
+            yy[int(rows[2]), int(cols[5])] *= 2.0              # 100% off
+        st = torch.zeros(2, sp.COLS, dtype=torch.int64)
+        caps = sp.new_caps("cpu", 256)
+        sb = torch.full((1,), sp.pack_step(4), dtype=torch.int64)
+        sp.spot_check_torch(x, yy, w, None, sb, st, 1, 3, 1, *caps, sp.SPOT_Z)
+        z = sp._f32(int(st[1, sp.C_ROW]) >> 32)
+        assert int(st[1, sp.C_JUDGED]) == 6 * sp.SPOT_COLS and int(st[1, sp.C_UNJ]) == 0
+        if wrong:
+            assert z > 100 and int(caps[0][0]) == 1 and int(st[1, sp.C_COL]) & sp.M32 == int(cols[5])
+        else:
+            assert z <= 1.0 and int(caps[0][0]) == 0
+    x = torch.zeros(2, 64, dtype=torch.bfloat16)
+    x[:, :2] = 1e20
+    w = torch.zeros(16, 64, dtype=torch.bfloat16)
+    w[:, 0], w[:, 1] = 1e20, -1e20
+    y = torch.full((2, 16), 5.0, dtype=torch.bfloat16)         # (the exact outputs are 0)
+    st = torch.zeros(2, sp.COLS, dtype=torch.int64)
+    caps = sp.new_caps("cpu", 64)
+    sp.spot_check_torch(x, y, w, None, torch.full((1,), sp.pack_step(4), dtype=torch.int64), st, 1, 3, 1, *caps,
+                        sp.SPOT_Z)
+    assert int(st[1, sp.C_JUDGED]) == 0 and int(st[1, sp.C_UNJ]) == 2 * sp.SPOT_COLS and int(st[1, 0]) == 0
+
+
 def test_inactive_layers_are_skipped_on_the_host_outside_capture(monkeypatch):
     layers = _layers()
     g, sc = _checks(layers)

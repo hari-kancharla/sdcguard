@@ -21,9 +21,11 @@ and judged, and its decision says what wasn't checked (NOT DECIDED rather than A
   every one    `sdcguard isolation` (primer dependence and canaries), `sdcguard consistency` (prefix cache cold vs
                hit, decode vs prefill), `sdcguard perf` (the same load each time), and
                each GPU worker's sdcguard metrics at the end (what the plugin checked), then the alerts it logged;
-               with the plugin on, also the stack it read from inside the server (sdcguard.stack: attention and MoE
-               backends, compilation and CUDA graph modes, versions, GPU, ...), recorded with the decision, so that
-               `sdcguard ready --qualified decision_<name>.json` can later tell whether a running server is that stack
+               with the plugin on, also the stack each worker read from inside the server (sdcguard.stack: the
+               model's resolved revision and a digest of its weights, attention and MoE backends, compilation and
+               CUDA graph modes, versions, GPU, the checks it ran, ...), recorded with the decision, so that
+               `sdcguard ready --qualified decision_<name>.json` can later tell whether a running server is that stack,
+               checked at least as the qualification was
 
 then stopped. Each candidate gets `sdcguard decide` against the baseline under the policy: decision_<name>.json and
 .txt, and REPORT.md has one line per candidate. Each candidate not accepted also gets repro_<name>/: why, how its stack
@@ -159,14 +161,16 @@ def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Opt
             return res
         stack = {"config": config, **a.stack_map}
         if not a.no_plugin:                           # what the server runs, as the plugin read it from inside
-            from .stack import from_metrics
+            from .stack import from_metrics, shared
             stacks = [from_metrics(t) for t in srv.metrics()]
-            fps = {s.get("fingerprint") for s in stacks if s}
             if stacks and stacks[0]:
                 stack["deployed"] = stacks[0]
+                # every worker's: with tensor parallelism each holds its own shard of the weights (weights_digest)
+                stack["deployed_workers"] = stacks
                 res["deployed_stack"] = stacks[0]
-            if len(fps) > 1:
-                res["stack_note"] = f"the workers publish different stacks: {sorted(fps)}"
+            if len({shared(s) for s in stacks if s}) > 1:
+                res["stack_note"] = ("the workers publish different stacks: "
+                                     f"{sorted({s.get('fingerprint') for s in stacks if s})}")
         try:
             if role == "baseline":
                 res["model_ref"] = gate_model.make_ref_url(srv.url, ref, a.tokens, extra_stack=stack,

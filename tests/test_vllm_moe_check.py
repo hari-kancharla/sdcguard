@@ -21,7 +21,7 @@ def _stats(worst=0.3):
 
 def passing():
     ident = ["a"] * vm.IDENTITY
-    speed = lambda v: {"16": {"median": {"output_tokens_per_s": v}}}  # noqa: E731
+    speed = lambda v: {"16": {"median": {"output_tokens_per_s": v}, "complete": True}}  # noqa: E731
     return {"plain": {"ready": True, "identity": ident, "speed": speed(1000.0)},
             "guarded": {"ready": True, "identity": ident, "moe_at_start": _stats(), "moe_clean": _stats(),
                         "clean_alerts": 0, "speed": speed(985.0)},
@@ -117,3 +117,44 @@ def test_nomoe_answers_and_cublas_settings_say_why_answers_differ():
     assert not ok and any(f.startswith("M2") for f in fails)                   # M2 as written
     assert s["identity_differ"] == {"plain_vs_guarded": 1, "guarded_vs_nomoe": 1, "plain_vs_nomoe": 0}
     assert s["reductions"]["plain"] == [{"bf16": True, "fp16": True}] and s["reductions"]["nomoe"] is None
+
+
+def test_an_incomplete_speed_run_decides_nothing():
+    r = passing()
+    r["guarded"]["speed"]["16"]["complete"] = False      # a round with failed requests
+    ok, fails, s = vm.judge(r)
+    assert s["on_by_default"] is None and s["cost"]["16"]["complete"] is False
+
+
+def test_a_server_that_dies_or_starts_too_late_is_recorded_not_a_crash(monkeypatch, tmp_path):
+    """The run bounds each startup by the time left and writes an error instead of crashing, so SUMMARY.json is
+    always written and the judge says what happened."""
+    import os
+    clock = [0.0]
+
+    class P:
+        pass
+
+    def server(role, out, port, metrics_port):
+        return P(), open(os.path.join(str(tmp_path), f"{role}.log"), "w")
+
+    waits = []
+
+    def wait_ready(port, proc, timeout):
+        waits.append(timeout)
+        clock[0] += 20 * 60                        # each start takes 20 minutes
+        return True
+
+    def rpc(port, method, args=()):
+        raise ConnectionError("worker gone")
+    monkeypatch.setattr(vm, "server", server)
+    monkeypatch.setattr(vm.vs, "wait_ready", wait_ready)
+    monkeypatch.setattr(vm.vs, "stop", lambda proc: {})
+    monkeypatch.setattr(vm.vn, "rpc", rpc)
+    monkeypatch.setattr(vm.time, "monotonic", lambda: clock[0])
+    res = vm.run(str(tmp_path), 8000, 9400)
+    assert res["plain"]["error"].startswith("ConnectionError") and "skipped" in res["eager"]
+    assert waits[0] == min(1500.0, vm.RUN_S - 240)
+    ok, fails, _ = vm.judge(res)
+    assert not ok and any("plain stopped with an error" in f for f in fails)
+    assert any("eager didn't start (the run's time was nearly up" in f for f in fails)

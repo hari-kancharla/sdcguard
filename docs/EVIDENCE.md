@@ -76,11 +76,12 @@ More sources, and the claims we decided not to make, are in [WHY.md](WHY.md).
 
 | Experiment | Written | Where |
 |---|---|---|
-| An FP8 MoE bug from detection to remedy, rerun inside Run 1 (the criteria as written) | Oct 25 | [METHOD.md](METHOD.md#an-fp8-moe-bug-from-detection-to-remedy-written-october-24-before-any-run) |
+| An FP8 MoE bug from detection to remedy, rerun inside Run 1 (the criteria as written; timeout cleanup amended Oct 26) | Oct 25 and 26 | [METHOD.md](METHOD.md#an-fp8-moe-bug-from-detection-to-remedy-written-october-24-before-any-run) |
 | Weight scan v2: the position-keyed fingerprint, the GPU kernel, every parameter (W1 to W7; H100; Run 1) | Oct 25 | [METHOD.md](METHOD.md#scheduled-weight-scan-in-serving-written-october-25-before-any-run) |
-| MoE checks: real rows given no experts (M6), with the fix moe_bench points to | Oct 25 | [METHOD.md](METHOD.md#moe-checks-in-serving-written-october-24-before-any-run) |
-| Why answers changed with norm checks on: 7 servers (a diagnosis; H100; Run 1) | Oct 25 | [METHOD.md](METHOD.md#norm-checks-in-serving-written-october-24-before-any-run) |
-| Spot checks in serving (S1 to S4; H100 and L4; Run 1) | Oct 25 | [METHOD.md](METHOD.md#spot-checks-in-serving-written-october-25-before-any-run) |
-| The screen's varied inputs and realistic-data matmuls (S1 to S3; H100 and L4; Run 1) | Oct 25 | [METHOD.md](METHOD.md#varied-inputs-and-realistic-data-matmuls-in-the-screen-written-october-25-before-any-run) |
+| MoE checks: M1 to M6, real rows given no experts among them (H100; Run 1) | Oct 25 and 26 | [METHOD.md](METHOD.md#moe-checks-in-serving-written-october-24-before-any-run) |
+| Where the MoE checks' cost goes (moe_bench: correct layers, fault path apart; a measurement; H100; Run 1) | Oct 25 and 26 | [METHOD.md](METHOD.md#the-moe-checks-cost-written-october-25-before-any-run) |
+| Why answers changed with norm checks on: 7 servers (a diagnosis, complete only with every server's 64 usable answers; H100; Run 1) | Oct 25 and 26 | [METHOD.md](METHOD.md#norm-checks-in-serving-written-october-24-before-any-run) |
+| Spot checks in serving (S1 to S6: whole-layer faults in eager mode, sampled single wrong values, a fault compiled into CUDA graphs; H100 and L4; Run 1) | Oct 25 and 26 | [METHOD.md](METHOD.md#spot-checks-in-serving-written-october-25-before-any-run) |
+| The screen's varied inputs and realistic-data matmuls (S1 to S3, every input set and shape covered; H100 and L4; Run 1) | Oct 25 and 26 | [METHOD.md](METHOD.md#varied-inputs-and-realistic-data-matmuls-in-the-screen-written-october-25-before-any-run) |
 
 When a run finishes, its row moves to section 2 with its result, whatever it is.

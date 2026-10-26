@@ -188,11 +188,13 @@ def summarize(res: dict) -> dict:
     g = res.get("guarded") or {}
     cost = {}
     for c in ("16", "256"):
-        on = (((g.get("speed") or {}).get(c) or {}).get("median") or {}).get("output_tokens_per_s")
-        off = (((((res.get("noattn") or {}).get("speed") or {}).get(c) or {}).get("median")) or {}).get(
-            "output_tokens_per_s")
-        if on and off:
-            cost[c] = {"attn_on": on, "attn_off": off, "attn_cost": round(1 - on / off, 4)}
+        ron = (g.get("speed") or {}).get(c) or {}
+        roff = ((res.get("noattn") or {}).get("speed") or {}).get(c) or {}
+        on = (ron.get("median") or {}).get("output_tokens_per_s")
+        off = (roff.get("median") or {}).get("output_tokens_per_s")
+        if on and off:      # complete: every request of every round answered on both (sdcguard.perf)
+            cost[c] = {"attn_on": on, "attn_off": off, "attn_cost": round(1 - on / off, 4),
+                       "complete": bool(ron.get("complete")) and bool(roff.get("complete"))}
     clean = {}
     for role in ("guarded", "eager", "tguarded"):
         s = (res.get(role) or {}).get("attn_clean") or {}
@@ -279,8 +281,8 @@ def judge(res: dict) -> tuple:
         if any("output_wrong" not in (t.get("verdicts") or []) for t in z_rows):
             fails.append(f"A5: rechecks of caught outputs: {[(t['mode'], t.get('verdicts')) for t in z_rows]}")
     s = summarize(res)
-    c16 = (s["cost"].get("16") or {}).get("attn_cost")
-    s["on_by_default"] = None if c16 is None else c16 <= COST_LIMIT
+    c16 = s["cost"].get("16") or {}
+    s["on_by_default"] = None if c16.get("attn_cost") is None or not c16.get("complete") else c16["attn_cost"] <= COST_LIMIT
     return not fails, fails, s
 
 

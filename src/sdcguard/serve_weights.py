@@ -46,9 +46,14 @@ device and element size before its first use; where they differ, or without Trit
 
 An intended weight update (an RL weight sync, a reload) looks the same as corruption: ServeGuard.refresh() and
 refresh_layer() make the references provisional again, and so does refresh() here.
+
+model_digest() uses the same fingerprint once, on every parameter of a loaded model, for its identity (sdcguard.stack's
+weights_digest, which `sdcguard ready --qualified` holds a server to), whether or not the scan is on.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 import time
@@ -250,6 +255,58 @@ def _fingerprints(tensors: Sequence[Optional[torch.Tensor]], device: torch.devic
         f = fingerprint(t)
         out[i] = f if f.device == device else f.to(device)
     return out
+
+
+def param_tensors(name: str, p):
+    """A parameter's tensors, as vLLM's own weight digests take them: a shared-weight parameter's partitions, a
+    tensor subclass's inner tensors (TorchAO), else the parameter itself."""
+    parts = getattr(p, "partitions", None)
+    if isinstance(parts, dict) and parts:
+        for k, v in parts.items():
+            yield from param_tensors(f"{name}.{k}", v)
+        return
+    try:
+        from torch.utils._python_dispatch import is_traceable_wrapper_subclass
+        wrapped = is_traceable_wrapper_subclass(p)
+    except Exception:  # noqa: BLE001
+        wrapped = False
+    if wrapped:
+        for a in p.__tensor_flatten__()[0]:
+            yield from param_tensors(f"{name}.{a}", getattr(p, a))
+        return
+    yield name, p
+
+
+def model_digest(model) -> Optional[str]:
+    """One identity of a loaded model's weights: every parameter (a tensor two modules hold, once) fingerprinted as
+    the scan does (the Triton kernel on its device where it passed its first-use comparison, else the PyTorch
+    version: the same two sums either way), then the names, shapes, dtypes and fingerprints hashed together. One
+    pass over the weights, and one wait for each device's results: for model load, never per request. One changed
+    value is always another digest (see the module's docstring for swaps and other patterns); like the scan, this is
+    for faults and mix-ups, not for someone who changes weights on purpose and knows the keys. None when the model
+    has no parameter; raises when one can't be read (a caller leaves the field out)."""
+    named, seen = [], set()
+    for pname, p in model.named_parameters():
+        for tname, t in param_tensors(pname, p):
+            if isinstance(t, torch.Tensor) and id(t) not in seen:
+                seen.add(id(t))
+                named.append((tname, t))
+    if not named:
+        return None
+    named.sort(key=lambda x: x[0])
+    by_device: dict = {}
+    for i, (_, t) in enumerate(named):
+        by_device.setdefault(t.device, []).append(i)
+    fps: list = [None] * len(named)
+    with torch.no_grad():
+        for dev, idx in by_device.items():
+            rows = _fingerprints([named[i][1] for i in idx], dev).cpu().tolist()
+            for i, f in zip(idx, rows):
+                fps[i] = f
+    h = hashlib.sha256()
+    for (n, t), f in zip(named, fps):
+        h.update(json.dumps([n, list(t.shape), str(t.dtype).replace("torch.", ""), f]).encode())
+    return h.hexdigest()[:16]
 
 
 def _location(t) -> Optional[tuple]:
@@ -588,8 +645,11 @@ class WeightScan:
         age = self.oldest_age()
         return {"entries": len(self.entries), "by_kind": by_kind, "bytes": self.stats["bytes"],
                 "budget_bytes_per_read": self.budget, "budget_bytes_now": self.stats["budget_bytes_now"],
+                # target_met: the schedule (each read's bytes) can meet the target at the measured time between
+                # reads, a prediction; oldest_within_target: the oldest verification age now is within it, measured
                 "target_age_seconds": self.target_age, "target_met": self.stats["target_met"],
                 "oldest_verification_age_seconds": round(age, 3) if age is not None else None,
+                "oldest_within_target": (age <= self.target_age) if self.target_age and age is not None else None,
                 "passes": self.stats["passes"],
                 "last_pass_seconds": self.stats["last_pass_seconds"],
                 "never_compared": sorted(e["name"] for e in self.entries if not e["compared"] and not e["excluded"]),

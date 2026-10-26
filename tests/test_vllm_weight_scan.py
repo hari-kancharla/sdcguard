@@ -5,6 +5,7 @@ summary, the stack and the alerts say what's scanned."""
 import logging
 import types
 
+import pytest
 import torch
 
 from _vllm_standins import Decoder, install_fake_vllm, load, plugin_env, x_in
@@ -299,3 +300,41 @@ def test_the_experiments_rpcs_change_a_parameter_and_name_its_scan_entry(monkeyp
     for _ in range(12):
         runner.execute_model(x_in())
         assert not [e for e in plugin.poll(wait=True) if e.detector == "serve_weights"]
+
+
+def _free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+
+@pytest.mark.parametrize("scan,want", [("1", "VERIFIED"), ("0", "NO CHANGE SEEN")])
+def test_a_decision_says_the_weights_were_verified_only_when_the_scan_ran(monkeypatch, tmp_path, scan, want):
+    """From the metrics page a worker exports to `sdcguard decide`: with the weight scan, every entry compared and
+    matched, and how long ago the least recently verified one was; without it, the checksum checks' silence, which
+    verifies no weight."""
+    pytest.importorskip("prometheus_client")
+    from prometheus_client import generate_latest
+
+    from sdcguard import decide as dc
+    plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN=scan,
+                               SDCGUARD_METRICS_PORT=str(_free_port()))
+    monkeypatch.delenv("LOCAL_RANK", raising=False)
+    model = load(Decoder(M, n_layers=4, lm_head=False))
+    runner = Runner(model)
+    for _ in range(3):
+        runner.execute_model(x_in())
+        plugin.poll(wait=True)
+    text = generate_latest(plugin.guard().metrics.registry).decode()
+    cov = dc.plugin_coverage([text])
+    w = dc.decide(None, alerts=[], plugin=cov)["weights"]
+    assert w["verdict"] == want, w
+    if scan == "1":
+        assert cov["workers"][0]["weight_scan_layers"] == 4 and cov["workers"][0]["weight_scan_never_compared"] == 0
+        assert w["oldest_verification_age_seconds"] is not None
+    else:
+        assert cov["workers"][0]["weight_scan_layers"] is None and "SDCGUARD_WEIGHT_SCAN" in w["why"]

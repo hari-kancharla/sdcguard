@@ -5,13 +5,66 @@ worker, and with VLLM_SERVER_DEV_MODE=1 the server's /collective_rpc endpoint ca
 
 With SDCGUARD_TEST_EXACT=1 (a plain server, SDCGUARD=0, compared with a guarded one), importing this module in the
 worker keeps PyTorch's bf16/fp16 cuBLAS partial sums in fp32, as the plugin does in every process it runs in
-(vllm_plugin._exact_reductions): the two servers then differ only by sdcguard's checks."""
+(vllm_plugin._exact_reductions): the two servers then differ only by sdcguard's checks.
+
+With SDCGUARD_TEST_COMPILED_FAULT="<linear layer name>:<factor>", the layer's outputs are multiplied by factor after
+its GEMM and before sdcguard's checks from model load on, before vLLM traces and compiles the model, so the fault is
+in the compiled graph and its CUDA graphs (a fault the eager-only RPCs below can't put there). Such a server needs a
+compile cache of its own (SDCGUARD_SHARED_CACHE=1 and a fresh VLLM_CACHE_ROOT): a cached clean graph would load
+without it. sdcguard_test_compiled_fault says what was applied."""
 import os as _os
 
 if _os.environ.get("SDCGUARD_TEST_EXACT") == "1":
     import torch as _torch
     _torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction = False
     _torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = False
+
+_COMPILED_FAULT: dict = {}
+
+
+def _compiled_fault(model, spec: str) -> dict:
+    """Wrap the GEMM of the linear layer spec names ("name:factor") so its outputs come out multiplied by factor
+    (out of place, so the wrapper traces cleanly into vLLM's compiled graph)."""
+    name, _, factor = spec.rpartition(":")
+    factor = float(factor)
+    target = dict(model.named_modules()).get(name)
+    qm = getattr(target, "quant_method", None)
+    if target is None or not hasattr(qm, "_gemm_impl"):
+        return {"layer": name, "factor": factor, "applied": False, "why": "no such linear layer with a GEMM to wrap"}
+    orig = qm._gemm_impl
+
+    def gemm(layer, x, weight, bias=None):
+        y = orig(layer, x, weight, bias)
+        return (y.float() * factor).to(y.dtype) if layer is target else y
+    qm._gemm_impl = gemm
+    return {"layer": name, "factor": factor, "applied": True, "width": int(target.weight.shape[0])}
+
+
+def _hook_load(spec: str) -> None:
+    import importlib
+    for mod in ("vllm.v1.worker.gpu.model_runner", "vllm.v1.worker.gpu_model_runner"):
+        try:
+            GM = importlib.import_module(mod).GPUModelRunner
+        except Exception:  # noqa: BLE001
+            continue
+        if getattr(GM, "_sdcguard_test_fault", False):
+            continue
+        orig = GM.load_model
+
+        def load_model(self, *args, _orig=orig, **kwargs):
+            out = _orig(self, *args, **kwargs)
+            try:
+                model = self.get_model() if callable(getattr(self, "get_model", None)) else self.model
+                _COMPILED_FAULT.update(_compiled_fault(model, spec))
+            except Exception as e:  # noqa: BLE001
+                _COMPILED_FAULT.update(applied=False, why=f"{type(e).__name__}: {e}"[:300])
+            return out
+        GM.load_model = load_model
+        GM._sdcguard_test_fault = True
+
+
+if _os.environ.get("SDCGUARD_TEST_COMPILED_FAULT"):
+    _hook_load(_os.environ["SDCGUARD_TEST_COMPILED_FAULT"])
 
 
 def _num(v: float):
@@ -128,6 +181,64 @@ class FaultInjection:
         self._sdcguard_marks = getattr(self, "_sdcguard_marks", []) + [(qm, orig, None)]
         torch.cuda.synchronize()
         return {"layer": name, "cols": [c0, cc], "width": width}
+
+    def sdcguard_test_spot_one(self, name: str, factor: float, pick: str = "largest") -> dict:
+        """In eager mode: from now on, at each of the layer's spot-checked turns, multiply exactly one output of the
+        linear layer named `name` by `factor`, after its GEMM and before sdcguard's checks: one the turn samples (a
+        known sampled single wrong value), the sampled output of largest magnitude (pick "largest") or the one of
+        median magnitude ("median"). Its other calls are left alone. sdcguard_test_unmark_rows undoes it;
+        sdcguard_test_spot_one_log lists each value changed. Returns {"layer", "width", "pick"} ({} if the layer
+        isn't spot-checked or has no GEMM to wrap)."""
+        import torch
+        from sdcguard import serve_spot as sp
+        target = dict(self.get_model().named_modules()).get(name)
+        qm = getattr(target, "quant_method", None)
+        sa = getattr(target, "_sdcguard_spot", None)
+        if target is None or not hasattr(qm, "_gemm_impl") or sa is None:
+            return {}
+        orig = qm._gemm_impl
+        stepbuf, nl, idx = sa[1], max(int(sa[4]), 1), int(sa[5])
+        log = self._sdcguard_spot_log = []
+
+        def gemm(layer, x, weight, bias=None):
+            y = orig(layer, x, weight, bias)
+            raw = sp._HOST.get(stepbuf.data_ptr())
+            if layer is not target or raw is None or (raw & sp.M32) % nl != idx:
+                return y
+            try:                                   # (a test hook: never break the model's forward)
+                y2 = y.view(-1, y.shape[-1])
+                m, n = y2.shape
+                real = (raw >> sp.ROWS_SHIFT) & sp.ROWS_MAX
+                mr = min(real, m) if real > 0 else m
+                rows, rmask, cols = sp.sampled(torch.tensor(raw & sp.M32), nl, mr, n)
+                rows = rows[rmask].clamp(max=max(m - 1, 0)).to(y2.device)
+                if m == 0 or rows.numel() == 0:
+                    return y
+                vals = y2.index_select(0, rows).index_select(1, cols.to(y2.device)).float().abs().reshape(-1)
+                order = torch.argsort(vals)
+                at = int(order[-1] if pick == "largest" else order[len(order) // 2])
+                r, c = int(rows[at // cols.numel()]), int(cols[at % cols.numel()])
+                before = float(y2[r, c])
+                y2[r, c] = (y2[r, c].float() * factor).to(y2.dtype)
+                if len(log) < 64:
+                    log.append({"step": int(raw & sp.M32), "row": r, "col": c, "before": _num(before),
+                                "after": _num(float(y2[r, c]))})
+            except Exception as e:  # noqa: BLE001
+                if len(log) < 64:
+                    log.append({"step": int(raw & sp.M32), "error": f"{type(e).__name__}: {e}"[:200]})
+            return y
+        qm._gemm_impl = gemm
+        self._sdcguard_marks = getattr(self, "_sdcguard_marks", []) + [(qm, orig, None)]
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        return {"layer": name, "width": int(target.weight.shape[0]), "pick": pick}
+
+    def sdcguard_test_spot_one_log(self) -> list:
+        return list(getattr(self, "_sdcguard_spot_log", []))
+
+    def sdcguard_test_compiled_fault(self) -> dict:
+        """What SDCGUARD_TEST_COMPILED_FAULT applied at model load ({} without it)."""
+        return dict(_COMPILED_FAULT)
 
     def sdcguard_test_unmark_rows(self) -> int:
         n = 0

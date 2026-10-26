@@ -12,7 +12,8 @@ def _ans(tokens, tops):
     return {"text": "".join(tokens), "tokens": tokens, "top": tops}
 
 
-def test_the_first_divergence_and_the_near_tie_rule():
+def test_the_first_divergence_and_the_near_tie_rule(monkeypatch):
+    monkeypatch.setattr(nd, "IDENTITY", 3)
     a = _ans(["A", "b", "c"], [{"A": -0.1}, {"b": -0.6, "x": -0.7}, {"c": -0.1}])
     b = _ans(["A", "x", "y"], [{"A": -0.1}, {"x": -0.6, "b": -0.65}, {"y": -0.1}])
     d = nd.first_divergence(a, b)
@@ -24,6 +25,9 @@ def test_the_first_divergence_and_the_near_tie_rule():
     c = nd.compare([a, a, a], [a, b, far])
     assert c["differ"] == 2 and c["all_near_ties"] is False and [x["prompt"] for x in c["diffs"]] == [1, 2]
     assert nd.compare([], [a])["compared"] is False
+    err = {"error": "HTTP 500: x"}
+    c = nd.compare([a, err, a], [a, a, a])                  # a failed request isn't a different answer
+    assert c["compared"] is False and c["failed"] == 1 and "prompt 1" in c["why"]
 
 
 def test_norm_kernels_are_compared_by_source_without_names_and_configs_as_a_set(tmp_path):
@@ -54,14 +58,102 @@ def test_norm_kernels_are_compared_by_source_without_names_and_configs_as_a_set(
     assert nd.kernel_diff({}, ka)["compared"] is False and nd.config_diff(None, ca)["compared"] is False
 
 
-def test_the_summary_is_complete_only_when_every_server_answered():
+def test_the_summary_is_complete_only_when_every_server_answered(monkeypatch):
+    monkeypatch.setattr(nd, "IDENTITY", 3)
     a = _ans(["A"], [{"A": -0.1}])
-    res = {r: {"ready": True, "answers": [a] * 3, "norm_kernels": {}, "tuned_configs": []} for r in nd.ROLES}
-    s = nd.summarize(res)
-    assert s["complete"] is True and s["pairs"]["nonorms_vs_guarded"]["answers"]["differ"] == 0
+
+    def full():
+        return {r: {"ready": True, "answers": [a] * 3, "norm_kernels": {"h": {"names": ["k"]}}, "tuned_configs": []}
+                for r in nd.ROLES}
+    s = nd.summarize(full())
+    assert s["complete"] is True and s["pairs"]["nonorms_vs_guarded"]["answers"]["differ"] == 0, s
+    res = full()
     res["guarded_det"] = {"skipped": "the run's time was nearly up"}
     s = nd.summarize(res)
     assert s["complete"] is False and s["pairs"]["plain_det_vs_guarded_det"]["answers"]["compared"] is False
+    # every server up, but every request failed: before, this counted as complete (and as 64 differences)
+    res = full()
+    for r in nd.ROLES:
+        res[r]["answers"] = [{"error": "HTTP 500: boom"}] * 3
+    s = nd.summarize(res)
+    assert s["complete"] is False and any("0 of 3 usable" in w for w in s["incomplete_because"])
+    res = full()
+    res["guarded"]["answers"] = [a, a]                    # a missing completion
+    assert nd.summarize(res)["complete"] is False
+    res = full()
+    res["plain_b"]["norm_kernels"] = {}                   # no compiled norm kernel to compare
+    s = nd.summarize(res)
+    assert s["complete"] is False and any("no compiled norm kernel" in w for w in s["incomplete_because"])
+
+
+def test_a_completion_without_its_tokens_or_log_probabilities_is_unusable(monkeypatch):
+    toks = list(range(nd.TOKENS))
+    good = {"choices": [{"text": "x", "logprobs": {"tokens": toks, "top_logprobs": [{"1": -0.1}] * nd.TOKENS}}]}
+    monkeypatch.setattr(nd.vn, "_post", lambda *a: (200, good))
+    assert "error" not in nd.complete(8000, "p")
+    short = {"choices": [{"text": "x", "logprobs": {"tokens": toks[:5], "top_logprobs": [{"1": -0.1}] * 5}}]}
+    monkeypatch.setattr(nd.vn, "_post", lambda *a: (200, short))
+    assert "unusable" in nd.complete(8000, "p")["error"]
+    none = {"choices": [{"text": "x", "logprobs": None}]}
+    monkeypatch.setattr(nd.vn, "_post", lambda *a: (200, none))
+    assert "unusable" in nd.complete(8000, "p")["error"]
+    monkeypatch.setattr(nd.vn, "_post", lambda *a: (500, "down"))
+    assert nd.complete(8000, "p")["error"].startswith("HTTP 500")
+
+
+def test_a_server_waits_only_as_long_as_the_run_has_left(monkeypatch, tmp_path):
+    waits, started = [], []
+    clock = [0.0]
+
+    class P:
+        pass
+
+    def server(role, out, port, metrics_port):
+        started.append(role)
+        return P(), open(os.path.join(str(tmp_path), f"{role}.log"), "w")
+
+    def wait_ready(port, proc, timeout):
+        waits.append(timeout)
+        clock[0] += 9 * 60                               # each server's startup takes 9 minutes
+        return False
+    monkeypatch.setattr(nd, "server", server)
+    monkeypatch.setattr(nd.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(nd.vs, "wait_ready", wait_ready)
+    monkeypatch.setattr(nd.vs, "stop", lambda proc: {})
+    res = nd.run(str(tmp_path), 8000, 9400)
+    assert started == list(nd.ROLES[:4]) and all("skipped" in res[r] for r in nd.ROLES[4:])
+    left = [nd.RUN_S - 9 * 60 * i for i in range(4)]
+    assert waits == [max(60.0, min(1200.0, x - nd.ANSWER_S)) for x in left] == [1200.0, 1200.0, 1080.0, 540.0]
+    assert all(w + nd.ANSWER_S <= x for w, x in zip(waits, left))
+
+
+def test_tuned_configs_are_paired_with_their_kernels(tmp_path):
+    def write(root, name, body, cfg):
+        d = tmp_path / root / "ab"
+        d.mkdir(parents=True, exist_ok=True)
+        path = d / f"{name}.py"
+        path.write_text(f"@triton.jit\ndef {name}(in_ptr0):\n    {body}\n")
+        bc = nd.best_config_path(str(path))            # (PyTorch's own naming, in whichever version is installed)
+        assert bc and os.path.dirname(bc) == str(d) and bc.endswith(".best_config")
+        with open(bc, "w") as f:
+            json.dump({**cfg, "time_taken_ms": 1}, f)
+    write("a", "triton_red_fused_rsqrt_0", "x = rsqrt(v)", {"R0_BLOCK": 4096})
+    write("a", "triton_poi_fused_1", "y = v", {"XBLOCK": 128})
+    write("b", "triton_red_fused_rsqrt_5", "x = rsqrt(v)", {"R0_BLOCK": 2048})      # same source, renamed
+    write("b", "triton_poi_fused_9", "y = v", {"XBLOCK": 128})
+    a, b = nd.configs_by_kernel(str(tmp_path / "a")), nd.configs_by_kernel(str(tmp_path / "b"))
+    assert len(a) == 2 and len(b) == 2
+    d = nd.tuned_by_kernel_diff(a, b)
+    assert d["kernels_in_both"] == 2 and len(d["tuned_differently"]) == 1 and not d["same"]
+    assert d["tuned_differently"][0]["first"] == ['{"R0_BLOCK": 4096}']
+    assert nd.tuned_by_kernel_diff({}, b)["compared"] is False
+    # two kernels of one server differing by name only: both configurations kept, compared as a set
+    write("c", "triton_red_fused_rsqrt_0", "x = rsqrt(v)", {"R0_BLOCK": 4096})
+    write("c", "triton_red_fused_rsqrt_3", "x = rsqrt(v)", {"R0_BLOCK": 1024})
+    write("d", "triton_red_fused_rsqrt_8", "x = rsqrt(v)", {"R0_BLOCK": 1024})
+    write("d", "triton_red_fused_rsqrt_9", "x = rsqrt(v)", {"R0_BLOCK": 4096})
+    c, dd = nd.configs_by_kernel(str(tmp_path / "c")), nd.configs_by_kernel(str(tmp_path / "d"))
+    assert len(next(iter(c.values()))) == 2 and nd.tuned_by_kernel_diff(c, dd)["same"] is True
 
 
 def test_the_deterministic_servers_set_it_in_vllms_inductor_config(monkeypatch, tmp_path):

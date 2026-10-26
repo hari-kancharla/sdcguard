@@ -258,11 +258,14 @@ def spot_check_torch(x: torch.Tensor, y: torch.Tensor, w: torch.Tensor, b: Optio
     acc = (xr.double() @ wc.double().t()).float()                     # (the kernel's compensated fp32 sum, closer)
     ref = acc + (b.index_select(0, cols).float()[None, :] if b is not None else 0.0)
     yv = y.index_select(0, rows).index_select(1, cols).float()
-    norm = xr.square().sum(1).sqrt()[:, None] * wc.square().sum(1).sqrt()[None, :]
+    # the norms in float64: in float32 a row of large values squares to infinity (or a column of small ones to
+    # zero), and an infinite bound would score a wrong output 0, as if right
+    norm = (xr.double().square().sum(1).sqrt()[:, None] * wc.double().square().sum(1).sqrt()[None, :]).float()
     den = u * ref.abs() + (u * acc.abs() if b is not None else 0.0) + acc_term(k, norm, ref.abs()) + sp
     z = (yv - ref).abs() / den
     z = torch.where(z == z, z, torch.full_like(z, float("inf")))
-    ok = rmask[:, None] & torch.isfinite(ref) & (ref.abs() <= fm)
+    # judged only where the reference and its bound are finite: anything else is counted unjudged, never clean
+    ok = rmask[:, None] & torch.isfinite(ref) & (ref.abs() <= fm) & torch.isfinite(den)
     z = torch.where(ok & active, z, torch.zeros_like(z))
     zmax, arg = z.reshape(-1).max(0)
     ri, ci = arg // SPOT_COLS, arg % SPOT_COLS
@@ -312,8 +315,13 @@ if HAVE_TRITON:
             col = ((off + cj * tl.maximum(N // C_, 1)) % N).to(tl.int64)
             acc = tl.zeros([RB], dtype=tl.float32)
             comp = tl.zeros([RB], dtype=tl.float32)
-            sx2 = tl.zeros([RB], dtype=tl.float32)
-            sw2 = tl.zeros([1], dtype=tl.float32)
+            # the norms as scale x sqrt(sum of (value / scale)^2), the scale the largest magnitude so far (as BLAS's
+            # nrm2 does): plain sums of squares overflow to infinity for large rows (and an infinite bound scores a
+            # wrong output 0) or underflow to zero for small columns
+            xsc = tl.zeros([RB], dtype=tl.float32)
+            xsq = tl.zeros([RB], dtype=tl.float32)
+            wsc = tl.zeros([1], dtype=tl.float32)
+            wsq = tl.zeros([1], dtype=tl.float32)
             for k0 in range(0, K, BK_):
                 kk = k0 + tl.arange(0, BK_)
                 km = kk < K
@@ -325,8 +333,18 @@ if HAVE_TRITON:
                 tk = acc + yk
                 comp = (tk - acc) - yk
                 acc = tk
-                sx2 += tl.sum(xv * xv, 1)
-                sw2 += tl.sum(wv * wv, 0)
+                nxs = tl.maximum(xsc, tl.max(tl.abs(xv), 1))
+                ix = 1.0 / tl.where(nxs > 0.0, nxs, 1.0)    # (one division a row a chunk, not one a value)
+                rx = xsc * ix
+                xq = xv * ix[:, None]
+                xsq = xsq * rx * rx + tl.sum(xq * xq, 1)
+                xsc = nxs
+                nws = tl.maximum(wsc, tl.max(tl.abs(wv), 0))
+                iw = 1.0 / tl.where(nws > 0.0, nws, 1.0)
+                rw = wsc * iw
+                wq = wv * iw
+                wsq = wsq * rw * rw + tl.sum(wq * wq, 0)
+                wsc = nws
             if HAS_BIAS:
                 bv = tl.load(b + col).to(tl.float32)
                 ref = acc + bv
@@ -338,12 +356,13 @@ if HAVE_TRITON:
                 dbl = 0.0
                 bflag = 0
             yv = tl.load(y + rows * sy + col * syc, mask=rmask, other=0.0).to(tl.float32)
-            norm = tl.sqrt(sx2) * tl.sqrt(tl.sum(sw2, 0))
+            norm = (xsc * tl.sqrt(xsq)) * (tl.sum(wsc, 0) * tl.sqrt(tl.sum(wsq, 0)))
             accb = ka * norm + kb * tl.abs(ref)             # acc_term: ka = S u32 C1 sqrt(K), kb = S u32 (sqrt(K) + ..)
             den = u * tl.abs(ref) + dbl + accb + spacing
             z = tl.abs(yv - ref) / den
             z = tl.where(z == z, z, float("inf"))
-            ok = rmask & (tl.abs(ref) <= fmax) & (ref == ref)
+            # judged only where the reference and its bound are finite: anything else counts as unjudged, not clean
+            ok = rmask & (tl.abs(ref) <= fmax) & (ref == ref) & (den == den) & (den < float("inf"))
             z = tl.where(ok, z, 0.0)
             pz = tl.max(z, 0)
             pi = tl.argmax(z, 0)
@@ -450,7 +469,9 @@ def verify_kernel(device, dtype) -> tuple:
     """The Triton kernel against the PyTorch check before its first use on a device and dtype: a correct layer with
     and without a bias (both quiet, the same counts, nearly the same scores), one sampled output made wrong (both
     alarm on its row and column and keep the same row), an inactive step (nothing changes), garbage rows past the
-    step's real rows (never sampled), and an output with a column stride (y transposed). (ok, why)."""
+    step's real rows (never sampled), an output with a column stride (y transposed), and in bf16 the wrong output
+    again with inputs scaled by 2^100 and weights by 2^-100 (the same products; squares that overflow or underflow
+    float32 must not hide it). (ok, why)."""
     key = (_dev_key(device), dtype)
     if key in STATUS:
         return STATUS[key]
@@ -465,16 +486,21 @@ def verify_kernel(device, dtype) -> tuple:
             x = torch.randn(m, k, generator=gen).to(dtype).to(device)
             w = (torch.randn(n, k, generator=gen) * 0.05).to(dtype).to(device)
             bias = (torch.randn(n, generator=gen) * 0.1).to(dtype).to(device)
-            for case in ("clean", "bias", "wrong", "inactive", "real_rows", "strided"):
+            cases = ("clean", "bias", "wrong", "inactive", "real_rows", "strided") + \
+                (("scaled",) if dtype == torch.bfloat16 else ())
+            for case in cases:
                 bb = bias if case in ("bias", "wrong") else None
-                y = torch.nn.functional.linear(x, w, bb)
+                xx, ww = x, w
+                if case == "scaled":
+                    xx, ww = (x.float() * 2.0 ** 100).to(dtype), (w.float() * 2.0 ** -100).to(dtype)
+                y = torch.nn.functional.linear(xx, ww, bb)
                 if case == "strided":
                     y = y.t().contiguous().t()
                 step = 7 if case != "inactive" else 8
                 given = 3 if case == "real_rows" else None
                 if case == "real_rows":
                     y[3:] = 1000.0
-                if case == "wrong":
+                if case in ("wrong", "scaled"):
                     rows, rmask, cols = sampled(torch.tensor(step), 3, m, n)
                     r0, c0 = int(rows[0]), int(cols[1])
                     y[r0, c0] = (y[r0, c0].float() * (1 + 16 * dtype_consts(dtype)[0]) + 1e-3).to(dtype)
@@ -483,7 +509,7 @@ def verify_kernel(device, dtype) -> tuple:
                     st = torch.zeros(2, COLS, dtype=torch.int64, device=device)
                     caps = new_caps(device, k)
                     sb = torch.full((1,), pack_step(step, given), dtype=torch.int64, device=device)
-                    fn(x, y, w, bb, sb, st, 1, 3, 1, *caps, SPOT_Z)
+                    fn(xx, y, ww, bb, sb, st, 1, 3, 1, *caps, SPOT_Z)
                     res.append((st.cpu(), *[c.cpu() for c in caps]))
                 (s0, c0m, c0x, c0w, c0v), (s1, c1m, c1x, c1w, c1v) = res
                 z0, z1 = _f32(int(s0[1, C_ROW]) >> 32), _f32(int(s1[1, C_ROW]) >> 32)
@@ -494,14 +520,14 @@ def verify_kernel(device, dtype) -> tuple:
                 if case == "inactive":
                     if s0.abs().sum() or s1.abs().sum() or c0m.abs().sum() or c1m.abs().sum():
                         raise AssertionError("an inactive step changed the state")
-                elif case == "wrong":
+                elif case in ("wrong", "scaled"):
                     if not (z0 > SPOT_Z and z1 > SPOT_Z) or int(s0[1, C_COL]) & M32 != c0 or \
                             int(s1[1, C_COL]) & M32 != c0 or int(s1[1, C_ROW]) & M32 != r0:
-                        raise AssertionError(f"a wrong output wasn't located ({z0}, {z1})")
+                        raise AssertionError(f"{case}: a wrong output wasn't located ({z0}, {z1})")
                     same = [0, 1, 2, 3, 5, 6]                   # (not the score's bits: the sums differ a little)
                     if c0m[same].tolist() != c1m[same].tolist() or int(c1m[6]) != 1 or not torch.equal(c0x, c1x) or \
                             not torch.equal(c0w, c1w) or not torch.equal(c0v[:2], c1v[:2]):
-                        raise AssertionError("the kept output differs")
+                        raise AssertionError(f"{case}: the kept output differs")
                 elif not (z0 <= 1.0 and z1 <= 1.0) or abs(z0 - z1) > 0.25:
                     raise AssertionError(f"{case}: scores of a correct layer differ or are high ({z0} vs {z1})")
                 elif int(s0[1, C_JUDGED]) != (3 if case == "real_rows" else min(m, SPOT_ROWS)) * SPOT_COLS:

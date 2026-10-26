@@ -47,6 +47,7 @@ ROUTE_MODES = ("experts", "weights")
 DROP_TRIALS = 1                          # the routing-validity check (amendment of October 25, after the third run)
 COST_LIMIT = 0.03
 IDENTITY = 64
+RUN_S = 45 * 60                          # inside the Modal phase's 50 minutes: the rest is for writing and stopping
 
 
 def server(role: str, out: str, port: int, metrics_port: int):
@@ -152,16 +153,22 @@ def route_trials(port: int, log_path: str, names: list, prompts: list) -> list:
 
 def run(out: str, port: int, metrics_port: int) -> dict:
     os.makedirs(out, exist_ok=True)
+    deadline = time.monotonic() + RUN_S
     res: dict = {"model": MODEL}
     ps = vs.prompts(IDENTITY + 8)
     tp = ps[IDENTITY:IDENTITY + 8]
     for role in ("plain", "guarded", "nomoe", "eager"):
-        proc, log = server(role, out, port, metrics_port)
         r: dict = {}
         res[role] = r
+        left = deadline - time.monotonic()
+        if left < 5 * 60:                    # (a server isn't started past the point where it could finish)
+            r["skipped"] = f"the run's time was nearly up ({left / 60:.1f} minutes left)"
+            continue
+        proc, log = server(role, out, port, metrics_port)
         log_path = os.path.join(out, f"{role}_alerts.jsonl")
         try:
-            r["ready"] = vs.wait_ready(port, proc, timeout=1500)
+            # a slow or hung start can't take the run past the Modal phase's limit: SUMMARY.json is always written
+            r["ready"] = vs.wait_ready(port, proc, timeout=max(60.0, min(1500.0, left - 240)))
             if not r["ready"]:
                 continue
             if role in ("guarded", "eager"):
@@ -188,6 +195,8 @@ def run(out: str, port: int, metrics_port: int) -> dict:
             if role == "eager" and rnames:
                 r["route_corrupt"] = route_trials(port, log_path, rnames, tp)
             r["alerts_total"] = len(vn.alerts(log_path))
+        except Exception as e:  # noqa: BLE001  (a server that died: the run is still judged on what was measured)
+            r["error"] = f"{type(e).__name__}: {str(e)[:300]}"
         finally:
             r["stop"] = vs.stop(proc)
             log.close()
@@ -215,11 +224,13 @@ def summarize(res: dict) -> dict:
     g = res.get("guarded") or {}
     cost = {}
     for c in ("16", "256"):
-        on = (((g.get("speed") or {}).get(c) or {}).get("median") or {}).get("output_tokens_per_s")
-        off = (((((res.get("nomoe") or {}).get("speed") or {}).get(c) or {}).get("median")) or {}).get(
-            "output_tokens_per_s")
-        if on and off:
-            cost[c] = {"moe_on": on, "moe_off": off, "moe_cost": round(1 - on / off, 4)}
+        ron = (g.get("speed") or {}).get(c) or {}
+        roff = ((res.get("nomoe") or {}).get("speed") or {}).get(c) or {}
+        on = (ron.get("median") or {}).get("output_tokens_per_s")
+        off = (roff.get("median") or {}).get("output_tokens_per_s")
+        if on and off:      # complete: every request of every round answered on both (sdcguard.perf)
+            cost[c] = {"moe_on": on, "moe_off": off, "moe_cost": round(1 - on / off, 4),
+                       "complete": bool(ron.get("complete")) and bool(roff.get("complete"))}
     return {"corrupt": [(t["mode"], t["layer"], t["detected"], t.get("rounds_to_detect"))
                         for t in (res.get("eager") or {}).get("corrupt") or []], "cost": cost,
             "route_corrupt": [(t["mode"], t["router"], t["detected"], t.get("rounds_to_detect"), t.get("verdicts"))
@@ -238,8 +249,11 @@ def judge(res: dict) -> tuple:
     """(criteria met, failures, summary): docs/METHOD.md, "MoE checks in serving"."""
     fails = []
     for role in ("plain", "guarded", "nomoe", "eager"):
-        if not (res.get(role) or {}).get("ready"):
-            fails.append(f"M1: {role} didn't start")
+        r = res.get(role) or {}
+        if not r.get("ready"):
+            fails.append(f"M1: {role} didn't start" + (f" ({r['skipped']})" if r.get("skipped") else ""))
+        if r.get("error"):
+            fails.append(f"M1: {role} stopped with an error ({r['error']})")
     for role in ("guarded", "eager"):
         st = (res.get(role) or {}).get("moe_at_start") or {}
         if (res.get(role) or {}).get("ready"):
@@ -298,8 +312,8 @@ def judge(res: dict) -> tuple:
     s = summarize(res)
     s["drop"] = [(t["layer"], t["detected"], t.get("rounds_to_detect"), t.get("findings"))
                  for t in (res.get("eager") or {}).get("drop") or []]
-    c16 = (s["cost"].get("16") or {}).get("moe_cost")
-    s["on_by_default"] = None if c16 is None else c16 <= COST_LIMIT
+    c16 = s["cost"].get("16") or {}
+    s["on_by_default"] = None if c16.get("moe_cost") is None or not c16.get("complete") else c16["moe_cost"] <= COST_LIMIT
     return not fails, fails, s
 
 
