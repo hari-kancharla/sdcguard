@@ -58,7 +58,7 @@ PAIRS = (("plain_a", "plain_b"), ("plain_a", "plain_exact"), ("plain_exact", "no
 IDENTITY = 64
 TOKENS = 32
 NEAR_TIE = 0.25
-RUN_S = 40 * 60                          # inside the Modal phase's 45 minutes
+RUN_S = 55 * 60                          # inside the Modal phase's 60 minutes (7 compiles from empty caches)
 ANSWER_S = 4 * 60                        # 64 completions, reading the compiled code, stopping the server
 MIN_START_S = 8 * 60                     # a fresh compile (2 to 4 minutes on an H100) and ANSWER_S
 

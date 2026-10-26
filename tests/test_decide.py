@@ -349,3 +349,29 @@ def test_weights_are_verified_only_when_the_scheduled_scan_covered_them():
 def test_the_policy_can_say_how_long_a_decision_stands():
     assert dc.policy_with_defaults(None)["ready"] == {"max_age_days": None}
     assert dc.policy_with_defaults({"ready": {"max_age_days": 7}})["ready"]["max_age_days"] == 7
+
+
+def test_alerts_the_workers_counted_but_no_record_shows_are_missing_evidence_not_a_clean_run(tmp_path):
+    """Positive alert counters with an empty or cut-short alert file must not read as no fault: the plugin's alerts
+    then aren't a source, and with nothing else the decision isn't ACCEPT. Unreadable lines of the file show the same
+    way. More records than counted (alerts read after the metrics) is a note, not missing evidence."""
+    counted = lambda n: dc.plugin_coverage([METRICS + f"sdcguard_all_alerts_total {n}\n"])  # noqa: E731
+    clean = dc.decide(quality=_quality(), alerts=[], plugin=counted(0))
+    assert clean["decision"] == "ACCEPT" and clean["arithmetic"]["verdict"] == "NO FAULT OBSERVED"
+    lost = dc.decide(quality=_quality(), alerts=[], plugin=counted(3))
+    assert lost["decision"] != "ACCEPT" and lost["arithmetic"]["verdict"] == "INCONCLUSIVE"
+    assert any("counted 3 alerts but only 0" in u for u in lost["arithmetic"]["unresolved"])
+    cleared = [{"detail": {"where": "l", "recheck": {"verdict": "output_agrees"}}}]
+    assert dc.decide(quality=_quality(), alerts=cleared, plugin=counted(2))["decision"] != "ACCEPT"
+    more = dc.decide(quality=_quality(), alerts=cleared, plugin=counted(0))
+    assert more["decision"] == "ACCEPT" and any("1 alert records for 0 counted" in x for x in
+                                                 more["arithmetic"]["notes"])
+    f = tmp_path / "alerts.jsonl"
+    f.write_text(json.dumps(cleared[0]) + "\n{\"detail\": {\"where\n")            # a file cut short mid-record
+    recs = dc._read_jsonl(str(f))
+    assert len(recs) == 2 and recs[1] == {"unreadable": 2}
+    cut = dc.decide(quality=_quality(), alerts=recs, plugin=counted(2))
+    assert cut["decision"] != "ACCEPT" and any("aren't readable records" in u for u in cut["arithmetic"]["unresolved"])
+    unread = dc.plugin_coverage([METRICS.replace("sdcguard_reads_total 40", "sdcguard_reads_total 0")])
+    assert unread["checked"] is False                                            # checks never read back: no source
+    assert dc.decide(quality=_quality(), alerts=[], plugin=unread)["decision"] != "ACCEPT"

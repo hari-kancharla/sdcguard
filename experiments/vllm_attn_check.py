@@ -282,7 +282,9 @@ def judge(res: dict) -> tuple:
             fails.append(f"A5: rechecks of caught outputs: {[(t['mode'], t.get('verdicts')) for t in z_rows]}")
     s = summarize(res)
     c16 = s["cost"].get("16") or {}
-    s["on_by_default"] = None if c16.get("attn_cost") is None or not c16.get("complete") else c16["attn_cost"] <= COST_LIMIT
+    # (only with every criterion met: a check that missed a fault or changed answers is never recommended on)
+    s["on_by_default"] = None if c16.get("attn_cost") is None or not c16.get("complete") else \
+        (not fails) and c16["attn_cost"] <= COST_LIMIT
     return not fails, fails, s
 
 

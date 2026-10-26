@@ -209,6 +209,9 @@ class Metrics:
     sdcguard_moe_checks_executed_total      MoE layer calls checked (rows recomputed), counted on the GPU
     sdcguard_fp8_layers_checked             FP8 layers whose input quantization is checked (SDCGUARD_FP8=1)
     sdcguard_fp8_calls_judged_total         FP8 quantizations judged, counted on the GPU
+    sdcguard_spot_layers_checked            linear layers this process spot-checks (SDCGUARD_SPOT=1)
+    sdcguard_spot_outputs_judged_total      sampled outputs the spot checks judged, counted on the GPU (their alerts
+                                            count in sdcguard_alerts_total and sdcguard_all_alerts_total)
     sdcguard_stack_info{model,...,fingerprint}  1: what this server runs, read from inside it (sdcguard.stack), for
                                             `sdcguard qualify` and `sdcguard ready --qualified`
     sdcguard_weight_scan_layers             entries the weight scan (SDCGUARD_WEIGHT_SCAN=1) compares with their
@@ -306,6 +309,25 @@ class Metrics:
         if ex > prev:
             self._moe_executed.inc(ex - prev)
         self._seen_moe[id(moe)] = max(ex, prev)
+
+    def observe_spot(self, spot, events: list) -> None:
+        """After a read of a guard's spot checks (serve_spot.SpotChecks): their alerts count like every other kind."""
+        from prometheus_client import Counter, Gauge
+        if getattr(self, "_spot_layers", None) is None:
+            self._spot_layers = Gauge("sdcguard_spot_layers_checked", "Linear layers this process spot-checks",
+                                      registry=self.registry)
+            self._spot_judged = Counter("sdcguard_spot_outputs_judged", "Sampled outputs the spot checks judged, "
+                                        "counted on the GPU", registry=self.registry)
+            self._seen_spot = {}
+        self._spot_layers.set(len(spot.layers))
+        for e in events:
+            self.alerts.labels(layer=str(e.detail.get("where")), UUID=str(e.identity.get("gpu_uuid") or "")).inc()
+            self.alerts_all.inc()
+        n = int(spot.stats.get("outputs_judged", 0))
+        prev = self._seen_spot.get(id(spot), 0)
+        if n > prev:
+            self._spot_judged.inc(n - prev)
+        self._seen_spot[id(spot)] = max(n, prev)
 
     def observe_fp8(self, fp8, events: list) -> None:
         """After a read of a guard's FP8 quantization checks (serve_fp8.Fp8Checks)."""

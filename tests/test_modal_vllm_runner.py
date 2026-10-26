@@ -21,8 +21,11 @@ def runner(monkeypatch, tmp_path):
         def __init__(self, *a, **k):
             pass
 
-        def function(self, **_):
-            return lambda f: f
+        def function(self, **kw):
+            def keep(f):
+                f._modal = kw                       # (what the decorator asked for: GPU, time limit)
+                return f
+            return keep
 
         def local_entrypoint(self):
             return lambda f: f
@@ -636,7 +639,7 @@ def test_the_norm_diagnosis_runs_alone_and_fails_on_a_nonzero_exit(runner, monke
     monkeypatch.setattr(runner, "norm_diag", _remote("norm_diag: exit code 1 in 30.0 minutes"))
     with pytest.raises(SystemExit, match="exit code 1"):
         runner.main("norm_diag")
-    assert "45-minute limit" in runner.ESTIMATES["norm_diag"]
+    assert "60-minute limit" in runner.ESTIMATES["norm_diag"]
 
 
 def test_the_spot_run_spawns_both_gpus_and_fails_if_either_does(runner, monkeypatch, capsys):
@@ -727,3 +730,36 @@ def test_the_smoke_test_is_one_call_over_every_part(runner, monkeypatch, capsys)
         runner.main("run1", False, "moe")
     with pytest.raises(SystemExit, match="--parts goes with"):
         runner.main("smoke1", False, "nope")
+
+
+def test_the_coordinators_outlast_their_parts_even_after_a_gpu_queue(runner):
+    """run1 and smoke1 wait for their parts; if one ran out of time first, the client would finish, download and stop
+    the app, stopping every part still running. Each coordinator's limit is its longest part's plus at least 2 hours
+    of queueing."""
+    fns = {"weight_scan": runner.weight_scan, "moe_bench": runner.moe_bench, "norm_diag": runner.norm_diag,
+           "moe": runner.moe, "spot_h100": runner.spot_h100, "spot_l4": runner.spot_l4,
+           "screen_ops_h100": runner.screen_ops_h100, "screen_ops_l4": runner.screen_ops_l4,
+           "fp8_moe": runner.fp8_moe}
+    assert set(fns) == set(runner.RUN1)
+    longest = max(f._modal["timeout"] for f in fns.values())
+    assert longest == 190 * 60 and runner.run1._modal["timeout"] >= longest + 2 * 3600
+    sfn = {p: getattr(runner, runner.SMOKE_FN[p]) for p in (*runner.SMOKE_H100, *runner.SMOKE_L4)}
+    smoke = max(f._modal["timeout"] for f in sfn.values())
+    assert runner.smoke1._modal["timeout"] >= smoke + 2 * 3600
+    for p, f in sfn.items():          # each part's function: just over the part's own limit, on the right GPU
+        assert runner.SMOKE_LIMITS[p] * 60 <= f._modal["timeout"] - 120 <= runner.SMOKE_LIMITS[p] * 60 + 180, p
+        assert (f._modal["gpu"] == "L4") == (p in runner.SMOKE_L4), p
+    assert runner.run1._modal["timeout"] <= 24 * 3600 and "gpu" not in runner.run1._modal    # (CPU only)
+
+
+def test_both_steps_at_every_functions_limit_stay_under_the_40_dollar_budget(runner):
+    """The worst case the brief states: the smoke test and Run 1 with every function, coordinators included, run to
+    its own time limit at its requested resources (Modal's other charges aside)."""
+    rate = lambda f: runner.RATE_L4 if f._modal.get("gpu") == "L4" else (                    # noqa: E731
+        runner.RATE_PER_HOUR if f._modal.get("gpu") else 0.0472 + 2 * 0.008)
+    cost = lambda f: f._modal["timeout"] / 3600 * rate(f)                                    # noqa: E731
+    run1 = [runner.weight_scan, runner.moe_bench, runner.norm_diag, runner.moe, runner.spot_h100, runner.spot_l4,
+            runner.screen_ops_h100, runner.screen_ops_l4, runner.fp8_moe, runner.run1]
+    smoke = [getattr(runner, runner.SMOKE_FN[p]) for p in (*runner.SMOKE_H100, *runner.SMOKE_L4)] + [runner.smoke1]
+    r1, sm = sum(map(cost, run1)), sum(map(cost, smoke))
+    assert 25 < r1 < 27.5 and 11 < sm < 12.5 and r1 + sm < 40, (r1, sm)

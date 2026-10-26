@@ -47,7 +47,7 @@ ROUTE_MODES = ("experts", "weights")
 DROP_TRIALS = 1                          # the routing-validity check (amendment of October 25, after the third run)
 COST_LIMIT = 0.03
 IDENTITY = 64
-RUN_S = 45 * 60                          # inside the Modal phase's 50 minutes: the rest is for writing and stopping
+RUN_S = 35 * 60                          # inside the Modal phase's 40 minutes: the rest is for writing and stopping
 
 
 def server(role: str, out: str, port: int, metrics_port: int):
@@ -313,7 +313,9 @@ def judge(res: dict) -> tuple:
     s["drop"] = [(t["layer"], t["detected"], t.get("rounds_to_detect"), t.get("findings"))
                  for t in (res.get("eager") or {}).get("drop") or []]
     c16 = s["cost"].get("16") or {}
-    s["on_by_default"] = None if c16.get("moe_cost") is None or not c16.get("complete") else c16["moe_cost"] <= COST_LIMIT
+    # (only with every criterion met: a check that missed a fault or changed answers is never recommended on)
+    s["on_by_default"] = None if c16.get("moe_cost") is None or not c16.get("complete") else \
+        (not fails) and c16["moe_cost"] <= COST_LIMIT
     return not fails, fails, s
 
 

@@ -211,8 +211,24 @@ def run_trials(port: int, log_path: str, prompts: list, deadline: float) -> list
     return rows
 
 
+def served_stack(metrics_port: int) -> dict:
+    """How the server says it runs (its sdcguard_stack_info): enforce_eager, CUDA graph and compilation modes."""
+    from sdcguard.stack import from_metrics
+    try:
+        status, raw = vs._request(metrics_port, "GET", "/metrics", timeout=10)
+        st = (from_metrics(raw.decode(errors="replace")) or {}) if status == 200 else {}
+    except Exception:  # noqa: BLE001
+        st = {}
+    return {k: st.get(k) for k in ("eager", "cudagraph", "compilation")}
+
+
 def compiled_trial(port: int, log_path: str, prompts: list, deadline: float, layer: str) -> dict:
-    """Rounds of BURST requests on the faulted server until a spot alert names its layer (or ROUNDS rounds)."""
+    """Rounds of BURST requests on the faulted server until a spot alert names its layer (or ROUNDS rounds). Only
+    alerts after the trial starts count (the fault is there from load, so warm-up can alert too: those are counted
+    apart), with the layer's checked turns read before and after."""
+    n0 = len(vn.alerts(log_path))
+    before = sum(1 for a in vn.alerts(log_path) if a.get("detector") == "serve_spot" and
+                 (a.get("detail") or {}).get("where") == layer)
     turns0 = _turns(port, layer)
     hit, sent, cut = [], 0, False
     for r in range(ROUNDS):
@@ -222,16 +238,17 @@ def compiled_trial(port: int, log_path: str, prompts: list, deadline: float, lay
         with ThreadPoolExecutor(BURST) as ex:
             list(ex.map(lambda k: vn._try(port, MODEL, prompts[(r * BURST + k) % len(prompts)], 32), range(BURST)))
         sent = r + 1
-        hit = [a for a in _spot_alerts(log_path) if (a.get("detail") or {}).get("where") == layer]
+        hit = [a for a in _spot_alerts(log_path, n0) if (a.get("detail") or {}).get("where") == layer]
         if hit:
             break
     time.sleep(3)
     vn._try(port, MODEL, prompts[0], 4)
-    new = vn.alerts(log_path)
+    new = vn.alerts(log_path)[n0:]
     hit = [a for a in new if a.get("detector") == "serve_spot" and (a.get("detail") or {}).get("where") == layer]
     turns1 = _turns(port, layer)
     return {"layer": layer, "factor": COMPILED_FACTOR, "detected": bool(hit), "rounds": sent if hit else None,
-            "rounds_sent": sent, "cut_by_deadline": cut,
+            "rounds_sent": sent, "cut_by_deadline": cut, "alerts_before_trial": before,
+            "alert_steps": [a.get("step") for a in hit[:5]],
             "turns": turns1 - turns0 if isinstance(turns0, int) and isinstance(turns1, int) else None,
             "verdicts": sorted({((a.get("detail") or {}).get("recheck") or {}).get("verdict") for a in hit} - {None}),
             "relative_errors": [(a.get("detail") or {}).get("relative_error") for a in hit[:3]],
@@ -271,6 +288,7 @@ def run(out: str, port: int, metrics_port: int, gpu: str) -> dict:
                 r["spot_at_start"] = vn.rpc(port, "sdcguard_test_spot_stats")
             if role == "faulted":
                 r["compiled_fault"] = vn.rpc(port, "sdcguard_test_compiled_fault")
+                r["served"] = served_stack(metrics_port)
                 r["trial"] = compiled_trial(port, log_path, tp, deadline, compiled_layer())
                 r["spot_after"] = vn.rpc(port, "sdcguard_test_spot_stats")
                 r["alerts_total"] = len(vn.alerts(log_path))
@@ -338,6 +356,11 @@ def _triton_everywhere(st: dict) -> bool:
     kern = _d(_d(st.get("coverage")).get("kernel"))
     return bool(kern) and any(k.startswith("cuda") for k in kern) and \
         all(v == "Triton" for k, v in kern.items() if k.startswith("cuda"))
+
+
+def compiled_served(served: dict) -> bool:
+    """The server's own stack says it runs compiled with CUDA graphs: enforce_eager off and a CUDA graph mode."""
+    return str(served.get("eager")).lower() == "false" and served.get("cudagraph") not in (None, "", "NONE", "None")
 
 
 def _caught(t: dict) -> bool:
@@ -410,9 +433,14 @@ def judge(res: dict) -> tuple:
                 fails.append(f"S6: the faulted server spot-checked {st.get('layers')} layers, kernels "
                              f"{_d(st.get('coverage')).get('kernel')} at startup and "
                              f"{_d(_d(f.get('spot_after')).get('coverage')).get('kernel')} after its trial")
+            elif not compiled_served(_d(f.get("served"))):
+                fails.append(f"S6: the faulted server can't be shown to serve compiled with CUDA graphs: "
+                             f"{f.get('served')}")
             elif not (t.get("detected") and "output_wrong" in (t.get("verdicts") or [])):
-                fails.append(f"S6: the compiled server's wrong layer wasn't caught within {ROUNDS} rounds (or not "
-                             f"rechecked as wrong): {t.get('verdicts')}, {t.get('rounds_sent')} rounds")
+                fails.append(f"S6: the compiled server's wrong layer wasn't caught within {ROUNDS} rounds of the trial "
+                             f"(or not rechecked as wrong): {t.get('verdicts')}, {t.get('rounds_sent')} rounds")
+            elif not (isinstance(t.get("turns"), int) and t["turns"] > 0):
+                fails.append(f"S6: the faulted layer's checked turns didn't go up during the trial ({t.get('turns')})")
             if t.get("spot_alerts_other_layers"):
                 fails.append(f"S6: {t['spot_alerts_other_layers']} spot alerts named a layer with no fault")
     s = summarize(res)

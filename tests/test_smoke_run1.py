@@ -1,7 +1,6 @@
 """experiments/smoke_run1.py without a GPU: each part's scaled-down settings are the ones its own judge counts, every
 speed load is cut, and a part that crashes or fails is written as such. In subprocesses: the smoke test changes the
 experiment modules' settings in place, which must not leak into the other tests."""
-import json
 import os
 import subprocess
 import sys

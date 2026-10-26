@@ -252,3 +252,30 @@ def test_the_scan_goes_on_by_default_only_with_the_kernel_and_1pct_at_both_loads
     assert not ok and any(f.startswith("W5") for f in fails)
     ok, fails, s = vw.judge(passing())
     assert ok and s["on_by_default"] is True and s["kernel"] == {"cuda:0 2-byte": "Triton"}
+
+
+def test_clean_traffic_runs_until_the_scan_compared_every_entry(monkeypatch):
+    """warm_scan keeps sending clean traffic until the scan's coverage lists no entry never compared (the coverage
+    requirement holds the scan to every entry compared before any fault), bounded by its own limit and the deadline."""
+    left = [5]
+    sent = []
+
+    def rpc(port, method, args=()):
+        return {"coverage": {"never_compared": [f"e{i}" for i in range(left[0])]}}
+
+    def try_(port, model, prompt, n):
+        sent.append(prompt)
+        if len(sent) % vw.BURST == 0:
+            left[0] = max(0, left[0] - 2)               # each round lets the scan compare two more entries
+        return {"text": "x"}
+    monkeypatch.setattr(vw.vn, "rpc", rpc)
+    monkeypatch.setattr(vw.vn, "_try", try_)
+    r = vw.warm_scan(8000, vw.MODEL, ["p"] * 8, vw.time.monotonic() + 3600)
+    assert r["left"] == 0 and r["rounds"] == 3 and len(sent) == 3 * vw.BURST
+    left[0], sent[:] = 5, []
+    r = vw.warm_scan(8000, vw.MODEL, ["p"] * 8, vw.time.monotonic() + 100)      # under 3 minutes left: no traffic
+    assert r["rounds"] == 0 and r["left"] == 5
+    clock = iter([0.0, 0.0, 0.0] + [500.0] * 50)
+    monkeypatch.setattr(vw.time, "monotonic", lambda: next(clock))
+    r = vw.warm_scan(8000, vw.MODEL, ["p"] * 8, 10_000.0, limit_s=240.0)        # its own limit
+    assert r["rounds"] == 1 and r["left"] == 3

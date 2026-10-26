@@ -1737,7 +1737,11 @@ section, as a confirmed wrong output. A GPU can multiply a corrupted weight corr
 which one failed, so a changed weight is now its own section (weights: CHANGED, UNCHANGED or UNMEASURED) and its
 own count (`weights_changed`, apart from `confirmed_wrong`), and still rejects. Criterion 3 reads, from now on: the
 fault's rejection gives the weight reason (or, on the code before this, the arithmetic one) naming the layer;
-criterion 4 also asks for no weights CHANGED on `same`, `triton` and `awq`.
+criterion 4 also asks for no weights CHANGED on `same`, `triton` and `awq`. (Amended October 26, after an outside
+review: UNCHANGED said more than was measured, since the arithmetic checks see a changed weight only once it moves an
+output past their line. The verdicts are now CHANGED, VERIFIED (the weight scan compared every entry it holds on
+every worker with no mismatch), NO CHANGE SEEN (only the checks ran, no alert showed a change) and UNMEASURED; the
+criteria above, which ask only that weights not be CHANGED, read the same.)
 
 ### Answers that depend on the request before (written October 24, before any run)
 
@@ -2039,7 +2043,8 @@ source hash, names taken out) to its configuration, read from the .best_config f
 file (named by PyTorch's own code), and each pair lists the kernels with the same source tuned differently. These
 outcomes locate where servers differ and point to a cause; they don't prove one (similar counts of differences in two
 pairs needn't have one cause), and the rules above read accordingly: each says what is tried next, not what is
-established.
+established. The phase's limit is now 60 minutes (the experiment's own 55, from 45 and 40), so seven compiles from
+empty caches still fit when each takes 5 minutes or more.
 
 ### Qualify on a real server (written October 24, before any run)
 
@@ -2259,7 +2264,10 @@ MoE run keeps M1 to M5, and its M3 now also counts these alerts on the clean ser
 
 Amendment (October 26, before the run): that next MoE run is part of Run 1 (`scripts/modal_vllm.py`, phase moe in
 RUN1; an outside review found Run 1 had left it out, so M6 would have stayed untested), on the same H100 setup, with
-its 50-minute limit (about 12 to 20 minutes and $1 to $1.60 expected: the fourth run took 10.4 minutes). Its cost
+a 40-minute limit (the experiment's own 35; about 12 to 20 minutes and $1 to $1.60 expected: the fourth run took 10.4
+minutes); each server's wait for readiness now ends with the time left, and a server that dies is recorded, not a
+crash. Its on_by_default flag ignored the criteria (a second outside review): it now needs every criterion met, as the
+spot and weight-scan judges do (the attention experiment's flag too). Its cost
 decision now reads only speed loads sdcguard.perf calls complete on both servers; an incomplete one decides nothing.
 The decision rule (3% at 16 at once) and M1 to M6 are unchanged.
 
@@ -2904,8 +2912,12 @@ run gets a fourth server and a sixth criterion:
   graphs (SDCGUARD_TEST_COMPILED_FAULT, read by the test extension at load; the layer drawn with seed 1; a compile
   cache of its own on local disk, so no clean graph loads in its place): all 112 layers spot-checked with the
   Triton kernel at startup and still after its trial, the layer caught within 40 rounds by a spot alert rechecked as
-  output_wrong, and no spot alert naming another layer. The eager trials stop 10 minutes before the experiment's
-  limit to leave it that time, and it isn't started with less than 7 minutes left.
+  output_wrong, and no spot alert naming another layer. Only alerts after the trial starts count (the fault is there
+  from load, so warm-up can alert too: those are counted apart), the layer's checked turns must rise during the
+  trial, and the server's own published stack must show enforce_eager off and a CUDA graph mode (decode batches of 4
+  run inside the captured sizes); a second outside review found the first version read the whole alert log. The
+  eager trials stop 10 minutes before the experiment's limit to leave it that time, and it isn't started with less
+  than 7 minutes left.
   The eager trials can't put a fault inside CUDA graphs; this is the compiled path's positive control.
 - The cost counts only from speed loads sdcguard.perf calls complete (every request of every round answered, on both
   servers); an incomplete one decides nothing, so spot checks stay opt-in.
@@ -3013,7 +3025,10 @@ extended to test them.
   (default 1024) a read, and the coverage report gives the oldest time since an entry was last found clean. That is a
   schedule, not a guarantee (amended October 26 after an outside review): the report's target_met says only that the
   schedule's bytes a read can meet the target at the measured time between reads; oldest_within_target says whether
-  the measured oldest age is within it.
+  the measured oldest age is within it. Also amended October 26 (a second outside review): W1's "every entry compared
+  before the trials" needs enough clean traffic for a full pass, which a short load may not give, so before the clean
+  baseline the scan and moe_scan servers get clean traffic, 4 requests at a time, until the scan's coverage lists no
+  entry never compared (at most 4 minutes; what it took is recorded). The requirement itself is unchanged.
 
 The next run (`modal run scripts/modal_vllm.py --phase weight_scan`, one H100, about 30 to 45 minutes and $2.40 to
 $3.65, 58-minute limit) keeps everything above, plus 12 trials on scan after the 48 flips, run the same way: bits 0,
@@ -3047,14 +3062,17 @@ shows (servers that didn't start, a kernel that didn't compile, a fallback that 
 on padding rows, a time limit), after CPU tests and reviews had passed. So before Run 1 its parts run scaled down to
 minutes, each on its own GPU at the same time, through the same code, each judged by its own judge on the scaled-down
 counts (`experiments/smoke_run1.py`; `modal run --detach scripts/modal_vllm.py --phase smoke1`; 6 H100s and 2 L4s;
-about 25 minutes and $4 to $5.50 expected, about $9.50 if every part ran to its limit at requested resources, an
-estimate, not a spending cap): the weight scan's 3 servers with 2 weight bit flips, 2 other-parameter changes and 1
+about 25 minutes and $5 to $6.50 expected with startups, about $12 if every part and its coordinator ran to their
+functions' limits at requested resources, an estimate, not a spending cap; each part runs in a function whose limit
+is just over its own): the weight scan's 3 servers with 2 weight bit flips, 2 other-parameter changes and 1
 MoE expert change; moe_bench with 20 replays a figure; the norm diagnosis's plain_a and guarded servers on 4 prompts;
 the MoE checks' 4 servers with 1 wrong kernel, 1 wrong router and 1 real row without experts; the spot checks' 4
 servers on the H100 (the compiled fault among them) with one trial of each kind, and the spot server on the L4; the
 screen on both GPUs with a 0.2-minute clean run (still its 6 rounds' coverage) and its 15 simulations. Every speed
 load is cut to 16 prompts of 16 tokens, at most 8 at once, one round. FP8 MoE isn't in it: its last attempt started
 all its servers on this code, and its one change since (the bounded wait) is tested on the CPU with real processes.
+So a smoke pass covers every part but FP8 MoE, and the norm diagnosis in 2 of its 7 configurations; it is a check
+that the parts run, not a preview of their results.
 
 A part passes when its own judge passes on those counts (the norm diagnosis when it is complete); the cost decisions
 aren't part of it. Decided now: Run 1 is launched only after every part of the smoke test passes; a part that fails

@@ -203,7 +203,7 @@ def test_the_verification_age_settings(monkeypatch, tmp_path, caplog):
     plugin, M, Runner = _setup(monkeypatch, tmp_path, SDCGUARD_WEIGHT_SCAN="1", SDCGUARD_WEIGHT_SCAN_AGE="30",
                                SDCGUARD_WEIGHT_SCAN_MAX_MB="256")
     assert plugin._weight_scan_age() == 30.0 and plugin._weight_scan_max_mb() == 256.0
-    model = load(Decoder(M, n_layers=2, lm_head=False))
+    load(Decoder(M, n_layers=2, lm_head=False))
     ws = plugin.guard().wscan
     assert ws.target_age == 30.0 and ws.max_budget == 256 << 20
     for bad in ("abc", "0.5"):

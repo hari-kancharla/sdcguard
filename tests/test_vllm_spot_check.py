@@ -32,6 +32,7 @@ def passing():
             "eager": {"ready": True, "identity": ident[:16], "clean_alerts": 0, "spot_at_start": _stats(),
                       "spot_clean": _stats(0.6, turns=5), "trials": tr},
             "faulted": {"ready": True, "spot_at_start": _stats(), "spot_after": _stats(turns=9),
+                        "served": {"eager": "False", "cudagraph": "FULL_AND_PIECEWISE", "compilation": "VLLM_COMPILE"},
                         "compiled_fault": {"layer": layer, "factor": 1.02, "applied": True, "width": 2048},
                         "trial": {"layer": layer, "detected": True, "rounds": 2, "verdicts": ["output_wrong"],
                                   "spot_alerts_other_layers": 0, "checksum_alerts": 0, "turns": 1}}}
@@ -91,6 +92,9 @@ def test_each_criterion_fails_on_its_own():
     cases.append((r, "S6"))
     r = passing(); r["faulted"]["spot_after"]["coverage"]["kernel"] = {"cuda:0 bfloat16": "off (failed)"}
     cases.append((r, "S6"))
+    r = passing(); r["faulted"]["served"] = {"eager": "True", "cudagraph": "NONE"}; cases.append((r, "S6"))
+    r = passing(); r["faulted"]["served"] = {}; cases.append((r, "S6"))         # (no stack published)
+    r = passing(); r["faulted"]["trial"]["turns"] = 0; cases.append((r, "S6"))
     r = passing(); r["eager"]["trials"][one[0]]["changed"] = [{"step": 7, "error": "IndexError: x"}]
     cases.append((r, "S5"))                                        # a hook error isn't a wrong value made
     for r, crit in cases:
@@ -158,7 +162,18 @@ def test_the_compiled_trial_stops_at_its_layers_alert(monkeypatch):
     monkeypatch.setattr(vsc.time, "sleep", lambda s: None)
     t = vsc.compiled_trial(8000, "x", ["p"] * 8, vsc.time.monotonic() + 3600, layer)
     assert t["detected"] and t["rounds"] == 3 and t["verdicts"] == ["output_wrong"] and t["turns"] > 0
-    assert t["spot_alerts_other_layers"] == 0
+    assert t["spot_alerts_other_layers"] == 0 and t["alerts_before_trial"] == 0
+    # an alert from before the trial (warm-up: the fault is there from load) doesn't count as the trial's catch
+    log[:] = [{"detector": "serve_spot", "detail": {"where": layer, "recheck": {"verdict": "output_wrong"}}}]
+    sent[0] = 10 ** 6                                # (no new alert during these rounds)
+    t = vsc.compiled_trial(8000, "x", ["p"] * 8, vsc.time.monotonic() + 3600, layer)
+    assert not t["detected"] and t["alerts_before_trial"] == 1 and t["rounds_sent"] == vsc.ROUNDS
+
+
+def test_compiled_served_reads_the_servers_own_stack():
+    assert vsc.compiled_served({"eager": "False", "cudagraph": "PIECEWISE"})
+    assert not vsc.compiled_served({"eager": "True", "cudagraph": "NONE"})
+    assert not vsc.compiled_served({"eager": "False", "cudagraph": "NONE"}) and not vsc.compiled_served({})
 
 
 def test_the_l4_run_judges_the_spot_server_alone():

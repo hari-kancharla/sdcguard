@@ -64,6 +64,7 @@ RUN_S = 50 * 60                          # inside the Modal phase's 55 minutes: 
 MOE_MODEL = "ibm-granite/granite-3.1-1b-a400m-instruct"
 MOE_BLOCKS = 24
 MOE_PROMPTS = 64                         # (enough model steps for a few passes before the trials)
+WARM_S = 240.0                           # the most clean traffic warm_scan sends for the scan to compare every entry
 
 
 def param_trials(seed: int = 1) -> list:
@@ -184,6 +185,26 @@ def _speed_alternating(port: int) -> dict:
             vals["pause_failed"].append("resume after the rounds")
         out[str(c)] = vals
     return out
+
+
+def warm_scan(port: int, model: str, prompts: list, deadline: float, limit_s: float = WARM_S) -> dict:
+    """Clean traffic, BURST requests at a time, until the scan has compared every entry at least once (none in its
+    coverage's never_compared), for at most limit_s seconds and never past the deadline less 3 minutes: the coverage
+    requirement holds the scan to every entry compared before any fault, which a short clean load (the smoke test's)
+    may not reach. {"rounds", "seconds", "left": entries still never compared}."""
+    t0 = time.monotonic()
+    rounds, left = 0, None
+    while True:
+        st = vn.rpc(port, "sdcguard_test_scan_stats")
+        cov = (st.get("coverage") or {}) if isinstance(st, dict) else {}
+        left = len(cov.get("never_compared") or []) if isinstance(cov.get("never_compared"), list) else None
+        if left == 0 or time.monotonic() - t0 > limit_s or time.monotonic() + 180 > deadline:
+            break
+        with ThreadPoolExecutor(BURST) as ex:
+            list(ex.map(lambda k: vn._try(port, model, prompts[(rounds * BURST + k) % len(prompts)], 16),
+                        range(BURST)))
+        rounds += 1
+    return {"rounds": rounds, "seconds": round(time.monotonic() - t0, 1), "left": left}
 
 
 def _write(out: str, name: str, data) -> None:
@@ -354,6 +375,8 @@ def run(out: str, port: int, metrics_port: int) -> dict:
                 r["identity"] = texts
             if role == "scan":
                 r["speed"] = _speed_alternating(port)
+            if role != "noscan":                # every entry compared before the clean baseline and any fault
+                r["warm"] = warm_scan(port, model, ps, deadline)
             time.sleep(3)
             vn._try(port, model, ps[0], 8)
             r["clean_scan_alerts"] = len(_scan_alerts(log_path))

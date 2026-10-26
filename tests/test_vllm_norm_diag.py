@@ -121,10 +121,14 @@ def test_a_server_waits_only_as_long_as_the_run_has_left(monkeypatch, tmp_path):
     monkeypatch.setattr(nd.vs, "wait_ready", wait_ready)
     monkeypatch.setattr(nd.vs, "stop", lambda proc: {})
     res = nd.run(str(tmp_path), 8000, 9400)
-    assert started == list(nd.ROLES[:4]) and all("skipped" in res[r] for r in nd.ROLES[4:])
-    left = [nd.RUN_S - 9 * 60 * i for i in range(4)]
-    assert waits == [max(60.0, min(1200.0, x - nd.ANSWER_S)) for x in left] == [1200.0, 1200.0, 1080.0, 540.0]
-    assert all(w + nd.ANSWER_S <= x for w, x in zip(waits, left))
+    left, n = [], 0                                       # what the run should do: start while MIN_START_S is left
+    while n < len(nd.ROLES) and nd.RUN_S - 9 * 60 * n >= nd.MIN_START_S:
+        left.append(nd.RUN_S - 9 * 60 * n)
+        n += 1
+    assert 0 < n < len(nd.ROLES)                          # (9-minute starts: not all 7 fit, so the skip is tested)
+    assert started == list(nd.ROLES[:n]) and all("skipped" in res[r] for r in nd.ROLES[n:])
+    assert waits == [max(60.0, min(1200.0, x - nd.ANSWER_S)) for x in left]
+    assert all(w + nd.ANSWER_S <= x for w, x in zip(waits, left)) and waits[-1] < 1200.0
 
 
 def test_tuned_configs_are_paired_with_their_kernels(tmp_path):

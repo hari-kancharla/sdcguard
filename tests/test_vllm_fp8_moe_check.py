@@ -127,7 +127,6 @@ def test_a_command_past_its_limit_is_interrupted_and_its_escaped_servers_stopped
     """The real thing, on processes: a stand-in for qualify that starts a stand-in server in a session of its own
     (as qualify does), cleans up on SIGINT only if told to, and outlives its limit. Past the limit it gets SIGINT
     (its finally block runs), and a server it left behind on the port is found and stopped."""
-    import subprocess
     import textwrap
     port = 18431
     srv = tmp_path / "srv.py"
@@ -157,7 +156,6 @@ def test_the_sweep_finds_renamed_engines_and_leaves_earlier_ones_alone(tmp_path)
     """vLLM's engine renames itself (VLLM::EngineCore), so the sweep finds it by that name too; one that was already
     running before the command began isn't the command's and is left alone."""
     import subprocess
-    import textwrap
     port = 18432
     # a stand-in with "VLLM::EngineCore" as its command line, as setproctitle leaves it
     old = subprocess.Popen(["bash", "-c", "exec -a VLLM::EngineCore sleep 600"], start_new_session=True)

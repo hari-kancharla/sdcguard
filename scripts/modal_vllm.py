@@ -30,7 +30,7 @@
     modal run scripts/modal_vllm.py --phase moe_bench      # where the MoE checks' cost goes, 1 H100, no server: under $0.65
     modal run scripts/modal_vllm.py --phase norm_diag      # why norm checks changed answers, 7 servers, 1 H100: $2-2.85
     modal run scripts/modal_vllm.py --phase spot           # spot checks in vllm serve, H100 + L4: $3-4
-    modal run --detach scripts/modal_vllm.py --phase smoke1  # Run 1's parts scaled down to minutes, before it: $4-5.50
+    modal run --detach scripts/modal_vllm.py --phase smoke1  # Run 1's parts scaled down to minutes, before it: $5-6.50
     modal run --detach scripts/modal_vllm.py --phase run1  # weight_scan, moe_bench, norm_diag, moe, spot, screen_ops
                                                            # and fp8_moe at once, each on its own GPU: about
                                                            # $12.30-17.50, about 2 hours (fp8_moe the longest)
@@ -609,7 +609,7 @@ def norms(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=50 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=40 * 60)
 def moe(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_moe_check.py: the plugin's MoE checks in real `vllm serve` (vLLM 0.32, granite-3.1-1b-a400m,
     one H100): coverage, identical answers, clean scores, wrong kernels caught in eager mode, and the cost."""
@@ -624,7 +624,7 @@ def moe(force: bool = False, source: Optional[dict] = None) -> str:
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_moe_check.py", "--out", out], f"{out}.txt",
-                    cwd="/root", timeout=46 * 60)
+                    cwd="/root", timeout=37 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -809,7 +809,7 @@ def moe_bench(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
-@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=45 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=60 * 60)
 def norm_diag(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_norm_diag.py: why the compiled server's answers changed with norm checks on (vLLM 0.32,
     Qwen2.5-1.5B-Instruct, one H100): 7 servers, each compiled from an empty cache, answers and compiled norm
@@ -825,7 +825,7 @@ def norm_diag(force: bool = False, source: Optional[dict] = None) -> str:
     code = None
     try:
         code = _tee([sys.executable, f"{R}/experiments/vllm_norm_diag.py", "--out", out], f"{out}.txt", cwd="/root",
-                    timeout=42 * 60)
+                    timeout=57 * 60)
     finally:
         import torch
         with open(f"{out}/STATUS.json", "w") as f:
@@ -840,7 +840,14 @@ RUN1 = ("weight_scan", "moe_bench", "norm_diag", "moe", "spot_h100", "spot_l4", 
         "fp8_moe")
 
 
-@app.function(image=vllm032_image, volumes=VOLS, cpu=1, memory=2048, timeout=200 * 60)
+# The coordinators wait for parts that can sit in Modal's GPU queue before their own limits even start. If a
+# coordinator ran out of time first, the local client would finish, download and stop the app, and that stops every
+# part still running: so they get hours (a CPU container that only waits costs about 6 cents an hour, and returns as
+# soon as its parts do).
+COORDINATOR_S = {"run1": 8 * 3600, "smoke1": 4 * 3600}
+
+
+@app.function(image=vllm032_image, volumes=VOLS, cpu=1, memory=2048, timeout=COORDINATOR_S["run1"])
 def run1(force: bool = False, source: Optional[dict] = None) -> dict:
     """Run 1 from one call (so `modal run --detach` keeps all of it alive: the parts are started from here, inside
     Modal, not by the local client): the weight scan, the MoE cost bench, the norm diagnosis, the MoE checks with
@@ -862,8 +869,8 @@ def run1(force: bool = False, source: Optional[dict] = None) -> dict:
 
 # Run 1's smoke test (experiments/smoke_run1.py): each part scaled down to minutes on its own GPU, through the same
 # code, so what breaks only on a real GPU shows before the full run. Each part's own time limit (minutes), inside its
-# function's (30 on an H100, 17 on an L4).
-SMOKE_LIMITS = {"weight_scan": 26, "moe_bench": 8, "norm_diag": 20, "moe": 26, "spot_h100": 28, "spot_l4": 15,
+# function's (SMOKE_FN, below: each function's limit just over its parts').
+SMOKE_LIMITS = {"weight_scan": 27, "moe_bench": 8, "norm_diag": 20, "moe": 27, "spot_h100": 28, "spot_l4": 15,
                 "screen_h100": 9, "screen_l4": 9}
 SMOKE_H100 = ("weight_scan", "moe_bench", "norm_diag", "moe", "spot_h100", "screen_h100")
 SMOKE_L4 = ("spot_l4", "screen_l4")
@@ -892,25 +899,51 @@ def _smoke(part: str, rate: float, what: str, source: Optional[dict], force: boo
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+# One function per GPU and length class, each limit just over its parts' own (SMOKE_LIMITS), so a part that hangs
+# costs its own limit, not the longest part's.
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=30 * 60)
 def smoke_h100(part: str, force: bool = False, source: Optional[dict] = None) -> str:
-    """One H100 part of Run 1's smoke test."""
+    """A long H100 part of Run 1's smoke test (weight_scan, moe, spot_h100)."""
+    return _smoke(part, RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=23 * 60)
+def smoke_h100_mid(part: str, force: bool = False, source: Optional[dict] = None) -> str:
+    """norm_diag's part of Run 1's smoke test."""
+    return _smoke(part, RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
+
+
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=12 * 60)
+def smoke_h100_short(part: str, force: bool = False, source: Optional[dict] = None) -> str:
+    """A short H100 part of Run 1's smoke test (moe_bench, screen_h100)."""
     return _smoke(part, RATE_PER_HOUR, "H100, 8 cores, 64 GiB", source, force)
 
 
 @app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=17 * 60)
 def smoke_l4(part: str, force: bool = False, source: Optional[dict] = None) -> str:
-    """One L4 part of Run 1's smoke test."""
+    """spot_l4's part of Run 1's smoke test."""
     return _smoke(part, RATE_L4, "L4, 8 cores, 32 GiB", source, force)
 
 
-@app.function(image=vllm032_image, volumes=VOLS, cpu=1, memory=2048, timeout=35 * 60)
+@app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=12 * 60)
+def smoke_l4_short(part: str, force: bool = False, source: Optional[dict] = None) -> str:
+    """screen_l4's part of Run 1's smoke test."""
+    return _smoke(part, RATE_L4, "L4, 8 cores, 32 GiB", source, force)
+
+
+SMOKE_FN = {"weight_scan": "smoke_h100", "moe": "smoke_h100", "spot_h100": "smoke_h100", "norm_diag": "smoke_h100_mid",
+            "moe_bench": "smoke_h100_short", "screen_h100": "smoke_h100_short", "spot_l4": "smoke_l4",
+            "screen_l4": "smoke_l4_short"}
+
+
+@app.function(image=vllm032_image, volumes=VOLS, cpu=1, memory=2048, timeout=COORDINATOR_S["smoke1"])
 def smoke1(force: bool = False, source: Optional[dict] = None, parts: Optional[list] = None) -> dict:
     """Run 1's smoke test from one call (as run1: the parts are started from here, inside Modal), each part on its
     own GPU at the same time (parts: only those, to run a fixed part again). {part: its message}."""
     want = set(parts or (*SMOKE_H100, *SMOKE_L4))
-    calls = {p: smoke_h100.spawn(p, force, source) for p in SMOKE_H100 if p in want}
-    calls.update({p: smoke_l4.spawn(p, force, source) for p in SMOKE_L4 if p in want})
+    fns = {"smoke_h100": smoke_h100, "smoke_h100_mid": smoke_h100_mid, "smoke_h100_short": smoke_h100_short,
+           "smoke_l4": smoke_l4, "smoke_l4_short": smoke_l4_short}
+    calls = {p: fns[SMOKE_FN[p]].spawn(p, force, source) for p in (*SMOKE_H100, *SMOKE_L4) if p in want}
     out = {}
     for part, call in calls.items():
         try:
@@ -1236,8 +1269,8 @@ ESTIMATES = {
                "$1.80 at requested resources, not a spending cap)",
     "moe": "the plugin's MoE checks in real `vllm serve` on 1 H100: granite-3.1-1b-a400m plain, guarded, without MoE "
            "checks and eager (4 server launches, 6 wrong-kernel trials, 2 wrong routers, M6's real rows given no "
-           "experts, the cost): about 12 to 20 minutes (the fourth run took 10.4), roughly $1 to $1.60 (50-minute "
-           "limit, about $4 at requested resources if it runs to its limit; an estimate, not a spending cap)",
+           "experts, the cost): about 12 to 20 minutes (the fourth run took 10.4), roughly $1 to $1.60 (40-minute "
+           "limit, about $3.25 at requested resources if it runs to its limit; an estimate, not a spending cap)",
     "fp8_moe": "one `sdcguard qualify` on vLLM issue #62124 and two remedies on 1 L4 (granite-3.1-1b-a400m: bf16 "
                "twice, FP8 per-tensor, the same eager, FP8 per-channel; 5 server launches, then the repro folder "
                "once): about 110 to 130 minutes, roughly $2.60 to $3.10 (190-minute limit, at most about $4.50 at "
@@ -1268,7 +1301,8 @@ ESTIMATES = {
     "norm_diag": "why the compiled server's answers changed with norm checks on, 1 H100: Qwen2.5-1.5B on 7 servers "
                  "each compiled afresh (plain twice, plain with the plugin's cuBLAS setting, the plugin without and "
                  "with norm checks, and both in Inductor's deterministic mode): about 25 to 35 minutes, roughly $2 "
-                 "to $2.85 (45-minute limit, at most about $3.65 at requested resources, not a spending cap)",
+                 "to $2.85 (60-minute limit, so 7 slow compiles still fit: about $4.84 at requested resources if it "
+                 "runs to its limit; an estimate, not a spending cap)",
     "spot": "the spot checks in real `vllm serve`, Qwen2.5-1.5B with every linear layer checked: on 1 H100 four "
             "servers (answers, clean traffic, cost, 17 eager trials, a fault compiled into the graph), and on 1 L4 at "
             "the same time the spot server's clean traffic: about 35 to 45 minutes, roughly $2.80 to $3.65 (H100) "
@@ -1276,12 +1310,13 @@ ESTIMATES = {
             "part runs to its limit; an estimate, not a spending cap)",
     "run1": "Run 1, each part on its own GPU at the same time: weight_scan, moe_bench, norm_diag, moe, spot (H100 "
             "and L4), screen_ops (H100 and L4) and fp8_moe (L4) as above, about 45 minutes for all but fp8_moe and "
-            "about 2 hours for it: roughly $12.30 to $17.50 together (about $26.10 if every part ran to its limit at "
-            "requested resources; an estimate, not a spending cap: Modal also bills image pulls and startup, CPU and "
-            "memory used above the request, and a part rerun after its machine is preempted)",
+            "about 2 hours for it: roughly $12.30 to $17.50 together (about $26.80 if every part and the "
+            "coordinator ran to their functions' limits at requested resources; an estimate, not a spending cap: "
+            "Modal also bills image pulls and startup, CPU and memory used above the request, and a part rerun "
+            "after its machine is preempted)",
     "smoke1": "Run 1's smoke test, each part scaled down to minutes on its own GPU at the same time (6 H100s, 2 L4s): "
-              "about 25 minutes, roughly $4 to $5.50 together (about $9.50 if every part ran to its limit at "
-              "requested resources; an estimate, not a spending cap)",
+              "about 25 minutes, roughly $5 to $6.50 together with startups (about $12 if every part and the "
+              "coordinator ran to their functions' limits at requested resources; an estimate, not a spending cap)",
     "fetch": "download only: a few cents",
 }
 

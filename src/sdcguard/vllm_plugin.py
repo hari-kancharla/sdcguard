@@ -861,6 +861,54 @@ def _rearm() -> None:
     _STATE["reported"] = False
     _STATE["rechecked"] = None
     _STATE["norms_stale"] = True          # norm and MoE layers take their current weights before the next batch
+    _identity_stale()
+
+
+def _publish_info(info: dict) -> None:
+    from .stack import fingerprint
+    info = {k: v for k, v in info.items() if k != "fingerprint" and v not in (None, "")}
+    info["fingerprint"] = fingerprint(info)
+    _STATE["stack"] = info
+    g = _STATE.get("guard")
+    if g is not None and g.metrics is not None and hasattr(g.metrics, "stack"):
+        g.metrics.stack(info)
+
+
+def _identity_stale() -> None:
+    """The weights changed (or are changing: a reload calls this once per layer): the published stack stops naming
+    a weights digest at once, so `sdcguard ready --qualified` can't match the old identity against new weights, and
+    the next model step publishes the new one (_take_new_weights)."""
+    info = _STATE.get("stack")
+    if not info or _STATE.get("identity_stale"):
+        return
+    _STATE["identity_stale"] = True
+    try:
+        _publish_info({k: v for k, v in info.items() if k != "weights_digest"})
+    except Exception as e:  # noqa: BLE001  (the stack is information; never break a weight update)
+        log.warning("sdcguard: couldn't withdraw the weights digest after a weight change (%s: %s)", type(e).__name__, e)
+
+
+def _identity_fresh() -> None:
+    """After a weight change has been taken (outside any CUDA-graph capture): the new weights' digest, published."""
+    if not _STATE.get("identity_stale"):
+        return
+    _STATE["identity_stale"] = False
+    runner, info = _STATE.get("stack_runner"), _STATE.get("stack")
+    if runner is None or not info:
+        return
+    try:
+        from .serve_weights import model_digest
+        try:
+            model = runner.get_model()
+        except Exception:  # noqa: BLE001
+            model = _model_of(runner)
+        digest = model_digest(model) if model is not None else None
+        if digest:
+            _publish_info({**info, "weights_digest": digest})
+            log.info("sdcguard: weights changed: the stack now names their new digest %s", digest)
+    except Exception as e:  # noqa: BLE001
+        log.warning("sdcguard: couldn't take the new weights' digest (%s: %s); the stack names none until the next "
+                    "change", type(e).__name__, e)
 
 
 def _take_new_weights(g) -> None:
@@ -888,6 +936,7 @@ def _take_new_weights(g) -> None:
             g.wscan.refresh(kind="other")       # the scan's other parameters: their new values are the reference
         except Exception as e:  # noqa: BLE001
             log.warning("sdcguard: the weight scan couldn't take the new weights of the other parameters: %s", e)
+    _identity_fresh()
 
 
 def _dummy_seen() -> None:
@@ -2069,6 +2118,8 @@ def _publish_stack(runner) -> Optional[dict]:
             checks[key] = f"{v:g}"
     info = collect(runner, model, checks)
     _STATE["stack"] = info
+    _STATE["stack_runner"] = runner          # (to take a new weights digest after a weight change)
+    _STATE["identity_stale"] = False
     g = _STATE["guard"]
     if g is not None and g.metrics is not None and hasattr(g.metrics, "stack"):
         g.metrics.stack(info)

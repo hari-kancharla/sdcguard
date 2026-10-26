@@ -143,12 +143,19 @@ def plugin_coverage(metrics: list) -> dict:
                         "weight_scan_oldest_age_seconds": _finite(v.get("sdcguard_weight_scan_oldest_age_seconds")),
                         "weight_scan_left_out": v.get("sdcguard_weight_scan_left_out"),
                         "weight_scan_target_age_seconds": _finite(v.get("sdcguard_weight_scan_target_age_seconds")),
+                        "alerts_counted": v.get("sdcguard_all_alerts_total", v.get("sdcguard_all_alerts")),
                         "share": info.get("share"), "gpu": info.get("UUID")})
     ratios = [w["weights_checked_ratio"] for w in workers]
+    counted = [w["alerts_counted"] for w in workers]
+    # checked: on every worker layers are checked, checks ran, and their results were read back at least once (an
+    # alert can only be seen at a read)
     return {"workers": workers,
-            "checked": bool(workers) and all((w["layers_checked"] or 0) > 0 and (w["checks_executed"] or 0) > 0
-                                             for w in workers),
+            "checked": bool(workers) and all((w["layers_checked"] or 0) > 0 and (w["checks_executed"] or 0) > 0 and
+                                             (w["reads"] or 0) > 0 for w in workers),
             "min_weights_checked": min(ratios) if ratios and None not in ratios else None,
+            # every alert the workers counted (each is also one record in SDCGUARD_LOG): None when a worker's metrics
+            # don't show it
+            "alerts_counted": sum(counted) if counted and None not in counted else None,
             "weight_scan": _scan_coverage(workers)}
 
 
@@ -262,8 +269,13 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
     faults, unsure, notes, sources, weights, empty = [], [], [], {}, [], []
     if alerts is not None:
         n = {"alerts": len(alerts), "confirmed_wrong": 0, "weights_changed": 0, "cleared": 0, "unconfirmed": 0,
-             "coverage": plugin}
+             "unreadable": 0, "coverage": plugin}
+        records = len(alerts)
         for ev in alerts:
+            if ev.get("unreadable"):                # a line of the alert file that isn't a record (_read_jsonl)
+                n["unreadable"] += 1
+                n["alerts"] -= 1
+                continue
             if ev.get("detector") == "serve_fp8":   # quantization findings: their own section (quantization)
                 n["alerts"] -= 1
                 continue
@@ -287,9 +299,28 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
                 unsure.append(f"the plugin's alert on {where}{at}: recheck {rv or 'missing (no row kept)'}")
         low = (plugin is not None and min_weights_checked is not None and
                not ((plugin.get("min_weights_checked") or 0.0) >= min_weights_checked))
-        if plugin is None or not plugin.get("checked") or low:
+        # the alerts given must be the alerts the workers counted: missing or unreadable records (an alert file cut
+        # short, lost, or from another run) are evidence that isn't there, never a clean one
+        counted = plugin.get("alerts_counted") if plugin is not None else None
+        n["records_vs_counted"] = [records - n["unreadable"], counted]
+        gap = None
+        if n["unreadable"]:
+            gap = f"{n['unreadable']} lines of the alert file aren't readable records"
+        elif plugin is not None and counted is None:
+            notes.append("the workers' metrics don't show how many alerts they counted (sdcguard_all_alerts_total: "
+                         "an older plugin), so the alert records can't be checked against them")
+        elif counted is not None and counted > records:
+            gap = f"the workers counted {counted:g} alerts but only {records} alert records were given (an alert file " \
+                  "cut short or lost)"
+        elif counted is not None and counted < records:
+            # more records than counted: alerts reported after the metrics were read (the plugin reads once more as
+            # the server stops), or a file that also holds another run's; none is missing, and each is judged above
+            notes.append(f"{records} alert records for {counted:g} counted in the workers' metrics (read before the "
+                         "server stopped)")
+        if plugin is None or not plugin.get("checked") or low or gap:
             why = ("its coverage wasn't given (--plugin-metrics)" if plugin is None else
-                   "its metrics show a worker with no checked layer or no check run" if not plugin.get("checked") else
+                   "its metrics show a worker with no checked layer, no check run, or no result read back"
+                   if not plugin.get("checked") else gap if gap else
                    f"it checks {plugin.get('min_weights_checked') or 0:.0%} of the linear-layer weights on some "
                    f"worker, under the policy's {min_weights_checked:.0%}")
             if not n["confirmed_wrong"]:
@@ -672,15 +703,18 @@ def render(r: dict) -> str:
 
 
 def _read_jsonl(path: str) -> list:
+    """The records of a JSONL file; a line that isn't a JSON object is kept as {"unreadable": its line number}, so
+    a cut-short or corrupted alert file shows instead of reading as fewer alerts."""
     out = []
     with open(path) as f:
-        for line in f:
+        for k, line in enumerate(f, 1):
             line = line.strip()
             if line:
                 try:
-                    out.append(json.loads(line))
+                    rec = json.loads(line)
                 except ValueError:
-                    continue
+                    rec = None
+                out.append(rec if isinstance(rec, dict) else {"unreadable": k})
     return out
 
 

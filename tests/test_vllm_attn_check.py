@@ -189,3 +189,10 @@ def test_an_incomplete_speed_run_decides_nothing():
     r["guarded"]["speed"]["16"]["complete"] = False      # a round with failed requests
     ok, fails, s = va.judge(r)
     assert s["on_by_default"] is None and s["cost"]["16"]["complete"] is False
+
+
+def test_a_failed_run_is_never_recommended_on_by_default():
+    r = passing()
+    r["guarded"]["clean_alerts"] = 3                        # a criterion missed, the cost still small
+    ok, fails, s = va.judge(r)
+    assert not ok and s["on_by_default"] is False

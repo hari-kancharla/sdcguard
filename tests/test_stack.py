@@ -94,7 +94,8 @@ def test_compare_names_what_differs():
 
 
 def _decision(tmp_path, decision="ACCEPT", deployed=True):
-    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "weights_digest": "0123456789abcdef"}
+    st = {"model": "m", "attention": "FLASH_ATTN", "vllm": "0.32.0", "weights_digest": "0123456789abcdef",
+          "tensor_parallel": "2"}
     st["fingerprint"] = stack.fingerprint(st)
     d = {"decision": decision, "scope": {"stacks": {"candidate": {"vllm": "0.32.0",
                                                                     **({"deployed": st} if deployed else {})}}}}
@@ -118,6 +119,9 @@ def test_ready_qualified_verdicts(tmp_path):
     assert ready.qualified(_decision(tmp_path, "REJECT")[0], [_page(st)])["verdict"] == "NOT QUALIFIED"
     assert ready.qualified(_decision(tmp_path, deployed=False)[0], [_page(st)])["verdict"] == "INCONCLUSIVE"
     assert ready.qualified(str(tmp_path / "missing.json"), [_page(st)])["verdict"] == "INCONCLUSIVE"
+    # a two-worker qualification can't be met by reading one worker (the other was never seen)
+    one = ready.qualified(path, [_page(st)])
+    assert one["verdict"] == "INCONCLUSIVE" and "1 workers read, the qualification ran on 2" in one["why"]
 
 
 def _free():
@@ -358,3 +362,32 @@ def test_the_plugin_publishes_the_weights_digest_at_load_with_the_scan_on_or_off
     monkeypatch.setattr(serve_weights, "model_digest", broken)
     vp, runner = start(Decoder)
     assert runner.model is not None and vp._STATE["stack"] and "weights_digest" not in vp._STATE["stack"]
+
+
+def test_a_weight_update_withdraws_the_digest_until_the_new_one_is_taken(monkeypatch, tmp_path):
+    """After weights change in place and refresh() (or a reload) the published stack names no weights digest at
+    once, so `ready --qualified` can't match the old identity with new weights; the next step outside a capture
+    publishes the new weights' digest (and the old one again if the weights came back)."""
+    from _vllm_standins import Decoder, install_fake_vllm, load, plugin_env
+    UL, GM = install_fake_vllm(monkeypatch.setitem)
+    monkeypatch.setattr(GM, "__init__", lambda self, f: setattr(self, "factory", f), raising=False)
+    monkeypatch.setattr(GM, "load_model", lambda self: setattr(self, "model", load(self.factory(UL))), raising=False)
+    vp = plugin_env(monkeypatch, tmp_path)
+    vp.register()
+    runner = GM(Decoder)
+    runner.load_model()
+    first = dict(vp._STATE["stack"])
+    w = runner.model.layers[2].weight
+    with torch.no_grad():
+        w.view(-1).view(torch.int16)[7] ^= 1 << 3
+    vp.refresh()
+    assert "weights_digest" not in vp._STATE["stack"] and vp._STATE["stack"]["fingerprint"] != first["fingerprint"]
+    vp._take_new_weights(vp._STATE["guard"])
+    new = vp._STATE["stack"]
+    assert new["weights_digest"] not in (None, first["weights_digest"]) and new["fingerprint"] != first["fingerprint"]
+    with torch.no_grad():
+        w.view(-1).view(torch.int16)[7] ^= 1 << 3                # back as loaded
+    vp.refresh()
+    vp._take_new_weights(vp._STATE["guard"])
+    assert vp._STATE["stack"]["weights_digest"] == first["weights_digest"]
+    assert vp._STATE["stack"]["fingerprint"] == first["fingerprint"]

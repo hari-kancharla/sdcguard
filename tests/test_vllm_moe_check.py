@@ -158,3 +158,10 @@ def test_a_server_that_dies_or_starts_too_late_is_recorded_not_a_crash(monkeypat
     ok, fails, _ = vm.judge(res)
     assert not ok and any("plain stopped with an error" in f for f in fails)
     assert any("eager didn't start (the run's time was nearly up" in f for f in fails)
+
+
+def test_a_failed_run_is_never_recommended_on_by_default():
+    r = passing()
+    r["guarded"]["clean_alerts"] = 3                        # a criterion missed, the cost still small
+    ok, fails, s = vm.judge(r)
+    assert not ok and s["on_by_default"] is False

@@ -258,6 +258,17 @@ def qualified(decision_path: str, texts: list, vllm_text: Optional[str] = None,
                        "sdcguard)"}
     req = requirements(d)
     diffs, unknown, weaker, notes = [], [], [], []
+    # every worker the qualification ran on must be read: one worker's page can't stand for another's (its own
+    # weights shard, its own checks)
+    try:
+        layout = int(float(was.get("tensor_parallel") or 1)) * int(float(was.get("pipeline_parallel") or 1))
+    except (TypeError, ValueError):
+        layout = None
+    want_n = len(recorded) if recorded else layout
+    if want_n is not None and len(texts) != want_n:
+        unknown.append(f"{len(texts)} workers read, the qualification ran on {want_n} (" +
+                       ("one stack recorded for each" if recorded else "its tensor and pipeline parallelism") +
+                       "): read every worker (--workers, or one --url each)")
     for i, t in enumerate(texts):
         live = from_metrics(t or "")
         # each worker against its own record (with tensor parallelism, its own shard's weights)

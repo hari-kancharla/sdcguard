@@ -808,6 +808,12 @@ class SpotChecks:
                 ev = torch.cuda.Event()
                 ev.record(torch.cuda.current_stream(dev))
                 self._host[dev] = (hs, tuple(hc), ev)
+        g = self.guard
+        if g is not None and getattr(g, "metrics", None) is not None and hasattr(g.metrics, "observe_spot"):
+            try:                               # (each alert counted, as every other check's are)
+                g.metrics.observe_spot(self, events)
+            except Exception:  # noqa: BLE001  (metrics never break serving)
+                pass
         return events
 
     def coverage(self) -> dict:

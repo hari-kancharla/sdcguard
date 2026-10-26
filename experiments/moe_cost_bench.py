@@ -194,7 +194,7 @@ def check_costs() -> dict:
                 "added_to_work_us": round(mixed - work, 3), "state_after": seen, "state_after_interleaved": seen_mixed,
                 "quiet": _quiet(seen) and _quiet(seen_mixed),
                 "judged": (seen["moe_calls"] > 0) == active}
-            del lays
+            lays = None                         # (frees the layers' tensors)
             if DEV == "cuda":
                 torch.cuda.empty_cache()
         bad = _layers(rows, True, wrong=True)
@@ -212,7 +212,7 @@ def check_costs() -> dict:
         res[f"{rows}_one_active_wrong"] = {"checks_and_clear_us": fault_us, "clear_us": clear_only,
                                            "checks_us": round(fault_us - clear_only, 3), "state_after": seen,
                                            "alarmed": bool(seen["moe_over_line"] and seen["moe_kept"])}
-        del bad
+        bad = None
         if DEV == "cuda":
             torch.cuda.empty_cache()
     return res

@@ -63,7 +63,7 @@ def setup(part: str):
         full_p, full_m = m.param_trials, m.moe_trials
         m.param_trials = lambda seed=1: full_p(seed)[:2]
         m.moe_trials = lambda seed=2: full_m(seed)[:1]
-        m.RUN_S = 22 * 60
+        m.RUN_S = 24 * 60
     elif part == "moe_bench":
         import moe_cost_bench as m
         m.REPS, m.WARM, m.TIMES = 20, 5, 1
@@ -74,7 +74,7 @@ def setup(part: str):
     elif part == "moe":
         import vllm_moe_check as m
         m.MODES, m.CORRUPT_TRIALS, m.ROUTE_MODES, m.DROP_TRIALS, m.IDENTITY = ("scale",), 1, ("experts",), 1, 4
-        m.RUN_S = 22 * 60
+        m.RUN_S = 24 * 60
     elif part in ("spot_h100", "spot_l4"):
         import vllm_spot_check as m
         m.IDENTITY = 8
