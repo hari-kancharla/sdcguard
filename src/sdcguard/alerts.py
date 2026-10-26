@@ -22,9 +22,26 @@ import urllib.request
 from typing import Callable, Iterable, Optional
 
 
+# A weight repair's records (serve_weights, SDCGUARD_WEIGHT_REPAIR=1): in the alert log and sent to on_alert, but not
+# alerts themselves (the alert that found the change is its own record)
+REPAIR_FINDINGS = ("weights_restored", "weights_restore_failed")
+
+
+def is_repair_record(detail) -> bool:
+    return isinstance(detail, dict) and detail.get("finding") in REPAIR_FINDINGS
+
+
 def _how(event) -> str:
     """What went wrong, in the words of the detector that saw it."""
     d, kind = event.detail, event.detector
+    if kind == "serve_weights":
+        if d.get("finding") == "weights_restored":
+            return (f"had its changed weights written back from the copy kept at load ({d.get('values_changed')} "
+                    "values) and they match their fingerprint again")
+        if d.get("finding") == "weights_restore_failed":
+            return f"could not have its changed weights restored: {(d.get('recheck') or {}).get('why')}"
+        return ("has weights that no longer match their fingerprint at load (a changed bit in GPU memory, or an "
+                "update sdcguard wasn't told about)")
     ranks = ", ".join(str(r) for r in d.get("suspect_ranks") or [])
     # suspect_ranks are global ranks; with a replica group, `world` is the size of that group
     of = f"in a group of {d.get('world')}" if "suspect_group_ranks" in d else f"of {d.get('world')}"
@@ -62,7 +79,7 @@ def describe(event) -> str:
     where = d.get("where") or d.get("op") or ("a checkpointed block" if event.detector == "recompute" else
                                               "a matmul")
     gpu = g.get("gpu_uuid") or g.get("device") or "unknown GPU"
-    parts = [f"sdcguard ALERT: {where} on {gpu}"]
+    parts = [f"sdcguard {'REPAIR' if is_repair_record(d) else 'ALERT'}: {where} on {gpu}"]
     extra = ", ".join(x for x in (g.get("gpu_name"), f"PCI {g['pci_bus_id']}" if g.get("pci_bus_id") else None,
                                   f"host {g['host']}" if g.get("host") else None,
                                   f"step {event.step}" if event.step is not None else None) if x)
@@ -80,7 +97,7 @@ def describe(event) -> str:
 class Webhook:
     """on_alert callback that posts each alert to a webhook (Slack, Discord, PagerDuty/Opsgenie via
     their generic webhooks, or anything that takes JSON). At most one delivered post per GPU and layer every
-    `min_interval` seconds. A failed post is retried (`retries` times, with a growing pause) and logged to the
+    `min_interval` seconds (and one for each kind of weight repair record on that layer). A failed post is retried (`retries` times, with a growing pause) and logged to the
     "sdcguard" logger; only a delivered post starts the quiet interval, so a webhook that was down doesn't
     silence the next alert. Alerts are also in the guard's log either way."""
 
@@ -104,7 +121,10 @@ class Webhook:
         return {key: describe(event)}
 
     def __call__(self, event) -> None:
-        key = (event.detail.get("where"), event.identity.get("gpu_uuid"))
+        # (each kind of repair record has its own quiet interval: one follows the layer's alert within seconds, and a
+        # failed repair after an earlier successful one must not be silenced by it)
+        key = (event.detail.get("where"), event.identity.get("gpu_uuid"),
+               event.detail.get("finding") if is_repair_record(event.detail) else False)
         now = time.time()
         with self._lock:
             if now - self._last.get(key, -1e18) < self.min_interval or key in self._sending:
@@ -241,6 +261,8 @@ class Metrics:
                                             first use, ...: listed in the coverage report)
     sdcguard_weight_scan_target_age_seconds its verification-age target (SDCGUARD_WEIGHT_SCAN_AGE; NaN when unset),
                                             to compare with the measured oldest age above
+    sdcguard_weight_repairs_total{result}   changed entries written back from their clean copy and compared again
+                                            (SDCGUARD_WEIGHT_REPAIR=1): restored, or failed
     `sdcguard decide` calls the weights VERIFIED only from these: every entry compared, none changed, on every worker
     """
 
@@ -448,7 +470,13 @@ class Metrics:
             self._ws_target = Gauge("sdcguard_weight_scan_target_age_seconds",
                                     "The weight scan's verification-age target (NaN when unset)",
                                     registry=self.registry)
+            self._ws_repairs = Counter("sdcguard_weight_repairs", "Changed weight entries written back from their "
+                                       "clean copy (SDCGUARD_WEIGHT_REPAIR=1), by result", ["result"],
+                                       registry=self.registry)
+            for res in ("restored", "failed"):
+                self._ws_repairs.labels(result=res)
             self._seen_ws = {}
+            self._seen_repairs = {}
         self._ws_layers.set(sum(1 for e in scan.entries if not e.get("excluded")))
         self._ws_never.set(sum(1 for e in scan.entries if not e.get("compared") and not e.get("excluded")))
         self._ws_changed.set(sum(1 for e in scan.entries if e.get("alerted")))
@@ -456,6 +484,12 @@ class Metrics:
         self._ws_age.set(float("nan") if age is None else float(age))
         self._ws_left_out.set(len(scan.not_scanned))
         self._ws_target.set(float(scan.target_age) if scan.target_age else float("nan"))
+        done = (int(scan.stats.get("repaired", 0)), int(scan.stats.get("repair_failed", 0)))
+        before = self._seen_repairs.get(id(scan), (0, 0))
+        for res, n, m in (("restored", done[0], before[0]), ("failed", done[1], before[1])):
+            if n > m:
+                self._ws_repairs.labels(result=res).inc(n - m)
+        self._seen_repairs[id(scan)] = (max(done[0], before[0]), max(done[1], before[1]))
         p = int(scan.stats.get("passes", 0))
         prev = self._seen_ws.get(id(scan), 0)
         if p > prev:

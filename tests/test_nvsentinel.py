@@ -141,6 +141,17 @@ def test_job_alerts_are_leads_one_event_per_gpu_and_detector():
     assert any("node-b" in s for s in skipped)
 
 
+def test_a_weight_repairs_records_arent_sent_as_alerts():
+    """The alert that found a changed weight is a lead; the repair's record after it isn't an alert of its own."""
+    found = _alert("serve_weights")
+    found["detail"] = {"where": "blocks.0.up", "finding": "weights_changed", "weights_changed_since_load": True}
+    restored = _alert("serve_weights")
+    restored["detail"] = {"where": "blocks.0.up", "finding": "weights_restored"}
+    evs, skipped = nv.from_alerts([found, restored], node="node-a", host="node-a")
+    assert len(evs) == 1 and not skipped and evs[0]["metadata"]["alerts"] == "1"
+    assert "weights no longer match" in evs[0]["message"]
+
+
 def test_metadata_values_are_short_strings():
     ev, _ = nv.from_check(_check(notes=[["bad", "x" * 5000]]), node="n")
     assert all(isinstance(v, str) and len(v) <= 256 for v in ev["metadata"].values())

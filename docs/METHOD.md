@@ -3073,6 +3073,107 @@ Reported, not criteria: as before, plus each trial's seconds to its alert, the o
 and how many entries the other parameters take. Decided now: the scan becomes on by default if W1 to W7 are met and
 its measured cost is at most 1% at 16 and at 256 requests at once; otherwise it stays opt-in.
 
+### Weight repair in serving (written October 26, before any run; revised the same day after an outside review)
+
+With SDCGUARD_WEIGHT_REPAIR=1 (and SDCGUARD_WEIGHT_SCAN=1), the weight scan keeps a host-RAM copy of each entry's
+tensors as they were when its reference fingerprint was taken (as much host memory as those weights take on the GPU;
+at most half the host memory free at the first copy, divided among the local GPUs, or repair turns itself off with a
+warning and the scan goes on alerting; also off when the free memory can't be read). When an entry is found changed, the end of that read counts the values that
+differ from the copy (in chunks, stopping once past the limit). At most 64 (`REPAIR_MAX_VALUES`): after the GPU has
+finished the work queued so far, the copy is
+written back in place (the same memory, so the CUDA graphs that read it stay valid), fingerprinted again and compared
+with its reference. More than 64: nothing is written, because a fault in memory changes a few values while an update
+nobody told sdcguard about (an RL weight sync, a reload without refresh()) changes nearly all of them, and writing the
+old weights over it would be a silent error of sdcguard's own making; the record says how many changed. An update made
+without refresh() that changes 64 values or fewer would be reverted. Restored, the entry is compared again from then on
+(a change that comes back is alerted again); not restored (too many values changed, a copy that doesn't restore the
+reference, tensors that moved or share memory), it stays changed and isn't tried again until a refresh. The alert that
+found the change stands either way (it counts as a confirmed fault, so `sdcguard ready` says FAULT FOUND), and a
+record of the repair (weights_restored or weights_restore_failed, not counted as an alert) goes to the alert log and
+to on_alert: the plugin's webhook sends it with its own quiet interval, so the layer's alert seconds before doesn't
+silence it. The record names the steps from the layer's last clean comparison (or, when it had none, from its
+reference: load or the last refresh) to the repair, and the requests served in them. The layer's checks (checksums,
+and norm and MoE checks, whose rechecks read the weights as they are now) then judge a later alert by when its output
+was computed: after the repair, normally; at or before it, or at a step not known, unknown (the output may have used
+the changed weights). The checks are told as soon as anything was written back, even if the write-back then fails
+its check. What it doesn't do: outputs computed with the
+changed weights before the repair aren't fixed, prefix-cache blocks computed then stay cached until the cache is
+emptied or the server restarts, and a fault that keeps changing the weights is repaired each time it is found. CPU
+tests cover a bf16 model; the GPU run covers bf16 linear-layer weights of one model on one GPU.
+
+The run (`experiments/vllm_weight_repair_check.py`, `--phase weight_repair`; one H100, 25-minute limit, the
+experiment's own 18 minutes, about 10 to 15 minutes and $0.80 to $1.20 expected): Qwen2.5-1.5B-Instruct in bf16, one
+linear layer in eight checked, attention checks off, the scan and repair on. The server answers 64 prompts greedily
+(32 tokens), gets clean traffic until the scan has compared every entry, then 8 trials one after another: one bit of
+one weight flipped through /collective_rpc (a random layer, row and column, seed 3; bits 14, 13, 10 and 7, two
+trials each) and not flipped back, rounds of 4 requests until a repair record for the layer appears or 60 s have
+passed, then the weight read back. After the trials the prefix cache is emptied, the 64 prompts are answered again,
+and clean traffic is sent for up to 120 s until every repaired layer has had a scheduled comparison come back.
+
+- R1: every trial's flip is alerted by the scan (weights_changed, naming its layer) and restored (a weights_restored
+  record naming it, each record writing back one changed value), and the weight reads back with exactly its 16 bits
+  before the flip.
+- R2: no repair failed, and no scan alert names a layer no trial changed.
+- R3: the prefix cache was emptied after the trials, and the 64 answers after them are identical to the 64 before.
+- R4: from the flip to its repair record, at most 5 s median and 30 s at most.
+- R5: at the end the scan finds no layer changed, and every repaired layer has had a scheduled comparison come back
+  clean since its repair.
+
+Decided now: if all five are met, weight repair is described as GPU-validated for bf16 linear-layer weights of this
+model on this GPU and stays opt-in (it costs host memory); if R1, R3 or R5 fails, it stays CPU-tested and isn't
+advertised.
+
+### A second cuBLAS bug: issue 6580689 (written October 26, before any run; revised the same day after an outside review, before any run)
+
+NVIDIA's CUDA 13.4 release notes list as a known issue of cuBLAS 13.7.0 that "cublasLtMatmul() can return incorrect
+output when using split-K if the number of K splits (SPLITK_NUM) does not evenly divide the K dimension and the floor
+division of K / SPLITK_NUM is an exact multiple of the stage size", for algorithm 66 on compute capability 9.0, 10.x
+and 11.x, first introduced in cuBLAS 12.6.3; the CUDA 13.4 Update 1 notes (cuBLAS 13.8.0.4) list it as resolved. The
+stage size is the first number of the configuration's stages id (cublasLtMatmulStages_t, "size and number of
+stages": 64 for 64xAUTO). PyTorch 2.14.1 and PyTorch 2.13.0 (vLLM 0.32.0's) install cuBLAS 13.1.1.3 by default,
+inside that range.
+
+`sdcguard blas --splitk` forces the first 4 algorithm-66 configurations the heuristic offers to each split-K count
+given, with each reduction scheme cuBLASLt accepts (each a run of its own; ones it refuses, or whose workspace is too
+large, are listed with why), records its stages id and whether it meets the issue's condition (`issue_6580689()`), compares its output bits with the
+same configuration unforced, and judges it as it judges the rest: every output written, a sample of rows against
+float64 within the rounding bound. The split count read back is the one just set, so it can't show that the library
+split K; a run counts as split (split_applied) when its bits differ from the unforced configuration's or its
+reduction (in the compute or the output type) needs workspace. The bound isn't rigorous for reduction schemes 1 and 4,
+which round each split's partial sum (and, for 4, each step of their sum) to the output type: a correct run could in
+principle land outside it. The fixed cuBLAS, whose forced runs must all be right (N2), the counts outside the
+condition, and the pairing of each wrong run with the same configuration on 13.8.1 are the check that it doesn't flag
+correct split-K results. A forced run that computes wrong fails the shape, named apart from the
+algorithms the heuristic offers. Each configuration the heuristic offers on its own that meets the condition is
+listed too. The first design (counts 3 to 9 on K = 4096 and 11008) was withdrawn before any run: no shape met the
+condition (K // s was never a multiple of a stage size), and the attributes were read with a 2-byte buffer for
+4-byte values, which cuBLASLt refuses (tile and stages ids came back 0).
+
+The run (`modal run scripts/modal_nvbug.py`; one H100, 30-minute limit, about 10 to 20 minutes and at most about $2.10):
+three environments that differ only in the cuBLAS wheel, each PyTorch 2.14.1: its default 13.1.1.3, 13.7.0.27 and
+13.8.1.7, each with 7 minutes for its sweeps and 2 for its version probe. Each runs `sdcguard blas --splitk
+9,11,13,15 --workspace-mib 256` in bf16 and fp16 on eight shapes whose K
+meets the condition for one count, K = 768 * s + 8 for s in 9, 11, 13 and 15 (K // s = 768, a multiple of every stage
+size cuBLASLt defines; K % s = 8), each as 4096xKx256 and 1024xKx16; the other counts are controls. Then, without
+forcing and with the default 32 MiB workspace, six down-projection shapes of real models (Qwen2.5-1.5B and 7B,
+Llama 3 8B and 70B; 1 and 16 tokens).
+
+- N1: with cuBLAS 13.7.0, at least one forced algorithm-66 run in the condition, counted as split, computes wrong
+  (reproduced).
+- N2: with cuBLAS 13.8.1, every run computes right: forced in the condition or not, offered by the heuristic, and the
+  cluster workaround (fixed).
+- N3: those two environments load the cuBLAS they should (cublasLtGetVersion 130700 and 130801), run on an H100
+  (compute capability 9.0), and test at least 8 forced runs in the condition counted as split, each; otherwise the
+  run says nothing.
+
+Reported, not criteria: whether the default 13.1.1 computes wrong in the condition too; forced runs outside the
+condition that compute wrong; configurations the heuristic offers on its own in the condition and whether they compute
+wrong (whether a plain call can hit it, on the model shapes too); for each wrong run with 13.7.0, whether the same
+configuration ran right with 13.8.1. If N1 isn't met, the result is recorded as not reproduced. What a pass would
+show: sdcguard's sweep reproduces a second documented NVIDIA wrong-result bug, tells the affected versions from the
+fixed one on the same GPU, and says whether the default PyTorch and vLLM install can compute wrong when split-K is
+forced. It would not show that a served model hits it (vLLM's matmuls take the heuristic's configurations).
+
 ### Run 1's smoke test (written October 26, before it and before Run 1)
 
 Most first GPU runs of a new experiment here failed on bugs of ours that only a real GPU inside a real `vllm serve`

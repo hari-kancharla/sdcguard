@@ -47,6 +47,11 @@ device and element size before its first use; where they differ, or without Trit
 An intended weight update (an RL weight sync, a reload) looks the same as corruption: ServeGuard.refresh() and
 refresh_layer() make the references provisional again, and so does refresh() here.
 
+Repair (repair=True, SDCGUARD_WEIGHT_REPAIR=1 in the plugin): a host copy of each entry's tensors is kept with its
+reference, and an entry found changed in at most REPAIR_MAX_VALUES values is written back in place at the end of the
+read that found it, then verified against its reference (_repair_pending). It can't tell an update made without
+refresh() that changes that few values from a fault, and reverts it too; larger changes are left alone and reported.
+
 model_digest() uses the same fingerprint once, on every parameter of a loaded model, for its identity (sdcguard.stack's
 weights_digest, which `sdcguard ready --qualified` holds a server to), whether or not the scan is on.
 """
@@ -81,6 +86,56 @@ def _s64(c: int) -> int:
 SEED64, M1, M2 = _s64(KEY_SEED), _s64(MIX1), _s64(MIX2)
 DEFAULT_BUDGET_MB = 64.0
 DEFAULT_MAX_MB = 1024.0                 # the most a read compares to meet a verification-age target
+# Repair writes an entry back only when at most this many of its values differ from the copy kept with its
+# reference: a fault in memory changes a few values, an update the guard wasn't told about (an RL weight sync, a
+# reload without refresh()) changes nearly all of them, and writing the old weights over one would be a silent error
+# of sdcguard's own making.
+REPAIR_MAX_VALUES = 64
+HOST_SHARE = 0.5                        # repair's copies take at most this share of the free host memory per local GPU
+
+
+def _host_room() -> Optional[int]:
+    """Bytes of host memory still free for this process: MemAvailable, or the cgroup's limit less its use when that
+    is lower (a container sees the host's MemAvailable); None when neither can be read."""
+    room = None
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    room = int(line.split()[1]) * 1024
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    for lim_path, use_path in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                               ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+                                "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+        try:
+            with open(lim_path) as f:
+                lim = f.read().strip()
+            if lim == "max":
+                continue
+            with open(use_path) as f:
+                left = int(lim) - int(f.read().strip())
+            room = left if room is None else min(room, left)
+            break
+        except (OSError, ValueError):
+            continue
+    return room
+
+
+def _local_gpus() -> int:
+    """The GPUs on this host that may each run a worker taking its own copies (LOCAL_WORLD_SIZE when set)."""
+    import os
+    try:
+        n = int(os.environ.get("LOCAL_WORLD_SIZE") or 0)
+    except ValueError:
+        n = 0
+    if n <= 0:
+        try:
+            n = torch.cuda.device_count() if torch.cuda.is_available() else 1
+        except Exception:  # noqa: BLE001
+            n = 1
+    return max(1, n)
 
 try:
     import triton
@@ -309,6 +364,22 @@ def model_digest(model) -> Optional[str]:
     return h.hexdigest()[:16]
 
 
+def before_repair(restored: Optional[dict], step) -> bool:
+    """Whether an output computed at `step` (None: not known) may predate a weight repair recorded as `restored`
+    ({"step": the last step queued before the write-back}): such an output may have used the changed weights."""
+    if restored is None:
+        return False
+    at = restored.get("step")
+    return step is None or at is None or step <= at
+
+
+def repair_why(restored: dict, step) -> str:
+    """Why a recheck with the restored weights can't judge an output from before the repair."""
+    return (f"sdcguard's weight repair wrote this layer's load-time weights back after step {restored.get('step')}, "
+            f"and this output (step {step}) may have been computed before that, with the changed weights: a recheck "
+            "with the weights as they are now can't say whether it was right")
+
+
 def _location(t) -> Optional[tuple]:
     if not isinstance(t, torch.Tensor) or t.numel() == 0:
         return None
@@ -319,8 +390,18 @@ class WeightScan:
     """The scan of one ServeGuard (guard.weight_scan()). poll() is called by the guard's poll."""
 
     def __init__(self, guard, budget_mb: float = DEFAULT_BUDGET_MB, target_age: Optional[float] = None,
-                 max_mb: float = DEFAULT_MAX_MB, max_gap: float = 4.0):
+                 max_mb: float = DEFAULT_MAX_MB, max_gap: float = 4.0, repair: bool = False,
+                 repair_max_values: int = REPAIR_MAX_VALUES, host_allowance: Optional[int] = None):
         self.guard = guard
+        # repair: keep a host-RAM copy of every entry's tensors as they were when its reference was taken, and when an
+        # entry is found changed by at most repair_max_values values, copy it back in place at the end of that read
+        # and compare again (_repair_pending). The copies take at most host_allowance bytes (default: HOST_SHARE of
+        # the host memory free at the first copy, divided among the local GPUs); repair turns itself off past it.
+        self.repair = bool(repair)
+        self.repair_max_values = max(0, int(repair_max_values))
+        self.repair_off: Optional[str] = None      # why repair turned itself off
+        self._host_allowance = host_allowance
+        self._to_repair: list = []                 # [(entry index, its generation, alert window, last clean)]
         self.budget = max(1, int(float(budget_mb) * (1 << 20)))
         # a verification-age target (seconds): each read compares enough bytes that a pass over the model takes at
         # most 2/3 of it at the measured time between reads, between the budget and max_mb (see target())
@@ -340,7 +421,8 @@ class WeightScan:
         self.not_scanned: dict = {}                # name -> why
         self.stats = {"entries": 0, "bytes": 0, "reads": 0, "entries_compared": 0, "bytes_compared": 0,
                       "passes": 0, "last_pass_seconds": None, "changed": 0, "alerts": 0, "references_retaken": 0,
-                      "budget_bytes_now": self.budget, "target_met": None}
+                      "budget_bytes_now": self.budget, "target_met": None, "repaired": 0, "repair_failed": 0,
+                      "host_copy_bytes": 0}
 
     # --------------------------------------------------------------------------------------------- entries
     def add(self, name: str, get: Callable[[], Sequence[Optional[torch.Tensor]]], kind: str,
@@ -356,7 +438,8 @@ class WeightScan:
             return None
         e = {"name": name, "get": get, "kind": kind, "module": module, "device": live[0].device,
              "bytes": sum(t.numel() * t.element_size() for t in live), "alerted": False, "excluded": None,
-             "last_clean": None, "last_clean_step": None, "compared": 0, "since": time.monotonic()}
+             "last_clean": None, "last_clean_step": None, "compared": 0, "since": time.monotonic(),
+             "gen": -1, "repairs": 0}
         with torch.inference_mode(False), torch.no_grad():
             self._take_reference(e, tensors)
         self.entries.append(e)
@@ -388,7 +471,7 @@ class WeightScan:
                 name: Optional[str] = None) -> int:
         """After an intended update: every entry (or one module's, one kind's, or the one with that name) takes a new
         provisional reference from its tensors now, and is compared again (an alerted or excluded one too). Returns
-        how many entries were refreshed. Comparisons started before are dropped."""
+        how many entries were refreshed. Comparisons started before, and repairs not yet made, are dropped."""
         n = 0
         self._pending.clear()
         now = time.monotonic()
@@ -402,6 +485,8 @@ class WeightScan:
                 e["since"] = now
                 self.not_scanned.pop(e["name"], None)
                 n += 1
+        # (an intended update: the copy kept now is of the new weights, and the old change is no longer one)
+        self._to_repair = [r for r in self._to_repair if r[1] == self.entries[r[0]]["gen"]]
         return n
 
     def _take_reference(self, e: dict, tensors: list) -> None:
@@ -409,6 +494,62 @@ class WeightScan:
         e["at"] = [_location(t) for t in tensors]
         e["ids"] = [id(t) for t in tensors]
         e["provisional"] = True
+        e["ref_step"] = getattr(self.guard, "_marked_step", None)    # (the steps after it may see a change)
+        e["gen"] += 1                            # comparisons and repairs started before are about other tensors
+        if self.repair:                          # the clean copy: the same values the reference fingerprints
+            self._keep_copy(e, tensors)
+
+    @staticmethod
+    def _nbytes(ts) -> int:
+        return sum(c.numel() * c.element_size() for c in ts or () if c is not None)
+
+    def _keep_copy(self, e: dict, tensors: list) -> None:
+        """e["clean"]: a host copy of each tensor (a copy already kept of the same shape and dtype is written over,
+        not allocated again). Turns repair off for every entry when the copies would pass the host allowance."""
+        old = e.get("clean") or []
+        reuse = [k < len(old) and old[k] is not None and isinstance(t, torch.Tensor) and t.numel() > 0 and
+                 old[k].shape == t.shape and old[k].dtype == t.dtype for k, t in enumerate(tensors)]
+        need = sum(t.numel() * t.element_size() for t, r in zip(tensors, reuse)
+                   if isinstance(t, torch.Tensor) and t.numel() and not r)
+        freed = self._nbytes(c for k, c in enumerate(old) if not (k < len(reuse) and reuse[k]))
+        if self._host_allowance is None:
+            room = _host_room()
+            if room is None:
+                self._host_allowance = 0
+                self._repair_disable("the free host memory couldn't be read (/proc/meminfo, the cgroup's limit), so "
+                                     "the host copies can't be sized safely")
+                return
+            self._host_allowance = int(HOST_SHARE * max(room, 0) / _local_gpus())
+        after = self.stats["host_copy_bytes"] - freed + need
+        if after > self._host_allowance:
+            self._repair_disable(f"the host copies would take {after / (1 << 30):.2f} GiB, more than this worker's "
+                                 f"allowance of {self._host_allowance / (1 << 30):.2f} GiB ({HOST_SHARE:g} of the free "
+                                 f"host memory, divided among {_local_gpus()} local GPUs)")
+            return
+        clean = []
+        for k, (t, r) in enumerate(zip(tensors, reuse)):
+            if not (isinstance(t, torch.Tensor) and t.numel()):
+                clean.append(None)
+            elif r:
+                old[k].copy_(t.detach())
+                clean.append(old[k])
+            else:
+                clean.append(t.detach().to("cpu", copy=True))
+        e["clean"] = clean
+        self.stats["host_copy_bytes"] = after
+
+    def _repair_disable(self, why: str) -> None:
+        self.repair, self.repair_off = False, why
+        for e in self.entries:
+            e["clean"] = None
+        self.stats["host_copy_bytes"] = 0
+        self._to_repair = []
+        log.warning("sdcguard: weight repair is off: %s; the scan still compares and alerts", why)
+
+    def _drop_copy(self, e: dict) -> None:
+        if e.get("clean"):
+            self.stats["host_copy_bytes"] -= self._nbytes(e["clean"])
+            e["clean"] = None
 
     def _shared(self, e: dict, tensors: list) -> tuple:
         """(why, the other entry) when another entry's tensor (a different tensor: one tensor two layers hold is fine)
@@ -443,6 +584,8 @@ class WeightScan:
         events = self._collect(wait)
         if self.entries and not self.paused:
             events += self._start(wait)
+        if self._to_repair:                # (after both: a change found by this read is repaired by this read)
+            self._repair_pending()
         g = self.guard
         if getattr(g, "metrics", None) is not None:
             try:
@@ -515,7 +658,7 @@ class WeightScan:
                                      "after an intended reload)")
                     continue
                 now = _fingerprints(tensors, e["device"])
-                started.setdefault(e["device"], []).append(((i, step), torch.ne(now, e["ref"]).any()))
+                started.setdefault(e["device"], []).append(((i, step, e["gen"]), torch.ne(now, e["ref"]).any()))
                 spent += e["bytes"]
         for dev, items in started.items():
             flags = torch.stack([f for _, f in items]).to(torch.int32)
@@ -526,7 +669,7 @@ class WeightScan:
             else:
                 events += self._judge(flags.cpu(), idx)
             self.stats["entries_compared"] += len(idx)
-            self.stats["bytes_compared"] += sum(self.entries[i]["bytes"] for i, _ in idx)
+            self.stats["bytes_compared"] += sum(self.entries[i]["bytes"] for i, _, _ in idx)
         return events
 
     @staticmethod
@@ -545,6 +688,7 @@ class WeightScan:
     def _exclude(self, e: dict, why: str) -> None:
         e["excluded"] = why
         self.not_scanned[e["name"]] = why
+        self._drop_copy(e)                   # (never written back: its memory isn't its own, or moved)
         if e["name"] not in self._warned:
             self._warned.add(e["name"])
             log.warning("sdcguard: the weight scan no longer compares %s: %s", e["name"], why)
@@ -576,9 +720,11 @@ class WeightScan:
     def _judge(self, flags: torch.Tensor, idx: list) -> list:
         events = []
         now = time.monotonic()
-        for f, (i, step) in zip(flags.tolist(), idx):
+        for f, (i, step, gen) in zip(flags.tolist(), idx):
             e = self.entries[i]
             if e["excluded"]:                    # left out after this comparison started (its memory is shared)
+                continue
+            if gen != e["gen"]:                  # its reference was taken again (a refresh, a repair) since it started
                 continue
             e["compared"] += 1
             e["provisional"] = False
@@ -589,8 +735,157 @@ class WeightScan:
                 continue
             e["alerted"] = True
             self.stats["changed"] += 1
-            events.append(self._alert(e, now, step))
+            ev = self._alert(e, now, step)
+            events.append(ev)
+            if self.repair and e.get("clean"):
+                self._to_repair.append((i, e["gen"], ev.detail.get("read_window_steps"),
+                                        ev.detail.get("last_clean_read_steps")))
         return events
+
+    # ----------------------------------------------------------------------------------------------- repair
+    def _repair_pending(self) -> None:
+        """Each entry found changed by this read or an earlier one (with repair on): when at most repair_max_values of
+        its values differ from the copy kept with its reference, the copy is written back in place (the same memory,
+        so CUDA graphs that read it stay valid; after the GPU has finished the work queued so far), then fingerprinted
+        and compared with its reference at once. Restored: it is compared again from then on (a change that comes back
+        alerts again). Not restored (more values changed than a fault would change, its memory isn't its own, it
+        moved, or it still doesn't match): it stays changed, and isn't tried again until a refresh. Either way a
+        record goes to the alert log and on_alert, naming the requests served between the layer's last clean
+        comparison and the repair; it isn't an alert, and the alert that found the change stands."""
+        todo, self._to_repair = self._to_repair, []
+        g = self.guard
+        for i, gen, window, clean in todo:
+            e = self.entries[i]
+            if gen != e["gen"] or not e["alerted"]:      # refreshed since, or already restored
+                continue
+            at = getattr(g, "_marked_step", None)       # the last step queued: it, and the ones before, ran first
+            counts = None
+            try:
+                with torch.inference_mode(False), torch.no_grad():
+                    ok, why, counts = self._restore(e, at)
+            except Exception as ex:  # noqa: BLE001  (a failed repair leaves the alert as it was)
+                ok, why = False, f"the restore failed: {type(ex).__name__}: {ex}"[:300]
+            if ok:
+                e["alerted"] = False
+                e["repairs"] += 1
+                e["gen"] += 1                            # (comparisons in flight saw the changed weights)
+                e["last_clean"], e["last_clean_step"] = time.monotonic(), at
+                e["compared_at_repair"] = e["compared"]
+                self.stats["repaired"] += 1
+            else:
+                self.stats["repair_failed"] += 1
+            self._repair_record(e, ok, why, at, window, clean, counts)
+
+    def _written(self, e: dict, at) -> None:
+        """Tell the guard the entry's tensors were written in place after step `at` (whether or not the write then
+        verifies), so its checks judge outputs from before it as computed with other weights."""
+        g = self.guard
+        if e["module"] is not None and hasattr(g, "_weights_restored"):
+            try:
+                g._weights_restored(e["module"], at)
+            except Exception:  # noqa: BLE001  (diagnosis is best effort)
+                pass
+
+    def _count_changed(self, pairs: list) -> tuple:
+        """(values that differ from the copy, stopped early): counted chunk by chunk on the host (CHUNK values at a
+        time, so a large entry needs no full host copy), stopping once past repair_max_values. A value is an element
+        of the tensor's raw bits (_int_view: a 32-bit word, for 8-byte elements)."""
+        changed = 0
+        for t, c in pairs:
+            tv, cv = _int_view(t), _int_view(c)
+            for a in range(0, tv.numel(), CHUNK):
+                changed += int(torch.ne(tv[a:a + CHUNK].to("cpu"), cv[a:a + CHUNK]).sum())
+                if changed > self.repair_max_values:
+                    return changed, True
+        return changed, False
+
+    def _restore(self, e: dict, at=None) -> tuple:
+        """(restored, why not, {"values_changed", "values", "at_least"}) for one changed entry."""
+        if e["excluded"]:
+            return False, f"the scan no longer compares it: {e['excluded']}", None
+        tensors = list(e["get"]())
+        clean = e.get("clean") or []
+        if [_location(t) for t in tensors] != e["at"] or len(clean) != len(tensors):
+            return False, "its tensors moved or changed since the clean copy was taken", None
+        why, _ = self._shared(e, tensors)
+        if why:
+            return False, f"it {why}", None
+        pairs = []
+        for t, c in zip(tensors, clean):
+            if c is None or not isinstance(t, torch.Tensor):
+                continue
+            if t.shape != c.shape or t.dtype != c.dtype:
+                return False, "a tensor's shape or dtype differs from its clean copy", None
+            pairs.append((t, c))
+        dev = e["device"]
+        if dev.type == "cuda":
+            torch.cuda.synchronize(dev)          # no queued kernel still reads the weights while they're compared
+        changed, stopped = self._count_changed(pairs)
+        counts = {"values_changed": changed, "values": sum(_int_view(c).numel() for _, c in pairs),
+                  "at_least": stopped}
+        if changed > self.repair_max_values:
+            return False, (f"{'at least ' if stopped else ''}{changed} of {counts['values']} values differ from the "
+                           f"copy kept with the reference, more than a fault in memory would change (repair writes "
+                           f"back at most {self.repair_max_values}): an update sdcguard wasn't told about (call "
+                           f"refresh() after one) or a stray write; the layer keeps its weights"), counts
+        try:
+            for t, c in pairs:
+                if t.is_inference():
+                    with torch.inference_mode():
+                        t.copy_(c)
+                else:
+                    with torch.inference_mode(False), torch.no_grad():     # (no_grad last: inference_mode(False)
+                        t.copy_(c)                                           # turns gradients back on)
+        finally:
+            self._written(e, at)
+        if dev.type == "cuda":
+            torch.cuda.synchronize(dev)
+        now = _fingerprints(tensors, dev)
+        if bool(torch.equal(now.cpu(), e["ref"].cpu())):
+            return True, None, counts
+        return False, ("the restored weights still don't match their reference fingerprint (the copy, or the GPU "
+                       "memory, is bad)"), counts
+
+    def _repair_record(self, e: dict, ok: bool, why: Optional[str], at: Optional[int], window, clean,
+                       counts: Optional[dict]) -> SDCEvent:
+        g = self.guard
+        ident = getattr(g, "_identity", None)
+        identity = dict(ident.get(str(e["device"]), {})) if isinstance(ident, dict) else {}
+        n = (counts or {}).get("values_changed")
+        start = window[0] if window else at
+        detail = {"where": e["name"], "kind": e["kind"],
+                  "finding": "weights_restored" if ok else "weights_restore_failed",
+                  "recheck": {"verdict": "weights_restored" if ok else "restore_failed",
+                              "why": "the copy kept with the reference was written back and the tensors match their "
+                                     "reference fingerprint again" if ok else why},
+                  "repairs": e["repairs"], "values_changed": n, "values": (counts or {}).get("values"),
+                  "values_changed_at_least": bool((counts or {}).get("at_least")),
+                  "repaired_at_step": at,
+                  # the steps that may have used the changed weights: from the alert's window to the repair
+                  "read_window_steps": [start, at] if start is not None and at is not None and start <= at else None,
+                  "last_clean_read_steps": clean,
+                  "reading": (f"restored in place ({n} changed value{'s' if n != 1 else ''} written back from the "
+                              "copy kept at load) and verified; the requests this layer served from its last clean "
+                              "comparison to the repair (potentially_exposed) may have had answers computed with the "
+                              "changed weights, and so may prefix-cache blocks written then; a change that comes back "
+                              "is alerted again" if ok else
+                              f"not restored ({why}): the layer keeps its changed weights; take the server out of "
+                              "service")}
+        ev = SDCEvent(detector="serve_weights", step=None, detail=detail, identity=identity)
+        (log.warning if ok else log.error)("sdcguard: weight repair of %s: %s", e["name"],
+                                           f"restored ({n} values) and verified" if ok else why)
+        if getattr(g, "attribute", None) is not None:
+            try:
+                g.attribute(ev)
+            except Exception:  # noqa: BLE001  (naming requests is extra; the record itself goes out)
+                g.stats["attribution_errors"] = g.stats.get("attribution_errors", 0) + 1
+        g.log.add(ev)
+        if getattr(g, "on_alert", None):
+            try:
+                g.on_alert(ev)
+            except Exception:  # noqa: BLE001
+                pass
+        return ev
 
     def _alert(self, e: dict, now: float, step: Optional[int]) -> SDCEvent:
         g = self.guard
@@ -603,15 +898,21 @@ class WeightScan:
         else:
             identity = device_identity(e["device"])
         clean = e["last_clean_step"]
-        window = None
+        window, since = None, None
         if step is not None:
-            window = [clean + 1 if clean is not None and clean < step else step, step]
+            if clean is not None:                # since the last clean comparison
+                start, since = (clean + 1 if clean < step else step), "the last clean comparison"
+            else:                                # never found clean: since the reference was taken (at load: step 0)
+                ref = e.get("ref_step")
+                start = min(ref + 1, step) if ref is not None else 0
+                since = "the reference (at load or the last refresh)" if ref is not None else "load"
+            window = [start, step]
         detail = {"where": e["name"], "finding": "weights_changed", "kind": e["kind"],
                   "weights_changed_since_load": True,
                   "recheck": {"verdict": "weights_changed",
                               "why": "the layer's tensors no longer match their reference fingerprint (taken at "
                                      "load, or at the last refresh)"},
-                  "read_window_steps": window,
+                  "read_window_steps": window, "window_since": since,
                   "last_clean_read_steps": [clean, clean] if clean is not None else None,
                   "seconds_since_last_clean_comparison": (round(now - e["last_clean"], 3)
                                                           if e["last_clean"] is not None else None),
@@ -653,6 +954,16 @@ class WeightScan:
                 "passes": self.stats["passes"],
                 "last_pass_seconds": self.stats["last_pass_seconds"],
                 "never_compared": sorted(e["name"] for e in self.entries if not e["compared"] and not e["excluded"]),
+                "repair": {"on": self.repair, "off_because": self.repair_off,
+                           "max_values": self.repair_max_values, "host_copy_bytes": self.stats["host_copy_bytes"],
+                           "host_allowance_bytes": self._host_allowance,
+                           "repaired": self.stats["repaired"], "failed": self.stats["repair_failed"],
+                           "entries_repaired": sorted(e["name"] for e in self.entries if e.get("repairs")),
+                           # restored, but no scheduled comparison has come back since the repair (its own check
+                           # right after the write-back aside)
+                           "not_compared_since_repair": sorted(
+                               e["name"] for e in self.entries if e.get("repairs") and not e["excluded"] and
+                               e["compared"] <= e.get("compared_at_repair", -1))},
                 "changed": sorted(e["name"] for e in self.entries if e["alerted"]),
                 "not_scanned": dict(self.not_scanned),
                 # the fingerprint's implementation per device and element size: the Triton kernel, or PyTorch and why

@@ -530,6 +530,33 @@ def sensitivity(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=25 * 60)
+def weight_repair(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_weight_repair_check.py: the plugin's weight repair in real `vllm serve` (vLLM 0.32,
+    Qwen2.5-1.5B-Instruct, one H100): 8 weight bit flips left in place, each alerted, written back and verified,
+    identical answers after."""
+    t0 = time.monotonic()
+    tag = "weight_repair"
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_weight_repair_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=22 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=58 * 60)
 def weight_scan(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_weight_scan_check.py: the plugin's weight scan in real `vllm serve` (vLLM 0.32,
@@ -1251,6 +1278,10 @@ ESTIMATES = {
     "sensitivity": "80 weight bit flips in a served Qwen2.5-1.5B on 1 H100, each with the plugin's verdict and a quality "
                    "check: about 20 to 30 minutes, roughly $1.60 to $2.40 (45-minute limit, at most about $3.60 at "
                    "requested resources, not a spending cap)",
+    "weight_repair": "the plugin's weight repair in real `vllm serve` on 1 H100: Qwen2.5-1.5B with the weight scan "
+                     "and repair on, 8 weight bit flips left in place, each to be alerted, written back and verified, "
+                     "and the 64 answers after identical to those before: about 10 to 15 minutes, roughly $0.80 to "
+                     "$1.20 (25-minute limit, at most about $2 at requested resources, not a spending cap)",
     "weight_scan": "the plugin's weight scan in real `vllm serve` on 1 H100: Qwen2.5-1.5B with one layer in eight "
                    "checked, without and with the scan (identical answers, the cost), then 48 weight bit flips and 12 "
                    "changes outside the linear layers each named or not within 120 s, then granite-3.1-1b-a400m with "
@@ -1496,6 +1527,11 @@ def main(phase: str = "vllm", force: bool = False, parts: str = ""):
                 failures.append(str(message))
         elif phase == "sensitivity":
             message = sensitivity.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "weight_repair":
+            message = weight_repair.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

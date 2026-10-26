@@ -179,6 +179,20 @@ class FaultInjection:
                 return {"layer": n, "row": r, "col": c, "bit": bit, "before": _num(before), "after": _num(after)}
         return {}
 
+    def sdcguard_test_weight_value(self, name: str, row_frac: float, col_frac: float) -> dict:
+        """One weight of the linear layer named `name`, at the place sdcguard_test_flip_bit flips with the same
+        fractions: {"layer", "row", "col", "value", "bits": its 16 bits as an integer} ({} when there's no such
+        layer)."""
+        import torch
+        for n, mod in self.get_model().named_modules():
+            w = getattr(mod, "weight", None)
+            if n == name and isinstance(w, torch.Tensor) and w.dim() == 2 and w.element_size() == 2:
+                r, c = int(row_frac * w.shape[0]) % w.shape[0], int(col_frac * w.shape[1]) % w.shape[1]
+                torch.cuda.synchronize()
+                return {"layer": n, "row": r, "col": c, "value": _num(float(w.data[r, c])),
+                        "bits": int(w.data.view(torch.int16)[r, c].item())}
+        return {}
+
     def sdcguard_test_mark_rows(self, name: str, marker: int, delta: float = 64.0) -> str:
         """In eager mode (--enforce-eager): from now on, add `delta` to the first 4 outputs of the linear layer named
         `name` in every row whose input token is `marker`, after its GEMM and before sdcguard's check (a wrong

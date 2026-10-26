@@ -386,3 +386,39 @@ def test_alerts_the_workers_counted_but_no_record_shows_are_missing_evidence_not
     unread = dc.plugin_coverage([METRICS.replace("sdcguard_reads_total 40", "sdcguard_reads_total 0")])
     assert unread["checked"] is False                                            # checks never read back: no source
     assert dc.decide(quality=_quality(), alerts=[], plugin=unread)["decision"] != "ACCEPT"
+
+
+def test_a_weight_repair_record_is_not_an_alert_and_the_change_still_counts():
+    """With SDCGUARD_WEIGHT_REPAIR=1 the alert log also holds the repair's record: it isn't an alert (the workers
+    don't count it), and the change its alert found still makes the weights CHANGED."""
+    bare = METRICS.replace("sdcguard_all_alerts_total 0\n", "")
+    cov = dc.plugin_coverage([bare + "sdcguard_all_alerts_total 1\n"])
+    found = {"detector": "serve_weights", "step": None, "detail": {
+        "where": "model.layers.3.mlp.down_proj", "finding": "weights_changed", "weights_changed_since_load": True,
+        "recheck": {"verdict": "weights_changed"}}}
+    fixed = {"detector": "serve_weights", "step": None, "detail": {
+        "where": "model.layers.3.mlp.down_proj", "finding": "weights_restored", "recheck": {"verdict": "weights_restored"}}}
+    r = dc.decide(quality=_quality(), alerts=[found, fixed], plugin=cov)
+    a = r["arithmetic"]
+    assert a["sources"]["plugin_alerts"]["repair_records"] == 1 and a["sources"]["plugin_alerts"]["alerts"] == 1
+    assert not any("counted" in u for u in a["unresolved"]) and r["decision"] != "ACCEPT"
+
+
+def test_a_weight_repair_record_or_counter_means_the_weights_changed():
+    """A repaired weight changed while serving: requests before the repair may have used it, so the weights are
+    CHANGED (and the candidate rejected), never VERIFIED, even when the scan's alert record is missing and the scan's
+    changed gauge is back to 0 after the repair."""
+    from sdcguard import decide as dc
+    rec = {"detector": "serve_weights", "detail": {"where": "model.layers.3.mlp.down_proj",
+                                                   "finding": "weights_restored"}}
+    a = dc.arithmetic([rec], plugin=None)
+    w = dc.weights_section(a, {"weight_scan": {"complete": True, "entries": 10, "oldest_age_seconds": 1.0}})
+    assert w["verdict"] == "CHANGED" and w["layers"] == ["model.layers.3.mlp.down_proj"]
+    w = dc.weights_section({"weights_changed": [], "weight_repairs": []},
+                           {"weight_scan": {"complete": True, "entries": 10, "changed": 0, "repairs": 1,
+                                            "oldest_age_seconds": 1.0}})
+    assert w["verdict"] == "CHANGED" and "1 weight repairs" in w["why"]
+    metrics = ("sdcguard_weight_scan_layers 4\nsdcguard_weight_scan_never_compared 0\nsdcguard_weight_scan_changed 0\n"
+               "sdcguard_weight_scan_oldest_age_seconds 2\nsdcguard_weight_repairs_total{result=\"restored\"} 1\n"
+               "sdcguard_weight_repairs_total{result=\"failed\"} 0\n")
+    assert dc.plugin_coverage([metrics])["weight_scan"]["repairs"] == 1

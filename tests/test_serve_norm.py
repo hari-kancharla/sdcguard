@@ -350,3 +350,31 @@ def test_an_alert_names_one_real_place_when_scores_tie():
     d = ev.detail
     assert d["place"] == sn.PLACE_KEPT and (d["row"], d["col"]) == (2, 900) == (d["captured"]["row"], 900)
     assert d["output"] != d["output"] and d["recheck"]["verdict"] == "output_wrong"     # the NaN itself
+
+
+def test_an_output_from_before_a_weight_repair_is_judged_unknown():
+    """A norm weight changed, an output computed with it, then written back by the weight scan's repair after that
+    step: the recheck with the weight as it is now would call the output wrong; the check knows of the repair
+    (weights_restored) and says unknown. An output after the repair is judged as usual."""
+    m = Norm(512, rounding="kernel")
+    nc = _checks([m])
+    x = _rows(4, 512, torch.bfloat16)
+    orig = m.weight.detach().clone()
+    nc.mark_step(7)
+    with torch.no_grad():
+        m.weight.data.view(torch.int16)[77] ^= (1 << 14)
+    m(x)                                                  # computed with the changed weight
+    with torch.no_grad():
+        m.weight.data.copy_(orig)                         # the repair writes it back after step 7
+    nc.weights_restored(m, 7)
+    (ev,) = nc.poll(wait=True)
+    d = ev.detail
+    assert d["captured"]["step"] == 7 and d["weights_changed_since_load"] is False
+    assert d["recheck"]["verdict"] == "unknown" and "weight repair" in d["recheck"]["why"]
+    nc.mark_step(8)
+    y = m.compute(x)
+    y[1, 3] = -y[1, 3]
+    sn.check_call(m._sdcguard_norm, x, None, y)
+    (ev2,) = nc.poll(wait=True)
+    assert ev2.detail["captured"]["step"] == 8 and ev2.detail["recheck"]["verdict"] == "output_wrong"
+    assert nc.refresh() == 1 and "restored" not in nc.layers[0]

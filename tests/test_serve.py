@@ -573,4 +573,40 @@ def test_a_webhook_that_cant_start_a_thread_tries_again_next_time(monkeypatch):
     started = []
     monkeypatch.setattr(Webhook, "_post", lambda self, body, key=None: started.append(key))
     w(Event())
-    assert started == [("layer", "gpu-1")] or ("layer", "gpu-1") in w._sending
+    assert started == [("layer", "gpu-1", False)] or ("layer", "gpu-1", False) in w._sending
+
+
+def test_a_weight_repairs_record_isnt_silenced_by_the_alert_before_it(monkeypatch):
+    """The alert on a layer starts that layer's quiet interval; the repair's record seconds later is still sent, and
+    each says in words what happened (not the checksum alerts' wording)."""
+    from sdcguard.alerts import Webhook, describe
+    from sdcguard.events import SDCEvent
+    ident = {"gpu_uuid": "gpu-1", "gpu_name": "NVIDIA H100"}
+    alert = SDCEvent(detector="serve_weights", step=None, identity=ident,
+                     detail={"where": "model.layers.3.mlp.down_proj", "finding": "weights_changed",
+                             "weights_changed_since_load": True})
+    rec = SDCEvent(detector="serve_weights", step=None, identity=ident,
+                   detail={"where": "model.layers.3.mlp.down_proj", "finding": "weights_restored",
+                           "values_changed": 1})
+    sent = []
+    monkeypatch.setattr(Webhook, "_post", lambda self, body, key=None: (sent.append(key), self._last.__setitem__(
+        key, 1e18), self._sending.discard(key)))
+    w = Webhook("https://example.invalid", fmt="slack")
+    w(alert)
+    w(alert)                                      # the same layer again: quiet
+    w(rec)
+    for t in w._threads:
+        t.join(5)
+    assert sorted(sent, key=str) == sorted([("model.layers.3.mlp.down_proj", "gpu-1", False),
+                                            ("model.layers.3.mlp.down_proj", "gpu-1", "weights_restored")], key=str)
+    failed = SDCEvent(detector="serve_weights", step=None, identity=ident,
+                      detail={"where": "model.layers.3.mlp.down_proj", "finding": "weights_restore_failed",
+                              "recheck": {"why": "the copy is bad"}})
+    w(failed)                                     # after a restore: a failed one isn't silenced by it
+    for t in w._threads:
+        t.join(5)
+    assert ("model.layers.3.mlp.down_proj", "gpu-1", "weights_restore_failed") in sent
+    a, r = describe(alert), describe(rec)
+    assert a.startswith("sdcguard ALERT") and "no longer match their fingerprint at load" in a
+    assert "inputs can't produce" not in a
+    assert r.startswith("sdcguard REPAIR") and "written back" in r and "1 values" in r

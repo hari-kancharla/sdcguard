@@ -824,8 +824,17 @@ class MoEChecks:
             for lay in self.layers:
                 mod = lay["module"]
                 lay["sums"] = (mod.w13_weight.detach().float().sum(1), mod.w2_weight.detach().float().sum(2))
+                lay.pop("restored", None)
                 n += 1
         return n
+
+    def weights_restored(self, module, step) -> None:
+        """The weight scan's repair wrote these experts' load-time weights back after `step`: an output computed at or
+        before it may have used the changed weights, which the recheck (with the weights as they are now) can't
+        see, so it is judged unknown (serve_weights.before_repair)."""
+        for lay in self.layers:
+            if lay["module"] is module:
+                lay["restored"] = {"step": step}
 
     def detach(self) -> None:
         try:
@@ -1000,6 +1009,10 @@ class MoEChecks:
             rc = {**rc, "verdict": "weights_changed",
                   "why": "the kept row agrees with a recompute from the experts' current weights, which differ from "
                          "their weights at load: the weights changed in memory (refresh() after an intended update)"}
+        if rc is not None and captured is not None:
+            from .serve_weights import before_repair, repair_why
+            if before_repair(lay.get("restored"), captured["step"]):
+                rc = {**rc, "verdict": "unknown", "why": repair_why(lay["restored"], captured["step"])}
         ident = g._identity if g is not None and hasattr(g, "_identity") else {}
         key = str(dev)
         if key not in ident:

@@ -80,6 +80,8 @@ import sys
 import time
 from typing import Optional
 
+from .alerts import is_repair_record
+
 SCHEMA = "sdcguard.decision/1"
 DEFAULT_POLICY = {"arithmetic": {"min_weights_checked": 0.5},
                   "quality": {"accept_warn": False, "max_mean_kl": None, "min_top1": None},
@@ -146,6 +148,7 @@ def plugin_coverage(metrics: list) -> dict:
                                                     v.get("sdcguard_weight_scan_passes")),
                         "weight_scan_never_compared": v.get("sdcguard_weight_scan_never_compared"),
                         "weight_scan_changed": v.get("sdcguard_weight_scan_changed"),
+                        "weight_repairs": v.get("sdcguard_weight_repairs_total", v.get("sdcguard_weight_repairs")),
                         "weight_scan_oldest_age_seconds": _finite(v.get("sdcguard_weight_scan_oldest_age_seconds")),
                         "weight_scan_left_out": v.get("sdcguard_weight_scan_left_out"),
                         "weight_scan_target_age_seconds": _finite(v.get("sdcguard_weight_scan_target_age_seconds")),
@@ -189,6 +192,7 @@ def _scan_coverage(workers: list) -> dict:
             "oldest_within_target": (not late) if targets else None, "past_target": late,
             "entries": sum(w.get("weight_scan_layers") or 0 for w in workers),
             "changed": sum(w.get("weight_scan_changed") or 0 for w in workers),
+            "repairs": sum(w.get("weight_repairs") or 0 for w in workers),
             "left_out": sum(w.get("weight_scan_left_out") or 0 for w in workers),
             "oldest_age_seconds": max(ages) if ages and None not in ages else None}
 
@@ -272,7 +276,7 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
     """plugin: plugin_coverage() of the candidate's run. Alerts count as a source of 'no fault' only when the
     coverage shows checks ran on every worker, the gate's cases only when one was judged, the kernel test only when
     one call ran and was judged; a confirmed wrong output is a fault whatever the rest shows."""
-    faults, unsure, notes, sources, weights, empty = [], [], [], {}, [], []
+    faults, unsure, notes, sources, weights, empty, repairs = [], [], [], {}, [], [], []
     if alerts is not None:
         n = {"alerts": len(alerts), "confirmed_wrong": 0, "weights_changed": 0, "cleared": 0, "unconfirmed": 0,
              "unreadable": 0, "coverage": plugin}
@@ -284,6 +288,16 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
                 continue
             if ev.get("detector") == "serve_fp8":   # quantization findings: their own section (quantization)
                 n["alerts"] -= 1
+                continue
+            if is_repair_record(ev.get("detail")):
+                # a weight repair's record (SDCGUARD_WEIGHT_REPAIR=1): not an alert, and not counted as one; the
+                # alert that found the change is its own record
+                n["alerts"] -= 1
+                n["repair_records"] = n.get("repair_records", 0) + 1
+                records -= 1
+                # the weights changed while serving, whether or not the write-back worked (its alert may be missing)
+                repairs.append({"where": (ev.get("detail") or {}).get("where") or "?",
+                                "finding": (ev.get("detail") or {}).get("finding")})
                 continue
             d = ev.get("detail") or {}
             rv = (d.get("recheck") or {}).get("verdict")
@@ -330,7 +344,7 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
                    f"it checks {plugin.get('min_weights_checked') or 0:.0%} of the linear-layer weights on some "
                    f"worker, under the policy's {min_weights_checked:.0%}")
             if not n["confirmed_wrong"]:
-                unsure.append(f"the plugin's {len(alerts)} alerts can't stand for no fault: {why}")
+                unsure.append(f"the plugin's {n['alerts']} alerts can't stand for no fault: {why}")
             n["counts_as_source"] = False
         else:
             n["counts_as_source"] = True
@@ -358,13 +372,15 @@ def arithmetic(alerts: Optional[list] = None, gate: Optional[dict] = None, kerne
         v = "NO FAULT OBSERVED"
         notes += empty
     return {"verdict": v, "faults": faults, "unresolved": unsure, "notes": notes, "sources": sources,
-            "weights_changed": weights}
+            "weights_changed": weights, "weight_repairs": repairs}
 
 
 def weights_section(a: dict, plugin: Optional[dict], alerts_given: bool = True) -> dict:
     """Weight integrity: do the model's weights still match what was loaded?
       CHANGED        an alert showed a layer's weights changed since load (a corrupted or overwritten weight,
-                     whatever the arithmetic did with it), or the weight scan's metrics count a mismatch
+                     whatever the arithmetic did with it), or the weight scan's metrics count a mismatch, or a
+                     weight repair's record or counter shows one was written back (SDCGUARD_WEIGHT_REPAIR=1: the
+                     requests served before it may have used the changed weights)
       VERIFIED       fingerprints verified: the scheduled weight scan (SDCGUARD_WEIGHT_SCAN=1) ran on every worker,
                      compared every entry it holds with its fingerprint at load and found no mismatch; with how long
                      before the metrics were read the least recently verified entry was found clean, and how many
@@ -387,10 +403,22 @@ def weights_section(a: dict, plugin: Optional[dict], alerts_given: bool = True) 
                + (f", first at step {min(first)}" if first else "")
                + "): a corrupted or overwritten weight, not wrong arithmetic")
         return {"verdict": "CHANGED", "layers": names, "alerts": len(changed), "why": why}
+    repairs = a.get("weight_repairs") or []
+    if repairs:
+        names = sorted({r["where"] for r in repairs})
+        return {"verdict": "CHANGED", "layers": names, "alerts": 0,
+                "why": f"weight repair records for {', '.join(names[:3])}"
+                       + (f" and {len(names) - 3} more" if len(names) > 3 else "")
+                       + " show weights that changed while serving and were written back (or not): requests "
+                         "served before the repair may have used the changed weights"}
     if scan.get("changed"):
         return {"verdict": "CHANGED", "layers": [], "alerts": 0,
                 "why": f"the weight scan's metrics count {scan['changed']:g} entries whose tensors no longer match "
                        "their fingerprint at load (their alerts aren't in the alerts given)"}
+    if scan.get("repairs"):
+        return {"verdict": "CHANGED", "layers": [], "alerts": 0,
+                "why": f"the weight scan's metrics count {scan['repairs']:g} weight repairs (entries found changed "
+                       "while serving and written back, or not); their records aren't in the alerts given"}
     if plugin is None:
         return {"verdict": "UNMEASURED", "why": "no plugin coverage was given"}
     if not alerts_given:

@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 
 from sdcguard.serve import ServeGuard
+from sdcguard import serve_weights as sw
 from sdcguard.serve_weights import BLOCK, fingerprint
 
 
@@ -474,3 +475,298 @@ def test_a_verification_age_target_sets_the_bytes_a_read_compares(monkeypatch, c
     s3.poll(wait=True)
     assert s3.stats["budget_bytes_now"] == 1024 and s3.stats["target_met"] is None
     assert s3.coverage()["oldest_within_target"] is None
+
+
+def _repairing(model, budget_mb=64.0):
+    g = ServeGuard().attach(model)
+    s = g.weight_scan(budget_mb=budget_mb, repair=True)
+    return g, s
+
+
+def test_repair_writes_a_changed_layer_back_and_verifies_it():
+    """With repair on, a weight bit changed after load is alerted, then written back in place from the copy kept at
+    load at the end of the same read and compared again: the layer holds its load-time values (the same tensor), the
+    alert stands, a record says it was restored (not an alert: not counted as one), and a change that comes back is
+    alerted and restored again."""
+    from prometheus_client import CollectorRegistry
+    from sdcguard.alerts import Metrics
+    m = _model()
+    g, s = _repairing(m)
+    reg = CollectorRegistry()
+    g.metrics = Metrics(registry=reg)
+    clean = m[1].weight.detach().clone()
+    ptr = m[1].weight.data_ptr()
+    assert s.stats["host_copy_bytes"] == sum(p.numel() * p.element_size() for p in m.parameters())
+    assert g.poll(wait=True) == []
+    _flip(m[1].weight, 17, 9)
+    alerts = [e for e in g.poll(wait=True) if e.detector == "serve_weights"]
+    assert [a.detail["finding"] for a in alerts] == ["weights_changed"]   # (the repair is a record, not an alert)
+    assert torch.equal(m[1].weight, clean) and m[1].weight.data_ptr() == ptr
+    rec = g.log.events[-1]
+    assert rec.detector == "serve_weights" and rec.detail["finding"] == "weights_restored"
+    assert rec.detail["recheck"]["verdict"] == "weights_restored" and rec.detail["repairs"] == 1
+    assert rec.detail["values_changed"] == 1 and rec.detail["values"] == m[1].weight.numel() + m[1].bias.numel()
+    assert s.coverage()["repair"]["not_compared_since_repair"] == [g.layers[1]["name"]]
+    assert g.poll(wait=True) == []
+    cov = g.coverage_report()["weights"]
+    assert cov["changed"] == [] and cov["repair"]["repaired"] == 1 and cov["repair"]["entries_repaired"] == \
+        [g.layers[1]["name"]]
+    assert reg.get_sample_value("sdcguard_all_alerts_total") == 1
+    assert reg.get_sample_value("sdcguard_confirmed_alerts_total") == 1
+    assert reg.get_sample_value("sdcguard_weight_repairs_total", {"result": "restored"}) == 1
+    assert cov["repair"]["not_compared_since_repair"] == []           # (the read after the repair compared it)
+    for _ in range(3):
+        assert g.poll(wait=True) == []                              # compared again from then on: clean
+    _flip(m[1].weight, 3, 14)                                       # it comes back
+    assert [e.detail["finding"] for e in g.poll(wait=True)] == ["weights_changed"]
+    g.poll(wait=True)
+    assert torch.equal(m[1].weight, clean) and s.stats["repaired"] == 2
+    assert reg.get_sample_value("sdcguard_weight_repairs_total", {"result": "restored"}) == 2
+
+
+def test_a_repair_that_cant_restore_the_reference_leaves_the_layer_changed():
+    """A clean copy that is itself wrong restores something that still doesn't match the reference: the layer stays
+    changed and a record says the repair failed."""
+    m = _model()
+    g, s = _repairing(m)
+    g.poll(wait=True)
+    e = next(x for x in s.entries if x["name"] == g.layers[0]["name"])
+    _flip(e["clean"][0], 5, 3)                                      # the copy kept at load is bad
+    _flip(m[0].weight, 11, 2)
+    g.poll(wait=True)
+    g.poll(wait=True)
+    rec = g.log.events[-1]
+    assert rec.detail["finding"] == "weights_restore_failed" and rec.detail["recheck"]["verdict"] == "restore_failed"
+    assert g.coverage_report()["weights"]["changed"] == [g.layers[0]["name"]] and s.stats["repair_failed"] == 1
+    assert [x for x in g.poll(wait=True) if x.detector == "serve_weights"] == []   # still alerted once only
+
+
+def test_without_repair_no_copy_is_kept_and_nothing_is_written_back():
+    m = _model()
+    g, s = _scan(m)
+    assert s.stats["host_copy_bytes"] == 0 and all("clean" not in e for e in s.entries)
+    g.poll(wait=True)
+    _flip(m[2].weight, 0, 8)
+    g.poll(wait=True)
+    g.poll(wait=True)
+    assert g.coverage_report()["weights"]["changed"] == [g.layers[2]["name"]] and s.stats["repaired"] == 0
+
+
+def test_repair_writes_into_inference_mode_weights_too():
+    """vLLM may build its weights under inference mode: the write-back happens in it for such tensors."""
+    with torch.inference_mode():
+        m = _model()
+    assert m[0].weight.is_inference()
+    clean = m[0].weight.clone()
+    g, s = _repairing(m)
+    g.poll(wait=True)
+    with torch.inference_mode():
+        m[0].weight.view(-1).view(torch.int16)[4] ^= 1 << 10
+    g.poll(wait=True)
+    g.poll(wait=True)
+    assert torch.equal(m[0].weight, clean) and s.stats["repaired"] == 1
+
+
+def test_repair_refuses_a_change_of_more_values_than_a_fault_makes():
+    """An update made without refresh() changes nearly every value: writing the old weights over it would be a silent
+    error of the repair's own making. It is refused (the layer keeps the new values), the record says how many
+    values changed, the alert stands, and it isn't tried again at later reads."""
+    m = _model()
+    g, s = _repairing(m)
+    g.poll(wait=True)
+    with torch.no_grad():
+        m[1].weight.mul_(1.5)
+    updated = m[1].weight.detach().clone()
+    found = [e for e in g.poll(wait=True) if e.detector == "serve_weights"]
+    assert [e.detail["finding"] for e in found] == ["weights_changed"]
+    rec = g.log.events[-1]
+    assert rec.detail["finding"] == "weights_restore_failed" and rec.detail["values_changed"] > sw.REPAIR_MAX_VALUES
+    assert rec.detail["values_changed_at_least"] is True
+    assert "at least 6144 of 6208" in rec.detail["recheck"]["why"]         # (counting stops past the limit)
+    assert "more than a fault in memory would change" in rec.detail["recheck"]["why"]
+    assert "refresh()" in rec.detail["recheck"]["why"] and "take the server out of service" in rec.detail["reading"]
+    assert torch.equal(m[1].weight, updated) and s.stats["repair_failed"] == 1
+    n = len(g.log.events)
+    for _ in range(3):
+        g.poll(wait=True)
+    assert len(g.log.events) == n and s.stats["repair_failed"] == 1
+    assert g.coverage_report()["weights"]["changed"] == [g.layers[1]["name"]]
+    s2 = sw.WeightScan(g, repair=True, repair_max_values=0)         # a limit of 0: nothing is written back
+    s2.poll(wait=True)                                              # (takes in the guard's layers as they are now)
+    _flip(m[0].weight, 3, 4)
+    flipped = m[0].weight.detach().clone()
+    s2.poll(wait=True)
+    assert s2.stats["repaired"] == 0 and s2.stats["repair_failed"] == 1 and torch.equal(m[0].weight, flipped)
+
+
+def test_the_repair_record_names_the_steps_and_requests_that_used_the_changed_weights():
+    """The record covers the steps from the alert's window (after the last clean comparison) to the repair, asks the
+    guard's attribution for the requests in them, and the next clean comparison starts after the repair."""
+    m = _model()
+    g, s = _repairing(m)
+    named = []
+    g.attribute = lambda ev: named.append(ev.detail.get("finding"))
+    g.mark_step(1)
+    g.poll(wait=True)
+    _flip(m[2].weight, 1, 13)
+    for step in (2, 3):
+        g.mark_step(step)
+    g.poll(wait=True)
+    rec = g.log.events[-1]
+    assert rec.detail["finding"] == "weights_restored" and rec.detail["repaired_at_step"] == 3
+    assert rec.detail["read_window_steps"] == [2, 3] and rec.detail["last_clean_read_steps"] == [1, 1]
+    assert named == ["weights_changed", "weights_restored"]
+    e = next(x for x in s.entries if x["name"] == g.layers[2]["name"])
+    assert e["last_clean_step"] == 3
+
+
+def test_a_comparison_in_flight_before_a_repair_doesnt_alert_again_after_it(monkeypatch):
+    """Two comparisons of a changed entry in flight: the first alerts and the entry is restored; the second, which
+    saw the changed weights before the repair, comes back afterwards and is dropped, not alerted."""
+    from sdcguard.serve_weights import WeightScan
+
+    class Ev:
+        def __init__(self):
+            self.done = False
+
+        def query(self):
+            return self.done
+
+        def synchronize(self):
+            self.done = True
+    made = []
+
+    def copy(flags, dev):
+        made.append(Ev())
+        return flags.clone(), made[-1]
+    monkeypatch.setattr(WeightScan, "_async", staticmethod(lambda dev: True))
+    monkeypatch.setattr(WeightScan, "_copy", staticmethod(copy))
+    m = _model()
+    g, s = _repairing(m)
+    clean = m[0].weight.detach().clone()
+    _flip(m[0].weight, 5, 12)
+    g.poll()                                     # comparison 1 started
+    g.poll()                                     # comparison 2 started, 1 not back
+    assert len(made) == 2
+    made[0].done = True
+    found = [e for e in g.poll() if e.detector == "serve_weights"]
+    assert [e.detail["finding"] for e in found] == ["weights_changed"] and torch.equal(m[0].weight, clean)
+    for ev in made:
+        ev.done = True
+    for _ in range(3):
+        assert not [e for e in g.poll() if e.detector == "serve_weights"]
+    assert s.stats["changed"] == 1 and s.stats["repaired"] == 1
+
+
+def test_a_refresh_from_the_alert_handler_cancels_the_repair():
+    """An operator whose on_alert refreshes (the change was an update they meant): nothing is written back."""
+    m = _model()
+    g, s = _repairing(m)
+    g.poll(wait=True)
+    g.on_alert = lambda ev: s.refresh(name=ev.detail["where"]) if ev.detail.get("finding") == "weights_changed" \
+        else None
+    _flip(m[1].weight, 2, 3)
+    changed = m[1].weight.detach().clone()
+    g.poll(wait=True)
+    assert torch.equal(m[1].weight, changed) and s.stats["repaired"] == 0 and s.stats["repair_failed"] == 0
+    assert not [e for e in g.log.events if e.detail.get("finding") in ("weights_restored", "weights_restore_failed")]
+    assert not [e for e in g.poll(wait=True) if e.detector == "serve_weights"]       # the new values are the reference
+
+
+def test_repair_turns_itself_off_when_the_copies_dont_fit_in_host_memory(monkeypatch, caplog):
+    import logging
+    monkeypatch.setattr(sw, "_host_room", lambda: 4000)
+    monkeypatch.setattr(sw, "_local_gpus", lambda: 2)
+    m = _model()
+    with caplog.at_level(logging.WARNING, logger="sdcguard"):
+        g, s = _repairing(m)
+    assert s.repair is False and "allowance of" in s.repair_off and s.stats["host_copy_bytes"] == 0
+    assert all(not e.get("clean") for e in s.entries)
+    assert sum("weight repair is off" in r.getMessage() for r in caplog.records) == 1
+    cov = s.coverage()["repair"]
+    assert cov["on"] is False and cov["off_because"] == s.repair_off and cov["host_allowance_bytes"] == 1000
+    g.poll(wait=True)
+    _flip(m[0].weight, 0, 9)
+    assert [e.detail["finding"] for e in g.poll(wait=True) if e.detector == "serve_weights"] == ["weights_changed"]
+    assert s.stats["repaired"] == 0 and not [e for e in g.log.events if e.detail.get("finding") == "weights_restored"]
+
+
+def test_a_refresh_writes_into_the_copies_it_already_keeps_and_an_excluded_entry_lets_its_copy_go():
+    m = _model()
+    g, s = _repairing(m)
+    e = next(x for x in s.entries if x["name"] == g.layers[0]["name"])
+    before = [id(c) for c in e["clean"]]
+    total = s.stats["host_copy_bytes"]
+    with torch.no_grad():
+        m[0].weight.add_(1.0)
+    s.refresh(name=e["name"])
+    assert [id(c) for c in e["clean"]] == before and torch.equal(e["clean"][0], m[0].weight.detach())
+    assert s.stats["host_copy_bytes"] == total
+    s._exclude(e, "a test")
+    assert e["clean"] is None and s.stats["host_copy_bytes"] == total - sum(
+        p.numel() * p.element_size() for p in m[0].parameters())
+    e["alerted"] = True
+    assert s._restore(e)[0] is False and "no longer compares" in s._restore(e)[1]
+
+
+def test_with_no_clean_comparison_yet_the_window_starts_at_the_reference():
+    """A change found at an entry's first comparison may have happened at any step since its reference was taken:
+    since load (step 0 on) when no step was marked then, or since the step of the last refresh."""
+    m = _model()
+    g, s = _repairing(m)
+    for step in range(1, 6):
+        g.mark_step(step)                              # steps run, no read yet
+    _flip(m[1].weight, 9, 12)
+    g.mark_step(6)
+    g.poll(wait=True)
+    (alert,) = [e for e in g.log.events if e.detail.get("finding") == "weights_changed"]
+    assert alert.detail["read_window_steps"] == [0, 6] and alert.detail["window_since"] == "load"
+    rec = g.log.events[-1]
+    assert rec.detail["finding"] == "weights_restored" and rec.detail["read_window_steps"] == [0, 6]
+    s.refresh(name=g.layers[2]["name"])                # a refresh after step 6, then a change in that entry
+    g.mark_step(7)
+    g.mark_step(8)
+    _flip(m[2].weight, 3, 12)
+    g.poll(wait=True)
+    alert = [e for e in g.log.events if e.detail.get("finding") == "weights_changed"][-1]
+    assert alert.detail["where"] == g.layers[2]["name"] and alert.detail["read_window_steps"] == [7, 8]
+
+
+def test_without_a_reading_of_free_host_memory_repair_stays_off(monkeypatch):
+    monkeypatch.setattr(sw, "_host_room", lambda: None)
+    m = _model()
+    g, s = _repairing(m)
+    assert s.repair is False and "couldn't be read" in s.repair_off and s.stats["host_copy_bytes"] == 0
+    monkeypatch.setattr(sw, "_host_room", lambda: -5000)             # (a cgroup just over its limit)
+    s2 = sw.WeightScan(g, repair=True)
+    s2.add("x", lambda: (m[0].weight,), "checked", m[0])
+    assert s2.repair is False and s2._host_allowance == 0
+
+
+def test_a_restore_that_fails_after_writing_still_tells_the_guard(monkeypatch):
+    """The write-back happened, then the check of it raised: the guard's checks must still know the weights were
+    written after that step (outputs from before it can't be judged with them), and the record says it failed."""
+    m = _model()
+    g, s = _repairing(m)
+    g.mark_step(1)
+    g.poll(wait=True)
+    counted = []
+    real_count = sw.WeightScan._count_changed
+
+    def count(self, pairs):
+        counted.append(1)
+        return real_count(self, pairs)
+    real_fp = sw._fingerprints
+
+    def fp(tensors, dev):
+        if counted:                                    # the check after the write-back
+            raise RuntimeError("the fingerprint failed")
+        return real_fp(tensors, dev)
+    monkeypatch.setattr(sw.WeightScan, "_count_changed", count)
+    monkeypatch.setattr(sw, "_fingerprints", fp)
+    _flip(m[0].weight, 4, 13)
+    g.mark_step(2)
+    g.poll(wait=True)
+    rec = g.log.events[-1]
+    assert rec.detail["finding"] == "weights_restore_failed" and "the fingerprint failed" in rec.detail["recheck"]["why"]
+    assert g.layers[0]["restored"]["step"] == 2 and s.stats["repair_failed"] == 1

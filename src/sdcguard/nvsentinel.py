@@ -44,6 +44,8 @@ import threading
 import time
 from typing import Iterable, Optional
 
+from .alerts import is_repair_record
+
 SOCKET = "/var/run/nvsentinel.sock"
 TOKEN = "/var/run/secrets/nvsentinel/platform-connector/token"
 METHOD = "/datamodels.PlatformConnector/HealthEventOccurredV1"
@@ -214,6 +216,8 @@ def from_alerts(events: Iterable[dict], *, node: Optional[str] = None, host: Opt
     groups: dict = {}
     skipped = []
     for e in events:
+        if is_repair_record(e.get("detail")):    # (not an alert: the alert that found the change is sent)
+            continue
         ident = e.get("identity") or {}
         det = str(e.get("detector") or "checksum")
         if not ident.get("gpu_uuid"):
@@ -239,7 +243,9 @@ def from_alerts(events: Iterable[dict], *, node: Optional[str] = None, host: Opt
         what = {"checksum": "a training matmul failed its checksum", "serve_checksum": "a serving matmul failed "
                 "its checksum", "recompute": "a recomputed activation differed from the original",
                 "replica": "this GPU's weights drifted from the other replicas'",
-                "canary": "this GPU's canary output differed from the other ranks'"}.get(det, f"{det} alert")
+                "canary": "this GPU's canary output differed from the other ranks'",
+                "serve_weights": "a served layer's weights no longer match their fingerprint at load"}.get(
+                    det, f"{det} alert")
         meta = {"sdcguard_version": __version__, "source": "in-job alert", "detector": det, "alerts": g["n"],
                 "first_alert": _iso(g["first"]), "last_alert": _iso(g["last"]), "max_z": g["max_z"],
                 "where": g["where"], "gpu_name": ident.get("gpu_name"),

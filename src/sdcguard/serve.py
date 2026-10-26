@@ -972,18 +972,33 @@ class ServeGuard:
         return self.attn
 
     def weight_scan(self, budget_mb: Optional[float] = None, target_age: Optional[float] = None,
-                    max_mb: Optional[float] = None):
+                    max_mb: Optional[float] = None, repair: bool = False, repair_max_values: Optional[int] = None):
         """Scheduled weight integrity (serve_weights.WeightScan), made at the first call: at each poll a few
         registered layers' weights are fingerprinted and compared with their fingerprint at registration, in turn,
         so a changed weight bit is named within a pass over the model. Layers registered later are taken in at the
         next poll; scan_weights_of() adds layers the arithmetic checks don't take. target_age (seconds): compare
-        enough each read that every weight is verified about that often (up to max_mb a read)."""
+        enough each read that every weight is verified about that often (up to max_mb a read). repair: keep a host
+        copy of the weights and write a changed entry back from it when at most repair_max_values of its values
+        changed (default serve_weights.REPAIR_MAX_VALUES), then verify it again (WeightScan.repair)."""
         if self.wscan is None:
-            from .serve_weights import DEFAULT_BUDGET_MB, DEFAULT_MAX_MB, WeightScan
+            from .serve_weights import DEFAULT_BUDGET_MB, DEFAULT_MAX_MB, REPAIR_MAX_VALUES, WeightScan
             self.wscan = WeightScan(self, DEFAULT_BUDGET_MB if budget_mb is None else budget_mb, target_age=target_age,
-                                    max_mb=DEFAULT_MAX_MB if max_mb is None else max_mb)
+                                    max_mb=DEFAULT_MAX_MB if max_mb is None else max_mb, repair=repair,
+                                    repair_max_values=REPAIR_MAX_VALUES if repair_max_values is None else
+                                    repair_max_values)
             self.wscan.sync()
         return self.wscan
+
+    def _weights_restored(self, module: torch.nn.Module, step: Optional[int]) -> None:
+        """The weight scan's repair wrote this module's load-time weights back in place after the work queued up to
+        `step` (the last marked step): that write isn't an unexplained one, but an output computed at or before
+        `step` may still have used the changed weights (see poll's alerts)."""
+        for lay in self.layers:
+            if lay["module"] is module:
+                lay["restored"] = {"step": step, "writes": _writes(module, lay.get("source"))}
+        for part in (self.norms, self.moe):         # (checks whose recheck reads the layer's weights as they are now)
+            if part is not None and hasattr(part, "weights_restored"):
+                part.weights_restored(module, step)
 
     def scan_weights_of(self, module: torch.nn.Module, name: str, tensors=None) -> Optional[int]:
         """With weight_scan() on, also scan a layer the arithmetic checks don't take (its weight and bias, or
@@ -1220,7 +1235,8 @@ class ServeGuard:
         bias = b.detach()[start:start + width].to("cpu") if cap["with_bias"] and isinstance(b, torch.Tensor) else None
         return A, B, C, bias, start, width
 
-    def _recheck(self, slot: int, cap: dict, changed, unreadable: Optional[str], rewritten: bool = False) -> dict:
+    def _recheck(self, slot: int, cap: dict, changed, unreadable: Optional[str], rewritten: bool = False,
+                 restored: Optional[dict] = None) -> dict:
         """The captured row and block judged again on the CPU from the numbers that alarmed and the layer's weights
         as they are when the alert is read (the capture keeps x and y, not the weights), by screen.cpu_recheck (the
         same test evidence files get: exact_block's rounding envelope, then the check itself with the same checksums
@@ -1261,6 +1277,9 @@ class ServeGuard:
         if changed:
             out.update(verdict="weights_changed", why="the layer's weights changed since load, so a recheck with "
                        "today's weights can't say whether this output was right when it was computed")
+        elif rewritten and restored is not None:
+            from .serve_weights import repair_why
+            out.update(verdict="unknown", why=repair_why(restored, cap.get("step")))
         elif rewritten:
             out.update(verdict="unknown", why="the layer's weights were written in place since load"
                        + (" (their values match load time now)" if changed is False else "")
@@ -1386,6 +1405,22 @@ class ServeGuard:
                 except Exception:  # noqa: BLE001  (the alert itself must never be lost over this)
                     caps = []
             cap = next((c for c in caps if c["slot"] == slot and (epoch is None or c["epoch"] == epoch)), None)
+            # Restored by the weight scan's repair (_weights_restored): an output computed after the repair used the
+            # load-time weights (no write counted since; with weights that keep no count, as judged without the
+            # repair); one from before it, or of a step not known, may have used the changed weights, so the recheck
+            # with the weights as they are now can't judge it, whatever the write counts say
+            restored = lay.get("restored")
+            if restored is not None:
+                from .serve_weights import before_repair
+                since = _rewritten(restored["writes"], _writes(lay["module"], lay.get("source")))
+                if since is True:
+                    restored = None                  # written again since: judged as any rewritten layer
+                elif before_repair(restored, (cap or {}).get("step")):
+                    rewritten = True
+                else:
+                    if since is False:
+                        rewritten = False
+                    restored = None
             recheck, evidence, cap_info = None, None, None
             if cap is not None:
                 caps.remove(cap)
@@ -1395,7 +1430,7 @@ class ServeGuard:
                 if cap.get("step") is not None:
                     cap_info["step"] = cap["step"]
                 try:
-                    recheck = self._recheck(slot, cap, changed, unreadable.get(slot), rewritten)
+                    recheck = self._recheck(slot, cap, changed, unreadable.get(slot), rewritten, restored)
                 except Exception as e:  # noqa: BLE001
                     recheck = {"verdict": "unknown", "why": f"the recheck failed: {type(e).__name__}: {e}"}
                 if self.evidence_dir and len(self.evidence) < self.max_evidence:
@@ -1408,6 +1443,10 @@ class ServeGuard:
             if changed:
                 reading = ("the layer's weights changed since load (they no longer match their load-time "
                            "checksums): in GPU memory, or updated without calling refresh()")
+            elif rewritten and restored is not None and verdict != "unknown":
+                reading = (f"the output disagrees with its checksums; sdcguard's weight repair restored this layer's "
+                           f"weights after step {restored.get('step')}, and this output may be from before that, "
+                           "computed with the changed weights")
             elif rewritten:
                 reading = recheck["why"] if verdict == "unknown" else (
                     "the output disagrees with its checksums; the layer's weights were written in place since load"
@@ -1608,6 +1647,7 @@ class ServeGuard:
             lay["cs"], lay["device"] = new, w.device
             lay["weight_at"] = None if quant else _location(getattr(mod, "weight", None))
             lay["writes"] = _writes(mod, lay.get("source"))
+            lay.pop("restored", None)
             self._prepare(new, w)
             self._grow(w.device)
             if lay.get("took_over"):
@@ -1622,6 +1662,7 @@ class ServeGuard:
                     a.copy_(c)
             old.fingerprint.copy_(new.fingerprint)
         lay["writes"] = _writes(mod, lay.get("source"))
+        lay.pop("restored", None)
         if lay.get("weight_at") is None and not quant:     # (back from a dtype the check doesn't take)
             lay["weight_at"] = _location(getattr(mod, "weight", None))
         # A supported dtype may have returned after an unsupported one without changing shape. The earlier

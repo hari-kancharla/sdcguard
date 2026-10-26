@@ -338,3 +338,63 @@ def test_weights_made_in_inference_mode_attach_and_are_judged(monkeypatch):
     (ev,) = g.poll(wait=True)
     assert ev.detail["weights_rewritten_since_load"] is None and ev.detail["recheck"]["verdict"] == "output_wrong"
     assert "no in-place write" not in ev.detail["reading"] and "load-time fingerprint" in ev.detail["reading"]
+
+
+def test_after_a_weight_repair_outputs_are_judged_by_when_they_were_computed(monkeypatch):
+    """The repair writes the load-time weights back in place, which PyTorch counts as a write. An output computed
+    after the repair used those weights: it is judged normally (not 'unknown' for ever after). One computed before
+    the repair may have used the changed weights: the recheck can't judge it, and says the repair is why."""
+    m = _model()
+    g = ServeGuard().attach(m)
+    s = g.weight_scan(repair=True)
+    x = torch.randn(4, 64).to(torch.bfloat16)
+    g.mark_step(1)
+    g.poll(wait=True)
+    with torch.no_grad():
+        m[0].weight.view(-1).view(torch.int16)[70] ^= 1 << 14       # a weight's top exponent bit, in place
+        g.mark_step(2)
+        m[0](x)                                                       # computed with the changed weight
+    s.poll(wait=True)                                                 # the scan alone: alerted and restored
+    assert s.stats["repaired"] == 1 and g.layers[0]["restored"]["step"] == 2
+    (ev,) = [e for e in g.poll(wait=True) if e.detector == "serve_checksum"]
+    d = ev.detail
+    assert d["captured"]["step"] == 2 and d["weights_changed_since_load"] is False
+    assert d["weights_rewritten_since_load"] is True and d["recheck"]["verdict"] == "unknown"
+    assert "weight repair wrote this layer's load-time weights back after step 2" in d["recheck"]["why"]
+    _Faults(monkeypatch, {1: _bump(2, 75, 40.0)})
+    with torch.no_grad():
+        g.mark_step(3)
+        m[0](x)                                                       # after the repair: a wrong output of its own
+    (ev,) = [e for e in g.poll(wait=True) if e.detector == "serve_checksum"]
+    assert ev.detail["captured"]["step"] == 3 and ev.detail["weights_rewritten_since_load"] is False
+    assert ev.detail["recheck"]["verdict"] == "output_wrong"
+    g.refresh()                                                       # a refresh starts the count again
+    assert "restored" not in g.layers[0]
+
+
+def test_with_weights_that_keep_no_write_count_an_output_before_a_repair_is_unknown_too(monkeypatch):
+    """vLLM may build weights under inference mode, whose tensors keep no write count: the repair is still known
+    (the scan tells the guard), so an output from before it is judged unknown, not output_wrong, and one after it is
+    judged as usual."""
+    with torch.inference_mode():
+        m = _model()
+    g = ServeGuard().attach(m)
+    s = g.weight_scan(repair=True)
+    x = torch.randn(4, 64).to(torch.bfloat16)
+    g.mark_step(1)
+    g.poll(wait=True)
+    with torch.inference_mode():
+        m[0].weight.view(-1).view(torch.int16)[70] ^= 1 << 14
+        g.mark_step(2)
+        m[0](x)
+    s.poll(wait=True)
+    assert s.stats["repaired"] == 1
+    (ev,) = [e for e in g.poll(wait=True) if e.detector == "serve_checksum"]
+    assert ev.detail["captured"]["step"] == 2 and ev.detail["recheck"]["verdict"] == "unknown"
+    assert "weight repair" in ev.detail["recheck"]["why"]
+    _Faults(monkeypatch, {1: _bump(2, 75, 40.0)})
+    with torch.inference_mode():
+        g.mark_step(3)
+        m[0](x)
+    (ev,) = [e for e in g.poll(wait=True) if e.detector == "serve_checksum"]
+    assert ev.detail["captured"]["step"] == 3 and ev.detail["recheck"]["verdict"] == "output_wrong"

@@ -577,8 +577,17 @@ class NormChecks:
                 w = load_time_weight(lay["module"], lay["kind"])
                 if w is not None and w.shape == lay["w_ref"].shape:
                     lay["w_ref"].copy_(w)
+                    lay.pop("restored", None)
                     n += 1
         return n
+
+    def weights_restored(self, module, step) -> None:
+        """The weight scan's repair wrote this norm's load-time weights back after `step`: an output computed at or
+        before it may have used the changed weights, which the recheck (with the weights as they are now) can't
+        see, so it is judged unknown (serve_weights.before_repair)."""
+        for lay in self.layers:
+            if lay["module"] is module:
+                lay["restored"] = {"step": step}
 
     def detach(self) -> None:
         try:
@@ -711,6 +720,9 @@ class NormChecks:
             captured = {"row": cap[1] & M32, "step": (cap[2] & M32) if self._marked is not None else None,
                         "score": _f32(cap[3])}
             rc = recheck(x_row, y_row, lay["w_ref"], w_now, lay["eps"], dtype, self.line)
+            from .serve_weights import before_repair, repair_why
+            if before_repair(lay.get("restored"), captured["step"]):
+                rc = {**rc, "verdict": "unknown", "why": repair_why(lay["restored"], captured["step"])}
         changed = None
         if w_now is not None:
             changed = not torch.equal(w_now.cpu(), lay["w_ref"].cpu())

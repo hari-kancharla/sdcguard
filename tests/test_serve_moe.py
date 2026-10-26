@@ -326,3 +326,31 @@ def test_real_rows_with_experts_missing_raise_an_alert(monkeypatch):
     assert len(ev) == 1 and ev[0].detail["finding"] == "real_rows_partly_routed"
     assert ev[0].detail["real_rows_missing_some_experts"] == 1 and ev[0].detail["row"] == 2
     assert mc.stats["partly_routed_real_rows"] == 1
+
+
+def test_an_output_from_before_a_weight_repair_is_judged_unknown(monkeypatch):
+    """The weight scan's repair writes an expert weight back after a step (ServeGuard._weights_restored tells this
+    check): an output from that step or before may have used the changed weights, which the recheck (with the weights
+    as they are now) can't see, so its verdict is unknown; an output after it is judged as usual; refresh() clears it."""
+    mod, (lay,) = _fake_layers(1, monkeypatch)
+    g = ServeGuard()
+    mc = g.moe_checks()
+    mc.add(lay, "experts")
+    mc.finalize()
+    x = torch.randn(4, 128).to(torch.bfloat16)
+    w, ids = _route_for(lay, x, 0)
+    lay.fault = lambda o: torch.flip(o, [0])
+    for step in (0, 1):
+        g.mark_step(step)
+        out = lay.forward_modular(x=x, topk_weights=w, topk_ids=ids)
+        sm.check_call(lay._sdcguard_moe, x, w, ids, out)
+        if step == 0:
+            g._weights_restored(lay, 0)                   # the repair, after step 0's work
+        (ev,) = [e for e in g.poll(wait=True) if e.detector == "serve_moe"]
+        rc = ev.detail["recheck"]
+        assert ev.detail["captured"]["step"] == step
+        if step == 0:
+            assert rc["verdict"] == "unknown" and "weight repair" in rc["why"] and "after step 0" in rc["why"]
+        else:
+            assert rc["verdict"] == "output_wrong"
+    assert mc.refresh() == 1 and "restored" not in mc.layers[0]

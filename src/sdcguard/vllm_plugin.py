@@ -40,7 +40,12 @@ nothing). What it does, in every vLLM process:
     megabytes of weights each read compares; SDCGUARD_WEIGHT_SCAN_AGE, in seconds, raises that as needed so a
     pass over the weights is scheduled to take at most 2/3 of it at the measured time between reads, up to
     SDCGUARD_WEIGHT_SCAN_MAX_MB a read, default 1024: a schedule, not a guarantee; the scan's coverage reports the
-    actual oldest verification age and whether it is within the target);
+    actual oldest verification age and whether it is within the target); with SDCGUARD_WEIGHT_REPAIR=1 as well, it
+    keeps a host-RAM copy of those weights (as much host memory as they take on the GPU, at most half the free host
+    memory per local GPU, or repair turns itself off) and writes a changed layer back from it at the end of the read
+    that found it, when at most 64 of its values changed (more is an update or a stray write, not a fault: an update
+    made without refresh() and changing at most 64 values would be reverted too), then compares it again: the alert
+    stands, and a record says whether the weights were restored and names the requests served in between;
   - once the model has loaded, reads what the server runs (sdcguard.stack, published as sdcguard_stack_info for
     `sdcguard qualify` and `sdcguard ready --qualified`): among it the commit its model revision resolved to and one
     digest of every parameter (the weight scan's fingerprint, one pass over the weights at load, scan on or off);
@@ -116,6 +121,8 @@ import time
 from typing import Optional
 
 import torch
+
+from .alerts import is_repair_record
 
 log = logging.getLogger("sdcguard")
 
@@ -260,7 +267,11 @@ def _guard(device: Optional[torch.device] = None):
         _STATE["guard"] = g
         g.attribute = _attribute
         if _weight_scan_on():
-            g.weight_scan(_weight_scan_mb(), target_age=_weight_scan_age(), max_mb=_weight_scan_max_mb())
+            g.weight_scan(_weight_scan_mb(), target_age=_weight_scan_age(), max_mb=_weight_scan_max_mb(),
+                          repair=_weight_repair_on())
+        elif _weight_repair_on():
+            log.warning("sdcguard: SDCGUARD_WEIGHT_REPAIR=1 does nothing without SDCGUARD_WEIGHT_SCAN=1 (repair writes "
+                        "back what the weight scan finds changed)")
         if metrics is not None:               # who and how, for `sdcguard ready` (checks from outside)
             try:
                 from .events import device_identity
@@ -759,6 +770,8 @@ def _from(d: dict) -> str:
 
 def _on_alert(ev) -> None:
     d, i = ev.detail, ev.identity
+    if ev.detector == "serve_weights" and is_repair_record(d):
+        return                                 # (the repair logs its own line; it isn't an alert)
     if ev.detector == "serve_weights":
         log.warning("sdcguard ALERT: the weights of %s on %s (%s, PCI %s, host %s) no longer match their reference "
                     "fingerprint (%s; %s s since its last clean comparison)", d.get("where"), i.get("gpu_uuid"),
@@ -1472,6 +1485,12 @@ def _weight_scan_age() -> Optional[float]:
     weight at least that often (a schedule from the measured time between reads, not a guarantee: the coverage
     report gives the actual oldest verification age; unset: the byte budget alone)."""
     return _positive_env("SDCGUARD_WEIGHT_SCAN_AGE", None, 1.0, "a number of seconds")
+
+
+def _weight_repair_on() -> bool:
+    """SDCGUARD_WEIGHT_REPAIR=1 (with SDCGUARD_WEIGHT_SCAN=1): keep a host-RAM copy of the scanned weights (as much
+    host memory as the model's weights on this GPU) and write a changed entry back from it, then verify it again."""
+    return os.environ.get("SDCGUARD_WEIGHT_REPAIR", "0").strip().lower() in ("1", "true", "on", "yes")
 
 
 def _weight_scan_max_mb() -> float:
