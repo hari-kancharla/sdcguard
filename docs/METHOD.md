@@ -3174,6 +3174,77 @@ show: sdcguard's sweep reproduces a second documented NVIDIA wrong-result bug, t
 fixed one on the same GPU, and says whether the default PyTorch and vLLM install can compute wrong when split-K is
 forced. It would not show that a served model hits it (vLLM's matmuls take the heuristic's configurations).
 
+### vLLM issue 59686 in vLLM 0.32.0 (written October 26, before any run)
+
+vLLM issue #59686 (opened October 1, 2026, by an outside reporter): with the CUTLASS FP8 MoE backend
+(CutlassExpertsFp8), valid tokens get the wrong MoE output whenever a CUDA-graph batch has padding rows, because
+`moe_permute` computes wrong per-expert offsets when the router writes expert id -1 for padding
+(VLLM_MOE_SKIP_PADDING=1, the default); with heavy padding the valid tokens' MoE output is silently zero. The reporter
+found it by comparing next-token distributions one request at a time; the same FP8 checkpoint scored within one
+standard error of its bf16 source on MMLU-Pro (12,032 questions). PR #59717 fixed it, merged on October 23 as commit
+e4db46c, five days after vLLM 0.32.0 (October 18), so 0.32.0, the current release, has it. The run asks whether
+`sdcguard qualify` rejects it, and which alternatives remove it at what cost.
+
+The run (`experiments/vllm_59686_check.py`, `--phase issue59686`; one H100, 100-minute limit, about 50 to 70 minutes
+and $4 to $6 expected, after the model is downloaded on a CPU): RedHatAI/Qwen3-30B-A3B-FP8-dynamic (compressed-tensors
+FP8 dynamic; 128 experts, 8 a token). Step 0, the kernel without weights: `moe_permute` on every token count from 1 to
+512, padded with -1 routes to the CUDA-graph size vLLM pads it to (1, 2, 4, multiples of 8 to 248, of 16 to 512), 128
+experts at top 4 (the issue's) and top 8 (this model's), called plainly and with the reusable scratch serving uses,
+in vLLM 0.32.0 and in vLLM built at e4db46c (its per-commit wheel, in its own environment). Each token's row carries its
+own index, so for every valid route the check reads where moe_permute really put it: a route is misrouted when its row
+isn't inside its expert's segment or isn't its own token's (the fix's own regression test reads rows the same way). A
+wrong offset that misroutes no valid row (the last offset counting padding rows, which happens at every padded size)
+is reported, not counted; counts that need no padding are the probe's control and may misroute nothing. If 0.32.0
+misroutes no valid route at top 8, or its control does, no server is started. If the fixed build can't be shown to
+be the build at e4db46c with nothing misrouted, it is left out of step 1 and only its part of C2 fails. Step 1 is
+`sdcguard qualify --no-plugin --repeat-baseline` (the plugin's arithmetic checks don't cover FP8 matmuls: this run tests
+qualify's quality, consistency, isolation and speed checks): baseline `--moe-backend triton` (the issue reports it
+correct), again (its noise floor), cutlass (`--moe-backend cutlass` on 0.32.0), nopad (the same with
+VLLM_MOE_SKIP_PADDING=0, through `--config-env`: the padding rows routed to real experts), fixed (`--moe-backend
+cutlass` on the fixed build, through `--config-serve-cmd`), and auto (no backend flag, reported only). Each server's
+FP8 MoE backend is read from vLLM's own log line ("Using X Fp8 MoE backend"), and whether it captured CUDA graphs from
+"Graph capturing finished" (only a graph pads a batch).
+
+- V: the run says something only if step 0 shows 0.32.0 misrouting valid routes at top 8 and its control misrouting
+  none, and the baseline, again, cutlass and nopad servers start, capture CUDA graphs and show the backends configured
+  (TRITON for baseline and again, VLLM_CUTLASS for cutlass and nopad).
+- C1: qualify REJECTs cutlass with its quality, consistency or isolation check among the reasons (caught).
+- C2: for nopad and for fixed, qualify doesn't REJECT it and each check that rejected cutlass (the quality check when
+  none did) was measured on it and passed (approximation WITHIN, consistency CONSISTENT, isolation NO LEAK SEEN): the
+  alternatives remove what was caught. NOT DECIDED is expected otherwise, the arithmetic being unmeasured without the
+  plugin. For fixed also: step 0 shows its environment is the build at e4db46c with nothing misrouted, and its server
+  started, captured graphs and used VLLM_CUTLASS.
+
+Reported, not criteria: auto's backend and decision (whether 0.32.0's own choice for this model is the affected
+backend); each run's quality numbers (mean KL, top-1 agreement, worst prompt) beside again's, and cutlass's mean KL
+over nopad's (the same kernel with the trigger removed); each candidate's checks and speed against the baseline (what
+each alternative costs); and step 0 at top 4 and for each call. The noise run sets qualify's KL pass line at three
+times its own mean KL; if that line reaches the warn line, every quality verdict is INCONCLUSIVE and C1 can fail for
+that reason, which is recorded as it stands. Decided now: if V, C1 and C2 are met, the result is described as sdcguard
+qualify catching a silent wrong-answer bug in the current vLLM release that a large benchmark passed, with two
+alternatives shown to remove it and their measured cost; it is never described as finding the bug (it was reported by
+someone else). If C1 isn't met, it is recorded as not caught.
+
+Revised on October 26 after an outside review and still before any run: step 0 first counted wrong offsets, which
+0.32.0 shows at every padded size whether or not a valid route is misrouted, so it now counts misrouted routes, at the
+sizes vLLM really pads to, for both calls, with a control; the fixed build's start no longer decides whether the
+cutlass and nopad result counts; the servers must show captured graphs; and C2 needs the catching checks measured
+and passed on the alternatives, since NOT DECIDED alone was also what a candidate with nothing measured would get.
+
+Revised again on October 26, after a review of qualify itself and still before any run. Qualify's checks changed
+under this run, and the run uses them as changed: the quality reference is recorded on the prefill path, the way the
+candidates are scored (before, a same-stack repeat measured the stack's own decode-vs-prefill gap, and a repeat above
+2.33e-3 made every quality verdict INCONCLUSIVE); every quality line moves with the repeat (the top-1 line by a
+two-proportion test, the per-prompt line to 3x the repeat's), and a result past the warn lines and the noise fails
+even on a noisy stack; isolation says LEAK only for a change that repeats every time the same primer comes first (three
+repeats), on a server whose repeats otherwise agree; the decode line's floor is 0.25 nats and is set from the baseline
+and its repeat; and qualify requires the isolation and consistency probes it runs. How a C2 failure is read is decided
+now: when nopad or fixed fails the very check that caught cutlass, the result is recorded as "not separated" (qualify's
+lines can't tell the CUTLASS backend change from the bug on this stack), never as caught and never as "the alternative
+doesn't remove it". A fixed server that qualify's time limit cut is recorded as not run, not as a failed criterion.
+Step 0 is saved as soon as it is measured, and the baseline's and its repeat's own isolation and consistency verdicts
+are reported beside the candidates'.
+
 ### Run 1's smoke test (written October 26, before it and before Run 1)
 
 Most first GPU runs of a new experiment here failed on bugs of ours that only a real GPU inside a real `vllm serve`

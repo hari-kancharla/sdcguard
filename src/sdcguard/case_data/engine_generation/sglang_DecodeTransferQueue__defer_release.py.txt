@@ -1,0 +1,21 @@
+    def _defer_release(self, decode_req: DecodeRequest) -> None:
+        start_time = time.monotonic()
+        deadline = start_time + self.deferred_kv_release_timeout
+        # Host-capable receivers own their drain tracking. Device destinations
+        # snapshot the number of prefill acknowledgements required by the manager.
+        # A rank that only holds for a peer has no local acknowledgements to await.
+        required_acks = (
+            0
+            if self._is_host_destination(decode_req)
+            or not decode_req.kv_receiver.abort_notified
+            else len(decode_req.kv_receiver.bootstrap_infos)
+        )
+        self._deferred_releases.append(
+            (
+                decode_req,
+                start_time,
+                deadline,
+                decode_req.metadata_buffer_index,
+                required_acks,
+            )
+        )

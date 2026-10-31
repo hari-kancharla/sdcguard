@@ -1,0 +1,17 @@
+@dataclass
+class KVChecksumRecord:
+    """One worker's checksums for one step."""
+
+    pp_rank: int
+    tp_rank: int
+    # Partial checksums per request and group. Every request the worker
+    # processed this step has an entry, empty if none of its groups is here.
+    checksums: dict[str, dict[int, KVChecksumGroup]]
+    # Groups with layers on this worker that it cannot checksum.
+    skipped_groups: frozenset[int]
+    # Per transfer group, the sum of a hash (name, type, dtype) of each of this
+    # worker's layers in it. Summed over PP stages it identifies the group's layers.
+    fingerprints: dict[int, int]
+    # Producer checksums of loads received in connectors' own messages, per
+    # request; reported by the first worker only, as every worker receives them.
+    received: dict[str, bytes] = field(default_factory=dict)

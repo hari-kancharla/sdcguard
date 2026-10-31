@@ -1,0 +1,1 @@
+Source fragments and primary source bytes are from vLLM, pinned at 29d2f4e03740acb14439ce22d24b06d8095d17d3. Upstream SPDX and copyright notices remain intact in the retained bytes. LICENSE-vllm.txt preserves the upstream Apache 2.0 license. CPU metadata is synthetic and does not qualify a runtime release.

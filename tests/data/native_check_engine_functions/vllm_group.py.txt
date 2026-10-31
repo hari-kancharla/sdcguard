@@ -1,0 +1,10 @@
+@dataclass
+class KVChecksumGroup:
+    """One worker's partial checksums of one request's blocks in one group."""
+
+    # Position of the first row.
+    start: int
+    # The replica key of each column.
+    replica_keys: list[ReplicaKey]
+    # ``(num_positions, len(replica_keys))`` uint64 partial checksums.
+    values: np.ndarray

@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "issue": "https://github.com/vllm-project/vllm/issues/61229",
+  "snapshot": "576ac8b",
+  "candidate": {
+    "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+    "spec": {
+      "point": "read_submit",
+      "key": null,
+      "until": {
+        "kind": "free",
+        "args": {
+          "region": {
+            "desc_block": 0
+          },
+          "by": {
+            "not": "$X_PREFILL_ID"
+          }
+        }
+      },
+      "timeout": 14
+    },
+    "source": "experiment",
+    "kind": "rewritten",
+    "found_by": {
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.793,
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "terminal": "harm_garbled"
+    },
+    "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself"
+  },
+  "model": "Qwen/Qwen3-0.6B",
+  "historical_model_revision": "main",
+  "resolved_model_revision": null,
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "engine_version": "0.32.0",
+  "nixl_version": "1.4.1",
+  "provenance": {
+    "description": "vLLM 0.32.0 plus a backport of PR vllm-project/vllm#62065 (NIXL lease-slot verification) at fix commit 42b8f230, vllm/ runtime code only",
+    "patch_sha256": "a669acdbc188d59439ca3ba74bba9a18447578b997be3f61278d45fd6a5f337d",
+    "patch_sha256_expected": "a669acdbc188d59439ca3ba74bba9a18447578b997be3f61278d45fd6a5f337d",
+    "patch_matches_expected": true,
+    "patch_extraction": "git diff 42b8f230^ 42b8f230 -- vllm/",
+    "fix_commit": "42b8f230676796445107ec3f50241e871fe9b9b6",
+    "fix_parent": "75e3b17c055c609f02c64cd4ad3f8692b8170d8e",
+    "pr_branch_tip": "03b2648165d24128611cd15818f4ecf51c0a0205",
+    "applied_onto_vllm": "v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be)",
+    "nixl_version": "1.4.1 (installed; vLLM 0.32 cu12 connector pin)",
+    "apply_method": "patch -p1 --fuzz=0",
+    "scope_note": "vllm/ runtime code only; the PR's test and doc files are not in the patch, so the PR's own unit tests are not run here"
+  },
+  "recorded_source_fingerprints": {
+    "stock": {
+      "sha256": "d17b5febc14e2bb357385e352228e2e36a23d68724f909e345e3ef509515602f",
+      "files": 309,
+      "criteria": {
+        "docs/METHOD.md": "3fda246f7e242d3cf52b50e62a6b944a747c2edaf63be6b228f9ab7950bc480f"
+      }
+    },
+    "fixed": {
+      "sha256": "4d03735b43adb73320f80834c2a9d9aa4d4aa5fba66e9684d2196dcedf9643ac",
+      "files": 309,
+      "criteria": {
+        "docs/METHOD.md": "3fda246f7e242d3cf52b50e62a6b944a747c2edaf63be6b228f9ab7950bc480f"
+      }
+    }
+  },
+  "artifacts": {
+    "stock_RESULT.json": {
+      "sha256": "fac7436d3ab9dbb0257926d877c3a765a929ece693e87a1b39d9a02b7634f9bb",
+      "original": "lifetime_pd/RESULT.json"
+    },
+    "stock_STATUS.json": {
+      "sha256": "effb5a4ef4b728263ced57b6741c85d9eaaae0cbb228b37d9b2822d881470278",
+      "original": "lifetime_pd/STATUS.json"
+    },
+    "fixed_RESULT.json": {
+      "sha256": "1f09b0b7793bb0a176484c936dd25c714a75eafd530a1d95f68b7970e8b35f08",
+      "original": "lifetime_pd_fixed/RESULT.json"
+    },
+    "fixed_STATUS.json": {
+      "sha256": "dfeb485a06dc795201c93d8700c2dbe25448d15cdaf4b7313279047436be4af0",
+      "original": "lifetime_pd_fixed/STATUS.json"
+    }
+  },
+  "minimality": "unverified",
+  "overhead": "not measured for the revised recorder",
+  "scope": [
+    "one host, two engine instances, one GPU",
+    "eager",
+    "read posted after reclamation; no in-flight RDMA claim",
+    "no retry or reused-id case",
+    "no cross-request text disclosure shown",
+    "historical results do not validate revised hooks"
+  ],
+  "reviewed_harness_sha256": "94c00d2d3d11d8ac7e3f5083cc1ffcb294aa9eb9ed6fa495e9ccb14bb976e2d0",
+  "canonical_result_sha256": {
+    "stock": "06a1721db791e755e442a9215aabbbc16ef6c0994c963eba9840acc128649e38",
+    "fixed": "8b48d80bf7bd5400b4920a935f03d3451246c90b1310b29fb7fb92b7fe348149"
+  },
+  "replay_model_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "replay_model_pin_sha256": "773a13fe7f55622feb7322e4431b44c1ed34f1b5b06f825db95114a66ae30981",
+  "model_revision_recovery": "Shared-cache revision and all ten file digests recovered and verified after the run; original artifacts remain revision=main."
+}

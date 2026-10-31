@@ -1,0 +1,7 @@
+    def _prefill_unique_rank(self) -> int:
+        """Stable per-sender id, matching what the transfer worker syncs on Success."""
+        return (
+            self.attn_tp_rank * (self.pp_size * self.attn_cp_size)
+            + self.pp_rank * self.attn_cp_size
+            + self.attn_cp_rank
+        )

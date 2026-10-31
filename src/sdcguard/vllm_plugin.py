@@ -2240,7 +2240,30 @@ def register() -> None:
     """vLLM general-plugin entry point. Runs in every vLLM process; safe to call more than once. With
     SDCGUARD_REQUIRE, anything that keeps it from checking refuses to serve (an error here stops vLLM's startup):
     SDCGUARD not 1, a vLLM layout it doesn't know, no model runner to hook (raised at model load, see
-    _require_runner). Not covered: a plugin that fails to import at all, which vLLM's loader logs and skips."""
+    _require_runner). Not covered: a plugin that fails to import at all, which vLLM's loader logs and skips.
+    SDCGUARD_LIFETIME_DIR (separate from SDCGUARD) turns on KV lifetime recording (lifetime/vllm_nixl.py).
+    SDCGUARD_FORWARD_DIR separately enables source-gated observations of eager forward metadata.
+    SDCGUARD_ASSIGNMENT_DIR additionally requests passive mapping facts through that same observer."""
+    if os.environ.get("SDCGUARD_ASSIGNMENT_DIR"):
+        try:
+            from .lifetime.mapping_activation import install as _mapping_install
+            _mapping_install()
+        except Exception:
+            # Optional recording cannot replace native startup or its errors.
+            pass
+    elif os.environ.get("SDCGUARD_FORWARD_DIR"):
+        try:
+            from .lifetime.vllm_forward import install as _forward_install
+            _forward_install()
+        except Exception:
+            # Missing recorder output is unknown evidence, never proof of coverage.
+            pass
+    if os.environ.get("SDCGUARD_LIFETIME_DIR"):
+        try:
+            from .lifetime.vllm_nixl import install as _lifetime_install
+            _lifetime_install()
+        except Exception:  # noqa: BLE001  (recording is optional: it never stops the server)
+            pass
     if os.environ.get("SDCGUARD", "0") != "1":
         if _require_floor() is not None:
             raise RequirementNotMet("sdcguard: SDCGUARD_REQUIRE is set but SDCGUARD isn't 1, so nothing would be "

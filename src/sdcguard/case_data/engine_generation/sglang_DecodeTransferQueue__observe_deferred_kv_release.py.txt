@@ -1,0 +1,8 @@
+    def _observe_deferred_kv_release(
+        self, duration_seconds: float, outcome: str
+    ) -> None:
+        if self.scheduler.metrics_reporter.enable_metrics:
+            self.scheduler.metrics_collector.observe_decode_deferred_kv_release(
+                duration_seconds=duration_seconds,
+                outcome=outcome,
+            )

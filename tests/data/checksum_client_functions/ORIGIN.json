@@ -1,0 +1,23 @@
+{
+  "files": {
+    "complete.json": {
+      "bytes": 7137,
+      "sha256": "40f39a833bb7152472614efa7f362ad3f467b9e78f231e63ecf8414549054865",
+      "source": "cpu-demo/complete.json"
+    },
+    "empty-replicas.json": {
+      "bytes": 7050,
+      "sha256": "097a8e59bdde47a0e79f7c32ccc0692d83deaa0e07d58d09207c373d7700c487",
+      "source": "cpu-demo/empty-replicas.json"
+    },
+    "partial-span.json": {
+      "bytes": 7151,
+      "sha256": "d6969c85726bf1e5edef50465044e80635508872bb4d404abca47c1c98386ddb",
+      "source": "cpu-demo/partial-span.json"
+    }
+  },
+  "full_engine_sdk_gpu_execution": false,
+  "owner": "Hari Krishna Kancharla",
+  "runtime_qualifying": false,
+  "scope": "Already produced synthetic CPU metadata processed by original pinned checksum callbacks; no callback re-run for this copy"
+}

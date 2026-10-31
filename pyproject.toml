@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sdcguard"
 version = "0.4.0"
-description = "Catch GPUs that give wrong answers without crashing, in PyTorch training and vLLM serving."
+description = "Evaluate recorded KV-state and static deployment contracts for supported inference stacks."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -33,16 +33,23 @@ metrics = ["prometheus-client>=0.20"]
 nvsentinel = ["grpcio>=1.60"]
 all = ["cryptography>=42", "prometheus-client>=0.20", "grpcio>=1.60"]
 experiments = ["numpy", "matplotlib", "tiktoken"]
-dev = ["pytest", "cryptography>=42", "prometheus-client>=0.20", "grpcio>=1.60"]
+# pytest 9.2 undoes monkeypatched torch settings (torch.backends.cuda.matmul, Inductor config) by deleting them
+dev = ["pytest<9.2", "cryptography>=42", "prometheus-client>=0.20", "grpcio>=1.60"]
 
 [project.scripts]
 sdcguard = "sdcguard.cli:main"
 
 [project.entry-points."vllm.general_plugins"]
 sdcguard = "sdcguard.vllm_plugin:register"
+sdcguard_coverage = "sdcguard.native_operator.plugin:register"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+sdcguard = ["case_data/*.json", "case_data/61229/*", "case_data/engine_generation/*",
+            "operator_data/*", "operator_data/guides/*", "operator_data/profiles/*"]
+"sdcguard.native_operator" = ["profile_data/artifacts/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

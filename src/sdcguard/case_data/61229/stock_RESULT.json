@@ -1,0 +1,1266 @@
+{
+  "model": "Qwen/Qwen3-0.6B",
+  "lease_s": 4,
+  "blocks": 48,
+  "nixl_ucx_params": {
+    "ucx_error_handling_mode": "none"
+  },
+  "variant": "unpatched",
+  "mode": "compare",
+  "reps": 5,
+  "kv_load_failure_policy": "recompute",
+  "metric_sources": {
+    "producer_8100": [
+      "vllm:nixl_num_kv_expired_reqs",
+      "vllm:nixl_num_notifications_after_expiry"
+    ],
+    "consumer_8200": [
+      "vllm:nixl_num_lease_check_failures",
+      "vllm:nixl_num_failed_transfers"
+    ]
+  },
+  "ready_P_s": 54.07339334487915,
+  "ready_D_s": 38.02705645561218,
+  "recording": true,
+  "hooks": {
+    "5": [
+      "NIXL UCX backend params ucx_error_handling_mode=none",
+      "KVCacheManager.allocate_slots",
+      "KVCacheManager.free",
+      "NixlPullConnectorScheduler.request_finished",
+      "NixlBaseConnectorWorker._reap_expired_send_leases",
+      "NixlBaseConnectorWorker._pop_done_transfers",
+      "NixlPullConnectorWorker._read_blocks_for_req",
+      "Scheduler._update_waiting_for_remote_kv"
+    ],
+    "25": [
+      "NIXL UCX backend params ucx_error_handling_mode=none",
+      "KVCacheManager.allocate_slots",
+      "KVCacheManager.free",
+      "NixlPullConnectorScheduler.request_finished",
+      "NixlBaseConnectorWorker._reap_expired_send_leases",
+      "NixlBaseConnectorWorker._pop_done_transfers",
+      "NixlPullConnectorWorker._read_blocks_for_req",
+      "Scheduler._update_waiting_for_remote_kv"
+    ],
+    "57": [
+      "NIXL UCX backend params ucx_error_handling_mode=none",
+      "KVCacheManager.allocate_slots",
+      "KVCacheManager.free",
+      "NixlPullConnectorScheduler.request_finished",
+      "NixlBaseConnectorWorker._reap_expired_send_leases",
+      "NixlBaseConnectorWorker._pop_done_transfers",
+      "NixlPullConnectorWorker._read_blocks_for_req",
+      "Scheduler._update_waiting_for_remote_kv"
+    ],
+    "212": [
+      "NIXL UCX backend params ucx_error_handling_mode=none",
+      "KVCacheManager.allocate_slots",
+      "KVCacheManager.free",
+      "NixlPullConnectorScheduler.request_finished",
+      "NixlBaseConnectorWorker._reap_expired_send_leases",
+      "NixlBaseConnectorWorker._pop_done_transfers",
+      "NixlPullConnectorWorker._read_blocks_for_req",
+      "Scheduler._update_waiting_for_remote_kv"
+    ],
+    "246": [
+      "NIXL UCX backend params ucx_error_handling_mode=none",
+      "KVCacheManager.allocate_slots",
+      "KVCacheManager.free",
+      "NixlPullConnectorScheduler.request_finished",
+      "NixlBaseConnectorWorker._reap_expired_send_leases",
+      "NixlBaseConnectorWorker._pop_done_transfers",
+      "NixlPullConnectorWorker._read_blocks_for_req",
+      "Scheduler._update_waiting_for_remote_kv"
+    ]
+  },
+  "baseline_x": " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is",
+  "baseline_x_refs": [
+    " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is",
+    " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is",
+    " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is"
+  ],
+  "baseline_refs_agree": true,
+  "baseline_x_says_its_word": true,
+  "baseline_refs_all_say_word": true,
+  "baseline_producer_signals": {
+    "vllm:nixl_num_kv_expired_reqs": 0.0,
+    "vllm:nixl_num_notifications_after_expiry": 0.0,
+    "log_lines": 0
+  },
+  "baseline_consumer_signals": {
+    "vllm:nixl_num_lease_check_failures": null,
+    "vllm:nixl_num_failed_transfers": 0.0
+  },
+  "baseline_events": 109,
+  "baseline_violations": [],
+  "checkpoints_in_baseline": [
+    "read_submit"
+  ],
+  "candidates_total": 21,
+  "design": "chosen for this experiment, not by the search: the lease length, the load on the prefill side after the lease, the canary prompts, and a hold timeout longer than the lease. The search chooses where to hold and when the hold ends. Controls: the same load with no hold, and the compared hold with a stall under the lease.",
+  "controls": [
+    {
+      "label": "control: the same load, no hold",
+      "spec": null,
+      "spec_applied": null,
+      "x_prefill_id": "cmpl-a2ec665e356d1253-0-8a9db819",
+      "source": null,
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 0.0,
+        "vllm:nixl_num_notifications_after_expiry": 0.0,
+        "log_lines": 0
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": false,
+      "hold_log": [],
+      "hold_outcome": "not_held",
+      "stall_s": null,
+      "intervention": null,
+      "violations": [],
+      "x": " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": false,
+        "lease_expired": false,
+        "source_block_reused_or_freed": false,
+        "decode_resumed": true,
+        "rejection_or_output": "correct",
+        "trigger_demonstrated": false
+      },
+      "outcome": {
+        "exposure": false,
+        "access": null,
+        "lease_expired": false,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "correct",
+        "foreign_words": [],
+        "harm": false,
+        "changed_without_stale_access": false,
+        "terminal": "clean",
+        "level": 0
+      }
+    },
+    {
+      "label": "control: hold read_submit until X's source block 0 is freed by its next owner, which has written it, stall under the lease",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 2
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-a11ed00d0d8099bf-0-84bae039"
+            }
+          }
+        },
+        "timeout": 2
+      },
+      "x_prefill_id": "cmpl-a11ed00d0d8099bf-0-84bae039",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 0.0,
+        "vllm:nixl_num_notifications_after_expiry": 0.0,
+        "log_lines": 0
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": false,
+      "hold_log": [
+        "hold condition for read_submit cmpl-a218d1a5ab87340a-0-a555076d: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 2], \"by\": {\"not\": \"cmpl-a11ed00d0d8099bf-0-84bae039\"}}}",
+        "released read_submit cmpl-a218d1a5ab87340a-0-a555076d (hold expired) after 2.002s"
+      ],
+      "hold_outcome": "expired",
+      "stall_s": 2.002,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [],
+      "x": " PLUM. Then, the first letter of the second repetition is P, the second letter is L, the third is",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": false,
+        "source_block_reused_or_freed": false,
+        "decode_resumed": true,
+        "rejection_or_output": "correct",
+        "trigger_demonstrated": false
+      },
+      "outcome": {
+        "exposure": false,
+        "access": null,
+        "lease_expired": false,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "correct",
+        "foreign_words": [],
+        "harm": false,
+        "changed_without_stale_access": false,
+        "terminal": "clean",
+        "level": 0
+      }
+    }
+  ],
+  "discovery": [
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-a3b2ad0891415966-0-b0203b3c"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-a3b2ad0891415966-0-b0203b3c",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-8eb8b7d218c3d87a-0-836f1ec3: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 1], \"by\": {\"not\": \"cmpl-a3b2ad0891415966-0-b0203b3c\"}}}",
+        "released read_submit cmpl-8eb8b7d218c3d87a-0-836f1ec3 (condition reached) after 5.793s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.793,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-8eb8b7d218c3d87a-0-836f1ec3 accepted cmpl-a3b2ad0891415966-0-b0203b3c@P; P block 1 gen 16 was freed (region now free, gen 17)",
+        "R1 stale descriptor accepted: decode cmpl-8eb8b7d218c3d87a-0-836f1ec3 accepted cmpl-a3b2ad0891415966-0-b0203b3c@P; P block 2 gen 15 was freed (region now free, gen 17)",
+        "R1 stale handle submitted: read-cmpl-8eb8b7d218c3d87a-0-836f1ec3-0 (read by decode cmpl-8eb8b7d218c3d87a-0-836f1ec3) uses source P block 1 gen 16 was retired; the region is now gen 18 owned by cmpl-b0ca69fb0ab84561-0-82474899",
+        "R1 stale handle submitted: read-cmpl-8eb8b7d218c3d87a-0-836f1ec3-1 (read by decode cmpl-8eb8b7d218c3d87a-0-836f1ec3) uses source P block 2 gen 15 was freed (region now free, gen 17)"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-9cefa83f1c492bb6-0-923f5379"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-9cefa83f1c492bb6-0-923f5379",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-be946820de720af7-0-90bf59c4: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 2], \"by\": {\"not\": \"cmpl-9cefa83f1c492bb6-0-923f5379\"}}}",
+        "released read_submit cmpl-be946820de720af7-0-90bf59c4 (condition reached) after 5.779s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.779,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-be946820de720af7-0-90bf59c4 accepted cmpl-9cefa83f1c492bb6-0-923f5379@P; P block 2 gen 25 was retired; the region is now gen 27 owned by cmpl-a77fd87f6f0ec7d1-0-b39d40b8",
+        "R1 stale descriptor accepted: decode cmpl-be946820de720af7-0-90bf59c4 accepted cmpl-9cefa83f1c492bb6-0-923f5379@P; P block 1 gen 25 was freed (region now free, gen 27)",
+        "R1 stale handle submitted: read-cmpl-be946820de720af7-0-90bf59c4-0 (read by decode cmpl-be946820de720af7-0-90bf59c4) uses source P block 2 gen 25 was retired; the region is now gen 27 owned by cmpl-a77fd87f6f0ec7d1-0-b39d40b8",
+        "R1 stale handle submitted: read-cmpl-be946820de720af7-0-90bf59c4-1 (read by decode cmpl-be946820de720af7-0-90bf59c4) uses source P block 1 gen 25 was freed (region now free, gen 27)"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-a3854181a0bd57c4-0-b9a0794b"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-a3854181a0bd57c4-0-b9a0794b",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-9d577cc8d921b7d3-0-b48c323c: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 1], \"by\": {\"not\": \"cmpl-a3854181a0bd57c4-0-b9a0794b\"}}}",
+        "released read_submit cmpl-9d577cc8d921b7d3-0-b48c323c (condition reached) after 5.779s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.779,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-9d577cc8d921b7d3-0-b48c323c accepted cmpl-a3854181a0bd57c4-0-b9a0794b@P; P block 1 gen 35 was freed (region now free, gen 36)",
+        "R1 stale descriptor accepted: decode cmpl-9d577cc8d921b7d3-0-b48c323c accepted cmpl-a3854181a0bd57c4-0-b9a0794b@P; P block 2 gen 34 was freed (region now free, gen 36)",
+        "R1 stale handle submitted: read-cmpl-9d577cc8d921b7d3-0-b48c323c-0 (read by decode cmpl-9d577cc8d921b7d3-0-b48c323c) uses source P block 1 gen 35 was freed (region now free, gen 36)",
+        "R1 stale handle submitted: read-cmpl-9d577cc8d921b7d3-0-b48c323c-1 (read by decode cmpl-9d577cc8d921b7d3-0-b48c323c) uses source P block 2 gen 34 was freed (region now free, gen 36)",
+        "R2 reuse while read-cmpl-9d577cc8d921b7d3-0-b48c323c-0 can still read from it: P block 1 reallocated from gen 36 (free) to gen 37 (cmpl-bc8271e320557408-0-ac713146) while read-cmpl-9d577cc8d921b7d3-0-b48c323c-0 (read, by decode cmpl-9d577cc8d921b7d3-0-b48c323c, cancel requested: False) still refers to gen 35"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    }
+  ],
+  "tried": [
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-905454831745d139-0-8396cb1b"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-905454831745d139-0-8396cb1b",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-9c8e7c3c5c48f384-0-8e9c762b: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 1], \"by\": {\"not\": \"cmpl-905454831745d139-0-8396cb1b\"}}}",
+        "released read_submit cmpl-9c8e7c3c5c48f384-0-8e9c762b (condition reached) after 5.771s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.771,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-9c8e7c3c5c48f384-0-8e9c762b accepted cmpl-905454831745d139-0-8396cb1b@P; P block 1 gen 54 was freed (region now free, gen 55)",
+        "R1 stale descriptor accepted: decode cmpl-9c8e7c3c5c48f384-0-8e9c762b accepted cmpl-905454831745d139-0-8396cb1b@P; P block 2 gen 53 was freed (region now free, gen 55)",
+        "R1 stale handle submitted: read-cmpl-9c8e7c3c5c48f384-0-8e9c762b-0 (read by decode cmpl-9c8e7c3c5c48f384-0-8e9c762b) uses source P block 1 gen 54 was freed (region now free, gen 55)",
+        "R1 stale handle submitted: read-cmpl-9c8e7c3c5c48f384-0-8e9c762b-1 (read by decode cmpl-9c8e7c3c5c48f384-0-8e9c762b) uses source P block 2 gen 53 was freed (region now free, gen 55)",
+        "R2 reuse while read-cmpl-9c8e7c3c5c48f384-0-8e9c762b-0 can still read from it: P block 1 reallocated from gen 55 (free) to gen 56 (cmpl-8531c2461cbce3d3-0-899abbad) while read-cmpl-9c8e7c3c5c48f384-0-8e9c762b-0 (read, by decode cmpl-9c8e7c3c5c48f384-0-8e9c762b, cancel requested: False) still refers to gen 54"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-80a6224537f3a37f-0-a473a095"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-80a6224537f3a37f-0-a473a095",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-bf658f7fddb021f3-0-a69cc49f: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 2], \"by\": {\"not\": \"cmpl-80a6224537f3a37f-0-a473a095\"}}}",
+        "released read_submit cmpl-bf658f7fddb021f3-0-a69cc49f (condition reached) after 5.782s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.782,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-bf658f7fddb021f3-0-a69cc49f accepted cmpl-80a6224537f3a37f-0-a473a095@P; P block 2 gen 63 was freed (region now free, gen 64)",
+        "R1 stale descriptor accepted: decode cmpl-bf658f7fddb021f3-0-a69cc49f accepted cmpl-80a6224537f3a37f-0-a473a095@P; P block 1 gen 63 was freed (region now free, gen 65)",
+        "R1 stale handle submitted: read-cmpl-bf658f7fddb021f3-0-a69cc49f-0 (read by decode cmpl-bf658f7fddb021f3-0-a69cc49f) uses source P block 2 gen 63 was freed (region now free, gen 64)",
+        "R1 stale handle submitted: read-cmpl-bf658f7fddb021f3-0-a69cc49f-1 (read by decode cmpl-bf658f7fddb021f3-0-a69cc49f) uses source P block 1 gen 63 was freed (region now free, gen 65)"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-a0a9390baf715af7-0-881e39a0"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-a0a9390baf715af7-0-881e39a0",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-ae1b6105a16b0ee5-0-b6225186: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 1], \"by\": {\"not\": \"cmpl-a0a9390baf715af7-0-881e39a0\"}}}",
+        "released read_submit cmpl-ae1b6105a16b0ee5-0-b6225186 (condition reached) after 5.791s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.791,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-ae1b6105a16b0ee5-0-b6225186 accepted cmpl-a0a9390baf715af7-0-881e39a0@P; P block 1 gen 73 was freed (region now free, gen 74)",
+        "R1 stale descriptor accepted: decode cmpl-ae1b6105a16b0ee5-0-b6225186 accepted cmpl-a0a9390baf715af7-0-881e39a0@P; P block 2 gen 72 was freed (region now free, gen 74)",
+        "R1 stale handle submitted: read-cmpl-ae1b6105a16b0ee5-0-b6225186-0 (read by decode cmpl-ae1b6105a16b0ee5-0-b6225186) uses source P block 1 gen 73 was freed (region now free, gen 74)",
+        "R1 stale handle submitted: read-cmpl-ae1b6105a16b0ee5-0-b6225186-1 (read by decode cmpl-ae1b6105a16b0ee5-0-b6225186) uses source P block 2 gen 72 was freed (region now free, gen 74)",
+        "R2 reuse while read-cmpl-ae1b6105a16b0ee5-0-b6225186-0 can still read from it: P block 1 reallocated from gen 74 (free) to gen 75 (cmpl-a225f53c53d0f1be-0-be00dba4) while read-cmpl-ae1b6105a16b0ee5-0-b6225186-0 (read, by decode cmpl-ae1b6105a16b0ee5-0-b6225186, cancel requested: False) still refers to gen 73"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-92cbcd0cff9bd74f-0-ab1fee88"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-92cbcd0cff9bd74f-0-ab1fee88",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-ac725ed643e9763c-0-82f5de62: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 2], \"by\": {\"not\": \"cmpl-92cbcd0cff9bd74f-0-ab1fee88\"}}}",
+        "released read_submit cmpl-ac725ed643e9763c-0-82f5de62 (condition reached) after 5.815s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.815,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-ac725ed643e9763c-0-82f5de62 accepted cmpl-92cbcd0cff9bd74f-0-ab1fee88@P; P block 2 gen 82 was freed (region now free, gen 83)",
+        "R1 stale descriptor accepted: decode cmpl-ac725ed643e9763c-0-82f5de62 accepted cmpl-92cbcd0cff9bd74f-0-ab1fee88@P; P block 1 gen 82 was freed (region now free, gen 84)",
+        "R1 stale handle submitted: read-cmpl-ac725ed643e9763c-0-82f5de62-0 (read by decode cmpl-ac725ed643e9763c-0-82f5de62) uses source P block 2 gen 82 was freed (region now free, gen 83)",
+        "R1 stale handle submitted: read-cmpl-ac725ed643e9763c-0-82f5de62-1 (read by decode cmpl-ac725ed643e9763c-0-82f5de62) uses source P block 1 gen 82 was freed (region now free, gen 84)"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    },
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "spec": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "$X_PREFILL_ID"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "spec_applied": {
+        "point": "read_submit",
+        "key": null,
+        "until": {
+          "kind": "free",
+          "args": {
+            "region": {
+              "desc_block": 0
+            },
+            "by": {
+              "not": "cmpl-815867888fe36b90-0-ac4a696d"
+            }
+          }
+        },
+        "timeout": 14
+      },
+      "x_prefill_id": "cmpl-815867888fe36b90-0-ac4a696d",
+      "source": "experiment",
+      "producer_signals": {
+        "vllm:nixl_num_kv_expired_reqs": 1.0,
+        "vllm:nixl_num_notifications_after_expiry": 1.0,
+        "log_lines": 1
+      },
+      "consumer_signals": {
+        "vllm:nixl_num_lease_check_failures": null,
+        "vllm:nixl_num_failed_transfers": 0.0
+      },
+      "canaries_in_load": {
+        "MANGO": "load request 0",
+        "CEDAR": "load request 1",
+        "TULIP": "load request 2",
+        "AMBER": "load request 3",
+        "COBALT": "load request 4",
+        "SAFFRON": "load request 5",
+        "JUNIPER": "load request 6",
+        "QUARTZ": "load request 7"
+      },
+      "decline_line": null,
+      "reached": true,
+      "hold_log": [
+        "hold condition for read_submit cmpl-964681cfed816735-0-bb4fbfba: {\"kind\": \"free\", \"args\": {\"region\": [\"P\", 1], \"by\": {\"not\": \"cmpl-815867888fe36b90-0-ac4a696d\"}}}",
+        "released read_submit cmpl-964681cfed816735-0-bb4fbfba (condition reached) after 5.816s"
+      ],
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.816,
+      "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself",
+      "violations": [
+        "R1 stale descriptor accepted: decode cmpl-964681cfed816735-0-bb4fbfba accepted cmpl-815867888fe36b90-0-ac4a696d@P; P block 1 gen 92 was freed (region now free, gen 93)",
+        "R1 stale descriptor accepted: decode cmpl-964681cfed816735-0-bb4fbfba accepted cmpl-815867888fe36b90-0-ac4a696d@P; P block 2 gen 91 was freed (region now free, gen 93)",
+        "R1 stale handle submitted: read-cmpl-964681cfed816735-0-bb4fbfba-0 (read by decode cmpl-964681cfed816735-0-bb4fbfba) uses source P block 1 gen 92 was freed (region now free, gen 93)",
+        "R1 stale handle submitted: read-cmpl-964681cfed816735-0-bb4fbfba-1 (read by decode cmpl-964681cfed816735-0-bb4fbfba) uses source P block 2 gen 91 was freed (region now free, gen 93)",
+        "R2 reuse while read-cmpl-964681cfed816735-0-bb4fbfba-0 can still read from it: P block 1 reallocated from gen 93 (free) to gen 94 (cmpl-ac110c8fdec4a08e-0-bec16ded) while read-cmpl-964681cfed816735-0-bb4fbfba-0 (read, by decode cmpl-964681cfed816735-0-bb4fbfba, cancel requested: False) still refers to gen 92"
+      ],
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "x_error": null,
+      "x_exc": null,
+      "x_finished": true,
+      "hung": false,
+      "started_clean": true,
+      "other_errors": [],
+      "ordering": {
+        "x_published": true,
+        "held": true,
+        "lease_expired": true,
+        "source_block_reused_or_freed": true,
+        "decode_resumed": true,
+        "rejection_or_output": "wrong",
+        "trigger_demonstrated": true
+      },
+      "outcome": {
+        "exposure": true,
+        "access": "read issued after the blocks were reclaimed",
+        "lease_expired": true,
+        "lease_expired_unknown": false,
+        "rejected": false,
+        "reject_reason": null,
+        "reject_kind": null,
+        "reject_counter_rose": false,
+        "reject_counter_unknown": true,
+        "answer": "wrong",
+        "foreign_words": [],
+        "harm": true,
+        "changed_without_stale_access": false,
+        "terminal": "harm_garbled",
+        "level": 3
+      }
+    }
+  ],
+  "discovery_confirmations": [
+    {
+      "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+      "harm": 3,
+      "of": 3
+    }
+  ],
+  "candidate": {
+    "label": "hold read_submit until X's source block 0 is freed by its next owner, which has written it",
+    "spec": {
+      "point": "read_submit",
+      "key": null,
+      "until": {
+        "kind": "free",
+        "args": {
+          "region": {
+            "desc_block": 0
+          },
+          "by": {
+            "not": "$X_PREFILL_ID"
+          }
+        }
+      },
+      "timeout": 14
+    },
+    "source": "experiment",
+    "kind": "rewritten",
+    "found_by": {
+      "hold_outcome": "condition_reached",
+      "stall_s": 5.793,
+      "x": " M. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the secret word. Repeat the",
+      "terminal": "harm_garbled"
+    },
+    "intervention": "delays the decode side posting its KV read (host side, before NixlPullConnectorWorker._read_blocks_for_req); it does not slow the transfer itself"
+  },
+  "runs_total": 5,
+  "runs_trigger_demonstrated": 5,
+  "runs_with_exposure": 5,
+  "runs_with_harm": 5,
+  "runs_rejected_by_fix": 0,
+  "runs_recovered": 0,
+  "runs_failed_closed": 0,
+  "runs_declined_before_read": 0,
+  "runs_answer_correct": 0,
+  "runs_answer_exact": 0,
+  "runs_answer_foreign": 0,
+  "runs_unresolved": 0,
+  "harm_present": true,
+  "hold_outcomes": {
+    "condition_reached": 5,
+    "expired": 0,
+    "not_held": 0
+  },
+  "runs_harm_after_expired_hold": 0,
+  "held_runs": 8,
+  "held_runs_ledger_flagged_stale_read": 8,
+  "held_runs_answer_visibly_wrong": 8,
+  "discovered_harm_once": true,
+  "lease_notes": [
+    "lease expired for cmpl-a3b2ad0891415966-0-b0203b3c on P",
+    "lease expired for cmpl-9cefa83f1c492bb6-0-923f5379 on P",
+    "lease expired for cmpl-a3854181a0bd57c4-0-b9a0794b on P",
+    "lease expired for cmpl-905454831745d139-0-8396cb1b on P",
+    "lease expired for cmpl-80a6224537f3a37f-0-a473a095 on P",
+    "lease expired for cmpl-a0a9390baf715af7-0-881e39a0 on P",
+    "lease expired for cmpl-92cbcd0cff9bd74f-0-ab1fee88 on P",
+    "lease expired for cmpl-815867888fe36b90-0-ac4a696d on P"
+  ],
+  "controls_clean": true,
+  "baseline_ok": true,
+  "verdict": "harm_reproduced",
+  "log_tail": {
+    "P": [
+      "INFO:     127.0.0.1:61784 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "(EngineCore pid=57) ERROR 10-27 11:23:58 [pull_worker.py:667] Potentially invalid KV blocks for unrecognized request cmpl-815867888fe36b90-0-ac4a696d were retrieved by a decode worker. They may have expired.",
+      "INFO:     127.0.0.1:25703 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:28118 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:21437 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:40987 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:42818 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:25089 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:24178 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:48123 - \"GET /metrics HTTP/1.1\" 200 OK",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [launcher.py:254] [shutdown] API server: shutdown triggered",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [launcher.py:270] [shutdown] API server: stopping engine client mode=abort timeout=0s",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [core_client.py:770] [shutdown] MPClient: start timeout=0s",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [core_client.py:772] [shutdown] MPClient: stopping engine manager",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore",
+      "(APIServer pid=5) WARNING 10-27 11:24:02 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1",
+      "(APIServer pid=5) WARNING 10-27 11:24:02 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 57",
+      "(EngineCore pid=57) INFO 10-27 11:24:02 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGTERM",
+      "(EngineCore pid=57) INFO 10-27 11:24:02 [core.py:1635] [shutdown] EngineCore: start mode=abort timeout=0s",
+      "(EngineCore pid=57) INFO 10-27 11:24:02 [core.py:1666] [shutdown] EngineCore: request processing complete; starting resource teardown",
+      "(EngineCore pid=57) INFO 10-27 11:24:02 [core.py:1499] [shutdown] EngineCore: exiting busy loop",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [core_client.py:774] [shutdown] MPClient: engine manager stopped",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [core_client.py:775] [shutdown] MPClient: cleaning up background resources",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [core_client.py:777] [shutdown] MPClient: complete",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906] AsyncLLM output_handler failed.",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906] Traceback (most recent call last):",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906]   File \"/usr/local/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py\", line 849, in output_handler",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906]     outputs = await engine_core.get_output_async()",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906]   File \"/usr/local/lib/python3.12/site-packages/vllm/v1/engine/core_client.py\", line 1235, in get_output_async",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906]     raise self._format_exception(outputs) from None",
+      "(APIServer pid=5) ERROR 10-27 11:24:02 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [launcher.py:279] [shutdown] API server: engine client stopped",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [launcher.py:282] [shutdown] API server: signalling HTTP server shutdown",
+      "(APIServer pid=5) INFO 10-27 11:24:02 [launcher.py:304] [shutdown] API server: shutting down FastAPI HTTP server",
+      "INFO:     Shutting down",
+      "INFO:     Waiting for application shutdown.",
+      "INFO:     Application shutdown complete.",
+      "/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown",
+      "  warnings.warn('resource_tracker: There appear to be %d '"
+    ],
+    "D": [
+      "(APIServer pid=212) INFO 10-27 11:23:42 [loggers.py:335] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 2.4 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, External prefix cache hit rate: 100.0%",
+      "(APIServer pid=212) INFO 10-27 11:23:42 [metrics.py:103] KV Transfer metrics: Num successful transfers=1, Avg xfer time (ms)=0.528, P90 xfer time (ms)=0.528, Avg post time (ms)=0.371, P90 post time (ms)=0.371, Avg MB per transfer=3.5, Throughput (MB/s)=6628.788, Avg number of descriptors=28.0, Num failed transfers=0, Num KV expired reqs=0, Num notifs after expiry=0",
+      "INFO:     127.0.0.1:61963 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:65352 - \"GET /metrics HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:23899 - \"GET /metrics HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:21802 - \"GET /metrics HTTP/1.1\" 200 OK",
+      "(APIServer pid=212) INFO 10-27 11:23:52 [loggers.py:335] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 2.4 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, External prefix cache hit rate: 100.0%",
+      "(APIServer pid=212) INFO 10-27 11:23:52 [metrics.py:103] KV Transfer metrics: Num successful transfers=1, Avg xfer time (ms)=0.697, P90 xfer time (ms)=0.697, Avg post time (ms)=0.697, P90 post time (ms)=0.697, Avg MB per transfer=3.5, Throughput (MB/s)=5021.521, Avg number of descriptors=56.0, Num failed transfers=0, Num KV expired reqs=0, Num notifs after expiry=0",
+      "INFO:     127.0.0.1:16202 - \"POST /v1/completions HTTP/1.1\" 200 OK",
+      "INFO:     127.0.0.1:61290 - \"GET /metrics HTTP/1.1\" 200 OK",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [launcher.py:254] [shutdown] API server: shutdown triggered",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [launcher.py:270] [shutdown] API server: stopping engine client mode=abort timeout=0s",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [core_client.py:770] [shutdown] MPClient: start timeout=0s",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [core_client.py:772] [shutdown] MPClient: stopping engine manager",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [utils.py:628] [shutdown] Process manager: send sigterm to process EngineCore",
+      "(APIServer pid=212) WARNING 10-27 11:24:02 [utils.py:648] [shutdown] Process manager: force killing remaining processes count=1",
+      "(EngineCore pid=246) INFO 10-27 11:24:02 [core.py:1454] [shutdown] EngineCore: trigger received signal=SIGTERM",
+      "(APIServer pid=212) WARNING 10-27 11:24:02 [utils.py:653] [shutdown] Process manager: force killing remaining process EngineCore pid 246",
+      "(EngineCore pid=246) INFO 10-27 11:24:02 [core.py:1635] [shutdown] EngineCore: start mode=abort timeout=0s",
+      "(EngineCore pid=246) INFO 10-27 11:24:02 [core.py:1666] [shutdown] EngineCore: request processing complete; starting resource teardown",
+      "(EngineCore pid=246) INFO 10-27 11:24:02 [core.py:1499] [shutdown] EngineCore: exiting busy loop",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [core_client.py:774] [shutdown] MPClient: engine manager stopped",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [core_client.py:775] [shutdown] MPClient: cleaning up background resources",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [core_client.py:777] [shutdown] MPClient: complete",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906] AsyncLLM output_handler failed.",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906] Traceback (most recent call last):",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906]   File \"/usr/local/lib/python3.12/site-packages/vllm/v1/engine/async_llm.py\", line 849, in output_handler",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906]     outputs = await engine_core.get_output_async()",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906]   File \"/usr/local/lib/python3.12/site-packages/vllm/v1/engine/core_client.py\", line 1235, in get_output_async",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906]     raise self._format_exception(outputs) from None",
+      "(APIServer pid=212) ERROR 10-27 11:24:02 [async_llm.py:906] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [launcher.py:279] [shutdown] API server: engine client stopped",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [launcher.py:282] [shutdown] API server: signalling HTTP server shutdown",
+      "(APIServer pid=212) INFO 10-27 11:24:02 [launcher.py:304] [shutdown] API server: shutting down FastAPI HTTP server",
+      "INFO:     Shutting down",
+      "INFO:     Waiting for application shutdown.",
+      "INFO:     Application shutdown complete.",
+      "/usr/local/lib/python3.12/multiprocessing/resource_tracker.py:279: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown",
+      "  warnings.warn('resource_tracker: There appear to be %d '"
+    ]
+  }
+}

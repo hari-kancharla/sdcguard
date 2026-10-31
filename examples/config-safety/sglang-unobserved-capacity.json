@@ -1,0 +1,96 @@
+{
+  "schema": "sdcguard.config-safety.v1",
+  "deployment_id": "synthetic-input-shape-sglang-unobserved-capacity",
+  "advertised_context_tokens": 1024,
+  "model": {
+    "id": "example/placeholder",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "architecture": "LlamaForCausalLM"
+  },
+  "workers": [
+    {
+      "id": "prefill",
+      "role": "prefill",
+      "engine": "sglang",
+      "version": "0.5.22",
+      "build_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "components": {},
+      "connector": {
+        "name": "mooncake",
+        "transfer_mode": "push",
+        "bidirectional": false,
+        "module_path": null
+      },
+      "parameters": {
+        "context_length": 1024,
+        "page_size": 16,
+        "max_total_tokens": 4096,
+        "disaggregation_transfer_backend": "mooncake",
+        "disaggregation_enable_kv_checksum": false,
+        "kv_canary": "none",
+        "kv_canary_real_data": "none",
+        "disaggregation_mode": "prefill"
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "separate",
+        "hybrid": false
+      }
+    },
+    {
+      "id": "decode",
+      "role": "decode",
+      "engine": "sglang",
+      "version": "0.5.22",
+      "build_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "components": {},
+      "connector": {
+        "name": "mooncake",
+        "transfer_mode": "push",
+        "bidirectional": false,
+        "module_path": null
+      },
+      "parameters": {
+        "context_length": 1024,
+        "page_size": 16,
+        "max_total_tokens": 4096,
+        "disaggregation_transfer_backend": "mooncake",
+        "disaggregation_enable_kv_checksum": false,
+        "kv_canary": "none",
+        "kv_canary_real_data": "none",
+        "disaggregation_mode": "decode"
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "separate",
+        "hybrid": false
+      }
+    }
+  ]
+}

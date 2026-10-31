@@ -1,0 +1,51 @@
+    def _pop_done_transfers(
+        self, transfers: dict[str, list[int]]
+    ) -> tuple[set[str], set[str]]:
+        """Poll transfers, retaining handles until they can be released.
+
+        Args:
+            transfers: Outstanding handles by request, updated in place.
+
+        Returns:
+            Requests with no outstanding handles and requests with observed
+            failures. Failed requests may still have outstanding handles.
+
+        """
+        done_req_ids: set[str] = set()
+        failed_req_ids: set[str] = set()
+        for req_id, handles in list(transfers.items()):
+            in_progress = []
+            for handle in handles:
+                try:
+                    xfer_state = self.nixl_wrapper.check_xfer_state(handle)
+                    if xfer_state == "DONE":
+                        res = self.nixl_wrapper.get_xfer_telemetry(handle)
+                        self.xfer_stats.record_transfer(res)
+                        self.nixl_wrapper.release_xfer_handle(handle)
+                    elif xfer_state == "PROC":
+                        in_progress.append(handle)
+                    else:
+                        self._log_failure(
+                            failure_type="transfer_failed",
+                            req_id=req_id,
+                            xfer_state=xfer_state,
+                        )
+                        if not self._handle_failed_transfer(
+                            req_id, handle, failed_req_ids
+                        ):
+                            in_progress.append(handle)
+                except Exception as e:
+                    self._log_failure(
+                        failure_type="transfer_exception",
+                        req_id=req_id,
+                        error=e,
+                    )
+                    if not self._handle_failed_transfer(req_id, handle, failed_req_ids):
+                        in_progress.append(handle)
+
+            if not in_progress:
+                done_req_ids.add(req_id)
+                del transfers[req_id]
+            else:
+                transfers[req_id] = in_progress
+        return done_req_ids, failed_req_ids

@@ -1,0 +1,92 @@
+{
+  "schema": "sdcguard.config-safety.v1",
+  "deployment_id": "synthetic-input-shape-vllm-capacity-shortfall",
+  "advertised_context_tokens": 1024,
+  "model": {
+    "id": "example/placeholder",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "architecture": "LlamaForCausalLM"
+  },
+  "workers": [
+    {
+      "id": "prefill",
+      "role": "prefill",
+      "engine": "vllm",
+      "version": "0.32.0",
+      "build_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "components": {
+        "runtime_patch_sha256": null
+      },
+      "connector": {
+        "name": "NixlConnector",
+        "transfer_mode": "pull",
+        "bidirectional": false,
+        "extra_config": {},
+        "module_path": null
+      },
+      "parameters": {
+        "max_model_len": 1024,
+        "block_size": 16,
+        "num_gpu_blocks_override": 64
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "separate",
+        "hybrid": false
+      }
+    },
+    {
+      "id": "decode",
+      "role": "decode",
+      "engine": "vllm",
+      "version": "0.32.0",
+      "build_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "components": {
+        "runtime_patch_sha256": null
+      },
+      "connector": {
+        "name": "NixlConnector",
+        "transfer_mode": "pull",
+        "bidirectional": false,
+        "extra_config": {},
+        "module_path": null
+      },
+      "parameters": {
+        "max_model_len": 1024,
+        "block_size": 16,
+        "num_gpu_blocks_override": 64
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "separate",
+        "hybrid": false
+      }
+    }
+  ]
+}

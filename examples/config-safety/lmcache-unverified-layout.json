@@ -1,0 +1,96 @@
+{
+  "schema": "sdcguard.config-safety.v1",
+  "deployment_id": "synthetic-input-shape-lmcache-unverified-layout",
+  "advertised_context_tokens": 1024,
+  "model": {
+    "id": "example/placeholder",
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "architecture": "LlamaForCausalLM"
+  },
+  "workers": [
+    {
+      "id": "prefill",
+      "role": "prefill",
+      "engine": "vllm-lmcache",
+      "version": "0.26.0",
+      "build_commit": "568afb3a13806beb53bb2e6bd518269357b237c0",
+      "components": {
+        "lmcache_version": "0.5.2",
+        "lmcache_commit": "cd2c0d6a6a982ec5e334bae7704e1029c06d3c97",
+        "runtime_patch_sha256": null
+      },
+      "connector": {
+        "name": "LMCacheConnectorV1",
+        "extra_config": {
+          "use_native": false
+        },
+        "module_path": null
+      },
+      "parameters": {
+        "max_model_len": 1024,
+        "block_size": 16,
+        "num_gpu_blocks_override": 65
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "unknown",
+        "hybrid": false
+      }
+    },
+    {
+      "id": "decode",
+      "role": "decode",
+      "engine": "vllm-lmcache",
+      "version": "0.26.0",
+      "build_commit": "568afb3a13806beb53bb2e6bd518269357b237c0",
+      "components": {
+        "lmcache_version": "0.5.2",
+        "lmcache_commit": "cd2c0d6a6a982ec5e334bae7704e1029c06d3c97",
+        "runtime_patch_sha256": null
+      },
+      "connector": {
+        "name": "LMCacheConnectorV1",
+        "extra_config": {
+          "use_native": false
+        },
+        "module_path": null
+      },
+      "parameters": {
+        "max_model_len": 1024,
+        "block_size": 16,
+        "num_gpu_blocks_override": 65
+      },
+      "environment": {},
+      "layout": {
+        "attention": "full",
+        "cache_groups": 1,
+        "tp": 1,
+        "pp": 1,
+        "dp": 1,
+        "dcp": 1,
+        "offload": false,
+        "speculative": false,
+        "dynamic": false,
+        "remote_model_code": false,
+        "parameters_complete": true,
+        "environment_complete": true,
+        "kv_pool_class": "MHATokenToKVPool",
+        "kv_layout": "unknown",
+        "hybrid": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 7079,
+      "sha256": "38535daf5aa52663c0fcc5065ac9cfba6d91223eb536244a65fadfa19998a174"
+    },
+    "SUPPORT.json": {
+      "bytes": 4794,
+      "sha256": "ea9fd3bd262d6204dc559cf16b0f6479b7190e3ceadeb6eec5c57fd427d811fc"
+    },
+    "guides/ALLOCATION_RECIPIENT.md": {
+      "bytes": 7916,
+      "sha256": "ed1e761a80ec14f4213610cedd6c810efbaa68543834a754f75d280fd122f4dd"
+    },
+    "guides/ASSIGNMENT.md": {
+      "bytes": 7033,
+      "sha256": "ba188221ca184a891aacf57c677ed4e56f2c3423213ee3c658831b3dbfe3ae2f"
+    },
+    "guides/ASSIGNMENT_NATIVE.md": {
+      "bytes": 9951,
+      "sha256": "c77c242d2700b32f6000ac2609f1d72dbe9bdbba321bfcc75aae10ffdbc7a3be"
+    },
+    "guides/CHECKSUM_CLIENT.md": {
+      "bytes": 8163,
+      "sha256": "ced49e27731aa7e71df63bceb77e070067e51002f6a75f09c1f95b89448ccc5b"
+    },
+    "guides/CHECKSUM_OBSERVER.md": {
+      "bytes": 10688,
+      "sha256": "caef4e3cc1d76fb36e90ee1e8dc15ab168a5bf6147a96325addbe33561ef7d62"
+    },
+    "guides/CONFIG_SAFETY.md": {
+      "bytes": 11196,
+      "sha256": "afe3f3c99853c666dd84b7bc4d9fd7f9aa245014151d4a8cc9a73d3d1242ae66"
+    },
+    "guides/EVIDENCE_REPORT.md": {
+      "bytes": 8510,
+      "sha256": "f8736e5fe5216a78406ecdc999aa98478442aa3cc504688dea88d860d3de86e6"
+    },
+    "guides/FORWARD_INPUTS.md": {
+      "bytes": 8968,
+      "sha256": "b0c1fcea3d5eb20ab9e51c56c3b747d2f8a12542692e7e582c966f280b23bc49"
+    },
+    "guides/H100_OBSERVER_RESULT.json": {
+      "bytes": 13629,
+      "sha256": "f5c1f7329783d8bbbeab12c64c63d8452940bc87bbeb48bd7be1d0faf7b3a0f2"
+    },
+    "guides/H100_OBSERVER_RESULT.md": {
+      "bytes": 5481,
+      "sha256": "2295fc88f8e0f9cf197fc76981719d88382f8e3a5faa5cd67f9ff257840a2a83"
+    },
+    "guides/LIFETIME_RULES.md": {
+      "bytes": 5777,
+      "sha256": "6d469715105936c16835c7d38a8581ce6e1f8adbcf4ccbc6da6175cfe20a066c"
+    },
+    "guides/NATIVE_CHECK_COVERAGE.md": {
+      "bytes": 7161,
+      "sha256": "f1be7e1c4c0236e6050cb3b86ff7e1954721383a89b9027ce0f486cae7e75cba"
+    },
+    "guides/NATIVE_EVIDENCE.md": {
+      "bytes": 6409,
+      "sha256": "7842f6ee69d378f84ef646a8c30395239bdf707e9e683cd8211423eacc7133ce"
+    },
+    "guides/OVERLAP.md": {
+      "bytes": 8580,
+      "sha256": "b435b059523a11e194c2cd06eff9b337cb62e3c30b4da5f6ad03ff1252c498bd"
+    },
+    "guides/OWNER_ACTIONS.md": {
+      "bytes": 2815,
+      "sha256": "2f723c1a04b844bd0d86d4d7221980ef0296159c82ca32501eb5b7eeeba7bcdb"
+    },
+    "guides/SUPPORT_61229.md": {
+      "bytes": 5771,
+      "sha256": "4b42fb272a69c02d4004c8f7dc4a1520e9baa189525178960bc5721e2a7889aa"
+    },
+    "guides/UPGRADE_GATE.md": {
+      "bytes": 5068,
+      "sha256": "c22c263eaf093b3b35977b45cf9a81aec04a26ee986e7e13632e080ce685b7bc"
+    },
+    "profiles/ascend-declared-capacity.json": {
+      "bytes": 2697,
+      "sha256": "e4f5e18a69aacf702cbf24d360651d9162f2a85748244140201eeffbf55ea237"
+    },
+    "profiles/lmcache-unverified-layout.json": {
+      "bytes": 2556,
+      "sha256": "fe7f88e560625a927bb589e877d7523c95a529b665ac37bb3a8bfe0d4ea1c078"
+    },
+    "profiles/sglang-unobserved-capacity.json": {
+      "bytes": 2646,
+      "sha256": "b5de747da7cc56fe7c1c49b4649757e4e639a5124ef5250ccd76cc49a8ff1d54"
+    },
+    "profiles/vllm-capacity-shortfall.json": {
+      "bytes": 2370,
+      "sha256": "b019b55d81d5546bf0c2497784b03b6a1aefd7f7894b12d0cc9f4e4bfbdf59f7"
+    },
+    "recording-deployment.example.json": {
+      "bytes": 445,
+      "sha256": "8f0cb84cff4338ebc63d70492dc255fb8ca79baf724161cde3ef28f06901ed03"
+    },
+    "static-deployment.example.json": {
+      "bytes": 235,
+      "sha256": "009975533a51bee7fe2a7cbd78ccc5701b5dc1a0d5948a4f5c14aea0b04995a4"
+    }
+  },
+  "limits": [
+    "local installed resource consistency only",
+    "templates contain unresolved or synthetic declarations",
+    "no runtime isolation or remote authenticity; raw GPU recordings are not bundled",
+    "result notes grant no new deployment verdict"
+  ],
+  "owner": "Hari Krishna Kancharla",
+  "schema": "sdcguard.operator-setup.v1",
+  "source_inputs": {
+    "guides/ALLOCATION_RECIPIENT.md": {
+      "sha256": "ed1e761a80ec14f4213610cedd6c810efbaa68543834a754f75d280fd122f4dd",
+      "source": "docs/ALLOCATION_RECIPIENT.md"
+    },
+    "guides/ASSIGNMENT.md": {
+      "sha256": "ba188221ca184a891aacf57c677ed4e56f2c3423213ee3c658831b3dbfe3ae2f",
+      "source": "docs/ASSIGNMENT.md"
+    },
+    "guides/ASSIGNMENT_NATIVE.md": {
+      "sha256": "c77c242d2700b32f6000ac2609f1d72dbe9bdbba321bfcc75aae10ffdbc7a3be",
+      "source": "docs/ASSIGNMENT_NATIVE.md"
+    },
+    "guides/CHECKSUM_CLIENT.md": {
+      "sha256": "ced49e27731aa7e71df63bceb77e070067e51002f6a75f09c1f95b89448ccc5b",
+      "source": "docs/CHECKSUM_CLIENT.md"
+    },
+    "guides/CHECKSUM_OBSERVER.md": {
+      "sha256": "caef4e3cc1d76fb36e90ee1e8dc15ab168a5bf6147a96325addbe33561ef7d62",
+      "source": "docs/CHECKSUM_OBSERVER.md"
+    },
+    "guides/CONFIG_SAFETY.md": {
+      "sha256": "afe3f3c99853c666dd84b7bc4d9fd7f9aa245014151d4a8cc9a73d3d1242ae66",
+      "source": "docs/CONFIG_SAFETY.md"
+    },
+    "guides/EVIDENCE_REPORT.md": {
+      "sha256": "f8736e5fe5216a78406ecdc999aa98478442aa3cc504688dea88d860d3de86e6",
+      "source": "docs/EVIDENCE_REPORT.md"
+    },
+    "guides/FORWARD_INPUTS.md": {
+      "sha256": "b0c1fcea3d5eb20ab9e51c56c3b747d2f8a12542692e7e582c966f280b23bc49",
+      "source": "docs/FORWARD_INPUTS.md"
+    },
+    "guides/H100_OBSERVER_RESULT.json": {
+      "sha256": "f5c1f7329783d8bbbeab12c64c63d8452940bc87bbeb48bd7be1d0faf7b3a0f2",
+      "source": "docs/H100_OBSERVER_RESULT.json"
+    },
+    "guides/H100_OBSERVER_RESULT.md": {
+      "sha256": "2295fc88f8e0f9cf197fc76981719d88382f8e3a5faa5cd67f9ff257840a2a83",
+      "source": "docs/H100_OBSERVER_RESULT.md"
+    },
+    "guides/LIFETIME_RULES.md": {
+      "sha256": "6d469715105936c16835c7d38a8581ce6e1f8adbcf4ccbc6da6175cfe20a066c",
+      "source": "docs/LIFETIME_RULES.md"
+    },
+    "guides/NATIVE_CHECK_COVERAGE.md": {
+      "sha256": "f1be7e1c4c0236e6050cb3b86ff7e1954721383a89b9027ce0f486cae7e75cba",
+      "source": "docs/NATIVE_CHECK_COVERAGE.md"
+    },
+    "guides/NATIVE_EVIDENCE.md": {
+      "sha256": "7842f6ee69d378f84ef646a8c30395239bdf707e9e683cd8211423eacc7133ce",
+      "source": "docs/NATIVE_EVIDENCE.md"
+    },
+    "guides/OVERLAP.md": {
+      "sha256": "b435b059523a11e194c2cd06eff9b337cb62e3c30b4da5f6ad03ff1252c498bd",
+      "source": "docs/OVERLAP.md"
+    },
+    "guides/OWNER_ACTIONS.md": {
+      "sha256": "2f723c1a04b844bd0d86d4d7221980ef0296159c82ca32501eb5b7eeeba7bcdb",
+      "source": "docs/OWNER_ACTIONS.md"
+    },
+    "guides/SUPPORT_61229.md": {
+      "sha256": "4b42fb272a69c02d4004c8f7dc4a1520e9baa189525178960bc5721e2a7889aa",
+      "source": "docs/SUPPORT_61229.md"
+    },
+    "guides/UPGRADE_GATE.md": {
+      "sha256": "c22c263eaf093b3b35977b45cf9a81aec04a26ee986e7e13632e080ce685b7bc",
+      "source": "docs/UPGRADE_GATE.md"
+    },
+    "profiles/ascend-declared-capacity.json": {
+      "sha256": "e4f5e18a69aacf702cbf24d360651d9162f2a85748244140201eeffbf55ea237",
+      "source": "examples/config-safety/ascend-declared-capacity.json"
+    },
+    "profiles/lmcache-unverified-layout.json": {
+      "sha256": "fe7f88e560625a927bb589e877d7523c95a529b665ac37bb3a8bfe0d4ea1c078",
+      "source": "examples/config-safety/lmcache-unverified-layout.json"
+    },
+    "profiles/sglang-unobserved-capacity.json": {
+      "sha256": "b5de747da7cc56fe7c1c49b4649757e4e639a5124ef5250ccd76cc49a8ff1d54",
+      "source": "examples/config-safety/sglang-unobserved-capacity.json"
+    },
+    "profiles/vllm-capacity-shortfall.json": {
+      "sha256": "b019b55d81d5546bf0c2497784b03b6a1aefd7f7894b12d0cc9f4e4bfbdf59f7",
+      "source": "examples/config-safety/vllm-capacity-shortfall.json"
+    },
+    "recording-deployment.example.json": {
+      "sha256": "8f0cb84cff4338ebc63d70492dc255fb8ca79baf724161cde3ef28f06901ed03",
+      "source": "examples/deployment-61229.json"
+    }
+  }
+}

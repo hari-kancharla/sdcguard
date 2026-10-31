@@ -558,12 +558,12 @@ def quantization_section(alerts: Optional[list], plugin: Optional[dict]) -> dict
 
 
 # ---------------------------------------------------------------- 4b. consistency
-def consistency_section(cons: Optional[dict], base: Optional[dict], pol: dict) -> dict:
+def consistency_section(cons: Optional[dict], base: Optional[dict], pol: dict, repeat: Optional[dict] = None) -> dict:
     req = pol["consistency"]["required"]
     if cons is None:
         return {"verdict": "UNMEASURED", "required": req, "why": "no consistency check was given"}
     from .consistency import judge_against
-    j = judge_against(cons, base)
+    j = judge_against(cons, base, repeat)
     v = j["verdict"]
     detail = {"prefix_cache": j["prefix_cache"], "decode_prefill": j["decode_prefill"],
               "decode_largest_gap": (cons.get("decode_prefill") or {}).get("largest_gap"),
@@ -628,7 +628,7 @@ def still_applies(decision: dict, stack_now: dict) -> dict:
 # ---------------------------------------------------------------- the decision
 def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=None, kernels_after=None,
            kernel_test=None, alerts=None, perf_before=None, perf_after=None, plugin=None, isolation=None,
-           consistency=None, consistency_baseline=None) -> dict:
+           consistency=None, consistency_baseline=None, consistency_repeat=None) -> dict:
     pol = policy_with_defaults(pol)
     a = arithmetic(alerts, gate, kernel_test, plugin, pol["arithmetic"]["min_weights_checked"])
     wt = weights_section(a, plugin, alerts is not None)
@@ -636,7 +636,7 @@ def decide(pol: Optional[dict] = None, quality=None, gate=None, kernels_before=N
     q = approximation(quality, pol)
     p = performance(perf_before, perf_after, pol)
     iso = isolation_section(isolation, pol)
-    con = consistency_section(consistency, consistency_baseline, pol)
+    con = consistency_section(consistency, consistency_baseline, pol, consistency_repeat)
     stacks = {"baseline": (quality or {}).get("ref_stack"), "candidate": (quality or {}).get("stack")}
     s = scope(kernels_before, kernels_after, kernel_test, stacks)
     reject, missing = [], []

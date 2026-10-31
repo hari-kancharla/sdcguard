@@ -1,0 +1,9 @@
+    def register_deferred_abort_room(self, bootstrap_room: int) -> int:
+        """Arm a new generation for a held room and return its wire id."""
+        self._deferred_abort_generation += 1
+        generation = self._deferred_abort_generation
+        self._deferred_abort_ack_tracker[bootstrap_room] = DeferredAbortAckState(
+            generation=generation,
+            prefill_ranks=set(),
+        )
+        return generation

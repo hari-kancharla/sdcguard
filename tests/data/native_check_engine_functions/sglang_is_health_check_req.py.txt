@@ -1,0 +1,3 @@
+def is_health_check_req(req: Req) -> bool:
+    rid = req.rid
+    return isinstance(rid, str) and rid.startswith(HEALTH_CHECK_RID_PREFIX)

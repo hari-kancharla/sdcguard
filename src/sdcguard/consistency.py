@@ -41,7 +41,7 @@ SCHEMA = "sdcguard.consistency/1"
 MIN_GAP = 0.5            # nats
 MIN_MARGIN = 1.0         # nats
 DECODE_FACTOR = 4.0
-DECODE_FLOOR = 0.1       # nats
+DECODE_FLOOR = 0.25      # nats: two bf16 rounding steps of a logit between 16 and 32 (0.1 was under one)
 KV_SPLIT = 96            # the decode gaps are also reported for KV lengths up to this and past it
 DOCS = (
     "The harbor town keeps a ledger of every ship that docks, with its cargo, its crew and the weather on arrival. "
@@ -224,12 +224,13 @@ def decode_probe(url: str, model: str, max_tokens: int = 160, prompts=DECODE_PRO
             "partial_cases": len(partial)}
 
 
-def judge_against(cand: dict, base: Optional[dict]) -> dict:
+def judge_against(cand: dict, base: Optional[dict], repeat: Optional[dict] = None) -> dict:
     """A candidate's consistency against the baseline's (sdcguard qualify): the prefix-cache probe stands on its own
     (a cached answer must match a cold one on any stack); decode-vs-prefill gaps are judged against the baseline's.
     base None: no baseline (the standalone command), the decode probe's own verdict stands. A baseline given whose
     decode probe is missing or incomplete sets no line: the candidate's decode gaps are INCONCLUSIVE, not judged by
-    the standalone rule."""
+    the standalone rule. repeat: the baseline started again (qualify's `again`), when there is one: the line is set
+    from the larger of the two baseline gaps, since one measurement of a largest gap is itself noisy."""
     out = {"prefix_cache": (cand.get("prefix_cache") or {}).get("verdict", "INCONCLUSIVE"), "why": []}
     cd, bd = cand.get("decode_prefill") or {}, (base or {}).get("decode_prefill") or {}
     cg, bg = cd.get("largest_gap"), bd.get("largest_gap")
@@ -242,12 +243,17 @@ def judge_against(cand: dict, base: Optional[dict]) -> dict:
     elif base is None:
         out["decode_prefill"] = cd.get("verdict", "INCONCLUSIVE")
     else:
-        line = max(DECODE_FACTOR * bg, DECODE_FLOOR)
+        rd = (repeat or {}).get("decode_prefill") or {}
+        rg = rd.get("largest_gap") if rd.get("verdict") in ("CONSISTENT", "INCONSISTENT") else None
+        ref_gap = max(bg, rg) if isinstance(rg, (int, float)) else bg
+        line = max(DECODE_FACTOR * ref_gap, DECODE_FLOOR)
         out["decode_prefill"] = "INCONSISTENT" if cg > line else "CONSISTENT"
         out["decode_line"] = round(line, 6)
+        out["decode_line_from"] = "the baseline and its repeat" if isinstance(rg, (int, float)) else "the baseline"
         if cg > line:
             out["why"].append(f"decode vs prefill: the candidate's largest log-probability gap is {cg:.3f} nats, the "
-                              f"baseline's {bg:.3f} (line {line:.3f})")
+                              f"baseline's {bg:.3f}" + (f" and its repeat's {rg:.3f}" if isinstance(rg, (int, float))
+                                                       else "") + f" (line {line:.3f})")
     if out["prefix_cache"] == "INCONSISTENT":
         pc = cand["prefix_cache"]
         # a case that made the verdict: a significant cached gap, quiet cold answers, the cache hit confirmed

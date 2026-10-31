@@ -133,3 +133,20 @@ def test_the_decode_probe_keeps_every_positions_gap_and_splits_them_by_kv_length
     c = r["decode_prefill"]["cases"][0]
     assert len(c["gaps"]) == c["tokens"] and c["missing"] == 0 and r["decode_prefill"]["kv_split"] == 96
     assert c["mean_gap_kv_past_split"] > c["mean_gap_kv_upto_split"]       # the stand-in drifts past 97 tokens
+
+
+def test_a_very_consistent_baseline_doesnt_reject_one_rounding_step_and_its_repeat_widens_the_line():
+    """An outside review's case: the line was max(4 x the baseline's largest gap, 0.1 nat), under one bf16 rounding
+    step of a typical top logit (0.125), so a very consistent baseline rejected a normal candidate at 0.2. The floor
+    is now two steps, and the repeated baseline (qualify's `again`) counts too."""
+    ok = {"verdict": "CONSISTENT", "cases": [], "cache_hits_confirmed": True}
+
+    def dp(gap):
+        return {"prefix_cache": ok, "decode_prefill": {"verdict": "CONSISTENT", "largest_gap": gap, "cases": []}}
+    assert cs.judge_against(dp(0.2), dp(0.0))["decode_prefill"] == "CONSISTENT"
+    assert cs.judge_against(dp(0.3), dp(0.0))["decode_prefill"] == "INCONSISTENT"
+    j = cs.judge_against(dp(0.3), dp(0.0), dp(0.1))                 # the repeat measured 0.1: line 0.4
+    assert j["decode_prefill"] == "CONSISTENT" and j["decode_line"] == 0.4
+    assert j["decode_line_from"] == "the baseline and its repeat"
+    j = cs.judge_against(dp(0.5), dp(0.0), dp(0.1))
+    assert j["decode_prefill"] == "INCONSISTENT" and "its repeat's 0.100" in j["why"][0]

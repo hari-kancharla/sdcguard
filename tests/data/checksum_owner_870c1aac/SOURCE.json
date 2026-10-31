@@ -1,0 +1,19 @@
+{
+  "files": {
+    "CPU_PREFLIGHT.json": {
+      "bytes": 1013640,
+      "sha256": "379bd7bf6676e80db9783d5a7b668b301011286e83c435d161403c90801d22d5"
+    },
+    "RESULT.json": {
+      "bytes": 1476,
+      "sha256": "618270e5b688fb66421948d25a74667b2e2a2904b067be56ba0825d9de836daa"
+    },
+    "ordinary-evidence.zip": {
+      "bytes": 925254,
+      "sha256": "ab833406d43a87ed9e765b9054e6946ca531dabffece79dfb9e84b95f881ee8d"
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "scope": "Exact already-recorded ordinary owner run; no live execution",
+  "source": "H100-owner-result from run 870c1aac"
+}

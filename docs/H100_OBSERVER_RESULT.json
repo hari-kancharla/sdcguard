@@ -1,0 +1,270 @@
+{
+  "audit_files_sha256": {
+    "ROOT_MEASUREMENT.json": "e46e3b6bff3103798ec9d78c2e47538b4f6dec4229a544497e5f139d96573459",
+    "host-recompute/RESULT.json": "f047a477c799a3942f5f87d2cc22cc4f404c1ae2e4e490da976576cef0d899f9",
+    "measurement/RESULT.json": "fa6ecef7e9215e01249a418bfb520eed91eef064b1b30395ef927c50074cf91c"
+  },
+  "kind": "derived_result_note",
+  "limits": [
+    "Same fixed engine with lease verification enabled in both arms; this measures observer overhead.",
+    "Sequential active-client decode token rate includes prefill/decode time, excluding receipt writes between calls.",
+    "Grouped off/on arms, three rounds each; descriptive comparison without a confidence interval.",
+    "End-to-end p99 is not TTFT or per-token latency; saturated throughput is not measured.",
+    "Local recorded identities and hashes are not remote or live-weight attestation.",
+    "Offline evaluation is outside the timed intervals.",
+    "Fresh stock, terminal refusal, deletion-minimality and complete binary/kernel identity are not established.",
+    "Raw data must be supplied independently for re-evaluation.",
+    "Actual billed cost was not recorded."
+  ],
+  "measurements": {
+    "off": {
+      "median": {
+        "decode_tokens_per_s": 68.64692128702099,
+        "e2e_p99_ms": 375.94122400003016
+      },
+      "output_tokens": 9216,
+      "references": 3,
+      "rounds": [
+        {
+          "active_client_seconds": 44.75073233300006,
+          "decode_tokens_per_s": 68.64692128702099,
+          "e2e_p99_ms": 381.3052099999936,
+          "independently_computed_rate": 68.64692128702099,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 0
+        },
+        {
+          "active_client_seconds": 44.800133308,
+          "decode_tokens_per_s": 68.57122452917858,
+          "e2e_p99_ms": 375.94122400003016,
+          "independently_computed_rate": 68.57122452917858,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 1
+        },
+        {
+          "active_client_seconds": 44.17275492600015,
+          "decode_tokens_per_s": 69.54513036704024,
+          "e2e_p99_ms": 374.1224249999959,
+          "independently_computed_rate": 69.54513036704024,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 2
+        }
+      ],
+      "timed_requests": 384,
+      "transport": {
+        "basis": "engine aggregate Prometheus samples around this arm, not per-request or remote attestation",
+        "delta": {
+          "vllm:nixl_bytes_transferred_count": 384.0,
+          "vllm:nixl_bytes_transferred_sum": 1409286144.0,
+          "vllm:nixl_num_failed_transfers": 0.0,
+          "vllm:nixl_num_lease_check_failures": 0.0
+        },
+        "missing": [],
+        "status": "observed"
+      }
+    },
+    "on": {
+      "median": {
+        "decode_tokens_per_s": 65.88348614581668,
+        "e2e_p99_ms": 396.342048000065
+      },
+      "output_tokens": 9216,
+      "references": 3,
+      "rounds": [
+        {
+          "active_client_seconds": 46.387884723000184,
+          "decode_tokens_per_s": 66.22418802547449,
+          "e2e_p99_ms": 392.0018200000186,
+          "independently_computed_rate": 66.22418802547449,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 0
+        },
+        {
+          "active_client_seconds": 47.37663785199982,
+          "decode_tokens_per_s": 64.84208545141259,
+          "e2e_p99_ms": 402.8405980000116,
+          "independently_computed_rate": 64.84208545141259,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 1
+        },
+        {
+          "active_client_seconds": 46.62776941100071,
+          "decode_tokens_per_s": 65.88348614581668,
+          "e2e_p99_ms": 396.342048000065,
+          "independently_computed_rate": 65.88348614581668,
+          "output_tokens": 3072,
+          "p99_rank": 127,
+          "requests": 128,
+          "round": 2
+        }
+      ],
+      "timed_requests": 384,
+      "transport": {
+        "basis": "engine aggregate Prometheus samples around this arm, not per-request or remote attestation",
+        "delta": {
+          "vllm:nixl_bytes_transferred_count": 384.0,
+          "vllm:nixl_bytes_transferred_sum": 1409286144.0,
+          "vllm:nixl_num_failed_transfers": 0.0,
+          "vllm:nixl_num_lease_check_failures": 0.0
+        },
+        "missing": [],
+        "status": "observed"
+      }
+    }
+  },
+  "new_deployment_verdict": null,
+  "observer_wheel_sha256": "bf98ea485b67061b2a91d555e1d1312da44db500b01733e9eb2747b1171d1fb5",
+  "ordinary": {
+    "on_references_satisfied": 3,
+    "timed_on_requests_satisfied": 384
+  },
+  "overhead": {
+    "decode_tokens_per_s": {
+      "absolute_change": -2.7634351412043117,
+      "observer_off": 68.64692128702099,
+      "observer_on": 65.88348614581668,
+      "percent_change": -4.025577679806001,
+      "relative_change": -0.040255776798060014
+    },
+    "e2e_p99_ms": {
+      "absolute_change": 20.400824000034845,
+      "observer_off": 375.94122400003016,
+      "observer_on": 396.342048000065,
+      "percent_change": 5.426599345229883,
+      "relative_change": 0.05426599345229883
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "raw_files_sha256": {
+    "FINISHED.json": "6efdb0b8ad2605bf03b2c71f065bd899271bb6f30535dbed8b0d61b28e3690d1",
+    "OWNER_CALL.json": "e77409fae322f6a9857b42d688aed0983fe28c6f4648afdaff64445deb077041",
+    "PERFORMANCE_IDENTITY.json": "9cc5df29a76b4dee9e76aa7875db60aefbfdc2d987f498c8a830ba498fac8da1",
+    "PROCESS_GROUPS.json": "e6bcd73875bbc432a9efff8fadc7eb91e97323696714a2e22e3adfe2a7d61393",
+    "STARTED.json": "930c2c809e7f0f9ec3e46a4dada7a3cfaf809433b36578174c61e87403327174",
+    "SUMMARY.json": "bb66bf331224ad224441fec204919aaa562b2abd4aaadb8e9733f5718137073c",
+    "case/BUNDLE_MANIFEST.json": "a460ea7f83183900906a3817e60595c01629487ca083ccdee867ef981ed7e9c8",
+    "case/CRITERIA.md": "a34ae0fe9db4c83e875c7980029b6277894525d610f7aa8b01cee5b7838b25c7",
+    "case/LIFETIME_RULES.md": "6d469715105936c16835c7d38a8581ce6e1f8adbcf4ccbc6da6175cfe20a066c",
+    "case/MODEL_PIN.json": "773a13fe7f55622feb7322e4431b44c1ed34f1b5b06f825db95114a66ae30981",
+    "case/MODEL_PROVENANCE.json": "40e066e5677bdf2d414b0277c7daa57a7adb450299ba70454bc51b6509d7436d",
+    "case/OVERLAP.md": "a57cb1bb922ec1812e721cb2ef0100f0af473b892c4ea2dbde4e97b29a393c45",
+    "case/OWNER_ACTIONS.md": "1b3108aacad7a524005293a0901142c73545936bb0506f3971d73fc18327a364",
+    "case/PRODUCT_REVIEW.md": "be64a5f29674bfadf7411e6698ca3c761e984b294859c5a8eee9ea405fa33468",
+    "case/README.md": "0a43deb239157dffb24a66da084b997abd9a1da8fb8a9f91c173b1f1c7e8cd03",
+    "case/RESULT.html": "b9cae5815aff2e439f139298ea84db8cf9e02af7784fc976a761a922d1e2083c",
+    "case/SUPPORT.md": "00d186479be3eb24e016828f06b25ed7eb08eaf875dfda25b42386abab08ffd7",
+    "case/candidate.json": "1867819f35aafb123bbfd259c3c8d6ed914505de38b46d389d885512c0fc0fcf",
+    "case/case.json": "9a0db1a5dc9c67bac27c3a5fd8320a9ff9f188d927bed298a5101346720ae34c",
+    "case/deployment.example.json": "cc338cd5a6362bb1ffe41905de071d05be156cb4755b38298772ecd901962017",
+    "case/existing_case.py": "94c00d2d3d11d8ac7e3f5083cc1ffcb294aa9eb9ed6fa495e9ccb14bb976e2d0",
+    "case/fixed_RESULT.json": "1f09b0b7793bb0a176484c936dd25c714a75eafd530a1d95f68b7970e8b35f08",
+    "case/fixed_STATUS.json": "dfeb485a06dc795201c93d8700c2dbe25448d15cdaf4b7313279047436be4af0",
+    "case/run.py": "fd32c21a065a72907ac553cb88134f40c4afbd1b7f881773bb9e9cba6e60d41c",
+    "case/stock_RESULT.json": "fac7436d3ab9dbb0257926d877c3a765a929ece693e87a1b39d9a02b7634f9bb",
+    "case/stock_STATUS.json": "effb5a4ef4b728263ced57b6741c85d9eaaae0cbb228b37d9b2822d881470278",
+    "deployment.json": "8f93862b392e011f8ff678aa2c7d1d1c39b22020541d845c22ed1d2eefe883c5",
+    "off/PERFORMANCE.json": "1529a769e6d6d0634a0a65de9770b8f108c463baee65b9b41c595a955cd86067",
+    "off/vllm_D.log": "b66cfdfdcc373e42c27108c9e746b0a06385fd86ff55c381fa7900756958bf9c",
+    "off/vllm_P.log": "fae9f7d423481d8b8ff34ceee880a10200534b5502244481876dfaea2f4009df",
+    "on/PERFORMANCE.json": "ee735377f969bb35aeefaa694eb8365c15d70d3c114917d512509917f6f596b3",
+    "on/events/687.jsonl": "cec6b14e497260b69bd00df38a2ecc147917a819dff049e52b32d1699b6c9bc4",
+    "on/events/716.jsonl": "1dc8dee96f7dd5e82616f677e8c6e83c4e80501b1223b4019ce9820dbf89d315",
+    "on/events/842.jsonl": "b1beb4b5dd7785e096e1b5490e5965a80f58e4e22b2c8ef8cbbb771b014374db",
+    "on/events/870.jsonl": "4ca75f78d49fdcfdc8a5c8418ee0a5274bdf5817aa9d2d25b84c55dbede10fe3",
+    "on/vllm_D.log": "86544fd3efc6a0296931865454afd0eb7eab9f0b64c5b73535837138dc35d66d",
+    "on/vllm_P.log": "76f33e67796bdf6e837c306779cbe5e84414740f12b8b1edabc147aef59db0b4",
+    "owner.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "regression.log": "19ccc83f0b1375c4d3062defde98d668c13f363136318e10e93af355e13f70fb",
+    "regression/RESULT.json": "a79e009dd4c61d02070c2c880ce4620350e20edb0207038434f0343390782375",
+    "regression/RUN_MANIFEST.json": "1ee40ff23dd1178384e2cff37ac374f067cfd257bfc6e555532e9d6517902676",
+    "regression/events/10.jsonl": "f4b1299520b86f4804e7bc9d693c2ad61d18d05b8995c6215fefdf4048cbf9e8",
+    "regression/events/193.jsonl": "90f1a435922c578cd9ed86332b9b0313726b31b41e0693b2110f23469501a820",
+    "regression/events/221.jsonl": "f4b7bff238a90077357f581508d3f1bb900c349b6b3826bb0b67474f83b31248",
+    "regression/events/32.jsonl": "f91d5104ca15e135ddc573c41adfa6fa5d9927811583c87ab88c4075b95020ad",
+    "regression/events/60.jsonl": "186f4cf5d9207fb3752596aafac2804880498c2095a9ec3525e0ba53a3a54059",
+    "regression/holds.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "regression/vllm_D.log": "cac509aa277ac9b0e4f0cdf791208aaff76b4f20bf35992a7b6d0c0baccf7e9f",
+    "regression/vllm_P.log": "f5ac52e3dc2b6530d2dece0e618ae339b071d4d8950d31af23c901dc39950823"
+  },
+  "raw_recordings_bundled": false,
+  "recorded_stack": {
+    "engine_distribution_version": "0.32.0",
+    "identity": {
+      "deployment_config_sha256": "28afcf0c3a7ee86f89ebeed56e5b6649d5803dfa72aa7ac27987b8c7656a01d3",
+      "engine_files_sha256": "be6cecf056535c85c703c81e7eeb769561e7e0c9477eb1362668b6fa528db5e9",
+      "gpu_uuid": "GPU-e6149cdf-e51b-363b-229c-9bb30b0ddf98",
+      "model_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+      "weights_sha256": "83b219f3770500a1c934947299c4b53491e3921be4e281c30f083147d9143fa5"
+    },
+    "identity_field_basis": {
+      "gpu_uuid": "observed inside the owner job, not remote attestation",
+      "model_file_observation": "all ten pinned files matched before and after; live GPU weights are not attested",
+      "weights_sha256": "aggregate model-pin identity, not the individual model.safetensors file hash"
+    },
+    "identity_limit": "nine inspected relevant source files and distribution0.32.0; no full binary/kernel attestation",
+    "inspected_engine_file_sha256": {
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py": "03e1cb0b7cafb0b21a648b2c8ae9b115043dda5aacdda21a04b8224aa7ea9406",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/lease_slots.py": "1cd6e6e93d3f5f03eb94b061de89aa13b8671ea34a554adac4f4dbcfce8f06ce",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": "44cbd55369df468e48ab9fe88cea8c0b13c8f27d70d4abc3185181ceae8cea19",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py": "cb0537aa414e31e8125517bf4de439ac5b392f3bcae88069169b9d234ac3b39d",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py": "05beb40831c1693bbdd281fad8e6a04b65776272892b2553cf59439aa52f4863",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py": "0e7eee3d8b36a2671df356de4fd0da53647ec2811f14e1d10c4c80707eb3c829",
+      "vllm/distributed/nixl_utils.py": "0bffa3c052c9f67472b1c0bc3816114891b010c968bf4b8a292e7da4d687db53",
+      "vllm/v1/core/kv_cache_manager.py": "d08315437c6b07040d1b7e12d7bd7d6e966c976a286f05a9788098cfdd9754c7",
+      "vllm/v1/core/sched/scheduler.py": "d9a39870286c424cef2fc0730e24092ee3df67e848608e2278944846bab804ae"
+    },
+    "model": "Qwen/Qwen3-0.6B",
+    "model_revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "nixl_version": "1.4.1",
+    "response_fingerprint": "vllm-0.32.0-96cb1967"
+  },
+  "regression": {
+    "allocation_basis": "observed real KVCacheManager allocation/free boundaries; no inferred hardware generation counter",
+    "controls_satisfied": 2,
+    "event_coverage": {
+      "on": {
+        "allocations": 1935,
+        "events": 18644,
+        "frees": 1935,
+        "lease_checks": 387,
+        "rule_verdicts": {
+          "satisfied": 387
+        },
+        "streams": 4
+      },
+      "regression": {
+        "allocations": 408,
+        "events": 5448,
+        "frees": 408,
+        "lease_checks": 12,
+        "rule_verdicts": {
+          "correctly_rejected": 5,
+          "satisfied": 7
+        },
+        "streams": 5
+      }
+    },
+    "fixed_trials_client_recovered_exactly": 5,
+    "fixed_trials_condition_reached": 5,
+    "fixed_trials_protocol_rejected": 5,
+    "native_assessment_recomputed": true,
+    "runtime_scope": "source lifetime and scheduler admission on this saved supported path"
+  },
+  "run_date_basis": {
+    "owner_local_date": "2026-10-27",
+    "owner_timezone": "America/New_York",
+    "server_log_utc_date": "2026-10-28"
+  },
+  "run_id": "8250642462a045a588e890ea0e79c669",
+  "schema": "sdcguard.saved-h100-observer-result.v1"
+}

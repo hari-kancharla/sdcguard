@@ -1,0 +1,35 @@
+    def get_new_blocks(self, num_blocks: int) -> list[KVCacheBlock]:
+        """Get new blocks from the free block pool.
+
+        Note that we do not check block cache in this function.
+
+        Args:
+            num_blocks: The number of blocks to allocate.
+
+        Returns:
+            A list of new block.
+
+        """
+        if num_blocks > self.get_num_free_blocks():
+            raise ValueError(f"Cannot get {num_blocks} free blocks from the pool")
+
+        ret: list[KVCacheBlock] = self.free_block_queue.popleft_n(num_blocks)
+
+        if self._reuse_watchers:
+            self._notify_reuse(ret)
+
+        # In order to only iterate the list once, we duplicated code a bit
+        if self.enable_caching:
+            for block in ret:
+                self._maybe_evict_cached_block(block)
+                assert block.ref_cnt == 0
+                block.ref_cnt += 1
+                if self.metrics_collector:
+                    self.metrics_collector.on_block_allocated(block)
+        else:
+            for block in ret:
+                assert block.ref_cnt == 0
+                block.ref_cnt += 1
+                if self.metrics_collector:
+                    self.metrics_collector.on_block_allocated(block)
+        return ret

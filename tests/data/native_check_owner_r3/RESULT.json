@@ -1,0 +1,45 @@
+{
+  "archive_sha256": "edb494c39cc5cf8bfa333d0294b390c0bc9455c5ca2dae5343f2ccb9e8a25b6b",
+  "packet_sha256": "40a200970d9e34e4591ff58af239a0e3bf7d8869a8aed153a3ed497b4dfe515b",
+  "report": {
+    "cleanup": {
+      "basis": "incarnation-bound pidfd signals and exact child reaping; ambiguous membership is incomplete",
+      "complete": true,
+      "errors": [],
+      "groups": [
+        4
+      ],
+      "leader_waited": true,
+      "observed_pids": [],
+      "reaped_leaders": [],
+      "remaining_pids": [],
+      "signal_actions": [],
+      "terminal_handles": [],
+      "wait_errors": []
+    },
+    "complete": false,
+    "exit_code": 2,
+    "failure": "ordinary_capture: ValueError: owned capture process shutdown was not verified",
+    "job_status": {
+      "cause": "ValueError: owned capture process shutdown was not verified",
+      "complete": false,
+      "owner": "Hari Krishna Kancharla",
+      "packet_sha256": "40a200970d9e34e4591ff58af239a0e3bf7d8869a8aed153a3ed497b4dfe515b",
+      "paths": [
+        "owner.log",
+        "ordinary/SUMMARY.json",
+        "ordinary/ordinary-capture/CAPTURE.json"
+      ],
+      "run_id": "b06b773e08d34994bf8029bddecb1c9a",
+      "schema": "sdcguard.owner-job-status.v1",
+      "secondary": null,
+      "stage": "ordinary_capture"
+    },
+    "native_trace_join": "unknown",
+    "owner": "Hari Krishna Kancharla",
+    "ownership": "unknown",
+    "physical_reads": "unknown",
+    "run_id": "b06b773e08d34994bf8029bddecb1c9a"
+  },
+  "run_id": "b06b773e08d34994bf8029bddecb1c9a"
+}

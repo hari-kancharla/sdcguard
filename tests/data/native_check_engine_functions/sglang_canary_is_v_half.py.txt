@@ -1,0 +1,9 @@
+def _is_v_half_tag(tag: CanaryLaunchTag) -> bool:
+    return tag in (
+        CanaryLaunchTag.HEAD_V_FULL,
+        CanaryLaunchTag.TAIL_V_FULL,
+        CanaryLaunchTag.SWEEP_V_FULL,
+        CanaryLaunchTag.HEAD_V_SWA,
+        CanaryLaunchTag.TAIL_V_SWA,
+        CanaryLaunchTag.SWEEP_V_SWA,
+    )

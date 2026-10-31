@@ -1,0 +1,226 @@
+{
+  "budgets": {
+    "fixed_metadata_bytes": 16384,
+    "max_bytes": 8388608,
+    "max_records": 4096,
+    "max_units": 65536,
+    "reserved_record_bytes": 3054,
+    "reserved_state_bytes": 0,
+    "retained_bytes": 3002,
+    "retained_records": 2,
+    "retained_units": 2
+  },
+  "closed": true,
+  "health": {
+    "active_calls": 0,
+    "budget_exhausted": false,
+    "complete": true,
+    "dropped_records": 0,
+    "errors": 0,
+    "inflight_position_bytes": 0,
+    "inflight_position_units": 0,
+    "late_calls": 0
+  },
+  "limits": [
+    "Units are native checksum chunk positions, not proof every model layer or byte was checksummed.",
+    "Client inventory, router forwarding, ownership, read rights and physical reads remain unknown.",
+    "Named source files and loaded callbacks are checked; full immutable build and authenticity are unknown.",
+    "This source profile is separate from the historical lease build and cannot qualify both checks.",
+    "CPU source-function execution cannot qualify a deployment. GPU execution and overhead are unverified."
+  ],
+  "profile": "vllm-checksum-62211-full-load-tp1-pp1.v1",
+  "qualification": "cpu_source_functions",
+  "records": [
+    {
+      "coverage": "unknown",
+      "kind": "recv_plan",
+      "load_plan": {
+        "configured_group_count": 1,
+        "configured_group_ids": [
+          0
+        ],
+        "expected_group_ids": [],
+        "expected_num_tokens": null,
+        "expected_tp_size": null,
+        "groups": [
+          {
+            "attention_chunk_size": null,
+            "block_count": 2,
+            "block_size": 16,
+            "compare_called": false,
+            "consumer_reports": [],
+            "group_id": 0,
+            "native_group_result": null,
+            "non_causal": false,
+            "sent_block_size": null,
+            "sent_count": null,
+            "sent_dtype": null,
+            "sent_fingerprint": null,
+            "sent_shape": null,
+            "sent_start": null,
+            "sliding_window": null,
+            "spec_fields_recorded": true,
+            "spec_source_supported": true,
+            "spec_type": "FullAttentionSpec",
+            "start": 0
+          }
+        ],
+        "native_tp_size": 1,
+        "num_local_computed_tokens": 0,
+        "num_tokens": 32,
+        "num_workers": 1,
+        "parallel": {
+          "dcp": 1,
+          "dp": 1,
+          "pcp": 1,
+          "pp": 1,
+          "tp": 1
+        },
+        "plan_sequence": 2,
+        "planned_group_count": 1,
+        "producer_payload_present": false,
+        "source_supported": true,
+        "speculative_disabled": true,
+        "worker_ranks": [],
+        "worker_report_count": 0
+      },
+      "native_result": "scheduled",
+      "plan_sequence": 2,
+      "reason": "native_checksum_receive_scheduled",
+      "request_id": "synthetic-empty-replica-request",
+      "sequence": 3
+    },
+    {
+      "compared_units": null,
+      "coverage": "unknown",
+      "expected_units": [
+        "group:0:chunk:0",
+        "group:0:chunk:1"
+      ],
+      "groups": [
+        {
+          "group_id": 0,
+          "native_result": "passed",
+          "reason": null,
+          "returned_positions": []
+        }
+      ],
+      "kind": "verification",
+      "missing_units": null,
+      "native_result": "passed",
+      "native_return": true,
+      "origin_update_sequence": 4,
+      "proof": {
+        "call_path": [
+          "on_new_request",
+          "add_recv",
+          "update_from_output",
+          "_verify",
+          "_compare_group"
+        ],
+        "configured_group_count": 1,
+        "configured_group_ids": [
+          0
+        ],
+        "expected_group_ids": [
+          0
+        ],
+        "expected_num_tokens": 32,
+        "expected_tp_size": 1,
+        "groups": [
+          {
+            "attention_chunk_size": null,
+            "block_count": 2,
+            "block_size": 16,
+            "compare_called": true,
+            "consumer_reports": [
+              {
+                "fingerprint": 123,
+                "group_start": 0,
+                "pp_rank": 0,
+                "record_pp_rank": 0,
+                "record_tp_rank": 0,
+                "replica_keys": [],
+                "skipped": false,
+                "tp_rank": 0,
+                "value_dtype": "uint64",
+                "value_shape": [
+                  2,
+                  0
+                ]
+              }
+            ],
+            "group_id": 0,
+            "native_group_error": null,
+            "native_group_result": [],
+            "non_causal": false,
+            "sent_block_size": 16,
+            "sent_count": 2,
+            "sent_dtype": "uint64",
+            "sent_fingerprint": 123,
+            "sent_shape": [
+              2
+            ],
+            "sent_start": 0,
+            "sliding_window": null,
+            "spec_fields_recorded": true,
+            "spec_source_supported": true,
+            "spec_type": "FullAttentionSpec",
+            "start": 0
+          }
+        ],
+        "metadata_stable": true,
+        "native_tp_size": 1,
+        "num_local_computed_tokens": 0,
+        "num_tokens": 32,
+        "num_workers": 1,
+        "parallel": {
+          "dcp": 1,
+          "dp": 1,
+          "pcp": 1,
+          "pp": 1,
+          "tp": 1
+        },
+        "plan_sequence": 2,
+        "planned_group_count": 1,
+        "producer_payload_present": true,
+        "source_supported": true,
+        "speculative_disabled": true,
+        "worker_ranks": [
+          [
+            0,
+            0
+          ]
+        ],
+        "worker_report_count": 1
+      },
+      "reason": "empty_replica_inputs",
+      "reasons": [
+        "empty_replica_inputs",
+        "consumer_replica_scope_unverified"
+      ],
+      "recording_complete": true,
+      "recording_issue": null,
+      "request_id": "synthetic-empty-replica-request",
+      "sequence": 5,
+      "unverified_reasons": []
+    }
+  ],
+  "release_qualifying": false,
+  "runtime_qualified": false,
+  "schema": "sdcguard.checksum-observer.v1",
+  "source": {
+    "files": {
+      "vllm/distributed/kv_transfer/kv_checksum/checksum.py": "90f5f350e85f0f8dab6b4fb54ddd8ec0718aad6437c1a8240bd0eadff266b7d8",
+      "vllm/distributed/kv_transfer/kv_checksum/scheduler.py": "00825d3750d856ad75095f5877375385129f56d263629d438dfa16888550b42f",
+      "vllm/distributed/kv_transfer/kv_checksum/worker.py": "690eec2fb26259cca2246455a817e7c5fdcc7462bee68a0b6413e129e0495f50",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": "cec0b5688e63a8d39151f9563810529544cb43f80dab1a07ecf87f874f26635c",
+      "vllm/utils/math_utils.py": "33a8fa109989654855abdc32c48e499349caf8339a5642f06b4d625572e472b1",
+      "vllm/v1/kv_cache_interface.py": "ea1ecbbb7f463254cbe49c378261ff095e471a09a0c0d2a9716e8013f5e8fb4a",
+      "vllm/v1/worker/gpu/async_utils.py": "0cf5552344f0de9303b994e0b8075434d9c4913870b339823126b394be843ec1"
+    },
+    "reason": "named_source_files_and_loaded_callbacks_match",
+    "revision": "29d2f4e03740acb14439ce22d24b06d8095d17d3",
+    "supported": true
+  }
+}

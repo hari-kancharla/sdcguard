@@ -1,0 +1,10 @@
+{
+  "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "excerpt_sha256": "d61371c631eae498fc0f15addab8f7cd1d8564b6df598a106632559bdfc88850",
+  "full_file_sha256": "c10281277fd9a90dc8b22670db4f1af53708c5caa2aefee7aa861fa579329219",
+  "line_end": 931,
+  "line_start": 907,
+  "owner": "Hari Krishna Kancharla",
+  "scope": "Original offline path-normalization branch with controlled local resolver. No engine or model execution.",
+  "source": "https://github.com/vllm-project/vllm/blob/5df63a7203cdb9328d824a27b682e77c7b9928be/vllm/engine/arg_utils.py#L907-L931"
+}

@@ -17,3 +17,19 @@ licensed under the Apache License, Version 2.0. The changes: an input vLLM quant
 vLLM's own code unchanged, and after the input is quantized to FP8 sdcguard's quantization check is called.
 
 The license text is in `licenses/vLLM-Apache-2.0.txt`.
+
+The exact vLLM component method excerpts in `src/sdcguard/case_data/engine_generation/`
+and `tests/fixtures/engine_generation/` come from commit
+`5df63a7203cdb9328d824a27b682e77c7b9928be`, Copyright contributors to the vLLM project,
+under Apache License 2.0. Each directory includes `vllm-LICENSE.txt` and a manifest
+with upstream paths, complete-source hashes and excerpt hashes. These unchanged
+methods are executed with controlled CPU mocks for the bounded conformance command.
+
+## SGLang
+
+The exact SGLang component method excerpts in `src/sdcguard/case_data/engine_generation/`
+and `tests/fixtures/engine_generation/` come from commit
+`41fb719cf25966e6155f3e3d91f1157bc1a15123`, Copyright contributors to the SGLang project,
+under Apache License 2.0. Each directory includes `sglang-LICENSE.txt` and a manifest
+with upstream paths, complete-source hashes and excerpt hashes. These unchanged
+methods are executed with controlled CPU mocks for the bounded conformance command.

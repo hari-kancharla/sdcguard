@@ -1,0 +1,65 @@
+@dataclass
+class _Pending:
+    """A request whose checksums are being collected from the workers."""
+
+    blocks: KVChecksumBlocks
+    # The producer's checksums; only for a load.
+    expected: KVChecksumPayload | None = None
+    # Why ``expected`` is None.
+    missing_reason: str = "the producer sent no checksums"
+    # Per (pp_rank, tp_rank): its checksums of the request per group, and its record.
+    reports: dict[
+        tuple[int, int], tuple[dict[int, KVChecksumGroup], KVChecksumRecord]
+    ] = field(default_factory=dict)
+
+    def set_expected(self, req_id: str, data: bytes) -> None:
+        try:
+            self.expected = KVChecksumPayload.from_bytes(data)
+        except ValueError as e:
+            self.missing_reason = "the producer's checksums are invalid"
+            logger.debug("Invalid KV checksums for request %s: %s", req_id, e)
+
+    def check_complete(self, num_workers: int) -> None:
+        """Check that every worker reported the request.
+
+        Raises:
+            _Unverified: If not.
+
+        """
+        if len(self.reports) < num_workers:
+            raise _Unverified(
+                "not every worker reported its checksums",
+                f"{len(self.reports)} of {num_workers} workers reported",
+            )
+
+    def skipped_groups(self) -> frozenset[int]:
+        return frozenset().union(*(r.skipped_groups for _, r in self.reports.values()))
+
+    def fingerprint(self, group_id: int) -> int:
+        """The group's fingerprint for the whole model: one TP rank's per PP
+        stage, summed."""
+        stages = {pp_rank: record for (pp_rank, _), (_, record) in self.reports.items()}
+        total = sum(record.fingerprints.get(group_id, 0) for record in stages.values())
+        return total % 2**64
+
+    def group_checksums(self, group_id: int) -> list[KVChecksumGroup]:
+        """Every worker's checksums of the group's scheduled blocks.
+
+        Raises:
+            _Unverified: If a worker checksummed other blocks, e.g. those of
+                an earlier prefill of a preempted request.
+
+        """
+        start, block_ids = self.blocks.groups[group_id]
+        groups = [
+            group
+            for checksums, _ in self.reports.values()
+            if (group := checksums.get(group_id)) is not None
+        ]
+        for group in groups:
+            if group.start != start or len(group.values) != len(block_ids):
+                raise _Unverified(
+                    "a worker checksummed other blocks than scheduled",
+                    f"group {group_id}",
+                )
+        return groups

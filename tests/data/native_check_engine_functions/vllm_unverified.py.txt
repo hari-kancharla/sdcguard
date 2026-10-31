@@ -1,0 +1,11 @@
+class _Unverified(Exception):
+    """A load, or one of its groups, that cannot be compared.
+
+    ``reason`` is one of a few fixed messages, logged once each; ``detail``
+    is logged per request at debug level.
+    """
+
+    def __init__(self, reason: str, detail: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+        self.detail = detail

@@ -1,0 +1,4 @@
+def passes_v_half_gate(tag: CanaryLaunchTag) -> bool:
+    if not _is_v_half_tag(tag):
+        return True
+    return envs.SGLANG_KV_CANARY_ENABLE_MHA_V.get()

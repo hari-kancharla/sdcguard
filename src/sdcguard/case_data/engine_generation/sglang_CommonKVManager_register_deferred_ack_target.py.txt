@@ -1,0 +1,17 @@
+    def register_deferred_ack_target(self, room: int, target: AckTarget) -> None:
+        """Hold this generation's ACK until the room's transfer drains.
+
+        Targets are kept per decode endpoint, so each decode rank that aborted
+        the room gets an ACK for its own latest generation. Active-room callers
+        must mark the room Failed before registering so no new chunk can be
+        accepted after the ACK is sent.
+        """
+        if room in self._deferred_ack_poisoned_rooms:
+            return
+        # Replace instead of mutating in place: a concurrent drain pops the dict
+        # and iterates it. If the pop wins, the caller's immediate
+        # _maybe_ack_drained_abort retry re-sends the merged set, and a
+        # duplicate ACK is harmless because decode records ACKs in a set.
+        targets = dict(self._deferred_ack_targets.get(room, ()))
+        targets[(target.ip, target.port)] = target
+        self._deferred_ack_targets[room] = targets

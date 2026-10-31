@@ -1,0 +1,7 @@
+    def note_abort_ack(
+        self, bootstrap_room: int, prefill_rank: int, generation: int
+    ) -> None:
+        """Record an ACK only for the generation currently holding the room."""
+        state = self._deferred_abort_ack_tracker.get(bootstrap_room)
+        if state is not None and state.generation == generation:
+            state.prefill_ranks.add(prefill_rank)

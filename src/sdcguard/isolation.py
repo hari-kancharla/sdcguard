@@ -17,9 +17,13 @@ containing another request's context under prefix caching (#61160). Checksums of
    each, sent at once, some cancelled after their first chunk: no answer may contain another request's code, which
    only another request's context could have put there.
 
-Verdicts: LEAK (a probe's answer changed with the primer while its control agreed, or an answer holds another
-request's code); NO LEAK SEEN (neither, with both probes judged); INCONCLUSIVE (a control disagreed, requests
-failed, or a probe was skipped). NO LEAK SEEN covers these prompts, this load and this server only. Stdlib only.
+Verdicts: LEAK (a probe's answer changed with the primer the same way each time that primer came before it, in a
+case where the control and every primer's own repeats agreed, on a server whose repeats otherwise agree; or an answer
+holds another request's code); NO LEAK SEEN (neither, with both probes judged and every repeat agreeing);
+INCONCLUSIVE (a control disagreed, requests failed, a probe was skipped, or answers changed in ways that don't repeat
+with their primer: the server isn't deterministic at batch size 1, and one differing token can't be told from that).
+Before October 26 one differing token after any primer was a LEAK: a server that flips a token in 2% of requests got
+LEAK in 9 of 10 runs. NO LEAK SEEN covers these prompts, this load and this server only. Stdlib only.
 """
 from __future__ import annotations
 
@@ -45,6 +49,8 @@ PRIMERS = {   # name: text; each is cycled or cut to an exact number of tokens
     "repeat": "zx",
 }
 PRIMER_TOKENS = (8, 16)
+MAX_UNSTABLE = 0.05      # the share of repeats after the same primer that may disagree for a LEAK to be judged at all
+MIN_REPEATS = 3          # two noisy flips to the same near-tie token can agree by chance; three rarely do (p^3)
 DOCS = (
     "The harbor town keeps a ledger of every ship that docks, with its cargo, its crew and the weather on arrival. ",
     "A recipe for bread begins with flour, water, salt and yeast, and the dough rests for an hour before shaping. ",
@@ -86,8 +92,11 @@ def _greedy(url: str, model: str, prompt, max_tokens: int, logprobs: Optional[in
     return {"tokens": list(toks), "logprobs": lp.get("token_logprobs"), "text": ch.get("text")}
 
 
-def primer_probe(url: str, model: str, repeats: int = 2, max_tokens: int = 8, probes=PROBES,
+def primer_probe(url: str, model: str, repeats: int = MIN_REPEATS, max_tokens: int = 8, probes=PROBES,
                  primers: Optional[dict] = None) -> dict:
+    """repeats: how many times each primer comes before the probe (at least 3: a change that doesn't repeat with its
+    primer is noise, not a leak); the reference primer one time more, for the control."""
+    repeats = max(MIN_REPEATS, repeats)
     primers = primers or PRIMERS
     pids = {name: _tokenize(url, model, text) for name, text in primers.items()}
     ref_name = next(iter(primers))
@@ -106,6 +115,13 @@ def primer_probe(url: str, model: str, repeats: int = 2, max_tokens: int = 8, pr
                 continue
             ref = runs[ref_name]
             control = all(r["tokens"] == ref[0]["tokens"] and r["logprobs"] == ref[0]["logprobs"] for r in ref[1:])
+            # each primer's own repeats: do they agree with each other (a change that repeats with its primer is the
+            # request before shaping the answer; one that doesn't is the server's own nondeterminism)?
+            groups = {name: {"stable": all(r["tokens"] == rs[0]["tokens"] for r in rs[1:]), "repeats": len(rs),
+                             "disagreeing": sum(r["tokens"] != rs[0]["tokens"] for r in rs[1:])}
+                      for name, rs in runs.items()}
+            repeatable = sorted(name for name, rs in runs.items() if name != ref_name and groups[name]["stable"]
+                                and rs[0]["tokens"] != ref[0]["tokens"])
             diffs = []
             for name, rs in runs.items():
                 for r in (rs if name != ref_name else rs[1:]):
@@ -116,16 +132,25 @@ def primer_probe(url: str, model: str, repeats: int = 2, max_tokens: int = 8, pr
                                       "reference_tokens": ref[0]["tokens"], "text": r["text"],
                                       "reference_text": ref[0]["text"]})
             cases.append({"probe": probe, "probe_tokens": len(pr), "primer_tokens": n, "control_agrees": control,
-                          "pairs": sum(len(rs) for rs in runs.values()) - 1, "differing": diffs})
+                          "pairs": sum(len(rs) for rs in runs.values()) - 1, "differing": diffs,
+                          "all_repeats_agree": all(g["stable"] for g in groups.values()),
+                          "repeat_pairs": sum(g["repeats"] - 1 for g in groups.values()),
+                          "repeats_disagreeing": sum(g["disagreeing"] for g in groups.values()),
+                          "repeatable_change_after": repeatable})
     judged = [c for c in cases if c["control_agrees"]]
-    leaks = [c for c in judged if c["differing"]]
-    if leaks:
+    # how often a repeat after the same primer disagreed with that primer's first answer: the server's own noise
+    unstable = sum(1 for c in cases if not c["all_repeats_agree"] or not c["control_agrees"])
+    rep_pairs = sum(c["repeat_pairs"] for c in cases)
+    unstable_share = sum(c["repeats_disagreeing"] for c in cases) / rep_pairs if rep_pairs else 0.0
+    leaks = [c for c in judged if c["all_repeats_agree"] and c["repeatable_change_after"]]
+    if leaks and unstable_share <= MAX_UNSTABLE:
         v = "LEAK"
-    elif not judged or errors or len(judged) < len(cases):
+    elif not judged or errors or len(judged) < len(cases) or any(c["differing"] for c in judged):
         v = "INCONCLUSIVE"
     else:
         v = "NO LEAK SEEN"
     return {"verdict": v, "cases": cases, "errors": errors, "judged": len(judged), "with_leak": len(leaks),
+            "unstable_cases": unstable, "unstable_share": round(unstable_share, 4),
             "pairs": sum(c["pairs"] for c in judged),
             "pairs_differing": sum(len(c["differing"]) for c in judged)}
 
@@ -210,7 +235,7 @@ def canary_probe(url: str, model: str, requests: int = 64, concurrency: int = 32
             "echoed_own_code": echoed, "leaks": leaks, "errors": errors[:10]}
 
 
-def run(url: str, model: Optional[str] = None, repeats: int = 2, canaries: int = 64, concurrency: int = 32) -> dict:
+def run(url: str, model: Optional[str] = None, repeats: int = MIN_REPEATS, canaries: int = 64, concurrency: int = 32) -> dict:
     from .perf import server_model, server_version
     model = model or server_model(url)
     if not model:
@@ -220,24 +245,31 @@ def run(url: str, model: Optional[str] = None, repeats: int = 2, canaries: int =
     c = canary_probe(url, model, canaries, concurrency)
     why = []
     if p["verdict"] == "LEAK":
-        ex = next(c_ for c_ in p["cases"] if c_["control_agrees"] and c_["differing"])
-        d = ex["differing"][0]
-        why.append(f"primer dependence: {p['pairs_differing']} of {p['pairs']} probe answers changed with the request "
-                   f"before them, e.g. {ex['probe']!r} answered {d['text']!r} after the {d['primer']!r} primer and "
-                   f"{d['reference_text']!r} after the reference one, whose own repeat agreed exactly")
+        ex = next(c_ for c_ in p["cases"] if c_["control_agrees"] and c_["all_repeats_agree"]
+                  and c_["repeatable_change_after"])
+        d = next(d_ for d_ in ex["differing"] if d_["primer"] == ex["repeatable_change_after"][0])
+        why.append(f"primer dependence: in {p['with_leak']} of {len(p['cases'])} cases a probe's answer changed the "
+                   f"same way every time a given primer came before it, e.g. {ex['probe']!r} answered {d['text']!r} "
+                   f"after the {d['primer']!r} primer each time and {d['reference_text']!r} after the reference one, "
+                   f"whose own repeats agreed exactly ({p['unstable_cases']} of {len(p['cases'])} cases had any "
+                   "repeat disagree)")
+    elif p["verdict"] == "INCONCLUSIVE" and p.get("unstable_cases"):
+        why.append(f"primer probe: answers changed in {p['unstable_cases']} of {len(p['cases'])} cases in ways that "
+                   "don't repeat with their primer (the server isn't deterministic at batch size 1), so a change "
+                   "after a primer can't be told from that noise")
     if c["verdict"] == "LEAK":
         lk = c["leaks"][0]
         why.append(f"canaries: {len(c['leaks'])} answers hold another request's code, e.g. request {lk['request']} "
                    f"answered with request {lk['found_code_of']}'s")
-    if why:
+    if p["verdict"] == "LEAK" or c["verdict"] == "LEAK":
         v = "LEAK"
     elif p["verdict"] == "NO LEAK SEEN" and c["verdict"] == "NO LEAK SEEN":
         v, why = "NO LEAK SEEN", [f"{p['pairs']} primer pairs agreed and {c['answered']} canary answers held no "
                                   "other request's code"]
     else:
         v = "INCONCLUSIVE"
-        why = [f"primer probe {p['verdict']} ({p['judged']} of {len(p['cases'])} cases had a control that agreed)",
-               f"canary probe {c['verdict']}"]
+        why = why + [f"primer probe {p['verdict']} ({p['judged']} of {len(p['cases'])} cases had a control that "
+                     f"agreed)", f"canary probe {c['verdict']}"]
     return {"schema": SCHEMA, "url": url, "model": model, "server_version": server_version(url), "verdict": v,
             "why": why, "primer": p, "canary": c, "seconds": round(time.time() - t0, 1),
             "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
@@ -248,7 +280,7 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", default="http://127.0.0.1:8000")
     ap.add_argument("--model", default=None)
-    ap.add_argument("--repeats", type=int, default=2)
+    ap.add_argument("--repeats", type=int, default=MIN_REPEATS)
     ap.add_argument("--canaries", type=int, default=64)
     ap.add_argument("--concurrency", type=int, default=32)
     ap.add_argument("--out", default=None)

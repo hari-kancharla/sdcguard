@@ -1,0 +1,4 @@
+The retained vLLM source is licensed under Apache License 2.0.
+Copyright contributors to the vLLM project.
+The full license is retained at ../checksum_observer_functions/LICENSE-vllm.txt.
+Source URLs, revisions, Git blob identities and SHA256 values are recorded in PRIMARY.json.

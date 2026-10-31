@@ -1,0 +1,2 @@
+    def _is_host_destination(self, decode_req: DecodeRequest) -> bool:
+        return self.enable_host_receive and decode_req.host_staged

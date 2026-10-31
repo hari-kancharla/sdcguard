@@ -763,3 +763,86 @@ def test_both_steps_at_every_functions_limit_stay_under_the_40_dollar_budget(run
     smoke = [getattr(runner, runner.SMOKE_FN[p]) for p in (*runner.SMOKE_H100, *runner.SMOKE_L4)] + [runner.smoke1]
     r1, sm = sum(map(cost, run1)), sum(map(cost, smoke))
     assert 25 < r1 < 27.5 and 11 < sm < 12.5 and r1 + sm < 40, (r1, sm)
+
+
+def test_a_preempted_call_restarted_by_modal_gets_through_its_own_lock(runner, monkeypatch, tmp_path):
+    """Modal restarts a preempted GPU call on the same input. The restart met the lock its first attempt wrote and
+    returned NOT STARTED: the partial run was paid for and lost. The lock now keeps the call's id."""
+    spec = importlib.util.spec_from_file_location("modal_vllm_lock", Path(__file__).resolve().parents[1] /
+                                                  "scripts/modal_vllm.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    monkeypatch.setattr(m, "V", str(tmp_path))
+    monkeypatch.setattr(m, "vol", SimpleNamespace(commit=lambda: None, reload=lambda: None))
+    ids = iter(["call-1", "call-1", "call-2"])
+    monkeypatch.setattr(m, "_call_id", lambda: next(ids))
+    assert m._locked("issue59686", False) is None                        # first attempt takes the lock
+    assert m._locked("issue59686", False) is None                        # Modal's restart of the same call
+    assert m._lock_info("issue59686")["restarted"] == 1
+    assert m._locked("issue59686", False).startswith("NOT STARTED")      # a second launch is still refused
+
+
+def _lifetime(runner, monkeypatch, tmp_path, status=None, cand=True, patch=b"the reviewed fix patch",
+              expected=None, code=0):
+    import hashlib
+    import torch
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda i=0: "NVIDIA H100 80GB HBM3")
+    monkeypatch.setattr(runner, "vol", SimpleNamespace(commit=lambda: None, reload=lambda: None))
+    monkeypatch.setattr(runner, "R", str(tmp_path / "container-root"))       # no container copy here
+    exp = tmp_path / "experiments"
+    exp.mkdir(exist_ok=True)
+    (exp / "pr62065_lease_fix.patch").write_bytes(patch)
+    monkeypatch.setattr(runner, "_PATCH_SHA256", expected or hashlib.sha256(b"the reviewed fix patch").hexdigest())
+    src = Path(runner.RUNS) / "lifetime_pd"
+    src.mkdir(parents=True, exist_ok=True)
+    if cand:
+        (src / "candidate.json").write_text('{"spec": {"point": "read_submit"}}')
+    if status is not None:
+        (src / "STATUS.json").write_text(json.dumps(status))
+    seen = []
+    monkeypatch.setattr(runner, "_tee", lambda cmd, log, **k: seen.append(cmd) or code)
+    return seen
+
+
+HARM = {"exit_code": 1, "verdict": "harm_reproduced", "source": {"sha256": "s1"}}
+
+
+def test_the_fixed_lifetime_run_needs_a_saved_schedule(runner, monkeypatch, tmp_path):
+    seen = _lifetime(runner, monkeypatch, tmp_path, status=HARM, cand=False)
+    assert "NOT STARTED" in runner._lifetime_pd("lifetime_pd_fixed", "fixed", False, {}, candidate_from="lifetime_pd")
+    assert seen == []
+
+
+@pytest.mark.parametrize("status", [None, {"exit_code": 5, "verdict": "harm_found_in_discovery_not_reproduced_in_"
+                                                                     "replays"},
+                                    {"exit_code": 3, "verdict": "control_broke"}])
+def test_the_fixed_lifetime_run_needs_confirmed_harm_on_the_stock_build(runner, monkeypatch, tmp_path, status):
+    seen = _lifetime(runner, monkeypatch, tmp_path, status=status)
+    msg = runner._lifetime_pd("lifetime_pd_fixed", "fixed", False, {}, candidate_from="lifetime_pd")
+    assert "NOT STARTED" in msg and "did not confirm harm" in msg and seen == []
+
+
+def test_the_fixed_lifetime_run_refuses_an_unreviewed_patch(runner, monkeypatch, tmp_path):
+    seen = _lifetime(runner, monkeypatch, tmp_path, status=HARM, patch=b"something else")
+    msg = runner._lifetime_pd("lifetime_pd_fixed", "fixed", False, {}, candidate_from="lifetime_pd")
+    assert "NOT STARTED" in msg and "does not match" in msg and seen == []
+
+
+def test_the_fixed_lifetime_run_records_what_it_replayed(runner, monkeypatch, tmp_path):
+    import hashlib
+    seen = _lifetime(runner, monkeypatch, tmp_path, status=HARM)
+    msg = runner._lifetime_pd("lifetime_pd_fixed", "fixed", False, {"sha256": "s2"}, candidate_from="lifetime_pd")
+    assert "exit code 0" in msg and "--candidate" in seen[0]
+    st = json.load(open(os.path.join(runner.RUNS, "lifetime_pd_fixed", "STATUS.json")))
+    src = st["replayed_candidate_from"]
+    assert src["verdict"] == "harm_reproduced" and src["source"] == {"sha256": "s1"}
+    assert src["candidate_sha256"] == hashlib.sha256(b'{"spec": {"point": "read_submit"}}').hexdigest()
+    assert st["provenance"]["patch_matches_expected"] and st["verdict"] == "no_result_file"
+
+
+def test_a_timed_out_lifetime_run_says_so(runner, monkeypatch, tmp_path):
+    _lifetime(runner, monkeypatch, tmp_path, code=124)
+    runner._lifetime_pd("lifetime_pd", "unpatched", False, {})
+    st = json.load(open(os.path.join(runner.RUNS, "lifetime_pd", "STATUS.json")))
+    assert st["timed_out"] and st["verdict"] == "harness_timed_out" and st["harness_failed"]

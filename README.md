@@ -1,198 +1,135 @@
 # sdcguard
 
-Hi, I'm Hari. sdcguard catches GPUs that give wrong answers without crashing.
+Hi, I'm Hari. sdcguard checks whether each request in a prefill/decode inference setup was actually covered by the
+engine's own KV checksum.
 
-A GPU can return wrong numbers and keep going. No error, no crash, and the loss curve looks fine. Sometimes the
-chip is bad, sometimes it's a library bug. Meta sees roughly one faulty device per thousand, and ByteDance
-found 18 incidents in 35 million GPU-hours, 15 of them silent
-([AEGIS](https://www.usenix.org/system/files/osdi26-lei.pdf)).
+vLLM's KV-transfer checksum (the open PR [#62211](https://github.com/vllm-project/vllm/pull/62211)) compares the
+blocks a decode server loads from the prefill server. When the decode server reuses prompt tokens from its own
+prefix cache, those tokens can sit outside that comparison while the check still returns success. sdcguard joins
+each client request to the engine's recorded checksum results and tells you, per request, how much of the prompt
+was compared. A request passes only if its whole prompt was covered. Otherwise it gets HOLD, with the number of
+unchecked tokens.
 
-The usual health checks test an idle GPU. sdcguard checks the math of your actual training run or vLLM server
-while it runs.
+## Replay a real H100 run
 
-## Try it
+From a source checkout:
 
-```bash
-pip install "sdcguard[all]"
-sdcguard check
+```sh
+python -m pip install --no-deps .
+sdcguard gate tests/data/checksum_owner_3a2ad847 --require checksum
 ```
 
-That takes about five minutes per machine. It runs matmuls in every precision your GPU supports and checks them
-against float64, tests memory, trains and serves a small model with the checks on, and makes sure a fixed
-model gives the same output every time. Each GPU gets PASS, FAIL, SUSPECT or INCOMPLETE. A FAIL saves the
-inputs and the wrong output so you can replay them on another GPU.
+This replays a real recording from an H100 run on your machine. It doesn't start an engine, make a network request
+or use a GPU. The recording stays in the source checkout and isn't included in the wheel or source distribution.
+The offline gate is tested on Python 3.10, 3.12 and 3.13.
 
-Add `--share` to put your result on the [public board](https://hari-kancharla.github.io/sdcguard/board/).
+You should get **HOLD**, with **9 of 153 requests passing**. All 153 native checksum calls returned success, but 144
+requests reused decode-cache tokens outside the comparison. The run has 153 prefill/decode pairs (306 HTTP stages).
+Of its 109,790 prompt tokens, 9,822 were inside a recorded checksum comparison and 99,968 were reused from the
+decode cache without one.
 
-No GPU? `python -m sdcguard.demo` runs a simulated bad GPU on your CPU, or try it in
-[Colab](https://colab.research.google.com/github/hari-kancharla/sdcguard/blob/main/examples/colab_demo.ipynb).
+This is a coverage result, not evidence of corruption. It's also per request: it doesn't tell you whether a cached
+block was checked during an earlier request.
 
-<img alt="An example sdcguard check result card" src="docs/img/example_card.png" width="560">
+Add `--json` for request IDs, check results, reasons and token counts. Exit code 0 means the policy passed and 2
+means HOLD, so this run exits 2.
 
-## What a bad GPU looks like
+## Check the transfers on their own
 
-Here's a simulated bad GPU: 4 H100s training a 51M-parameter GPT model on TinyStories. From step 205,
-GPU 2 corrupts 5% of its attention Q/K matmuls, using the fault patterns from NVIDIA's
-[gate-level fault-injection study](https://arxiv.org/abs/2605.04213). sdcguard checked every 10th step,
-flagged GPU 2 at step 210, rolled back to the step 200 checkpoint and finished all 1,000 steps on the other
-three GPUs (the blue line after step 200 is that rerun). Without it, the loss looked normal until it turned
-NaN at step 215, and it crashed the same way after both restarts.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/demo_zoom_dark.png">
-  <img alt="Training loss on 4 H100s with and without sdcguard. GPU 2 starts returning wrong results at step 205. sdcguard flags it at step 210, rolls back to step 200 and finishes all 1,000 steps on GPUs 0, 1 and 3. Without sdcguard the loss looks normal until it turns NaN at step 215, and restarting crashes again." src="docs/img/demo_zoom.png">
-</picture>
-
-Logs and raw numbers are in [results/demo_4gpu](results/demo_4gpu).
-
-## A real bug that GPU health checks can't see
-
-cuBLAS has a bug (NVIDIA known issue 6862950) that gives wrong FP16, BF16 and FP8 matmuls on Hopper GPUs
-running under MPS with less than 100% of the SMs. A matching report was
-[posted on NVIDIA's forum](https://forums.developer.nvidia.com/t/cublaslt-returns-silently-wrong-fp16-bf16-fp8-gemm-results-on-hopper-under-cuda-mps-active-thread-percentage-algoid-66-cluster-kernels/384873)
-by another engineer on October 2, 2026, and NVIDIA said on October 6 that it had reproduced it.
-
-I ran sdcguard, DCGM and gpu-burn on one H200 at four MPS shares, with the rules written down before the run.
-The second column is the ground truth: PyTorch's own matmuls at that share, checked against float64.
-
-| MPS share | PyTorch's matmuls | sdcguard check | DCGM diagnostic | gpu-burn |
-|---|---|---|---|---|
-| 100% | right | pass | pass | pass |
-| 40% | **wrong** | **FAIL** | pass | pass |
-| 75% | **wrong** (weight gradients) | **FAIL** | pass | pass |
-| 14% | **wrong** | **FAIL** | pass | pass |
-
-DCGM and gpu-burn were right to pass: their own matmuls, in their own shapes and settings rather than the job's,
-came out right every time, so the rules written before the run count them as not exercised, not as misses. That's the point: a test
-that runs its own matmuls can't vouch for the ones your job runs. Full rules and logs are in
-[METHOD.md](docs/METHOD.md#head-to-head-on-a-real-cublas-bug-written-october-20-2026-before-any-run).
-
-## In training
-
-```python
-from sdcguard import SDCGuard
-
-guard = SDCGuard(every=20).protect(model)    # checks every nn.Linear: forward, dX and dW
-for step, (x, y) in enumerate(loader):
-    with guard.on_step(step):                # every 20th step is checked
-        loss = model(x, y); loss.backward()
-    optimizer.step(); optimizer.zero_grad()
-    if guard.log.events:
-        print(guard.log.events[0].to_json()); break
+```sh
+sdcguard transfer-check tests/data/checksum_owner_3a2ad847
 ```
 
-In tests on an H100 (October 18), checking every 20th step cost 1.7% on GPT-2 small and 1.3% on a 0.9B model.
-It works with autocast,
-DDP, FSDP2, tensor parallel and `torch.compile`. With the Hugging Face Trainer it's one line:
+This offline command checks something narrower: whether each recorded prefill-to-decode transfer got a complete
+native comparison of the token chunks it was planned to move. The expected chunks come from the receive plan, tied
+to the engine's cache accounting and the client's request, and the command checks the recorded comparison and the
+order things happened in. A successful native return doesn't count as coverage, and neither does the overlap between the
+planned and compared chunks on its own.
 
-```python
-trainer = Trainer(..., callbacks=[SDCGuardCallback(every=20, stop_on_alert=True)])   # from sdcguard.hf
+For the saved run this passes for all 153 requests, covering 688 chunk positions and 9,822 transferred tokens.
+**The full-prompt gate is still HOLD: 9 PASS and 144 HOLD.** The 99,968 decode-cache tokens are still outside the
+transfer comparison. Cache reuse on the prefill side is recorded separately. These numbers count token uses across
+requests, not unique stored tokens or physical bytes.
+
+`transfer-check` exits 0 only for the transfer check. It doesn't replace `gate --require checksum` and can't approve
+a full-prompt release. Its JSON includes the unchanged full-prompt gate, every planned request, source identity,
+input hashes and any gaps. Missing receipts, unknown builds, broken joins and incomplete recordings all hold. A
+request that provably transferred nothing is `NOT_EXERCISED`, never a pass, and a recording where nothing was
+exercised holds. This first profile needs prefix caching on and recorded native accounting in both engine roles.
+Anything else holds as unsupported.
+
+The consumer-side checksum arrays aren't kept, so this verifies that the engine's comparison was complete, not the
+checksum values themselves. It makes no claim about all layers, ownership, physical reads or cross-machine safety.
+The pinned engine checks only the load span, on purpose, in
+[`add_recv`](https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/distributed/kv_transfer/kv_checksum/scheduler.py#L280-L315).
+
+## Compare two recordings
+
+```sh
+sdcguard transfer-compare baseline-run candidate-run
 ```
 
-## In vLLM
+This takes two saved recordings and reruns the transfer check on both, offline. It matches requests by workload
+slot and actual request parameters, checks that the model files and startup configuration match, and shows which
+coverage was kept, which regressed and which can't be verified. A native mismatch after a verified baseline counts as a
+regression. Missing evidence stays unverifiable and names the request. Changed cache reuse or comparison spans
+don't count as kept coverage. Neither full-prompt decision changes.
 
-```bash
-SDCGUARD=1 SDCGUARD_SHARE=0.125 vllm serve Qwen/Qwen2.5-7B-Instruct
+`--json` gives both full-prompt gates, input hashes, build and recording identities, token counts and every slot.
+In this release the command always exits 2 (HOLD): only one engine revision is qualified so far, so there's no
+qualified before-and-after build pair yet. Comparing a recording with itself can show equal coverage, but it's
+labeled as the same evidence, not an upgrade. Changing paths, packet hashes or run IDs doesn't make it a different
+engine build, and an unsupported revision stays unverifiable. All of this checks that the local evidence is
+consistent. It doesn't authenticate where the evidence came from or explain why two runs differ.
+
+## Record your own run
+
+Recording needs a prepared Linux x86_64 host with one H100, the CPython 3.12 environment at `/opt/sdcguard-python`
+and the pinned editable vLLM install at `/opt/vllm-checksum`. Installing sdcguard doesn't set these up. A CPU
+preflight checks the interpreter, headers, dependencies, engine source, compiled payload, model files, transport
+and cleanup support before anything is recorded.
+
+| Component | Supported recording profile |
+| --- | --- |
+| Engine | `sawsa307/vllm` at `29d2f4e03740acb14439ce22d24b06d8095d17d3`, from the open checksum PR [#62211](https://github.com/vllm-project/vllm/pull/62211) |
+| Compiled payload | Exact base wheel at `2b678ac739166bd0356883048673bbd1c34a3b0e`; [source and dependency lock](src/sdcguard/native_operator/profile_data/artifacts/ENGINE_BUILD_LOCK.json) |
+| Model | `Qwen/Qwen3-0.6B`, revision `c1899de289a04d12100db370d81485cdf75e47ca`, with the [recorded file hashes](src/sdcguard/native_operator/profile_data/artifacts/MODEL_PIN.json) |
+| Execution | Two engine instances on one host, NIXL pull, eager `uni`, prefix caching on, 16-token blocks, same-host UCX profile with peer error handling disabled |
+
+Use the prepared host's Python environment. The output directories must not exist yet:
+
+```sh
+# CPU preflight only. No server or GPU work.
+sdcguard operator run --require checksum --out checksum-preflight --preflight-only
+
+# Owner-run GPU capture: starts both engines, records ordinary traffic and verifies it.
+sdcguard operator run --require checksum --out checksum-run
 ```
 
-This checks one linear layer in eight: the same layers on every step, so the other seven in eight are never
-checked on this server (give replicas different `SDCGUARD_OFFSET`s and between them they check every layer once).
-On an H100 (October 22, Qwen2.5 1.5B and 7B, 16 and 256 requests at a time) it lowered throughput by 2.5% to 7%,
-the answers were word for word the same as plain vLLM, and a weight bit I flipped on purpose was caught and the
-layer named. Checking every layer lowered throughput by 20% to 22% on the 7B model and by 11% (256 at a time) to
-33% (16 at a time) on the 1.5B. I'm working on making that cheaper. Those numbers were measured before the attention
-spot check, which is now on by default (`SDCGUARD_ATTN=0` turns it off). On the 1.5B on an H100 (October 24) it took
-another 2.7% at 16 requests at a time on top of a server checking every layer, and nothing measurable at 256. That
-added time would be about 4% of plain vLLM's time per token on the 1.5B, so on the 1.5B with one layer in eight
-expect more than 3% from it at 16 at a time. I haven't measured that, or other models (the 7B takes longer per
-token, so the same added time is likely a smaller share).
+The model has to be cached already. Pass `--model-cache /path/to/the/pinned/snapshot` to point at it. The run sends
+153 ordinary prefill/decode pairs in nine shared-prefix groups at concurrency 1, 4 and 16. It keeps `RESULT.json`,
+`ordinary-evidence.zip`, the CPU preflight and the final `GATE.json`. Replay it later with:
 
-When a check fires, sdcguard keeps the exact numbers that failed (copied on the GPU before vLLM reuses the
-memory) and rechecks them in float64 on the CPU, so the alert tells you whether the output was really wrong.
-Those evidence files hold real rows of your inputs and of the layer's weights: treat them like your data, and
-don't attach them to a public issue unless you're fine sharing them.
-
-Each alert also says which requests it concerns, in three parts kept apart: the request directly implicated (the
-one that held the row the check alarmed on, in that model step), the requests potentially exposed (every request in
-the steps that read covered, and every request since the layer's last clean read, which a persistent fault such as
-a changed weight concerns), and what neither covers (prefix-cache blocks reused later, and what isn't checked).
-Tokens already streamed to a client can't be taken back; the alert tells you which responses to distrust.
-
-If the plugin fails to load, vLLM serves without it, and the plugin can't report its own absence. So check from
-outside. Give each GPU worker a metrics port, then ask:
-
-```bash
-SDCGUARD=1 SDCGUARD_REQUIRE=1 SDCGUARD_METRICS_PORT=9400 vllm serve Qwen/Qwen2.5-7B-Instruct --tensor-parallel-size 2
-sdcguard ready --port 9400 --workers 2 --vllm http://127.0.0.1:8000/metrics --probe http://127.0.0.1:8000
+```sh
+sdcguard gate checksum-run --require checksum
 ```
 
-It says PROTECTED only if every worker answers, checks its layers, has read results back, and ran checks while
-vLLM produced tokens. It works as a Kubernetes readiness probe (give the probe more time than its 5-second window).
-On a real `vllm serve` (H100, vLLM 0.32, October 24) it gave the expected answer 21 times out of 21 and never said
-PROTECTED when the plugin wasn't loaded, was turned off, had stopped reading its results while serving, or the
-server was gone. An idle server can't show its checks running, so it says IDLE; add `--probe http://127.0.0.1:8000`
-and it sends two short requests to find out. Request naming: one request alone was named exactly in 5 of 5
-trials; with 32 requests sent 8 at a time, every alert named one of the 32 (which one held the row wasn't checked
-independently).
+## What PASS and HOLD mean
 
-For any other PyTorch model there's `ServeGuard().attach(model, share=0.125)`.
+PASS means every selected client request joined to a recorded passing check with complete coverage, both engine
+roles had the check enabled, and the identity and recording checks passed. Any unchecked reused prefix gives HOLD,
+with its token counts. Missing facts, unknown builds and incomplete recordings can't pass. An incomplete native
+comparison and a native mismatch stay distinguishable in the per-request evidence.
 
-## Across a fleet
+## Limits
 
-```bash
-sdcguard screen --minutes 10                         # screen every GPU on a node
-sdcguard replay screen_out/GPU-.../evidence_0.pt     # replay a failure on another GPU
-sdcguard report node*/sdcguard_check --out fleet_report
-sdcguard blas                                        # every cuBLAS algorithm on a few shapes, checked
-sdcguard issues                                      # which known cuBLAS bugs apply to this machine
-```
+This profile is checksum-only and same-host eager, not all vLLM defaults. It doesn't establish ownership, read
+rights, physical reads, cross-machine correctness, recovery from peer failures or that a deployment is safe in
+general. Recording lease and checksum checks together isn't supported. A newer head of the PR needs its own
+qualification, because matching protocol version numbers don't prove compatibility.
 
-There are also Kubernetes and Slurm health checks ([deploy/](deploy/)), signed per-GPU certificates, and alerts
-to Slack, Discord, Prometheus or NVIDIA NVSentinel.
+The checksum gate admits up to 2,000,000 JSON lexical nodes in total. Each JSON document keeps its 1,000,000-node
+limit, along with the byte, depth and archive limits. Evidence over a limit is refused, not truncated.
 
-## How it works
-
-For `C = A @ B`, the sum of each block of 128 output columns has to equal `A` times the matching column sums of
-`B`. Both sides are cheap to compute, so a wrong value in `C` shows up as a mismatch. This is algorithm-based
-fault tolerance (Huang and Abraham, 1984). The hard part is bf16: normal rounding makes the two sides differ a
-little, so sdcguard models each block's rounding noise and only alarms past six times that. In 24.6 million
-checks of clean GPT-2 small training on H100s (every matmul on every step, five 62-minute runs on October 14-15,
-with the check as it was then) it raised no false alarm; the highest score was 3.54. On NVIDIA GPUs the checks run
-as Triton kernels.
-
-## What it can't do yet
-
-- Small errors. With one wrong value in a matmul's output, the default check flagged half of them only once the
-  error reached about 29% of a typical output in its block, and none of 594 at 10% (H100, A100 and L4, October 23,
-  training matmuls); precise mode (`precise=True`) flagged half at 0.71% to 0.92% on the same matmuls. These are
-  detection rates for injected errors in training, not a measured curve for the vLLM plugin. ByteDance found its
-  real incidents with fp32 checksums, not bf16 ones. The fused fp32 check (`precise="fused"`) matched precise
-  mode's sensitivity on October 20 and 21 and passed 40 minutes of clean training on an H100 and an L4.
-- Anything outside the checked matmuls: attention internals, norms, the optimizer. The experimental
-  `recompute=True` check covers activation-checkpointed blocks in training. In vLLM serving, attention is
-  spot-checked by default (one layer a step recomputes four of its outputs from the KV cache; gross errors only,
-  on vLLM's FlashAttention 2 and 3 and Triton backends; `SDCGUARD_ATTN=0` turns it off), and RMSNorm layers have
-  an opt-in check (`SDCGUARD_NORMS=1`: it costs 7% to 10% and changed 5 of 64 answers of a compiled server).
-- FP8 matmul arithmetic and most of fused MoE in vLLM. FP8 layers' input quantization has an opt-in check
-  (`SDCGUARD_FP8=1`, CPU-tested; its GPU rerun is pending), and fused MoE experts an opt-in sampled check
-  (`SDCGUARD_MOE=1`: 2 rows of one layer a step; it ran on an eager server, its compiled server's rerun is
-  pending). INT4 and INT8 weight-only layers (GPTQ, AWQ on vLLM's Marlin and Machete kernels) are checked.
-- AMD GPUs.
-- It hasn't caught a naturally bad GPU yet. So far the evidence is injected faults and the cuBLAS bug above.
-
-## Project layout
-
-```
-src/sdcguard/     the library
-experiments/      the GPU experiments behind every number here
-scripts/          the runners that launch them on cloud GPUs
-results/          raw results of every GPU run
-docs/             METHOD.md (how each number was measured), EVIDENCE.md, WHY.md, the board
-deploy/           Kubernetes, Slurm and Docker
-tests/            pytest -q runs them all on a CPU
-```
-
-## Feedback
-
-This is alpha (0.4.0), MIT licensed, and I built it on my own. If you try it, I'd love to hear how it went,
-and most of all if you have a GPU you think is bad. Open an issue.
+The offline comparison works today. Qualifying it on two independently built and recorded engines is still to do.
+Older interfaces, and what their evidence covers, are in [earlier workflows](docs/EARLIER_WORKFLOWS.md).

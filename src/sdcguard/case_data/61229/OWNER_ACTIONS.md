@@ -1,0 +1,11 @@
+# Remaining owner-only evidence
+
+No GPU job was launched.
+
+1. Use the recovered snapshot c1899de289a04d12100db370d81485cdf75e47ca at hf/hub/models--Qwen--Qwen3-0.6B/snapshots/ on the sdcguard-runs volume. The packet supplies MODEL_PIN.json; all ten files were verified by a read-only CPU audit against immutable upstream identities. Keep the original cache read-only. Original run artifacts recorded main; this recovery corroborates identity without rewriting that historical record.
+2. Export: `sdcguard regression export /new/case`. Its README gives the owner-run replay command. Use the exact inspected interpreter/engine and a new output directory. Only the saved condition is replayed. Stop if another ordering, retries/reused IDs, transfer mechanism or topology change is required.
+3. Minimality remains open. Verify each request/token deletion on that same condition, with fresh agreed clean references, the same failure class and both controls. Preserve failed reductions. No deletion was GPU-verified or declared successful. No automated workload-mutating reducer or new ordering generator was added.
+4. Collect fresh recordings for revised hooks after review and CPU checks. Historical events lack revised identity/health facts and must remain unknown where needed. Report client recovered/refused separately from protocol rejection; fresh GPU refusal validation is not present.
+5. Collect at least three alternating checks-off/on performance rounds with the same model, engine, GPU, load and settings. Existing `sdcguard perf` retains throughput, TTFT p99, SSE text-chunk gap p99 and end-to-end p99. Use overhead prepare with the external MODEL_PIN.json, then perf --identity ... --checks off/on to bind identity/state without editing result JSON. Check state and GPU UUID remain declarations; preserve the same engine source variant and verify actual path/check execution separately. Then run `sdcguard overhead baseline.json checked.json`. Metadata consistency is not attestation. Retain incomplete/failing rounds.
+
+No claim of verified minimality, an original immutable historical model binding, revised-hook GPU validation, universal absence of false alarms, or measured overhead is made.

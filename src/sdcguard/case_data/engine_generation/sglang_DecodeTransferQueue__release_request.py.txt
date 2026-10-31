@@ -1,0 +1,9 @@
+    def _release_request(self, decode_req: DecodeRequest) -> None:
+        # HiSparse host pages are the transfer destination; free them with the KV.
+        if self.scheduler.enable_hisparse:
+            self.scheduler.hisparse_coordinator.request_finished(decode_req.req)
+        if self.enable_host_receive:
+            discard_kv_cache_backup(decode_req.req, self.tree_cache, "host_pool")
+            if decode_req.host_staged:
+                return
+        release_kv_cache(decode_req.req, self.tree_cache, checkpoint=False)

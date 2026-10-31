@@ -1,0 +1,3 @@
+def num_valid_tokens(position: int, block_size: int, num_tokens: int) -> int:
+    """How many of the first ``num_tokens`` tokens block ``position`` holds."""
+    return min(block_size, max(0, num_tokens - position * block_size))

@@ -1,0 +1,8 @@
+_SWEEP_TAGS: frozenset[CanaryLaunchTag] = frozenset(
+    (
+        CanaryLaunchTag.SWEEP_K_FULL,
+        CanaryLaunchTag.SWEEP_V_FULL,
+        CanaryLaunchTag.SWEEP_K_SWA,
+        CanaryLaunchTag.SWEEP_V_SWA,
+    )
+)

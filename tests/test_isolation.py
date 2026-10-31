@@ -56,6 +56,12 @@ def _server(mode="clean"):
             seed = sum(p) + (salt % 3 if mode == "primer_leak" else 0)
             if mode == "noisy":
                 seed += random.randint(0, 1)
+            if mode == "rare_noise":                     # a token flipped in about 3% of answers, nothing else
+                seed += random.random() < 0.03
+            if mode == "leak_and_noise":                 # the #62124 kind of dependence, plus rare noise
+                with lock:
+                    salt = state["last_primer"]
+                seed += salt % 3 + (random.random() < 0.01)
             toks = [(seed * 31 + i) % 1000 for i in range(req["max_tokens"])]
             return self._send({"choices": [{"text": f"t{seed}", "token_ids": toks,
                                             "logprobs": {"tokens": [f"token_id:{t}" for t in toks],
@@ -86,14 +92,27 @@ def test_answers_that_change_with_the_request_before_are_a_leak():
     assert r["canary"]["verdict"] == "NO LEAK SEEN"
 
 
-def test_a_server_that_isnt_deterministic_can_not_be_judged_by_the_primer_probe():
-    random.seed(3)
-    r = _run("noisy")
-    assert r["primer"]["verdict"] in ("INCONCLUSIVE", "LEAK")
-    # a control that disagrees takes its case out of the judgment: never a leak from noise alone
-    judged = [c for c in r["primer"]["cases"] if c["control_agrees"]]
-    assert all(c["control_agrees"] for c in judged)
-    assert r["primer"]["judged"] < len(r["primer"]["cases"])
+def test_a_server_that_isnt_deterministic_is_never_called_a_leak():
+    """An outside review's case: one differing token after any primer was a LEAK, so a server that flips a token in
+    2% of requests got LEAK in 9 of 10 runs, and this stand-in got LEAK on 6 of 6 seeds. Noise alone is never a leak:
+    a change has to repeat with its primer on a server whose repeats otherwise agree."""
+    for mode in ("noisy", "rare_noise"):
+        for seed in range(8):
+            random.seed(seed)
+            r = _run(mode)
+            assert r["primer"]["verdict"] == "INCONCLUSIVE" and r["verdict"] != "LEAK", (mode, seed, r["why"])
+            if r["primer"]["unstable_cases"]:
+                assert "isn't deterministic at batch size 1" in " ".join(r["why"])
+
+
+def test_a_dependence_on_the_request_before_is_still_caught_on_a_slightly_noisy_server():
+    caught = 0
+    for seed in range(6):
+        random.seed(seed)
+        r = _run("leak_and_noise")
+        caught += r["primer"]["verdict"] == "LEAK"
+        assert r["verdict"] in ("LEAK", "INCONCLUSIVE")
+    assert caught >= 4
 
 
 def test_another_requests_code_in_an_answer_is_a_leak():

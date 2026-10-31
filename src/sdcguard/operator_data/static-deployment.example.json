@@ -1,0 +1,14 @@
+{
+  "deployment_id": "fill-from-your-saved-deployment",
+  "schema": "sdcguard.config-safety.v1",
+  "workers": [
+    {
+      "id": "prefill",
+      "role": "prefill"
+    },
+    {
+      "id": "decode",
+      "role": "decode"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "basis": "Exact saved R3 owner result. Original incomplete status is unchanged. No live run is started by these tests.",
+  "files": {
+    "RESULT.json": {
+      "bytes": 1528,
+      "sha256": "1860a71e53da08761c3f3a6a17e69c046b29b30c0352b3a121bcc1b4109ebfb1"
+    },
+    "ordinary-evidence.zip": {
+      "bytes": 416468,
+      "sha256": "edb494c39cc5cf8bfa333d0294b390c0bc9455c5ca2dae5343f2ccb9e8a25b6b"
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "schema": "sdcguard.native-check-test-source.v1",
+  "source": "H100-owner-result"
+}

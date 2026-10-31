@@ -1,0 +1,20 @@
+{
+  "files": {
+    "CPU_PREFLIGHT.json": {
+      "bytes": 540579,
+      "sha256": "f1e7299d1b09591397bdf5caa0aaecacedf530fe2ebc5c6470a3de4c938ea40e"
+    },
+    "RESULT.json": {
+      "bytes": 1426,
+      "sha256": "d4d0aa6ab1aeefab75d021adf0781af8a97ab967699f1fd11614a70e5e3187dd"
+    },
+    "ordinary-evidence.zip": {
+      "bytes": 558462,
+      "sha256": "f0b2387e9dcdfaedec5987e433676229ec2ab7083d49e890a9cc5d1dbd99127d"
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "run_id": "3a2ad847b9af4c76ae55aee4111c0258",
+  "scope": "Unchanged ordinary same-host owner recording. Prefix caching on, checksum only. Offline gate replay; no new engine execution.",
+  "source": "H100-owner-result from run 3a2ad847"
+}

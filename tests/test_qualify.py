@@ -237,3 +237,38 @@ def test_a_qualify_cut_short_leaves_its_record_so_far(tmp_path, monkeypatch):
     assert q["decisions"]["leaky"]["decision"] == "REJECT" and q["decisions"]["leaky"]["isolation"] == "LEAK"
     assert "later" not in q["decisions"]
     assert json.load(open(os.path.join(out, "RUNS.json")))["complete"] is False
+
+
+def test_a_change_made_by_a_setting_or_another_install_is_a_candidate_too(tmp_path, capsys):
+    """--config-env gives one configuration an environment variable of its own (a setting is the change), and
+    --config-serve-cmd its own serve command (another environment's vLLM: an upgrade). Each is judged like any
+    candidate, its own settings are recorded with it, and a candidate not accepted reruns with them."""
+    out = str(tmp_path / "q")
+    fake = os.path.join(HERE, "_fake_vllm.py")
+    code = qualify.main([
+        "--out", out, "--baseline", "fake/m", "--candidate", "same=fake/m", "--candidate", "setting=fake/m",
+        "--candidate", "upgrade=fake/m", "--config-env", "setting:FAKE_SHIFT=4",
+        "--config-serve-cmd", f"upgrade:{sys.executable} {fake} --shift 4",
+        "--serve-cmd", f"{sys.executable} {fake}", "--port", str(_free()), "--metrics-port", str(_free()),
+        "--tokens", "8", "--concurrency", "4", "--max-tokens", "8", "--rounds", "1", "--startup-timeout", "30"])
+    rows = json.load(open(os.path.join(out, "QUALIFY.json")))["decisions"]
+    assert code == 1 and rows["same"]["decision"] == "ACCEPT", rows["same"]
+    assert rows["setting"]["decision"] == "REJECT" and rows["setting"]["approximation"] == "OUTSIDE"
+    assert rows["upgrade"]["decision"] == "REJECT" and rows["upgrade"]["approximation"] == "OUTSIDE"
+    runs = json.load(open(os.path.join(out, "RUNS.json")))["runs"]
+    assert runs["setting"]["config_env"] == {"FAKE_SHIFT": "4"} and "config_env" not in runs["same"]
+    assert runs["upgrade"]["command"][:3] == [sys.executable, fake, "--shift"]
+    q = json.load(open(os.path.join(out, "setting_quality.json")))
+    assert q["stack"]["config_env"] == {"FAKE_SHIFT": "4"}
+    assert json.load(open(os.path.join(out, "upgrade_quality.json")))["stack"]["serve_cmd"].endswith("--shift 4")
+    sh = open(os.path.join(out, "repro_setting", "rerun.sh")).read()
+    assert "FAKE_SHIFT=4" in sh
+    assert "with FAKE_SHIFT=4" in open(os.path.join(out, "repro_setting", "README.md")).read()
+    assert "--shift 4" in open(os.path.join(out, "repro_upgrade", "rerun.sh")).read()
+    rep = open(os.path.join(out, "REPORT.md")).read()
+    assert f"**upgrade** (`{sys.executable} {fake} --shift 4 fake/m`)" in rep
+    assert "**setting** (`vllm serve fake/m` with FAKE_SHIFT=4)" in rep and "**same** (`vllm serve fake/m`)" in rep
+    for bad in (["--config-env", "nobody:X=1"], ["--config-env", "same"], ["--config-serve-cmd", "same:a",
+                                                                          "--config-serve-cmd", "same:b"]):
+        with pytest.raises(SystemExit):
+            qualify.main(["--out", str(tmp_path / "x"), "--baseline", "fake/m", "--candidate", "same=fake/m", *bad])

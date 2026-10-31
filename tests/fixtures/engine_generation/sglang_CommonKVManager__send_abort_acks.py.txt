@@ -1,0 +1,7 @@
+    def _send_abort_acks(
+        self, room: int, targets: Optional[Dict[Tuple[str, int], AckTarget]]
+    ) -> None:
+        # With prefill TP < decode TP several decode ranks share one room and
+        # each sends its own ABORT; fan the ACK out to every one of them.
+        for target in (targets or {}).values():
+            self._send_abort_ack(room, target)

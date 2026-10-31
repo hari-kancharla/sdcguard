@@ -1,3 +1,33 @@
-# The source distribution is the package: the tests need fixtures, helpers and the experiments that only a
-# checkout has, so they stay in the repository rather than ship half-runnable.
+# Tests remain in the source checkout. The reviewed regression harness, exact saved case, pins and
+# operator documentation ship as pinned package-data for checkout-independent export.
 prune tests
+include docs/CONFIG_SAFETY.md
+include docs/EVIDENCE_REPORT.md
+include docs/UPGRADE_GATE.md
+include docs/FORWARD_INPUTS.md
+include docs/ASSIGNMENT.md
+include docs/ASSIGNMENT_INITIALIZATION.md
+include docs/ASSIGNMENT_NATIVE.md
+include docs/NATIVE_EVIDENCE.md
+include docs/ALLOCATION_RECIPIENT.md
+include docs/NATIVE_CHECK_COVERAGE.md
+include docs/CHECKSUM_OBSERVER.md
+include docs/CHECKSUM_CLIENT.md
+include docs/ASSIGNMENT_RECORDING.md
+include docs/FORWARD_BRIDGE.md
+include docs/SUPPORT_61229.md
+include docs/LIFETIME_RULES.md
+include docs/OWNER_ACTIONS.md
+include docs/OVERLAP.md
+include docs/H100_OBSERVER_RESULT.md
+include docs/H100_OBSERVER_RESULT.json
+include docs/PRODUCT_REVIEW.md
+include docs/result-61229.html
+include results/61229_saved/stock_RESULT.json
+include results/61229_saved/stock_STATUS.json
+include results/61229_saved/fixed_RESULT.json
+include results/61229_saved/fixed_STATUS.json
+include examples/deployment-61229.json
+recursive-include examples/config-safety *.json
+include scripts/build_operator_data.py
+include docs/EARLIER_WORKFLOWS.md

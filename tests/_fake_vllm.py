@@ -31,7 +31,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model")
     ap.add_argument("--port", type=int, required=True)
-    ap.add_argument("--shift", type=float, default=0.0)
+    ap.add_argument("--shift", type=float, default=float(os.environ.get("FAKE_SHIFT", "0")))  # (env: a setting change)
     ap.add_argument("--leak", action="store_true")
     ap.add_argument("--slow", type=float, default=0.0005)
     ap.add_argument("--fault", action="store_true")

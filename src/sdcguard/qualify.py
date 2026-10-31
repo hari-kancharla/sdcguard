@@ -6,7 +6,14 @@ give one decision per candidate with its evidence.
         --candidate awq="Qwen/Qwen2.5-7B-Instruct-AWQ" \\
         --candidate triton="Qwen/Qwen2.5-7B-Instruct --attention-backend TRITON_ATTN"
 
-Each configuration is what follows `vllm serve` (the model and its flags). One at a time, on the same GPUs and port,
+Each configuration is what follows `vllm serve` (the model and its flags). A change that isn't a flag has its own
+setting: --config-env NAME:KEY=VALUE gives one configuration (baseline, or a candidate's name) an environment variable
+of its own, and --config-serve-cmd NAME:COMMAND its own serve command, for example a vLLM upgrade installed in another
+environment:
+
+    sdcguard qualify --out qual/ --baseline "Qwen/Qwen2.5-7B-Instruct" --candidate new="Qwen/Qwen2.5-7B-Instruct" \
+        --config-serve-cmd "new:/opt/vllm-next/bin/python -m vllm.entrypoints.cli.main serve"
+ One at a time, on the same GPUs and port,
 each is started with the sdcguard plugin on (SDCGUARD=1, its metrics and alert log; --share, default 1: every layer,
 since a qualification run is a test and decide's default policy counts the plugin's silence only when it checks at
 least half the weights; --no-plugin leaves it off; its attention checks stay off unless --env SDCGUARD_ATTN=1, since
@@ -16,7 +23,8 @@ whose layers it can't all check (no SDCGUARD_REQUIRE, unless --require): an FP8 
 and judged, and its decision says what wasn't checked (NOT DECIDED rather than ACCEPT when too little was).
 
   baseline     the quality reference (`gate model-ref --url`): greedy completions with their top-20 log-probabilities
-  again        with --repeat-baseline, the baseline started a second time: its quality check is the noise floor
+  again        the baseline started a second time (unless --no-repeat-baseline): its quality check is the noise
+               floor every quality line is set from
   candidates   the quality check against the reference (teacher-forced, `gate model-check --url`)
   every one    `sdcguard isolation` (primer dependence and canaries), `sdcguard consistency` (prefix cache cold vs
                hit, decode vs prefill), `sdcguard perf` (the same load each time), and
@@ -149,9 +157,12 @@ def _write(path: str, obj) -> None:
 def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Optional[str]) -> dict:
     from . import consistency, gate_model, isolation, perf
     res: dict = {"name": name, "role": role, "config": config}
-    srv = Server(name, config, out, a.port, a.metrics_port, not a.no_plugin, a.share, a.serve_cmd, a.env_map,
-                 a.require)
+    own = "baseline" if role in ("baseline", "again") else name   # (the repeated baseline is the baseline)
+    env, serve = config_env(a, own), config_serve(a, own)
+    srv = Server(name, config, out, a.port, a.metrics_port, not a.no_plugin, a.share, serve, env, a.require)
     res["command"] = srv.cmd
+    if (getattr(a, "config_env", None) or {}).get(own):
+        res["config_env"] = dict(a.config_env[own])
     try:
         t0 = time.monotonic()
         res["ready"] = srv.wait(a.startup_timeout)
@@ -160,6 +171,10 @@ def run_one(role: str, name: str, config: str, a, out: str, ref: str, noise: Opt
             res["exit_code"] = srv.proc.poll()
             return res
         stack = {"config": config, **a.stack_map}
+        if res.get("config_env"):                         # (an environment variable can be the change itself)
+            stack["config_env"] = res["config_env"]
+        if serve != a.serve_cmd:
+            stack["serve_cmd"] = " ".join(serve)
         if not a.no_plugin:                           # what the server runs, as the plugin read it from inside
             from .stack import from_metrics, shared
             stacks = [from_metrics(t) for t in srv.metrics()]
@@ -256,11 +271,12 @@ def write_repro(out: str, name: str, configs: dict, runs: dict, row: dict, a) ->
         shutil.copytree(ev, os.path.join(d, "evidence"), dirs_exist_ok=True)
     base, cand = (runs.get("baseline") or {}).get("deployed_stack"), (runs.get(name) or {}).get("deployed_stack")
     diff = compare(base, cand) if base and cand else {"differences": [], "why": "no stack recorded for both"}
-    serve = " ".join(shlex.quote(x) for x in a.serve_cmd)
+    serve = " ".join(shlex.quote(x) for x in config_serve(a, name))
+    base_serve = " ".join(shlex.quote(x) for x in config_serve(a, "baseline"))
     req = getattr(a, "require", None)
     env = {"SDCGUARD": "1", "SDCGUARD_SHARE": a.share, "SDCGUARD_ATTN": "0",
-           **({"SDCGUARD_REQUIRE": req} if req else {}), **a.env_map} if not a.no_plugin \
-        else dict(a.env_map)
+           **({"SDCGUARD_REQUIRE": req} if req else {}), **config_env(a, name)} if not a.no_plugin \
+        else dict(config_env(a, name))
     failing = {"approximation": row.get("approximation") == "OUTSIDE" or row.get("approximation") == "UNMEASURED",
                "isolation": row.get("isolation") in ("LEAK", "UNMEASURED") and not a.no_isolation,
                "consistency": row.get("consistency") in ("INCONSISTENT", "UNMEASURED") and
@@ -319,7 +335,8 @@ done
         f.write(script)
     os.chmod(os.path.join(d, "rerun.sh"), 0o755)
     lines = [f"# Candidate {name}: {row.get('decision')}", "",
-             f"Baseline: `{serve} {configs['baseline']}`", "", f"Candidate: `{serve} {configs[name]}`", "",
+             f"Baseline: `{base_serve} {configs['baseline']}`" + _env_note(a, "baseline"), "",
+             f"Candidate: `{serve} {configs[name]}`" + _env_note(a, name), "",
              "## Why", "", *[f"- {w}" for w in row.get("why") or []], "",
              "## What differs between the two stacks (read from inside each server)", "",
              *([f"- {x}" for x in diff.get("differences") or []] or [f"- {diff.get('why')}"]), "",
@@ -438,7 +455,8 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool, runs: O
                       consistency=_load(os.path.join(out, f"{name}_consistency.json")),
                       # {} when the baseline's is missing: a baseline was meant, so there's no line (not the
                       # standalone rule)
-                      consistency_baseline=_load(os.path.join(out, "baseline_consistency.json")) or {})
+                      consistency_baseline=_load(os.path.join(out, "baseline_consistency.json")) or {},
+                      consistency_repeat=_load(os.path.join(out, "again_consistency.json")))
         d["scope"]["tested"] = tested_conditions(out, name)
         _write(os.path.join(out, f"decision_{name}.json"), d)
         with open(os.path.join(out, f"decision_{name}.txt"), "w") as f:
@@ -455,8 +473,15 @@ def decide_all(out: str, names: list, pol: Optional[dict], plugin: bool, runs: O
     return rows
 
 
-def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
-    lines = ["# Qualification", "", f"Baseline: `vllm serve {configs['baseline']}`", "",
+def _served(a, name: str, args: str) -> str:
+    """How a configuration was served, for the report: its own serve command (or `vllm serve`), its arguments and its
+    own environment."""
+    own = (getattr(a, "config_serve", None) or {}).get(name)
+    return f"`{' '.join(own) if own else 'vllm serve'} {args}`" + (_env_note(a, name) if a is not None else "")
+
+
+def report(out: str, configs: dict, runs: dict, rows: dict, a=None) -> str:
+    lines = ["# Qualification", "", f"Baseline: {_served(a, 'baseline', configs['baseline'])}", "",
              "| Candidate | Decision | Arithmetic | Weights | Approximation | Isolation | Consistency | Performance | "
              "Throughput |",
              "|---|---|---|---|---|---|---|---|---|"]
@@ -468,7 +493,7 @@ def report(out: str, configs: dict, runs: dict, rows: dict) -> str:
                      f"{r.get('consistency') or ''} | {r.get('performance') or ''} | {tp} |")
     lines.append("")
     for name, r in rows.items():
-        lines.append(f"- **{name}** (`vllm serve {configs[name]}`): {r['decision']}: " + "; ".join(r["why"]))
+        lines.append(f"- **{name}** ({_served(a, name, configs[name])}): {r['decision']}: " + "; ".join(r["why"]))
     not_started = [n for n, r in runs.items() if not r.get("ready")]
     if not_started:
         lines += ["", "Servers that didn't start: " + ", ".join(not_started) + " (their logs are here)."]
@@ -504,6 +529,32 @@ def _pairs(items) -> dict:
     return out
 
 
+def _named(items, what: str) -> dict:
+    """NAME:REST items (--config-env, --config-serve-cmd) as {name: [rest, ...]}."""
+    out: dict = {}
+    for it in items or ():
+        name, sep, rest = it.partition(":")
+        if not sep or not name.strip() or not rest.strip():
+            raise ValueError(f"{what} {it!r}: use NAME:VALUE, NAME being baseline or a candidate's name")
+        out.setdefault(name.strip(), []).append(rest.strip())
+    return out
+
+
+def config_env(a, name: str) -> dict:
+    """The environment a configuration's server gets beyond the plugin's: --env, then its own --config-env."""
+    return {**(getattr(a, "env_map", None) or {}), **((getattr(a, "config_env", None) or {}).get(name) or {})}
+
+
+def config_serve(a, name: str) -> list:
+    """The serve command of a configuration: its own --config-serve-cmd, else --serve-cmd (or this Python's vLLM)."""
+    return (getattr(a, "config_serve", None) or {}).get(name) or a.serve_cmd
+
+
+def _env_note(a, name: str) -> str:
+    own = (getattr(a, "config_env", None) or {}).get(name)
+    return (" with " + " ".join(f"{k}={v}" for k, v in own.items())) if own else ""
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="sdcguard qualify", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -511,7 +562,10 @@ def main(argv=None) -> int:
     p.add_argument("--candidate", action="append", required=True, help="[name=]what follows `vllm serve` (repeat)")
     p.add_argument("--policy", help="decide's policy file (JSON)")
     p.add_argument("--out", required=True)
-    p.add_argument("--repeat-baseline", action="store_true", help="start the baseline twice: the noise floor")
+    p.add_argument("--repeat-baseline", action="store_true",
+                   help="start the baseline twice: the noise floor (the default since October 26; kept for old scripts)")
+    p.add_argument("--no-repeat-baseline", action="store_true",
+                   help="start the baseline once: the quality lines are then the fixed starting ones, not this stack's")
     p.add_argument("--no-plugin", action="store_true", help="serve without the sdcguard plugin (no arithmetic source)")
     p.add_argument("--no-isolation", action="store_true")
     p.add_argument("--no-consistency", action="store_true", help="skip `sdcguard consistency` on every server")
@@ -532,21 +586,44 @@ def main(argv=None) -> int:
     p.add_argument("--startup-timeout", type=float, default=1800.0)
     p.add_argument("--serve-cmd", default=None, help="the command that serves (default: this Python's vllm serve)")
     p.add_argument("--env", action="append", default=[], help="KEY=VALUE for every server (repeat)")
+    p.add_argument("--config-env", action="append", default=[], metavar="NAME:KEY=VALUE",
+                   help="an environment variable for one configuration only (baseline or a candidate; repeat)")
+    p.add_argument("--config-serve-cmd", action="append", default=[], metavar="NAME:COMMAND",
+                   help="the serve command for one configuration only, e.g. another environment's vLLM (repeat)")
     p.add_argument("--stack", action="append", default=[], help="KEY=VALUE recorded with each stack (gpu=H100, say)")
     a = p.parse_args(argv)
     a.serve_cmd = shlex.split(a.serve_cmd) if a.serve_cmd else [sys.executable, "-m", "vllm.entrypoints.cli.main",
                                                                  "serve"]
     a.env_map, a.stack_map = _pairs(a.env), _pairs(a.stack)
-    os.makedirs(a.out, exist_ok=True)
     configs = {"baseline": a.baseline}
     for i, c in enumerate(a.candidate):
         name, cfg = _parse_config(c, f"candidate{i + 1}")
         if name in configs or name == "again":
             p.error(f"two configurations are named {name}")
         configs[name] = cfg
+    try:
+        envs, serves = _named(a.config_env, "--config-env"), _named(a.config_serve_cmd, "--config-serve-cmd")
+    except ValueError as e:
+        p.error(str(e))
+    for name in [*envs, *serves]:
+        if name not in configs:
+            p.error(f"--config-env/--config-serve-cmd name {name!r} isn't a configuration (baseline or a candidate: "
+                    f"{', '.join(configs)})")
+    for name, cmds in serves.items():
+        if len(cmds) > 1:
+            p.error(f"--config-serve-cmd gives {name} two serve commands")
+    a.config_env = {n: _pairs(v) for n, v in envs.items()}
+    a.config_serve = {n: shlex.split(v[0]) for n, v in serves.items()}
+    os.makedirs(a.out, exist_ok=True)
     if a.policy and not os.path.isfile(a.policy):
         p.error(f"--policy {a.policy}: no such file (decide's default policy would be used in its place)")
-    pol = _load(a.policy)
+    a.repeat_baseline = not a.no_repeat_baseline
+    pol = _load(a.policy) or {}
+    # the probes qualify runs are required unless skipped or the policy says otherwise: a candidate whose isolation or
+    # consistency probe couldn't run (a server that refuses cache_salt, say) is NOT DECIDED, never ACCEPTed unseen
+    for sec, skipped in (("isolation", a.no_isolation), ("consistency", a.no_consistency)):
+        if not skipped:
+            pol.setdefault(sec, {}).setdefault("required", True)
     moved = set_aside_earlier(a.out, list(configs))
     if moved:
         print(f"sdcguard qualify: {a.out} held an earlier run's files; moved them to {moved}", file=sys.stderr)
@@ -575,7 +652,7 @@ def main(argv=None) -> int:
             except Exception as e:  # noqa: BLE001  (the decision stands without its repro folder)
                 row["repro_error"] = f"{type(e).__name__}: {e}"[:300]
     _write(os.path.join(a.out, "QUALIFY.json"), {"configs": configs, "runs": runs, "decisions": rows, "complete": True})
-    print(report(a.out, configs, runs, rows))
+    print(report(a.out, configs, runs, rows, a))
     ds = [r["decision"] for r in rows.values()]
     return 1 if "REJECT" in ds else (0 if ds and all(d == "ACCEPT" for d in ds) else 2)
 

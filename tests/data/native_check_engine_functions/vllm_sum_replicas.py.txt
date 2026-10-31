@@ -1,0 +1,29 @@
+def _sum_replicas(
+    groups: list[KVChecksumGroup], num_positions: int
+) -> list[np.ndarray]:
+    """The consumer's checksums of a group, one per check. Check ``k`` sums
+    copy ``k % R`` of each layer replicated on ``R`` ranks, so every check
+    covers each layer once and every copy is checked.
+
+    Raises:
+        _Unverified: If a check misses a copy.
+
+    """
+    totals: dict[ReplicaKey, np.ndarray] = {}
+    for group in groups:
+        for column, key in enumerate(group.replica_keys):
+            total = totals.setdefault(key, np.zeros(num_positions, dtype=np.uint64))
+            total += group.values[:, column]
+    replica_counts = {replicas for replicas, _ in totals}
+    checks = []
+    for k in range(max(replica_counts, default=1)):
+        check = np.zeros(num_positions, dtype=np.uint64)
+        for replicas in replica_counts:
+            if (total := totals.get((replicas, k % replicas))) is None:
+                raise _Unverified(
+                    "a replica was not checksummed",
+                    f"replica {k % replicas} of {replicas}",
+                )
+            check += total
+        checks.append(check)
+    return checks

@@ -1,0 +1,31 @@
+    def _compare(
+        self, pending: _Pending
+    ) -> tuple[dict[int, list[int]], list[_Unverified]]:
+        """The mismatching block positions per group, and why the load or some
+        of its groups could not be compared."""
+        try:
+            pending.check_complete(self._num_workers)
+            if pending.expected is None:
+                raise _Unverified(pending.missing_reason)
+        except _Unverified as e:
+            return {}, [e]
+        mismatches: dict[int, list[int]] = {}
+        unverified: list[_Unverified] = []
+        skipped = pending.skipped_groups()
+        num_compared = 0
+        for group_id in pending.blocks.groups:
+            try:
+                bad = self._compare_group(
+                    pending, pending.expected, group_id, group_id in skipped
+                )
+            except _Unverified as e:
+                unverified.append(e)
+                continue
+            if bad is None:
+                continue
+            num_compared += 1
+            if bad:
+                mismatches[group_id] = bad
+        if not num_compared and not unverified:
+            unverified.append(_Unverified("no loaded group can be checksummed"))
+        return mismatches, unverified

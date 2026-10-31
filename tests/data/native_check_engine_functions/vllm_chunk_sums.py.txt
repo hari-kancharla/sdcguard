@@ -1,0 +1,31 @@
+def _chunk_sums(
+    values: np.ndarray,
+    start: int,
+    block_size: int,
+    chunk_size: int,
+    num_tokens: int,
+) -> tuple[int, np.ndarray]:
+    """Sums of the checksums of consecutive blocks over chunks of
+    ``chunk_size`` tokens: the first chunk and one sum per chunk.
+
+    Args:
+        values: Checksums of consecutive blocks.
+        start: Position of the first block.
+        block_size: Tokens per block.
+        chunk_size: A multiple of ``block_size``.
+        num_tokens: Tokens checksummed; blocks past them are zero.
+
+    Returns:
+        The first chunk the blocks cover whole and the sums of the chunks
+        they cover whole.
+
+    """
+    blocks_per_chunk = chunk_size // block_size
+    end = start + len(values)
+    if end >= cdiv(num_tokens, block_size):
+        values = np.pad(values, (0, -end % blocks_per_chunk))
+        end += -end % blocks_per_chunk
+    first = cdiv(start, blocks_per_chunk)
+    last = max(first, end // blocks_per_chunk)
+    whole = values[first * blocks_per_chunk - start : last * blocks_per_chunk - start]
+    return first, whole.reshape(-1, blocks_per_chunk).sum(axis=1, dtype=np.uint64)

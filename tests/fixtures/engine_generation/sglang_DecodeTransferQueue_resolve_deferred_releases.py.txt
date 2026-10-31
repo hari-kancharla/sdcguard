@@ -1,0 +1,63 @@
+    def resolve_deferred_releases(self) -> None:
+        """Release drained transfers; device destinations may also time out."""
+        if not self._deferred_releases:
+            return
+        now = time.monotonic()
+        drained = []
+        ready = []
+        for decode_req, _, deadline, _, required_acks in self._deferred_releases:
+            if self._is_host_destination(decode_req):
+                # A timeout cannot prove that a remote write has stopped.
+                is_drained = decode_req.kv_receiver.is_abort_release_safe()
+                is_ready = is_drained
+            else:
+                is_drained = decode_req.kv_receiver.kv_mgr.is_abort_release_safe(
+                    decode_req.req.bootstrap_room, required_acks
+                )
+                is_ready = is_drained or now >= deadline
+            drained.append(is_drained)
+            ready.append(is_ready)
+        # Acks and deadlines are rank-local. Releasing only on some ranks would
+        # diverge admission and the sizes of subsequent polling collectives.
+        # Entries are appended from agreed holds, so every rank reduces the same
+        # list in the same order.
+        ready = all_reduce_flags(
+            flags=ready, group=self.gloo_group, op=torch.distributed.ReduceOp.MIN
+        )
+        still_held = []
+        to_release = []
+        for entry, is_ready, is_drained in zip(self._deferred_releases, ready, drained):
+            decode_req, start_time, _, idx, _ = entry
+            if is_ready:
+                to_release.append(
+                    (
+                        decode_req,
+                        start_time,
+                        idx,
+                        decode_req.req.bootstrap_room,
+                        is_drained,
+                    )
+                )
+            else:
+                still_held.append(entry)
+        # Commit the survivors before releasing so a _do_release exception can't
+        # leave a released entry in the list (double-free / None receiver on retry).
+        self._deferred_releases = still_held
+        for decode_req, start_time, idx, room, drained in to_release:
+            if not drained:
+                logger.warning(
+                    f"Deferred KV release for room {room} timed out after "
+                    f"{self.deferred_kv_release_timeout}s without a full drain "
+                    f"ack from prefill; releasing anyway."
+                )
+            outcome = "drained" if drained else "timeout"
+            try:
+                self._do_release(decode_req, idx)
+            except Exception:
+                # Isolate a failed release so the rest still run; entry already dropped.
+                logger.exception(f"Deferred KV release failed for room {room}")
+                outcome = "error"
+            self._observe_deferred_kv_release(
+                duration_seconds=max(0.0, now - start_time),
+                outcome=outcome,
+            )

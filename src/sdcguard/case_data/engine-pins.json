@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "engine": "vllm",
+  "version": "0.32.0",
+  "base_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "fix_commit": "42b8f230676796445107ec3f50241e871fe9b9b6",
+  "fix_pr": "https://github.com/vllm-project/vllm/pull/62065",
+  "fix_patch_sha256": "a669acdbc188d59439ca3ba74bba9a18447578b997be3f61278d45fd6a5f337d",
+  "variants": {
+    "stock": {
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py": "5da22389ba154696ba19a936fdaa89305a4dd981ef4c19d5c40322b050443f9b",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/lease_slots.py": null,
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": "11b517d993688152fd6f3396497a93773420e5aefd8c6b7c216d01b1cc5e60b9",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py": "99d01087a209dc292245231a899edecaf66c5f8ef82707f025c6e3f4633a4cc7",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py": "6985fbd91aed81dc982abaa009d93475a89d0893deb1ff48fce406d62509563a",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py": "6698f49258e81ad47f9d0eac7bca578585f7eaef303bc2627e19560e32199d2b",
+      "vllm/v1/core/sched/scheduler.py": "d9a39870286c424cef2fc0730e24092ee3df67e848608e2278944846bab804ae",
+      "vllm/v1/core/kv_cache_manager.py": "d08315437c6b07040d1b7e12d7bd7d6e966c976a286f05a9788098cfdd9754c7",
+      "vllm/distributed/nixl_utils.py": "0bffa3c052c9f67472b1c0bc3816114891b010c968bf4b8a292e7da4d687db53"
+    },
+    "fixed": {
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py": "03e1cb0b7cafb0b21a648b2c8ae9b115043dda5aacdda21a04b8224aa7ea9406",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/lease_slots.py": "1cd6e6e93d3f5f03eb94b061de89aa13b8671ea34a554adac4f4dbcfce8f06ce",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": "44cbd55369df468e48ab9fe88cea8c0b13c8f27d70d4abc3185181ceae8cea19",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py": "cb0537aa414e31e8125517bf4de439ac5b392f3bcae88069169b9d234ac3b39d",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py": "05beb40831c1693bbdd281fad8e6a04b65776272892b2553cf59439aa52f4863",
+      "vllm/distributed/kv_transfer/kv_connector/v1/nixl/stats.py": "0e7eee3d8b36a2671df356de4fd0da53647ec2811f14e1d10c4c80707eb3c829",
+      "vllm/v1/core/sched/scheduler.py": "d9a39870286c424cef2fc0730e24092ee3df67e848608e2278944846bab804ae",
+      "vllm/v1/core/kv_cache_manager.py": "d08315437c6b07040d1b7e12d7bd7d6e966c976a286f05a9788098cfdd9754c7",
+      "vllm/distributed/nixl_utils.py": "0bffa3c052c9f67472b1c0bc3816114891b010c968bf4b8a292e7da4d687db53"
+    }
+  },
+  "construction": "Full pinned v0.32.0 files, verified Git blob IDs, with the saved runtime-only upstream patch applied using git apply (all hunks).",
+  "observer_source_git_blobs": {
+    "vllm/v1/core/sched/scheduler.py": "cec96d2a49235fdade2768c427f1cff7868c6026",
+    "vllm/v1/core/kv_cache_manager.py": "4f472170a874814b539ae900d014efecc7327150",
+    "vllm/distributed/nixl_utils.py": "c063b3ea7426d63ce03383a86c28ae39c5cadb47"
+  }
+}

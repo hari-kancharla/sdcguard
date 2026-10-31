@@ -1,0 +1,42 @@
+{
+  "files": {
+    "vllm/distributed/kv_transfer/kv_checksum/checksum.py": {
+      "git_blob_sha": "2d3376b55fdc80c93f69d3d8ee0838501b5d6e66",
+      "sha256": "90f5f350e85f0f8dab6b4fb54ddd8ec0718aad6437c1a8240bd0eadff266b7d8",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/distributed/kv_transfer/kv_checksum/checksum.py"
+    },
+    "vllm/distributed/kv_transfer/kv_checksum/scheduler.py": {
+      "git_blob_sha": "3947e3e6fbfc240c27f3bba9a2b56fb284b06af8",
+      "sha256": "00825d3750d856ad75095f5877375385129f56d263629d438dfa16888550b42f",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/distributed/kv_transfer/kv_checksum/scheduler.py"
+    },
+    "vllm/distributed/kv_transfer/kv_checksum/worker.py": {
+      "git_blob_sha": "3b4324a9df30b414cf82619877d73a49fd28e228",
+      "sha256": "690eec2fb26259cca2246455a817e7c5fdcc7462bee68a0b6413e129e0495f50",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/distributed/kv_transfer/kv_checksum/worker.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": {
+      "git_blob_sha": "f18d39b7f9c7b9a925aef3ff68d0e19c4ea7d0fa",
+      "sha256": "cec0b5688e63a8d39151f9563810529544cb43f80dab1a07ecf87f874f26635c",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py"
+    },
+    "vllm/utils/math_utils.py": {
+      "git_blob_sha": "d07fe7cf7485c1a67ea5763f5e4e18767985f934",
+      "sha256": "33a8fa109989654855abdc32c48e499349caf8339a5642f06b4d625572e472b1",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/utils/math_utils.py"
+    },
+    "vllm/v1/kv_cache_interface.py": {
+      "git_blob_sha": "73efc161a369553bfad06a8bb3527119501713e4",
+      "sha256": "ea1ecbbb7f463254cbe49c378261ff095e471a09a0c0d2a9716e8013f5e8fb4a",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/v1/kv_cache_interface.py"
+    },
+    "vllm/v1/worker/gpu/async_utils.py": {
+      "git_blob_sha": "522d02b359b75cb003ee98f8e4713a1664c17d6f",
+      "sha256": "0cf5552344f0de9303b994e0b8075434d9c4913870b339823126b394be843ec1",
+      "url": "https://github.com/sawsa307/vllm/blob/29d2f4e03740acb14439ce22d24b06d8095d17d3/vllm/v1/worker/gpu/async_utils.py"
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "revision": "29d2f4e03740acb14439ce22d24b06d8095d17d3",
+  "schema": "sdcguard.checksum-observer-pins.v1"
+}

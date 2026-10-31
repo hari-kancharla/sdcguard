@@ -1,0 +1,2 @@
+    def clear_deferred_abort_state(self, bootstrap_room: int) -> None:
+        self._deferred_abort_ack_tracker.pop(bootstrap_room, None)

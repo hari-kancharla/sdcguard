@@ -1,0 +1,18 @@
+    def _handle_deferred_abort_notification(
+        self, notification: AbortNotification, room_active: bool
+    ) -> None:
+        room = notification.room
+        if room_active:
+            self.update_status(room, KVPoll.Failed)
+
+        ack_target = notification.deferred_ack_target()
+        if ack_target is None:
+            return
+        self.register_deferred_ack_target(room, ack_target)
+        self._maybe_ack_drained_abort(room)
+        if room_active:
+            logger.debug(
+                "Received abort notification for room %s, marked as Failed; "
+                "ACK deferred until transfer drains",
+                room,
+            )

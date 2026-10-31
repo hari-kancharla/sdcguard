@@ -1,0 +1,73 @@
+{
+  "cache_path": "hf/hub/models--Qwen--Qwen3-0.6B",
+  "cache_ref_metadata": [
+    {
+      "created_modified": "2026-10-27 00:08:08-04:00",
+      "filename": "hf/hub/models--Qwen--Qwen3-0.6B/refs/main",
+      "size": 40,
+      "type": "file"
+    }
+  ],
+  "cache_volume": "sdcguard-runs",
+  "gpu_used": false,
+  "historical_binding": "Shared-cache refs and snapshot metadata predate the saved runs and corroborate this revision. The original run artifacts recorded main, not an immutable resolved revision.",
+  "method": "read-only CPU cache audit; each file matched immutable upstream Git blob or LFS SHA256",
+  "model": "Qwen/Qwen3-0.6B",
+  "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+  "schema": 1,
+  "snapshot_count_observed": 1,
+  "snapshot_files_verified": 10,
+  "verification": [
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": ".gitattributes",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "LICENSE",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "README.md",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "config.json",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "generation_config.json",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "merges.txt",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes SHA256 matches immutable upstream LFS hash",
+      "name": "model.safetensors",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes SHA256 matches immutable upstream LFS hash",
+      "name": "tokenizer.json",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "tokenizer_config.json",
+      "verified": true
+    },
+    {
+      "basis": "actual cached bytes match immutable upstream Git blob ID and audited SHA256",
+      "name": "vocab.json",
+      "verified": true
+    }
+  ],
+  "volume_mutated": false
+}

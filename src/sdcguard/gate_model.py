@@ -24,14 +24,25 @@ likely one (recorded_is_top1), and top-1 agreement is measured against the refer
 way. Free-running greedy text isn't compared: across GPUs and batch sizes it
 diverges for a large share of prompts on correct stacks.
 
+The reference is scored the way the candidate is: since October 26 a reference keeps, for each recorded completion,
+the reference stack's own prompt_logprobs over it (the prefill path, `logprobs`) beside the decode path's
+(`decode_logprobs`), and a candidate scored with prompt_logprobs is compared with the first, one scored through Trace
+Replay with the second. (Before, the reference was the decode path's and the candidate the prefill path's, so a
+same-stack repeat measured the stack's own decode-vs-prefill gap: 1.8e-3 mean KL on an L4, above the pass line.) An
+older reference has only decode-path distributions and is used as before; the summary says when the two paths differ.
+
 Verdict (the thresholds are a starting point taken from published numbers, not calibrated for every model; a
-same-stack run with --noise raises them to 3x what that run measured):
-  PASS   mean KL <= max(1e-3, 3 x noise) and top-1 agreement >= 99%, and no prompt's mean KL above 0.05
-  WARN   mean KL up to 7e-3 (about where quantized models land) or top-1 agreement from 97% to 99%
-  FAIL   anything further: mean KL above 7e-3, top-1 agreement under 97%, or a prompt's mean KL above 0.1
-  INCONCLUSIVE  a recorded position wasn't scored (a prompt without a result counts as all of its positions), or
-         the --noise run is incomplete, of another reference or model, or so noisy that its pass line reaches the
-         warn line: a verdict on part of the data would pass a stack that drops the rest
+same-stack run with --noise moves each line to what that run measured):
+  PASS   mean KL <= max(1e-3, 3 x noise), top-1 agreement >= 99% (or, with a noise run, no more disagreement than
+         the noise run's: a two-proportion test, z < 3), and no prompt's mean KL above max(0.05, 3 x noise's worst)
+  WARN   mean KL up to max(7e-3, 3 x noise) (about where quantized models land) or top-1 agreement from 97% to 99%
+  FAIL   anything further: mean KL above that, top-1 agreement under 97% and (with a noise run) significantly below
+         the noise run's, or a prompt's mean KL above max(0.1, 3 x noise's worst). A result past these lines fails
+         even when the noise run is too noisy to certify a pass.
+  INCONCLUSIVE  a recorded position wasn't scored (a prompt without a result counts as all of its positions), fewer
+         than 200 positions were scored, the --noise run is incomplete or of another reference or model, or the
+         noise run is so noisy (its pass line at the warn line, or its own top-1 agreement under 97%) that a result
+         inside it can't be told from noise
 Fireworks, for example, reports KL around 1e-6 between two FP16 runs and calls 1e-3 the line between equivalent
 and not; vLLM issue #61100 (an upgrade that made a model print commas) would be KL of order 1 or more.
 """
@@ -49,6 +60,8 @@ CHECK_SCHEMA = "sdcguard.gate-model-check/1"
 TOP = 20
 PASS_KL, WARN_KL, FAIL_PROMPT_KL, PASS_PROMPT_KL = 1e-3, 7e-3, 0.1, 0.05
 PASS_TOP1, WARN_TOP1 = 0.99, 0.97
+MIN_POSITIONS = 200                     # fewer scored positions: no verdict (one flip in 24 was a FAIL before)
+Z_EXCESS = 3.0                          # top-1 disagreement significantly above the noise run's (one-sided)
 # sampling settings a server request sets so that a server's defaults (vLLM applies the model's generation_config.json
 # to what a request leaves out) can't change the greedy completion
 NEUTRAL = {"repetition_penalty": 1.0, "frequency_penalty": 0.0, "presence_penalty": 0.0, "top_p": 1.0, "top_k": 0,
@@ -147,7 +160,7 @@ def recorded_is_top1(records: list) -> Optional[float]:
     else changing the choice)."""
     n = agree = 0
     for rec in records:
-        for tok, top in zip(rec.get("completion_ids") or [], rec.get("logprobs") or []):
+        for tok, top in zip(rec.get("completion_ids") or [], rec.get("decode_logprobs") or rec.get("logprobs") or []):
             vals = {int(t): _lp(v) for t, v in (top or {}).items()}
             if not _usable(vals):
                 continue
@@ -185,10 +198,24 @@ def _incomplete(s: dict) -> Optional[str]:
     return None
 
 
-def verdict(s: dict, noise: Optional[dict] = None) -> dict:
+def _excess_z(f_c: float, n_c: int, f_n: float, n_n: int) -> float:
+    """One-sided two-proportion z: how far the candidate's top-1 disagreement rate f_c (over n_c positions) is above
+    the noise run's f_n (over n_n). 0 when it isn't above; inf when the noise run never disagreed and the candidate
+    did more than chance allows (the pooled rate's variance is then from the candidate alone)."""
+    if not (n_c and n_n) or not (math.isfinite(f_c) and math.isfinite(f_n)) or f_c <= f_n:
+        return 0.0
+    p = (f_c * n_c + f_n * n_n) / (n_c + n_n)
+    se = math.sqrt(p * (1 - p) * (1 / n_c + 1 / n_n))
+    return (f_c - f_n) / se if se > 0 else math.inf
+
+
+def verdict(s: dict, noise: Optional[dict] = None, min_positions: int = MIN_POSITIONS) -> dict:
     """PASS / WARN / FAIL from a summary (and the summary of a same-stack run, when there is one). INCONCLUSIVE when
-    either doesn't cover every recorded position: a verdict on part of the prompts would pass a stack that drops the
-    rest, and an incomplete noise run would set the line from a part too."""
+    either doesn't cover every recorded position (a verdict on part of the prompts would pass a stack that drops the
+    rest, and an incomplete noise run would set the line from a part too), when too few positions were scored, and
+    when a result within the noise of a very noisy stack can't be told apart from it. With a noise run every line
+    moves with what it measured: the mean-KL and per-prompt lines to 3x its values, the top-1 line by a
+    two-proportion test against its disagreement rate."""
     if not s.get("positions"):
         return {"verdict": "INCONCLUSIVE", "why": "no positions were scored"}
     why = _incomplete(s)
@@ -197,35 +224,69 @@ def verdict(s: dict, noise: Optional[dict] = None) -> dict:
     if s.get("nonfinite_positions"):
         return {"verdict": "FAIL", "why": f"at {s['nonfinite_positions']} of {s['positions']} positions the new "
                 "stack's log-probabilities weren't a distribution (NaN, +inf, or nothing finite)"}
-    pass_kl = PASS_KL
+    if s.get("max_kl") == math.inf:
+        return {"verdict": "FAIL", "why": f"at some of {s['positions']} positions the new stack gave a token the "
+                "reference stack found likely a probability of 0 (KL infinite)"}
+    if s["positions"] < min_positions:
+        return {"verdict": "INCONCLUSIVE", "why": f"only {s['positions']} positions were scored; a verdict needs at "
+                f"least {min_positions} (one flipped token would otherwise decide it)"}
+    pass_kl, warn_kl, pass_prompt, fail_prompt = PASS_KL, WARN_KL, PASS_PROMPT_KL, FAIL_PROMPT_KL
+    kl, top1, worst, n = s["mean_kl"], s["top1_agreement"], s["max_prompt_mean_kl"], s["positions"]
+    top1_pass, top1_warn = top1 >= PASS_TOP1, top1 >= WARN_TOP1
+    noisy, z, nline = None, None, ""
     if noise is not None:
         nwhy = "it scored no positions" if not noise.get("positions") else _incomplete(noise)
         if nwhy:
             return {"verdict": "INCONCLUSIVE", "why": f"the --noise run can't set the line: {nwhy}"}
-        nkl = noise.get("mean_kl")
+        nkl, ntop1, nworst = noise.get("mean_kl"), noise.get("top1_agreement"), noise.get("max_prompt_mean_kl")
         if noise.get("nonfinite_positions") or not (isinstance(nkl, (int, float)) and 0 <= nkl < math.inf):
             return {"verdict": "INCONCLUSIVE", "why": f"the --noise run can't set the line: its mean KL is {nkl}"}
-        pass_kl = max(PASS_KL, 3 * nkl)
-        if not pass_kl < WARN_KL:
-            return {"verdict": "INCONCLUSIVE", "why": f"the same stack's own mean KL ({noise['mean_kl']:.2e}) puts the "
-                    f"pass line at {pass_kl:.1e}, at or above the warn line ({WARN_KL:.0e}): on this stack the check "
-                    "can't tell a change from noise"}
-    kl, top1, worst = s["mean_kl"], s["top1_agreement"], s["max_prompt_mean_kl"]
-    line = (f"mean KL {kl:.2e} (pass up to {pass_kl:.1e}), top-1 agreement {top1:.2%}, worst prompt's mean KL "
-            f"{worst:.2e}, over {s['positions']} positions of {s['prompts']} prompts")
+        if not (isinstance(ntop1, (int, float)) and 0 <= ntop1 <= 1):
+            ntop1 = 1.0                          # (an older noise summary without it: the fixed top-1 lines)
+        if not (isinstance(nworst, (int, float)) and 0 <= nworst < math.inf):
+            nworst = 0.0
+        pass_kl, warn_kl = max(PASS_KL, 3 * nkl), max(WARN_KL, 3 * nkl)
+        pass_prompt, fail_prompt = max(PASS_PROMPT_KL, 3 * nworst), max(FAIL_PROMPT_KL, 3 * nworst)
+        z = _excess_z(1 - top1, n, 1 - ntop1, int(noise["positions"]))
+        not_worse = z < Z_EXCESS                 # (NaN-safe: a NaN top-1 makes z 0 here, and the KL lines fail it)
+        top1_pass, top1_warn = top1_pass or not_worse, top1_warn or not_worse
+        nline = (f"; the same stack's own run: mean KL {nkl:.2e}, top-1 agreement {ntop1:.2%}, worst prompt "
+                 f"{nworst:.2e}; top-1 disagreement {z:.1f} standard errors above it")
+        if not pass_kl < WARN_KL or ntop1 < WARN_TOP1:
+            noisy = (f"the same stack's own run (mean KL {nkl:.2e}, top-1 agreement {ntop1:.2%}) is too noisy for a "
+                     "pass: a result within its noise can't be told from it")
+    line = (f"mean KL {kl:.2e} (pass up to {pass_kl:.1e}, fail above {warn_kl:.1e}), top-1 agreement {top1:.2%}, "
+            f"worst prompt's mean KL {worst:.2e} (pass up to {pass_prompt:.2g}, fail above {fail_prompt:.2g}), over "
+            f"{n} positions of {s['prompts']} prompts{nline}")
     # written so a NaN (every comparison with it is False) can only fail: PASS needs each bound shown met
-    if not (kl <= WARN_KL and top1 >= WARN_TOP1 and worst <= FAIL_PROMPT_KL):
+    if not (kl <= warn_kl and top1_warn and worst <= fail_prompt and top1 == top1):
         return {"verdict": "FAIL", "why": line}
-    if not (kl <= pass_kl and top1 >= PASS_TOP1 and worst <= PASS_PROMPT_KL):
+    if noisy:
+        return {"verdict": "INCONCLUSIVE", "why": f"{noisy}; {line}"}
+    if not (kl <= pass_kl and top1_pass and worst <= pass_prompt):
         return {"verdict": "WARN", "why": line}
     return {"verdict": "PASS", "why": line}
 
 
-def compare(ref: dict, cand_logprobs: list) -> dict:
-    """ref: a model-ref file's records; cand_logprobs: per prompt, the candidate's prompt_logprobs over the prompt
-    plus the recorded completion (position i scores token i). The summary counts the recorded positions and how many
-    weren't scored (a prompt without a result, a position either side lacks), and verdict() won't judge a part."""
+def _ref_key(ref: dict, path: str) -> str:
+    """Which recorded distributions a candidate scored on `path` ("prefill": prompt_logprobs; "decode": Trace Replay)
+    is compared with. A reference recorded since October 26 keeps both (`logprobs` from the prefill path,
+    `decode_logprobs` from the decode); an older one has only the decode path's, under `logprobs`."""
+    if ref.get("logprobs_path") == "prefill":
+        return "decode_logprobs" if path == "decode" else "logprobs"
+    return "logprobs"
+
+
+def compare(ref: dict, cand_logprobs: list, path: str = "prefill") -> dict:
+    """ref: a model-ref file's records; cand_logprobs: per prompt, the candidate's log-probabilities over the prompt
+    plus the recorded completion (position i scores token i), scored on `path` (prefill: prompt_logprobs; decode:
+    Trace Replay). The summary counts the recorded positions and how many weren't scored (a prompt without a result,
+    a position either side lacks), and verdict() won't judge a part. It also says which path each side was scored
+    on: a comparison across paths measures the stack's own decode-vs-prefill gap too."""
     records, cand = ref["records"], list(cand_logprobs)
+    key = _ref_key(ref, path)
+    ref_path = ("decode" if key == "decode_logprobs" else "prefill") if ref.get("logprobs_path") == "prefill" \
+        else "decode"
     per_prompt, missing_prompts = [], 0
     for i, rec in enumerate(records):
         plp = cand[i] if i < len(cand) else None
@@ -234,7 +295,8 @@ def compare(ref: dict, cand_logprobs: list) -> dict:
         ms = []
         for t, tok in enumerate(comp):
             cpos = plp[p_len + t] if plp is not None and p_len + t < len(plp) else None
-            rpos = rec["logprobs"][t] if t < len(rec["logprobs"]) else None
+            rlist = rec.get(key) or []
+            rpos = rlist[t] if t < len(rlist) else None
             if not cpos or not rpos:
                 continue
             m = position_metrics({int(k): v for k, v in rpos.items()}, cpos, tok)
@@ -244,7 +306,8 @@ def compare(ref: dict, cand_logprobs: list) -> dict:
     summary = summarize(per_prompt)
     expected = sum(len(r["completion_ids"]) for r in records)
     summary.update(expected_positions=expected, missing_positions=expected - summary["positions"],
-                   missing_prompts=missing_prompts, extra_results=max(0, len(cand) - len(records)))
+                   missing_prompts=missing_prompts, extra_results=max(0, len(cand) - len(records)),
+                   ref_path=ref_path, candidate_path=path, same_path=ref_path == path)
     return {"per_prompt": per_prompt, "summary": summary}
 
 
@@ -294,14 +357,56 @@ def make_ref_url(url: str, out: str, tokens: int = 64, model: Optional[str] = No
         lp = ch["logprobs"]
         comp = ch.get("token_ids") or [int(t.split(":", 1)[1]) for t in lp["tokens"]]
         tops = [{k.split(":", 1)[1]: float(v) for k, v in (pos or {}).items()} for pos in lp["top_logprobs"]]
-        records.append({"prompt_ids": list(ids), "completion_ids": list(comp), "logprobs": tops})
+        records.append({"prompt_ids": list(ids), "completion_ids": list(comp), "decode_logprobs": tops})
+    path_note = _rescore_url(url, model, records)
     ref = {"schema": REF_SCHEMA, "model": model, "dtype": None, "max_len": None, "tokens": tokens, "extra": {},
            "via": "server", "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-           "stack": _server_stack(url, model, extra_stack), "recorded_is_top1": recorded_is_top1(records),
-           "records": records}
+           "stack": _server_stack(url, model, extra_stack), **path_note,
+           "recorded_is_top1": recorded_is_top1(records), "records": records}
     with open(out, "w") as f:
         json.dump(ref, f)
     return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}
+
+
+def _prompt_logprobs_url(url: str, model: str, ids: list) -> Optional[list]:
+    """The server's top-20 prompt log-probabilities over `ids` (the prefill path), one dict per position (None at
+    position 0), or None when the request fails."""
+    try:
+        r = _post(url, "/v1/completions", {"model": model, "prompt": ids, "max_tokens": 1, "temperature": 0.0,
+                                           "prompt_logprobs": TOP})
+        plp = r["choices"][0].get("prompt_logprobs")
+    except Exception:  # noqa: BLE001  (the caller says what it couldn't score)
+        return None
+    return None if plp is None else [None if pos is None else {int(k): v for k, v in pos.items()} for pos in plp]
+
+
+def _rescore(records: list, scored: list) -> dict:
+    """Keep each record's prefill-path distributions (`logprobs`) beside its decode-path ones (`decode_logprobs`).
+    scored: per record, prompt log-probabilities over prompt plus completion, or None. When any record couldn't be
+    scored the reference stays a decode-path one (its `logprobs` are the decode's, as before October 26), and says
+    why: a reference with some records of each path would compare a candidate on two paths at once."""
+    prefill = []
+    for rec, plp in zip(records, scored):
+        p_len, n = len(rec["prompt_ids"]), len(rec["completion_ids"])
+        pos = None if plp is None else plp[p_len:p_len + n]
+        if pos is None or len(pos) != n or any(not x for x in pos):
+            prefill = None
+            break
+        prefill.append([{str(int(k)): _lp(v) for k, v in x.items()} for x in pos])
+    if prefill is None:
+        for rec in records:
+            rec["logprobs"] = rec["decode_logprobs"]
+        return {"logprobs_path": "decode", "path_note": "the completions couldn't all be re-scored with prompt "
+                "log-probabilities, so this reference is the decode path's and a candidate scored with prompt "
+                "log-probabilities is compared across paths"}
+    for rec, tops in zip(records, prefill):
+        rec["logprobs"] = tops
+    return {"logprobs_path": "prefill"}
+
+
+def _rescore_url(url: str, model: str, records: list) -> dict:
+    return _rescore(records, [_prompt_logprobs_url(url, model, rec["prompt_ids"] + rec["completion_ids"])
+                              for rec in records])
 
 
 def check_url(ref_path: str, out: str, url: str, model: Optional[str] = None, noise_path: Optional[str] = None,
@@ -314,16 +419,8 @@ def check_url(ref_path: str, out: str, url: str, model: Optional[str] = None, no
     if ref.get("schema") != REF_SCHEMA:
         raise ValueError(f"{ref_path} isn't a {REF_SCHEMA} file")
     served = model or server_model(url)
-    cand = []
-    for rec in ref["records"]:
-        try:
-            r = _post(url, "/v1/completions", {"model": served, "prompt": rec["prompt_ids"] + rec["completion_ids"],
-                                               "max_tokens": 1, "temperature": 0.0, "prompt_logprobs": TOP})
-            plp = r["choices"][0].get("prompt_logprobs")
-        except Exception:  # noqa: BLE001  (a prompt without a result: compare() counts its positions as missing)
-            plp = None
-        cand.append(None if plp is None else [None if pos is None else {int(k): v for k, v in pos.items()}
-                                              for pos in plp])
+    # (a prompt without a result: compare() counts its positions as missing)
+    cand = [_prompt_logprobs_url(url, served, rec["prompt_ids"] + rec["completion_ids"]) for rec in ref["records"]]
     return _finish(ref, ref_path, cand, out, served, ref.get("extra") or {}, noise_path,
                    _server_stack(url, served, extra_stack))
 
@@ -366,10 +463,15 @@ def make_ref(model: str, out: str, tokens: int = 64, dtype: str = "bfloat16", ma
     for o in outs:
         c = o.outputs[0]
         records.append({"prompt_ids": list(o.prompt_token_ids), "completion_ids": list(c.token_ids),
-                        "logprobs": [{str(t): _lp(v) for t, v in pos.items()} for pos in c.logprobs]})
+                        "decode_logprobs": [{str(t): _lp(v) for t, v in pos.items()} for pos in c.logprobs]})
+    # the same completions re-scored on this stack's prefill path, as a candidate is scored
+    from vllm.inputs import TokensPrompt
+    rescored = llm.generate([TokensPrompt(prompt_token_ids=r["prompt_ids"] + r["completion_ids"]) for r in records],
+                            SamplingParams(temperature=0.0, max_tokens=1, prompt_logprobs=TOP), use_tqdm=False)
+    path_note = _rescore(records, [o.prompt_logprobs for o in rescored])
     ref = {"schema": REF_SCHEMA, "model": model, "dtype": dtype, "max_len": max_len, "tokens": tokens,
            "extra": extra or {}, "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "stack": _stack(),
-           "recorded_is_top1": recorded_is_top1(records), "records": records}
+           **path_note, "recorded_is_top1": recorded_is_top1(records), "records": records}
     with open(out, "w") as f:
         json.dump(ref, f)
     return {"file": out, "prompts": len(records), "positions": sum(len(r["completion_ids"]) for r in records)}
@@ -429,13 +531,14 @@ def check_trace(ref_path: str, out: str, model: Optional[str] = None, extra: Opt
             cand.append(None)                    # the trace wasn't what ran: none of its positions are scored
             continue
         cand.append([None] * len(r["prompt_ids"]) + [dict(pos) for pos in (c.logprobs or [])])
-    run = _finish(ref, ref_path, cand, out, model or ref["model"], extra, noise_path, {**_stack(), "via": "trace"})
+    run = _finish(ref, ref_path, cand, out, model or ref["model"], extra, noise_path, {**_stack(), "via": "trace"},
+                  path="decode")
     return run
 
 
 def _finish(ref: dict, ref_path: str, cand: list, out: str, model: str, extra, noise_path: Optional[str],
-            stack: dict) -> dict:
-    res = compare(ref, cand)
+            stack: dict, path: str = "prefill") -> dict:
+    res = compare(ref, cand, path)
     digest = ref_digest(ref)
     noise, noise_why = None, None
     if noise_path:

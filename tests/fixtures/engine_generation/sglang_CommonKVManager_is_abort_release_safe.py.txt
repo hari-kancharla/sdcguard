@@ -1,0 +1,5 @@
+    def is_abort_release_safe(self, bootstrap_room: int, required_acks: int) -> bool:
+        """True once every prefill rank that could still write these pages has acked."""
+        state = self._deferred_abort_ack_tracker.get(bootstrap_room)
+        acks = state.prefill_ranks if state is not None else ()
+        return len(acks) >= required_acks

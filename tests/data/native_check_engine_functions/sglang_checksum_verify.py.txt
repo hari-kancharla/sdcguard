@@ -1,0 +1,30 @@
+    def _verify_kv_checksums(self, batch: ScheduleBatch) -> None:
+        computer: Optional[KvChecksumComputer] = self.kv_checksum_computer
+        if computer is None:
+            return
+
+        verified: List[int] = []
+        for i, req in enumerate(batch.reqs):
+            if is_health_check_req(req):
+                verified.append(i)
+                continue
+            expected = req.expected_kv_checksum
+            if expected == 0:
+                verified.append(i)
+                continue
+            seq_len = len(req.origin_input_ids)
+            page_indices_gpu = page_indices_for_request(self, req, seq_len)
+            state_indices = state_indices_for_request(self, req, seq_len)
+            actual = computer.compute(page_indices_gpu, state_indices)
+            if actual == expected:
+                verified.append(i)
+                continue
+            msg = (
+                f"KV checksum mismatch req={req.rid} "
+                f"bootstrap_room={req.bootstrap_room} "
+                f"expected={expected:#x} got={actual:#x}"
+            )
+            logger.error(msg)
+            self._handle_kv_checksum_mismatch(req, msg)
+        if len(verified) != len(batch.reqs):
+            batch.filter_batch(keep_indices=verified)

@@ -1,0 +1,122 @@
+{
+  "allocation_recipient": {
+    "activation": "explicit internal programmatic factory only",
+    "build_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+    "common_evidence_ingest": "not implemented",
+    "engine": "vllm",
+    "native_originals_checked": 22,
+    "ownership": "unknown",
+    "physical_reads": "unknown",
+    "read_rights": "unknown",
+    "runtime_validation": "pending",
+    "scope": "recorded positive local capacity attribution only",
+    "version": "0.32.0"
+  },
+  "checked_on": "2026-10-27",
+  "checksum_client_candidate": {
+    "client_request_ids": "actual passive frontend assignment; native randomization unchanged",
+    "format": "sdcguard.checksum-client.packet.v1",
+    "inputs": [
+      "REQUEST_PLAN.json",
+      "CLIENT_INVENTORY.json",
+      "CAPTURES.json"
+    ],
+    "lease_pairing": "unqualified separate source revision",
+    "release_qualifying": false,
+    "runtime_qualified": false,
+    "scope": "planned ordinary client requests, actual request-ID assignments and native checksum calls",
+    "source_revision": "29d2f4e03740acb14439ce22d24b06d8095d17d3"
+  },
+  "checksum_observer_candidate": {
+    "activation": "explicit programmatic installation only",
+    "checked_on": "2026-10-29",
+    "client_inventory": "unknown",
+    "format": "sdcguard.checksum-observer.v1",
+    "lease_pairing": "unqualified separate source build",
+    "release_qualifying": false,
+    "runtime_qualified": false,
+    "scope": "conditional native checksum chunk comparisons",
+    "source_revision": "29d2f4e03740acb14439ce22d24b06d8095d17d3"
+  },
+  "engine_release_transitions": "unreviewed releases remain inconclusive",
+  "fix_status": "exact proposed PR62065 backport; not a released upstream fix",
+  "identity_basis": "supplied source declarations; no remote attestation",
+  "native_check_coverage": {
+    "authenticity": "not established",
+    "cache_groups": 1,
+    "checksum_runtime_observation": "not implemented",
+    "connector": "NixlConnector",
+    "dcp": 1,
+    "dp": 1,
+    "engine": "vllm",
+    "format": "sdcguard.native-check-coverage.v1",
+    "lease_unit": "one remote request lease by rank",
+    "mode": "pull",
+    "pcp": 1,
+    "pp": 1,
+    "profile": "vllm032-fixed-nixl-pull-single-rank.v1",
+    "required_checks_default": [
+      "lease",
+      "checksum"
+    ],
+    "router_forwarding": "unknown",
+    "saved_owner_run": "incomplete; all release policies hold",
+    "scope": "explicit native lease-check execution for the declared ordinary capture client batch",
+    "sglang_runtime_adapter": "not implemented",
+    "tp": 1,
+    "version": "0.32.0"
+  },
+  "native_evidence": {
+    "current_runtime_upgrade_gate": "inconclusive without an independent runtime witness",
+    "format": "sdcguard.evidence-envelope.v1",
+    "ownership": "unknown",
+    "physical_reads": "unknown",
+    "required_slots": "explicit named slots; missing evidence remains unknown",
+    "rule": "allocator_to_model_entry_mapping_consistency",
+    "upgrade_policy": "preserve-retained-native-facts.v1"
+  },
+  "owner": "Hari Krishna Kancharla",
+  "physical_write_safety": "unknown",
+  "recorded_profile": {
+    "engine": "vllm",
+    "model": "Qwen/Qwen3-0.6B",
+    "model_revision": "required from supplied recording; never filled by preflight",
+    "nixl_version": "1.4.1",
+    "scope": "recorded source lease lifetime and scheduler admission only",
+    "version": "0.32.0"
+  },
+  "runtime_isolation": "not established",
+  "schema": "sdcguard.operator-support.v1",
+  "static_profiles": [
+    {
+      "build_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+      "connector": "NixlConnector",
+      "engine": "vllm",
+      "runtime_patch_sha256": "a669acdbc188d59439ca3ba74bba9a18447578b997be3f61278d45fd6a5f337d",
+      "scope": "declared ordinary capacity and first-direction pull verifier configuration",
+      "version": "0.32.0"
+    },
+    {
+      "build_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+      "engine": "sglang",
+      "scope": "declared ordinary dense capacity, source capability and configured safeguard inventory",
+      "version": "0.5.22"
+    },
+    {
+      "build_commit": "399c30d3ae5b1b91e2820e6cd405e1a689a797d1",
+      "engine": "vllm-ascend",
+      "scope": "pinned plugin/base ordinary capacity and proposed hold-verifier inventory",
+      "version": "source-snapshot",
+      "vllm_commit": "a98247ab4db686ee03c66d5feb3c761e52a2f8ab"
+    },
+    {
+      "build_commit": "568afb3a13806beb53bb2e6bd518269357b237c0",
+      "engine": "vllm-lmcache",
+      "lmcache_commit": "cd2c0d6a6a982ec5e334bae7704e1029c06d3c97",
+      "lmcache_version": "0.5.2",
+      "scope": "ordinary device capacity and named connector/layout compatibility conditions",
+      "version": "0.26.0"
+    }
+  ],
+  "upgrade_policy": "preserve-named-contracts.v1"
+}

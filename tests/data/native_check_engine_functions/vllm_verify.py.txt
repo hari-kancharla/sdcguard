@@ -1,0 +1,24 @@
+    def _verify(self, req_id: str, pending: _Pending) -> bool:
+        """Compare a finished load with the producer's checksums and log the
+        outcome. Returns whether the load verified."""
+        mismatches, unverified = self._compare(pending)
+        if mismatches:
+            logger.error(
+                "KV checksum mismatch for request %s: %s.",
+                req_id,
+                "; ".join(
+                    f"group {group_id} block positions {positions}"
+                    for group_id, positions in mismatches.items()
+                ),
+            )
+        elif unverified:
+            for e in unverified:
+                logger.warning_once("KV checksums not verified: %s.", e.reason)
+            logger.debug(
+                "KV checksums of request %s not verified: %s.",
+                req_id,
+                "; ".join(f"{e.reason} ({e.detail})" for e in unverified),
+            )
+        else:
+            return True
+        return False

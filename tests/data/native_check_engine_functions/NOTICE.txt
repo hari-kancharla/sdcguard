@@ -1,0 +1,38 @@
+CPU source-fragment controls
+
+The test harness and synthetic fixtures are maintained by Hari Krishna Kancharla.
+
+The source fragments retain unchanged source lines from the projects below.
+Their original licenses and copyright notices remain applicable. The accompanying
+MANIFEST.json pins each source commit, file, line range, full-file Git blob hash,
+full-file SHA256, fragment SHA256, and AST SHA256.
+
+SGLang
+https://github.com/sgl-project/sglang
+Commit baa9befa381511cd4d56f83980951e5a45fffc6d
+Apache License 2.0, retained in sglang-LICENSE.txt.
+
+vLLM
+https://github.com/vllm-project/vllm
+Checksum change branch https://github.com/sawsa307/vllm
+Commit 29d2f4e03740acb14439ce22d24b06d8095d17d3
+SPDX-License-Identifier: Apache-2.0
+SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+Apache License 2.0, retained in vllm-LICENSE.txt.
+
+Scope
+
+These tests execute selected original functions with synthetic CPU inputs.
+They do not start either full engine, a server, a GPU job, or transport work.
+The canary case executes SGLang's original Torch CPU reference function and
+host health function. It does not execute the CUDA kernel. The dispatch source
+explicitly selects the Torch reference for CPU devices.
+
+The SGLang expected-zero case proves admission without comparison. It does not
+prove a live decode-only deployment or an explicit native passing verdict.
+The canary case proves counter activity with an empty plan, not a request pass.
+The vLLM case proves a true native aggregate return while a declared transferred
+group is not compared. It is a synthetic comparison, not measured serving data.
+
+The fixture manifest marks these cases synthetic and not release qualifying.
+Pure classification controls are not runtime integration or release evidence.

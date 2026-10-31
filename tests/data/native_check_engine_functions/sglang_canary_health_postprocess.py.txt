@@ -1,0 +1,12 @@
+    def _postprocess_on_host(self, new_counter_host: torch.Tensor) -> None:
+        delta = new_counter_host - self._prev_counters_host
+        self._prev_counters_host = new_counter_host
+        expected_tags = self._expected_active_tags_for_health_check()
+        stalled = [tag for tag in expected_tags if int(delta[tag.value]) == 0]
+        if stalled:
+            names = ", ".join(tag.name for tag in stalled)
+            raise RuntimeError(
+                f"kv-canary: kernel_run_counter did not increase since previous check "
+                f"for tags=[{names}] at step={self._outer_step_counter_getter()}; "
+                f"canary path is not executing"
+            )

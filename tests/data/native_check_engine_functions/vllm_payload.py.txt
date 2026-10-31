@@ -1,0 +1,60 @@
+@dataclass
+class KVChecksumPayload:
+    """A producer's checksums of one request, as sent to its consumer."""
+
+    # The producer's TP size.
+    tp_size: int
+    # Tokens whose KV the checksummed blocks hold.
+    num_tokens: int
+    # Per KV cache group id: its fingerprint (``KVChecksumRecord.fingerprints``),
+    # block size, first block position, and one uint64 checksum per position.
+    groups: dict[int, tuple[int, int, int, np.ndarray]]
+
+    def to_bytes(self) -> bytes:
+        groups = [
+            (
+                group_id,
+                fingerprint,
+                block_size,
+                start,
+                # Encoded straight from the array's memory.
+                np.ascontiguousarray(values, dtype="<u8").data,
+            )
+            for group_id, (fingerprint, block_size, start, values) in (
+                self.groups.items()
+            )
+        ]
+        return msgspec.msgpack.encode(
+            (_PAYLOAD_VERSION, self.tp_size, self.num_tokens, groups)
+        )
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "KVChecksumPayload":
+        """Decode a payload; its checksums are views of ``data``.
+
+        Raises:
+            ValueError: If ``data`` is not a payload of this version.
+
+        """
+        try:
+            msg_type = tuple[int, int, int, list[tuple[int, int, int, int, memoryview]]]
+            version, tp_size, num_tokens, groups = msgspec.msgpack.decode(
+                data, type=msg_type
+            )
+            if version != _PAYLOAD_VERSION:
+                raise ValueError(f"unsupported version {version}")
+            return cls(
+                tp_size,
+                num_tokens,
+                {
+                    group_id: (
+                        fingerprint,
+                        block_size,
+                        start,
+                        np.frombuffer(values, dtype="<u8"),
+                    )
+                    for group_id, fingerprint, block_size, start, values in groups
+                },
+            )
+        except ValueError as e:  # Includes msgspec's decode errors.
+            raise ValueError(f"invalid KV checksums: {e}") from e

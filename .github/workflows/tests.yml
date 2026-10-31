@@ -14,7 +14,7 @@ concurrency:
 jobs:
   cpu:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,7 +33,7 @@ jobs:
   # PyTorch 2.8+), next to the versions above. No Triton here: its interpreter tests run in the job above.
   cpu-minimum:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:

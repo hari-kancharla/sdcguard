@@ -1,0 +1,10 @@
+@dataclass
+class KVChecksumBlocks:
+    """The blocks of one request to checksum."""
+
+    # Tokens whose KV the blocks hold; slots of the last block at or past this
+    # count are not checksummed.
+    num_tokens: int
+    # Per KV cache group id, the position of the first block and the ids of the
+    # blocks at consecutive positions from there.
+    groups: dict[int, tuple[int, list[int]]]

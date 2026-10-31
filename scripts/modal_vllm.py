@@ -84,6 +84,7 @@ ROUND = "r3"
 DATA, RUNS = f"{V}/data", f"{V}/runs_{ROUND}"
 LOCK_HOURS = 3.25          # longer than any phase's time limit (fp8_moe: 190 minutes)
 RATE_PER_HOUR = 3.95 + 8 * 0.0472 + 64 * 0.008         # H100 + 8 cores + 64 GiB, Modal prices on Oct 20, 2026
+RATE_H100_32 = 3.95 + 8 * 0.0472 + 32 * 0.008          # H100 + 8 cores + 32 GiB (the lifetime p/d pair's alloc)
 RATE_TP2 = 2 * 3.95 + 16 * 0.0472 + 128 * 0.008        # 2 H100s + 16 cores + 128 GiB
 RATE_L4 = 0.80 + 8 * 0.0472 + 32 * 0.008               # L4 + 8 cores + 32 GiB
 
@@ -94,7 +95,7 @@ def _source() -> dict:
     import hashlib
     h, n = hashlib.sha256(), 0
     for d in ("src", "experiments", "tests", "scripts"):
-        for p in sorted((LOCAL / d).rglob("*.py")):
+        for p in sorted(list((LOCAL / d).rglob("*.py")) + list((LOCAL / d).rglob("*.patch"))):
             if "__pycache__" in p.parts or p.name.startswith("._"):
                 continue
             h.update(str(p.relative_to(LOCAL)).encode() + b"\0" + p.read_bytes() + b"\0")
@@ -110,6 +111,35 @@ def _cost(minutes: float, rate: float = RATE_PER_HOUR, what: str = "H100, 8 core
                          "image pull and startup are billed too and not in this number"}
 
 
+# Provenance of the fixed build, so a fixed-variant result says exactly what it ran. The SHAs are the PR #62065
+# facts verified against the fetched branch; the patch sha256 is computed from the shipped patch and checked against
+# the value that extract produced, so a changed patch file shows up instead of passing silently.
+_PATCH_SHA256 = "a669acdbc188d59439ca3ba74bba9a18447578b997be3f61278d45fd6a5f337d"
+
+
+def _provenance() -> dict:
+    import hashlib
+    # inside the container the image carries the patch under R (the file the fixed image applied); on the Mac it
+    # sits next to this script. Check the container copy first, so the recorded hash is of the patch that was used.
+    patch = next((p for p in (Path(R) / "experiments" / "pr62065_lease_fix.patch",
+                              LOCAL / "experiments" / "pr62065_lease_fix.patch") if p.is_file()), None)
+    sha = hashlib.sha256(patch.read_bytes()).hexdigest() if patch is not None else None
+    return {
+        "description": "vLLM 0.32.0 plus a backport of PR vllm-project/vllm#62065 (NIXL lease-slot verification) at "
+                       "fix commit 42b8f230, vllm/ runtime code only",
+        "patch_sha256": sha, "patch_sha256_expected": _PATCH_SHA256, "patch_matches_expected": sha == _PATCH_SHA256,
+        "patch_extraction": "git diff 42b8f230^ 42b8f230 -- vllm/",
+        "fix_commit": "42b8f230676796445107ec3f50241e871fe9b9b6",
+        "fix_parent": "75e3b17c055c609f02c64cd4ad3f8692b8170d8e",
+        "pr_branch_tip": "03b2648165d24128611cd15818f4ecf51c0a0205",
+        "applied_onto_vllm": "v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be)",
+        "nixl_version": "1.4.1 (installed; vLLM 0.32 cu12 connector pin)",
+        "apply_method": "patch -p1 --fuzz=0",
+        "scope_note": "vllm/ runtime code only; the PR's test and doc files are not in the patch, so the PR's own "
+                      "unit tests are not run here",
+    }
+
+
 def _skip(p: Path) -> bool:
     return any(part in ("__pycache__", ".pytest_cache", "runs", "data", "results", "private") or
                part.startswith("._") or part.endswith(".egg-info") for part in p.parts)
@@ -117,8 +147,10 @@ def _skip(p: Path) -> bool:
 
 # vLLM brings its own PyTorch (2.13 for vLLM 0.31). sdcguard is pip-installed here, so vLLM finds its
 # plugin entry point the way it would on a user's machine.
-def _vllm_image(version: str):
-    return (
+def _vllm_image(version: str, before_code=None):
+    """before_code: more build steps that don't need this repository, put before its files so that a code change
+    doesn't rebuild them (a second vLLM's environment, say)."""
+    base = (
         modal.Image.debian_slim(python_version="3.12")
         .apt_install("build-essential")
         .uv_pip_install(f"vllm=={version}")
@@ -129,6 +161,11 @@ def _vllm_image(version: str):
         # as well as guarded; 0 = vLLM's own all-reduce (one GPU never reduces)
         .env({"PYTHONUNBUFFERED": "1", "HF_HOME": f"{V}/hf", "VLLM_USE_FLASHINFER_SAMPLER": "0",
               "VLLM_ALLREDUCE_USE_FLASHINFER": "0"})
+    )
+    if before_code is not None:
+        base = before_code(base)
+    return (
+        base
         .add_local_dir(LOCAL / "src", f"{R}/src", ignore=_skip, copy=True)
         .add_local_dir(LOCAL / "experiments", f"{R}/experiments", ignore=_skip, copy=True)
         .add_local_file(LOCAL / "pyproject.toml", f"{R}/pyproject.toml", copy=True)
@@ -143,6 +180,32 @@ vllm032_image = _vllm_image("0.32.0")       # (October 18; the server checks run
 # the tests too, for the GPU tests that run on vLLM 0.32's own PyTorch and Triton (the graphs phase)
 tests_image = vllm032_image.uv_pip_install("pytest==9.1.1").add_local_dir(LOCAL / "tests", f"{R}/tests",
                                                                           ignore=_skip, copy=True)
+
+# vLLM 0.32.0 and, in its own environment (/opt/vfix), vLLM built at the fix of issue #59686 (PR #59717, merged
+# October 23 as commit e4db46c, after 0.32.0): its wheel from vLLM's per-commit wheel server
+FIX_59686_WHEEL = ("https://wheels.vllm.ai/e4db46c79bca354fef07197465faea14ca563c09/"
+                   "vllm-0.32.1rc1.dev431%2Bge4db46c79-cp38-abi3-manylinux_2_28_x86_64.whl")
+# (the fixed build's environment, a 335 MB wheel and its own PyTorch, is built before this repository's files, so a
+# code change rebuilds only the last layers; sdcguard goes into it after them)
+issue59686_image = _vllm_image("0.32.0", before_code=lambda img: img.run_commands(
+    "pip install uv", "uv venv --python 3.12 /opt/vfix",
+    f"uv pip install --python /opt/vfix/bin/python '{FIX_59686_WHEEL}'")).run_commands(
+    f"uv pip install --python /opt/vfix/bin/python --no-deps {R}").env({"SDCGUARD_FIX_PY": "/opt/vfix/bin/python"})
+
+# vLLM 0.32.0 with NIXL for prefill/decode pairs (the version vLLM 0.32's CUDA 12 connector requirements pin)
+lifetime_image = _vllm_image("0.32.0", before_code=lambda img: img.uv_pip_install("nixl==1.4.1"))
+
+# the same, plus vLLM PR #62065 (NIXL lease-slot verification, the open fix for issue #61229) applied to the
+# installed 0.32.0 in place. experiments/pr62065_lease_fix.patch is the PR's vLLM-only diff. The build applies it
+# with patch(1) and then imports the new module, so a patch that does not apply exactly fails the build loudly (set
+# -e) rather than shipping a half-fixed vLLM. Same 0.32.0 base as lifetime_image; the only difference is the fix.
+lifetime_fixed_image = _vllm_image(
+    "0.32.0", before_code=lambda img: img.uv_pip_install("nixl==1.4.1").apt_install("patch")).run_commands(
+    "set -e; "
+    "VP=$(python -c 'import os, vllm; print(os.path.dirname(os.path.dirname(vllm.__file__)))'); "
+    f"cd \"$VP\"; patch -p1 --fuzz=0 < {R}/experiments/pr62065_lease_fix.patch; "
+    "python -c 'from vllm.distributed.kv_transfer.kv_connector.v1.nixl import lease_slots; "
+    "assert lease_slots.lease_verification_enabled.__name__'")
 
 app = modal.App("sdcguard-vllm", image=vllm_image)
 vol = modal.Volume.from_name("sdcguard-runs", create_if_missing=True)
@@ -204,20 +267,50 @@ def _tee(cmd, log_path, env=None, cwd=R, timeout: float = 15 * 60):
     return code
 
 
+def _call_id() -> str | None:
+    """This function call's id (None outside Modal): Modal restarts a preempted GPU call on the same input with the
+    same id, and that restart must not be turned away by the lock its first attempt wrote."""
+    try:
+        return modal.current_function_call_id()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _lock_path(phase: str) -> str:
+    return f"{V}/locks/{ROUND}_{phase}.json"
+
+
+def _lock_info(phase: str) -> dict:
+    try:
+        return json.load(open(_lock_path(phase)))
+    except (OSError, ValueError):
+        return {}
+
+
 def _locked(phase: str, force: bool) -> str | None:
     vol.reload()
-    path = f"{V}/locks/{ROUND}_{phase}.json"
+    path = _lock_path(phase)
+    me = _call_id()
     if os.path.exists(path) and not force:
+        info = _lock_info(phase)
         try:
-            age = (time.time() - json.load(open(path))["started"]) / 3600
-        except (OSError, ValueError, KeyError):
+            age = (time.time() - info["started"]) / 3600
+        except (KeyError, TypeError):
             age = 0.0
+        if me is not None and info.get("call_id") == me:
+            # the same call restarted after a preemption: it goes on (its first attempt's files were set aside by the
+            # caller's _set_aside, never deleted), and the lock records that it restarted
+            info["restarted"] = int(info.get("restarted") or 0) + 1
+            with open(path, "w") as f:
+                json.dump(info, f)
+            vol.commit()
+            return None
         if age < LOCK_HOURS:
             return (f"NOT STARTED: phase '{phase}' was started {age * 60:.0f} minutes ago and may still be running. "
                     f"Starting it twice would pay twice. Wait, then run --phase fetch.")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
-        json.dump({"started": time.time()}, f)
+        json.dump({"started": time.time(), "call_id": me}, f)
     vol.commit()
     return None
 
@@ -530,6 +623,47 @@ def sensitivity(force: bool = False, source: Optional[dict] = None) -> str:
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
 
 
+@app.function(image=vllm032_image, volumes=VOLS, cpu=4, memory=8192, timeout=45 * 60)
+def fetch_model(repo: str) -> str:
+    """Download a model into the volume's Hugging Face cache on a CPU, so a GPU run doesn't pay for the download (or
+    run out of time saving it to the volume at its end)."""
+    from huggingface_hub import snapshot_download
+    t0 = time.monotonic()
+    path = snapshot_download(repo)
+    vol.commit()
+    size = sum(f.stat().st_size for f in Path(path).rglob("*") if f.is_file())
+    return f"{repo}: {size / 2 ** 30:.1f} GiB in the cache after {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=issue59686_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=100 * 60)
+def issue59686(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/vllm_59686_check.py: vLLM issue #59686 (CUTLASS FP8 MoE corrupting valid tokens when a CUDA-graph
+    batch is padded) in vLLM 0.32.0 on one H100, judged by `sdcguard qualify` against the Triton backend, with the
+    alternatives that remove it (padding routed, the build with the fix)."""
+    t0 = time.monotonic()
+    tag = "issue59686"
+    vol.reload()                            # (the model fetch_model just saved)
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/vllm_59686_check.py", "--out", out], f"{out}.txt",
+                    cwd="/root", timeout=96 * 60)
+    finally:
+        import torch
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "passed": code == 0, "source": source,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       "restarted_after_preemption": _lock_info(tag).get("restarted", 0),
+                       **_cost((time.monotonic() - t0) / 60, RATE_PER_HOUR, "H100, 8 cores, 64 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
 @app.function(image=vllm032_image, volumes=VOLS, gpu=GPU, cpu=8, memory=65536, timeout=25 * 60)
 def weight_repair(force: bool = False, source: Optional[dict] = None) -> str:
     """experiments/vllm_weight_repair_check.py: the plugin's weight repair in real `vllm serve` (vLLM 0.32,
@@ -687,6 +821,104 @@ def qualify(force: bool = False, source: Optional[dict] = None) -> str:
                        **_cost((time.monotonic() - t0) / 60, RATE_L4, "L4, 8 cores, 32 GiB")}, f)
         vol.commit()
     return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+def _lifetime_pd(tag: str, variant: str, force: bool, source: Optional[dict], policy: str = "recompute",
+                 candidate_from: Optional[str] = None) -> str:
+    """Shared runner for the prefill/decode lifetime experiment. variant: 'unpatched' plain vLLM 0.32.0, or 'fixed'
+    the same plus the PR #62065 backport (its image carries the patch). policy: kv_load_failure_policy for the
+    fixed build (recompute, the default, or fail). candidate_from: the run whose saved candidate.json (the stall
+    that corrupted the answer there) this run replays exactly; if it is missing, nothing starts."""
+    t0 = time.monotonic()
+    extra, cand, cand_source = [], None, None
+    if candidate_from:                       # checked before the lock and the servers, so a refusal costs nothing
+        import hashlib
+        vol.reload()
+        cand = f"{RUNS}/{candidate_from}/candidate.json"
+        if not os.path.isfile(cand):
+            return (f"{tag}: NOT STARTED: {cand} is missing. Run --phase {candidate_from} first: it finds the "
+                    "decode stall that corrupts the answer and saves it for this run to replay.")
+        try:
+            with open(f"{RUNS}/{candidate_from}/STATUS.json") as sf:
+                src_status = json.load(sf)
+        except Exception:  # noqa: BLE001
+            src_status = {}
+        # a fixed run is only a comparison if the saved schedule actually broke the answer on the stock build
+        if src_status.get("verdict") != "harm_reproduced" or src_status.get("exit_code") != 1:
+            return (f"{tag}: NOT STARTED: the {candidate_from} run did not confirm harm (verdict "
+                    f"{src_status.get('verdict')!r}, exit code {src_status.get('exit_code')!r}), so there is no "
+                    "broken stock-build result for this run to be compared with.")
+        with open(cand, "rb") as cf:
+            cand_source = {"run": candidate_from, "verdict": src_status.get("verdict"),
+                           "exit_code": src_status.get("exit_code"), "source": src_status.get("source"),
+                           "candidate_sha256": hashlib.sha256(cf.read()).hexdigest()}
+        extra = ["--candidate", cand]
+    if variant == "fixed":
+        prov = _provenance()
+        if not prov.get("patch_matches_expected"):
+            return (f"{tag}: NOT STARTED: the fix patch in this image does not match the reviewed one (sha256 "
+                    f"{prov.get('patch_sha256')!r}, expected {_PATCH_SHA256}).")
+    msg = _locked(tag, force)
+    if msg:
+        return msg
+    out = f"{RUNS}/{tag}"
+    _set_aside(out)
+    os.makedirs(out, exist_ok=True)
+    code = None
+    try:
+        code = _tee([sys.executable, f"{R}/experiments/lifetime_pd_check.py", "--out", out, "--variant", variant,
+                     "--kv-load-failure-policy", policy, *extra],
+                    f"{out}.txt", cwd="/root", timeout=36 * 60)
+    finally:
+        import torch
+        verdict = None
+        try:
+            with open(f"{out}/RESULT.json") as rf:
+                verdict = json.load(rf).get("verdict")
+        except Exception:  # noqa: BLE001
+            pass
+        if verdict is None:                  # no verdict written: say why instead of leaving every flag false
+            verdict = ("harness_timed_out" if code == 124 else "not_started_no_time" if code == 125
+                       else "no_result_file")
+        with open(f"{out}/STATUS.json", "w") as f:
+            json.dump({"exit_code": code, "variant": variant, "verdict": verdict,
+                       "harm_confirmed": code == 1, "hooks_recorded_nothing": code == 2,
+                       "control_broke": code == 3, "harness_failed": code in (4, 124, 125) or code is None,
+                       "timed_out": code == 124, "inconclusive": code == 5,
+                       "source": source, "provenance": _provenance() if variant == "fixed" else None,
+                       "replayed_candidate": cand, "replayed_candidate_from": cand_source,
+                       "kv_load_failure_policy": policy,
+                       "gpus": [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())],
+                       **_cost((time.monotonic() - t0) / 60, RATE_H100_32, "H100, 8 cores, 32 GiB")}, f)
+        vol.commit()
+    return f"{tag}: exit code {code} in {(time.monotonic() - t0) / 60:.1f} minutes"
+
+
+@app.function(image=lifetime_image, volumes=VOLS, gpu="H100!", cpu=8, memory=32768, timeout=40 * 60)
+def lifetime_pd(force: bool = False, source: Optional[dict] = None) -> str:
+    """experiments/lifetime_pd_check.py on plain vLLM 0.32.0: a prefill/decode pair (NixlConnector, Qwen3-0.6B, both
+    on one H100) with KV lifetime recording and a 4-second prefill-side lease (the shape of issue 61229). It finds the
+    decode stall that actually corrupts the answer, saves it to candidate.json for the fixed runs, then replays it
+    next to two controls. Run this first."""
+    return _lifetime_pd("lifetime_pd", "unpatched", force, source)
+
+
+@app.function(image=lifetime_fixed_image, volumes=VOLS, gpu="H100!", cpu=8, memory=32768, timeout=40 * 60)
+def lifetime_pd_fixed(force: bool = False, source: Optional[dict] = None) -> str:
+    """The exact stall lifetime_pd saved, replayed on vLLM 0.32.0 plus a backport of PR #62065 (NIXL lease-slot
+    verification). The read still refers to released blocks, but the verifier should decline it, the request
+    recompute and the answer stay correct. The contrast with lifetime_pd (same base, same schedule, only the fix
+    added) is the result. Needs lifetime_pd's candidate.json; without it nothing starts."""
+    return _lifetime_pd("lifetime_pd_fixed", "fixed", force, source, candidate_from="lifetime_pd")
+
+
+@app.function(image=lifetime_fixed_image, volumes=VOLS, gpu="H100!", cpu=8, memory=32768, timeout=40 * 60)
+def lifetime_pd_fixed_fail(force: bool = False, source: Optional[dict] = None) -> str:
+    """Optional control: the fixed build under kv_load_failure_policy=fail. The declined stale read makes the
+    request fail closed (an error, correlated with the decode lease rejection for that request) rather than
+    recompute, so an HTTP 500 here is shown to be deliberate fail-closed behaviour, not a hang."""
+    return _lifetime_pd("lifetime_pd_fixed_fail", "fixed", force, source, policy="fail",
+                        candidate_from="lifetime_pd")
 
 
 @app.function(image=vllm032_image, volumes=VOLS, gpu="L4", cpu=8, memory=32768, timeout=190 * 60)
@@ -1278,6 +1510,12 @@ ESTIMATES = {
     "sensitivity": "80 weight bit flips in a served Qwen2.5-1.5B on 1 H100, each with the plugin's verdict and a quality "
                    "check: about 20 to 30 minutes, roughly $1.60 to $2.40 (45-minute limit, at most about $3.60 at "
                    "requested resources, not a spending cap)",
+    "issue59686": "vLLM issue #59686 in vLLM 0.32.0 on 1 H100: the issue's kernel repro in 0.32.0 and in the build "
+                  "with the fix, then `sdcguard qualify` of RedHatAI/Qwen3-30B-A3B-FP8-dynamic on the CUTLASS FP8 MoE "
+                  "backend against the Triton backend, with the padding workaround and the fixed build as "
+                  "alternatives: about 50 to 70 minutes, roughly $4 to $6 (100-minute limit, at most about $8 at "
+                  "requested resources, not a spending cap), after the model's download on a CPU (a few minutes, "
+                  "cents)",
     "weight_repair": "the plugin's weight repair in real `vllm serve` on 1 H100: Qwen2.5-1.5B with the weight scan "
                      "and repair on, 8 weight bit flips left in place, each to be alerted, written back and verified, "
                      "and the 64 answers after identical to those before: about 10 to 15 minutes, roughly $0.80 to "
@@ -1298,6 +1536,22 @@ ESTIMATES = {
                "Triton attention, a wrong rms_norm_eps), then `sdcguard ready --qualified` on two more launches (7 "
                "server launches): about 35 to 50 minutes, roughly $0.85 to $1.20 (75-minute limit, at most about "
                "$1.80 at requested resources, not a spending cap)",
+    "lifetime_pd": "plain vLLM 0.32.0 prefill/decode pair (NixlConnector, Qwen3-0.6B, both on 1 H100) with KV "
+                   "lifetime recording and a 4-second prefill-side lease (the shape of vLLM issue 61229): finds the "
+                   "decode stall that actually corrupts the answer, saves it for lifetime_pd_fixed, then replays it "
+                   "5 times next to two controls. Run this first: about 5 to 10 minutes, roughly $0.40 to $0.80 "
+                   "(40-minute limit; about $3.05 if it ran the whole limit at requested resources, an estimate, "
+                   "not a cap: startup and image pulls are billed on top)",
+    "lifetime_pd_fixed": "the exact stall lifetime_pd saved, replayed 5 times on vLLM 0.32.0 plus a backport of PR "
+                         "#62065 (NIXL lease-slot verification, the open fix for issue 61229), next to two controls; "
+                         "run lifetime_pd first: about 4 to 8 minutes, roughly $0.30 to $0.60 (40-minute limit; about "
+                         "$3.05 if it ran the whole limit at requested resources, an estimate, not a cap: startup "
+                         "and image pulls are billed on top)",
+    "lifetime_pd_fixed_fail": "optional control: lifetime_pd_fixed with kv_load_failure_policy=fail, so a declined "
+                              "read fails the request closed instead of recomputing; run lifetime_pd first: about 4 "
+                              "to 8 minutes, roughly $0.30 to $0.60 (40-minute limit; about $3.05 if it ran the whole "
+                              "limit at requested resources, an estimate, not a cap: startup and image pulls are "
+                              "billed on top)",
     "moe": "the plugin's MoE checks in real `vllm serve` on 1 H100: granite-3.1-1b-a400m plain, guarded, without MoE "
            "checks and eager (4 server launches, 6 wrong-kernel trials, 2 wrong routers, M6's real rows given no "
            "experts, the cost): about 12 to 20 minutes (the fourth run took 10.4), roughly $1 to $1.60 (40-minute "
@@ -1460,6 +1714,21 @@ def main(phase: str = "vllm", force: bool = False, parts: str = ""):
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))
+        elif phase == "lifetime_pd":
+            message = lifetime_pd.remote(force, src)
+            print(message, flush=True)
+            if "exit code 1 " not in str(message):         # the stock build should reproduce the harm (exit 1)
+                failures.append(str(message))
+        elif phase == "lifetime_pd_fixed":
+            message = lifetime_pd_fixed.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):      # the fixed run should find no harm (exit 0)
+                failures.append(str(message))
+        elif phase == "lifetime_pd_fixed_fail":
+            message = lifetime_pd_fixed_fail.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):      # fail-closed is still no wrong answer, so exit 0
+                failures.append(str(message))
         elif phase == "qualify":
             message = qualify.remote(force, src)
             print(message, flush=True)
@@ -1527,6 +1796,12 @@ def main(phase: str = "vllm", force: bool = False, parts: str = ""):
                 failures.append(str(message))
         elif phase == "sensitivity":
             message = sensitivity.remote(force, src)
+            print(message, flush=True)
+            if "exit code 0 " not in str(message):
+                failures.append(str(message))
+        elif phase == "issue59686":
+            print(fetch_model.remote("RedHatAI/Qwen3-30B-A3B-FP8-dynamic"), flush=True)
+            message = issue59686.remote(force, src)
             print(message, flush=True)
             if "exit code 0 " not in str(message):
                 failures.append(str(message))

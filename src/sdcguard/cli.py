@@ -1,5 +1,21 @@
 """The sdcguard command.
 
+Scoped inference-state workflow (see README for exact supported configuration):
+    sdcguard config-safety CONFIG --out NEWDIR   static contracts from config and saved startup logs
+    sdcguard evidence collect ... --out NEWDIR  portable scoped inputs and named findings
+    sdcguard evidence verify PACKET            re-judge captured facts offline
+    sdcguard operator export NEWDIR            installed setup guides and distinct input templates
+    sdcguard operator preflight ... --out NEWDIR   offline local input preflight
+    sdcguard upgrade compare BASE CAND --out NEWDIR   compare verified named contracts
+    sdcguard record-plan CONFIG --out NEWDIR    prepare passive recording instructions; no server start
+    sdcguard assess CONFIG --out NEWDIR         scoped assessment with portable JSON/HTML evidence
+    sdcguard report-verify PACKET               verify an assessment offline; integrity is not a verdict
+    sdcguard regression export NEWDIR           export the packaged saved case without a checkout
+    sdcguard regression verify PACKET           verify its pinned files without executing a replay
+    sdcguard overhead prepare ...               bind local identity before owner-run measurements
+
+The arithmetic and fleet commands below have separate scopes and evidence:
+
     sdcguard check                        is this GPU computing correctly, and at full speed? (5 min, share card)
     sdcguard demo                         a device goes bad mid-training; watch it get caught (CPU is fine)
     sdcguard selftest                     does sdcguard see and check this machine's matmuls?
@@ -323,6 +339,23 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="sdcguard", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--version", action="version", version=f"sdcguard {__version__}")
     sub = p.add_subparsers(dest="cmd")
+    sub.add_parser("evidence", help="capture and verify named evidence contracts offline", add_help=False)
+    sub.add_parser("operator", help="export installed setup and preflight supplied local inputs offline", add_help=False)
+    sub.add_parser("forward-inputs", help="inspect recorded attention input plans offline; physical reads remain unknown", add_help=False)
+    sub.add_parser("native-checks", help="engine pass vs actually covered in retained ordinary client records", add_help=False)
+    sub.add_parser("checksum-observer", help="inspect candidate native checksum observations offline", add_help=False)
+    sub.add_parser("checksum-client", help="reconcile planned client requests with native checksum calls offline", add_help=False)
+    sub.add_parser("transfer-check", help="check recorded transfer comparison scope without relaxing the full-prompt gate", add_help=False)
+    sub.add_parser("transfer-compare", help="compare saved transfer coverage across recorded stacks offline", add_help=False)
+    sub.add_parser("assignment", help="inspect recorded allocator-to-model mapping; ownership remains unknown", add_help=False)
+    sub.add_parser("upgrade", help="compare verified contracts under the installed preservation policy", add_help=False)
+    sub.add_parser("config-safety", help="static config and startup contracts; no server", add_help=False)
+    sub.add_parser("report-verify", help="verify a saved assessment offline; integrity is separate from verdict", add_help=False)
+    sub.add_parser("record-plan", help="prepare observation-only instructions; never start a server", add_help=False)
+    sub.add_parser("assess", help="scoped read-only assessment of the supported #61229 recording", add_help=False)
+    sub.add_parser("inventory", help="normalize saved client receipts for offline workload coverage", add_help=False)
+    sub.add_parser("regression", help="export or verify the saved #61229 regression case", add_help=False)
+    sub.add_parser("overhead", help="compare paired existing performance records with strict identity checks", add_help=False)
     sub.add_parser("check", help="is this GPU computing correctly, and at full speed?", add_help=False)
     sub.add_parser("board", help="build the public results board", add_help=False)
     sub.add_parser("demo", help="a device goes bad mid-training; watch it get caught", add_help=False)
@@ -335,7 +368,7 @@ def main(argv=None) -> int:
                    add_help=False)
     sub.add_parser("kernels", help="which GPU matmul kernels a workload runs, and how many of them a test ran",
                    add_help=False)
-    sub.add_parser("gate", help="keep wrong matmuls as test cases and check every upgrade against them",
+    sub.add_parser("gate", help="require lease or checksum coverage; legacy arithmetic gate subcommands remain available",
                    add_help=False)
     sub.add_parser("decide", help="accept or reject one change to a serving stack: arithmetic, quality, speed, scope",
                    add_help=False)
@@ -344,6 +377,8 @@ def main(argv=None) -> int:
     sub.add_parser("isolation", help="does one request's answer depend on another's? (a running vLLM server)",
                    add_help=False)
     sub.add_parser("consistency", help="the same answer along a server's serving paths? (prefix cache, decode)",
+                   add_help=False)
+    sub.add_parser("lifetime", help="evaluate recorded rules or run pinned CPU component conformance",
                    add_help=False)
     sub.add_parser("qualify", help="start the baseline and candidate vLLM stacks, run every check, decide each change",
                    add_help=False)
@@ -401,12 +436,56 @@ def main(argv=None) -> int:
 
 
 _DISPATCHED = ("demo", "selftest", "screen", "check", "board", "casefile", "blas", "issues", "nvsentinel", "gate",
-               "ready", "kernels", "decide", "perf", "isolation", "consistency", "qualify")
+               "ready", "kernels", "decide", "perf", "isolation", "consistency", "qualify", "lifetime",
+               "assess", "inventory", "regression", "overhead", "record-plan", "report-verify", "config-safety", "evidence", "upgrade", "operator", "forward-inputs", "assignment", "native-checks", "checksum-observer", "checksum-client", "transfer-check", "transfer-compare")
 
 
 def _dispatch(cmd: str, rest: list) -> int:
     """The subcommands with parsers of their own."""
-    if cmd == "issues":
+    if cmd == "transfer-compare":
+        from .transfer_upgrade import main as transfer_upgrade_main
+        return transfer_upgrade_main(rest)
+    elif cmd == "transfer-check":
+        from .transfer_coverage import main as transfer_main
+        return transfer_main(rest)
+    elif cmd == "gate":
+        if (rest and rest[0] in ("capture", "add", "run", "compare", "investigate", "workaround", "pin", "model-ref", "model-check")
+                and not any(arg == "--require" or arg.startswith("--require=") for arg in rest)):
+            from .gate import main as legacy_gate_main
+            return legacy_gate_main(rest)
+        from .required_gate import main as gate_main
+        return gate_main(rest)
+    elif cmd == "checksum-client":
+        from . import checksum_client_report
+        return checksum_client_report.main(rest)
+    elif cmd == "checksum-observer":
+        from .checksum_observer_report import main as checksum_observer_main
+        return checksum_observer_main(rest)
+    elif cmd == "native-checks":
+        from .native_checks import main as native_checks_main
+        return native_checks_main(rest)
+    elif cmd == "assignment":
+        from .assignment_report import main as assignment_main
+        return assignment_main(rest)
+    elif cmd == "forward-inputs":
+        from .forward_report import main as forward_main
+        return forward_main(rest)
+    elif cmd == "operator":
+        if rest and rest[0] == "run":
+            from .native_operator.command import main as operator_run
+            return operator_run(rest[1:])
+        from .operator_setup import main as operator_main
+        return operator_main(rest)
+    elif cmd == "upgrade":
+        from .upgrade_entry import main as upgrade_main
+        return upgrade_main(rest)
+    elif cmd == "evidence":
+        from .evidence_entry import main as evidence_main
+        return evidence_main(rest)
+    elif cmd == "config-safety":
+        from .config_safety import main as config_safety_main
+        return config_safety_main(rest)
+    elif cmd == "issues":
         from .known_issues import main as m
         try:                       # (known_issues.environment() reads the GPU only once CUDA is in use)
             import torch
@@ -424,6 +503,24 @@ def _dispatch(cmd: str, rest: list) -> int:
         from .kernels import main as m
     elif cmd == "decide":
         from .decide import main as m
+    elif cmd == "assess":
+        from .assessment import main as assess_main
+        return assess_main(rest)
+    elif cmd == "inventory":
+        from .client_inventory import main as inventory_main
+        return inventory_main(rest)
+    elif cmd == "report-verify":
+        from .assessment_bundle import main as verify_report_main
+        return verify_report_main(["verify", *rest])
+    elif cmd == "record-plan":
+        from .recording_plan import main as recording_plan_main
+        return recording_plan_main(rest)
+    elif cmd == "regression":
+        from .regression import main as regression_main
+        return regression_main(rest)
+    elif cmd == "overhead":
+        from .overhead import main as overhead_main
+        return overhead_main(rest)
     elif cmd == "perf":
         from .perf import main as m
     elif cmd == "isolation":
@@ -432,8 +529,8 @@ def _dispatch(cmd: str, rest: list) -> int:
         from .consistency import main as m
     elif cmd == "qualify":
         from .qualify import main as m
-    elif cmd == "gate":
-        from .gate import main as m
+    elif cmd == "lifetime":
+        from .lifetime.cli import main as m
     elif cmd == "nvsentinel":
         from .nvsentinel import main as m
     elif cmd == "check":

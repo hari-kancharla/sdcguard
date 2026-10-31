@@ -1,0 +1,102 @@
+    def _compare_group(
+        self,
+        pending: _Pending,
+        expected: KVChecksumPayload,
+        group_id: int,
+        skipped: bool,
+    ) -> list[int] | None:
+        """The group's mismatching block positions, or None if the group is
+        not compared (neither side checksums it).
+
+        With different block sizes, sums of the smaller blocks are compared
+        with the larger ones.
+
+        Raises:
+            _Unverified: If the group cannot be compared.
+
+        """
+        spec = self._groups[group_id].kv_cache_spec
+        if (
+            isinstance(spec, MambaSpec)
+            and spec.state_splits is None
+            and not spec.tp_replicated
+            and expected.tp_size != self._tp_size
+        ):
+            # Without its TP splits, a rank's share of sharded state depends on
+            # the TP size.
+            raise _Unverified(
+                "Mamba state without TP splits differs between TP sizes",
+                f"group {group_id}: producer TP {expected.tp_size}, "
+                f"consumer TP {self._tp_size}",
+            )
+        sent = expected.groups.get(group_id)
+        # No worker checksums a group of only drafter layers, as if skipped.
+        unchecked = skipped or not pending.group_checksums(group_id)
+        if unchecked or sent is None:
+            if unchecked != (sent is None):
+                raise _Unverified(
+                    "a group is checksummed by one side only",
+                    f"group {group_id} on the "
+                    f"{'producer' if unchecked else 'consumer'} only",
+                )
+            return None
+        fingerprint, sent_block_size, sent_start, sent_values = sent
+        if fingerprint != pending.fingerprint(group_id):
+            raise _Unverified(
+                "a group holds other layers or dtype on the producer",
+                f"group {group_id}",
+            )
+        start, block_ids = pending.blocks.groups[group_id]
+        if isinstance(spec, MambaSpec):
+            # One state per block, not per token.
+            block_size = sent_block_size = 1
+        else:
+            block_size = spec.block_size
+        chunk_size = max(block_size, sent_block_size)
+        if chunk_size % min(block_size, sent_block_size):
+            raise _Unverified(
+                "block sizes are not multiples of each other",
+                f"group {group_id}: {sent_block_size} on the producer, "
+                f"{block_size} on the consumer",
+            )
+        blocks_per_chunk = chunk_size // block_size
+        if start % blocks_per_chunk:
+            # Its producer block also holds tokens the consumer did not load.
+            raise _Unverified(
+                "the first loaded block starts inside a producer block",
+                f"group {group_id}",
+            )
+        num_tokens = pending.blocks.num_tokens
+        sent_first, sent_sums = _chunk_sums(
+            sent_values, sent_start, sent_block_size, chunk_size, expected.num_tokens
+        )
+        checks = [
+            _chunk_sums(values, start, block_size, chunk_size, num_tokens)
+            for values in _sum_replicas(
+                pending.group_checksums(group_id), len(block_ids)
+            )
+        ]
+        first, num_chunks = checks[0][0], len(checks[0][1])
+        chunks = [
+            chunk
+            for chunk in range(
+                max(first, sent_first),
+                min(first + num_chunks, sent_first + len(sent_sums)),
+            )
+            # Only the last chunk can hold fewer tokens on one side.
+            if isinstance(spec, MambaSpec)
+            or num_valid_tokens(chunk, chunk_size, num_tokens)
+            == num_valid_tokens(chunk, chunk_size, expected.num_tokens)
+        ]
+        if not chunks:
+            raise _Unverified("a group has no block in common", f"group {group_id}")
+        index = np.array(chunks)
+        bad = np.zeros(len(chunks), dtype=bool)
+        for _, sums in checks:
+            bad |= sums[index - first] != sent_sums[index - sent_first]
+        return [
+            pos
+            for chunk in index[bad].tolist()
+            for pos in range(chunk * blocks_per_chunk, (chunk + 1) * blocks_per_chunk)
+            if start <= pos < start + len(block_ids)
+        ]

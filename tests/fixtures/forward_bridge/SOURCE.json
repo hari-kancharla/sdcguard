@@ -1,0 +1,13 @@
+{
+  "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "fragment_sha256": "beb2163b7b532b64e4812004067aca9a4e6191bcde46585bb9e52949ad07abfb",
+  "lines": [
+    605,
+    614
+  ],
+  "owner": "Hari Krishna Kancharla",
+  "path": "vllm/v1/worker/gpu/model_runner.py",
+  "scope": "actual three initialization assignments in isolation only; no cache allocation, engine or GPU",
+  "source_sha256": "5240fe8d62d403e466a4aa07a28fb7af5c0f1e9b9c3bb08c4003185bde461f87",
+  "url": "https://github.com/vllm-project/vllm/blob/5df63a7203cdb9328d824a27b682e77c7b9928be/vllm/v1/worker/gpu/model_runner.py#L605-L614"
+}
