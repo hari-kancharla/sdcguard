@@ -33,7 +33,7 @@ Allocation-recipient facts: the separate [capacity attribution component](ALLOCA
 
 An inference engine can compute every matrix multiply correctly while using KV state that belongs to another request. sdcguard is building a vendor-independent acceptance and regression workflow for that serving-state boundary: inspect the exact deployment, collect passive observations, evaluate bounded rules, and preserve an independently inspectable packet.
 
-Current deployment support is deliberately pinned to the saved public vLLM #61229 configuration. The installed CPU conformance command applies one destination-retirement rule to pinned original vLLM and SGLang component functions. That evidence is separate from deployed multi-engine protection. Legacy arithmetic, training and fleet tools keep their separate historical evidence in the full repository's `docs/STATUS.md`. That historical archive requires the repository and is outside this installed workflow.
+Deployment support for these workflows is pinned to the saved public vLLM #61229 configuration. The installed CPU conformance command applies one destination-retirement rule to pinned original vLLM and SGLang component functions. That evidence is separate from deployed multi-engine protection. Legacy arithmetic, training and fleet tools keep their separate historical evidence in the full repository's `docs/STATUS.md`. That historical archive requires the repository and is outside this installed workflow.
 
 ## Why now, and what is actually demonstrated
 

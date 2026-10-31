@@ -16,6 +16,7 @@ from types import MappingProxyType
 
 from . import checksum_observer_report as checks, evidence_io as io
 from . import kv_checksum_observer as checksum
+from . import checksum_profiles as profiles
 
 REVISION = "29d2f4e03740acb14439ce22d24b06d8095d17d3"
 PROFILE = "vllm-checksum-62211-client-join.v1"
@@ -73,9 +74,10 @@ def _context(value):
             and _text(value.get("arm_id"), 128) and _text(value.get("engine_session_id"), 128))
 
 
-def source_profile():
-    return {"profile": PROFILE, "revision": REVISION,
-            "api_request_id_files": dict(SOURCE_FILES), "checksum_profile": checksum.source_profile()}
+def source_profile(revision=REVISION):
+    profile = profiles.get(revision)
+    return {"profile": PROFILE, "revision": revision,
+            "api_request_id_files": profile["binding_files"], "checksum_profile": checksum.source_profile(revision)}
 
 
 def evaluator_hashes():
@@ -97,7 +99,9 @@ class RequestBindingObserver:
     """Observe the original request-ID assignment without selecting an ID."""
 
     def __init__(self, *, run_id, packet_sha256, arm_id, engine_session_id,
-                 max_records=4096, max_bytes=2 * 1024 * 1024):
+                 max_records=4096, max_bytes=2 * 1024 * 1024, revision=REVISION):
+        self.profile = profiles.get(revision)
+        self.revision = self.profile["revision"]
         self.context = dict(run_id=run_id, packet_sha256=packet_sha256,
                             arm_id=arm_id, engine_session_id=engine_session_id)
         if not _context(self.context):
@@ -110,7 +114,7 @@ class RequestBindingObserver:
         self._lock = threading.RLock()
         self._records, self._bytes, self._sequence = [], 0, 0
         self._health = dict(errors=0, dropped_records=0, late_calls=0, active_calls=0, budget_exhausted=False)
-        self._source = dict(profile=BINDING_PROFILE, revision=REVISION, files=dict(SOURCE_FILES),
+        self._source = dict(profile=BINDING_PROFILE, revision=self.revision, files=self.profile["binding_files"],
                             supported=False, reason="not_installed")
         self._qualification = "unknown"
         self._class = self._original = self._descriptor = self._wrapper = self._code = None
@@ -139,7 +143,7 @@ class RequestBindingObserver:
             expected_path = root / INPUT_PROCESSOR
             if actual_path != expected_path or cls.__name__ != "InputProcessor":
                 raise checksum.UnsupportedSource("unsupported input processor source path")
-            for name, digest in SOURCE_FILES.items():
+            for name, digest in self.profile["binding_files"].items():
                 target = root / name
                 if target.resolve() != target or io.digest(target.read_bytes()) != digest:
                     raise checksum.UnsupportedSource("request-ID source bytes differ: " + name)
@@ -282,10 +286,13 @@ def _identity(plan, value, *, plan_raw=None):
 
 
 def _planned(plan):
+    if "gpu_blocks_override" in plan and (type(plan["gpu_blocks_override"]) is not int
+            or plan["gpu_blocks_override"] != 8192):
+        raise io.EvidenceError("request plan cache capacity is unsupported")
     if type(plan.get("prefix_caching", False)) is not bool:
         raise io.EvidenceError("prefix cache configuration must be a recorded boolean")
     if (type(plan.get("run_id")) is not str or re.fullmatch(r"[0-9a-f]{32}", plan["run_id"]) is None
-            or not _sha(plan.get("packet_sha256")) or plan.get("source_revision") != REVISION
+            or not _sha(plan.get("packet_sha256")) or not profiles.supported(plan.get("source_revision"))
             or not _text(plan.get("model"))):
         raise io.EvidenceError("request plan identity, source revision or model is unsupported")
     phases, arms = plan.get("phases"), plan.get("arms")
@@ -419,7 +426,7 @@ def _snapshot_context(snapshot, context):
             and _integer(snapshot.get("process_id"), 1, 2**31 - 1))
 
 
-def _bindings(snapshot, context):
+def _bindings(snapshot, context, revision=REVISION):
     reasons = []
     if type(snapshot) is not dict:
         return [], ["binding_snapshot_missing"], None
@@ -432,8 +439,8 @@ def _bindings(snapshot, context):
             or qualification not in ("source_bound_candidate", "cpu_source_functions")):
         reasons.append("binding_snapshot_identity_or_closure_unverified")
     if (type(source) is not dict or source.get("supported") is not True
-            or source.get("profile") != BINDING_PROFILE or source.get("revision") != REVISION
-            or not _same(source.get("files"), SOURCE_FILES)):
+            or source.get("profile") != BINDING_PROFILE or source.get("revision") != revision
+            or not _same(source.get("files"), profiles.get(revision)["binding_files"])):
         reasons.append("binding_source_unverified")
     health = snapshot.get("health")
     if (type(health) is not dict or health.get("complete") is not True or health.get("budget_exhausted") is not False
@@ -473,20 +480,21 @@ def _bindings(snapshot, context):
 
 
 def _capture(value, plan, arm):
+    revision = profiles.get(plan["source_revision"])["revision"]
     context = {key: (plan[key] if key in ("run_id", "packet_sha256") else arm[key]) for key in CONTEXT_KEYS}
     reasons = []
     if type(value) is not dict:
         return {"issues": ["engine_capture_missing"], "bindings": [], "calls": [], "unverified": [],
                 "qualification": "unknown"}
     if (any(value.get(k) != context[k] for k in ("arm_id", "engine_session_id"))
-            or value.get("source_revision") != REVISION or value.get("capture_complete") is not True):
+            or value.get("source_revision") != revision or value.get("capture_complete") is not True):
         reasons.append("engine_capture_identity_or_closure_unverified")
     startup = value.get("startup")
     if (type(startup) is not dict or not _sha(value.get("startup_sha256"))
             or io.digest(io.json_bytes(startup)) != value.get("startup_sha256")
             or any(startup.get(k) != context[k] for k in CONTEXT_KEYS)
-            or startup.get("source_revision") != REVISION or startup.get("role") != "decode"
-            or startup.get("model") != plan["model"] or not _same(startup.get("source_profile"), source_profile())
+            or startup.get("source_revision") != revision or startup.get("role") != "decode"
+            or startup.get("model") != plan["model"] or not _same(startup.get("source_profile"), source_profile(revision))
             or startup.get("checksum_enabled") is not True or startup.get("request_id_randomization_enabled") is not True):
         reasons.append("engine_startup_binding_unverified")
     binding_snapshots, snapshots = value.get("binding_snapshots"), value.get("checksum_snapshots")
@@ -501,7 +509,7 @@ def _capture(value, plan, arm):
     bindings, calls, unverified, domains, binding_active, checksum_active = [], [], [], [], 0, 0
     checksum_record_count = 0
     for index, snapshot in enumerate(binding_snapshots):
-        records, issues, domain = _bindings(snapshot, context)
+        records, issues, domain = _bindings(snapshot, context, revision)
         reasons.extend(issues)
         domains.append(domain)
         binding_active += bool(records)
@@ -517,7 +525,7 @@ def _capture(value, plan, arm):
         if (type(snapshot) is not dict or not _snapshot_context(snapshot.get("capture_context"), context)):
             reasons.append("checksum_capture_context_unverified")
         try:
-            report = checks.evaluate(io.json_bytes(snapshot))
+            report = checks.evaluate(io.json_bytes(snapshot), revision=revision)
         except (io.EvidenceError, TypeError, ValueError) as exc:
             reasons.append("checksum_snapshot_unreadable")
             unverified.append(dict(request_id=None, reason="checksum_snapshot_unreadable", detail=type(exc).__name__))
@@ -748,9 +756,9 @@ def evaluate(plan_raw, inventory_raw, captures_raw):
     if summary["on_unverified_requests"]:
         issues.append("required_checksum_coverage_incomplete")
     return dict(schema=REPORT_SCHEMA, title=TITLE, owner="Hari Krishna Kancharla", profile=PROFILE,
-        source_revision=REVISION, runtime_qualified=False, release_decision="HOLD",
+        source_revision=plan["source_revision"], runtime_qualified=False, release_decision="HOLD",
         inputs_sha256={"REQUEST_PLAN.json": io.digest(plan_raw), "CLIENT_INVENTORY.json": io.digest(inventory_raw),
-                       "CAPTURES.json": io.digest(captures_raw)}, source_profile=source_profile(),
+                       "CAPTURES.json": io.digest(captures_raw)}, source_profile=source_profile(plan["source_revision"]),
         client_inventory=dict(status="complete" if client_complete else "unknown", planned_requests=len(rows),
             recorded_rows=len(raw_rows), complete_requests=complete_clients, unexpected_rows=unexpected_rows),
         summary=summary, requests=rows,

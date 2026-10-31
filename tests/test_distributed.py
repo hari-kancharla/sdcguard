@@ -60,6 +60,8 @@ def _worker(rank, init_file, out_dir):
     # PyTorch 2.5's gloo teardown can hang one rank after all the work is done; the process exits anyway
     if tuple(int(x) for x in torch.__version__.split(".")[:2]) >= (2, 6):
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT, about 1 run in 20)
+    os._exit(0)
 
 
 def test_replica_and_canary_name_the_bad_rank():
@@ -112,6 +114,8 @@ def _ddp_fast_worker(rank, init_file, out_dir):
     dist.barrier()
     if tuple(int(x) for x in torch.__version__.split(".")[:2]) >= (2, 6):
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT, about 1 run in 20)
+    os._exit(0)
 
 
 def test_fast_mode_under_ddp():
@@ -173,6 +177,8 @@ def _fsdp_fast_worker(rank, init_file, out_dir):
     dist.barrier()
     if tuple(int(x) for x in torch.__version__.split(".")[:2]) >= (2, 6):
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT, about 1 run in 20)
+    os._exit(0)
 
 
 def test_fast_mode_with_fsdp2_and_checkpointing():
@@ -226,6 +232,8 @@ def _guard_replica_worker(rank, init_file, out_dir):
     dist.barrier()
     if tuple(int(x) for x in torch.__version__.split(".")[:2]) >= (2, 6):
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT, about 1 run in 20)
+    os._exit(0)
 
 
 def test_guard_replica_check_names_the_rank_whose_update_went_wrong():

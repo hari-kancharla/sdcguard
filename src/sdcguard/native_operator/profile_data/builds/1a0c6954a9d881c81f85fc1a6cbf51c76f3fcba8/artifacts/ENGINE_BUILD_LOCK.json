@@ -1,0 +1,440 @@
+{
+  "base": {
+    "all_critical_compiled_inputs_equal": true,
+    "binary_member_count": 14,
+    "binary_members": {
+      "vllm/_C_stable_libtorch.abi3.so": {
+        "bytes": 100099768,
+        "sha256": "670901ca800199f5c33ff1572243f7e9f6989ca7e024e5d26200679949d85e91"
+      },
+      "vllm/_deepselect_C.abi3.so": {
+        "bytes": 4419360,
+        "sha256": "333f9b255d9d4f29c6d8bc46a67ba2068a9fde0735dfbfbd1aec64a38c19d695"
+      },
+      "vllm/_flashkda_C.abi3.so": {
+        "bytes": 5422576,
+        "sha256": "2f10bcce0114256411e18a70c64ce61cdb80fd54ada49dcc65a7f7994736f047"
+      },
+      "vllm/_flashmla_C.abi3.so": {
+        "bytes": 3862536,
+        "sha256": "25ce6b315b9b80f7979061c9addf668e7396267dd5114406fbfd11c963303dd8"
+      },
+      "vllm/_flashmla_extension_C.abi3.so": {
+        "bytes": 219736,
+        "sha256": "178e6b3d2d698d20f30c68bcb38d9569513e4334e6be24ca52cc462cfa24eb1f"
+      },
+      "vllm/_moe_C_stable_libtorch.abi3.so": {
+        "bytes": 45654776,
+        "sha256": "65033ed59b04e00b30d9926a5181b6191f9560f244360c06e84938cceedb890c"
+      },
+      "vllm/_qutlass_C.abi3.so": {
+        "bytes": 1426016,
+        "sha256": "5e2603f8abf17dd03ef30bae0433920a410cf577e5d9a013cc22e393c0964100"
+      },
+      "vllm/cumem_allocator.abi3.so": {
+        "bytes": 27264,
+        "sha256": "92ad21a86537952bd9229c2ecd88ac66a5787f37ec60ddf8b26be3ff04205c32"
+      },
+      "vllm/fs_io_C.abi3.so": {
+        "bytes": 27592,
+        "sha256": "1214f5bbe44bf7f5efc714c05a4af4a608478ebb1aa2701db4c20bf544580be2"
+      },
+      "vllm/spinloop.abi3.so": {
+        "bytes": 16872,
+        "sha256": "d9611e3b08ab8ed4ec80c28d483371aad10b212ab597603e60452ab0e8549b7f"
+      },
+      "vllm/third_party/deep_gemm/_C_extension.abi3.so": {
+        "bytes": 29749720,
+        "sha256": "5ef679e1b3bb53630a46b9a167df64d297be7773117365ff73f0b0a0fcdf3b33"
+      },
+      "vllm/vllm-rs": {
+        "bytes": 61846584,
+        "sha256": "ec3f660b9cd6b6ba8dbcd754d7e189c1021126cb905efb640bae374b58985316"
+      },
+      "vllm/vllm_flash_attn/_vllm_fa2_C.abi3.so": {
+        "bytes": 307960648,
+        "sha256": "0c57f16ba35bbc71e9d7ec83cb8d19fb63bba86c7dacde947af247c20c220d33"
+      },
+      "vllm/vllm_flash_attn/_vllm_fa3_C.abi3.so": {
+        "bytes": 172594888,
+        "sha256": "bcea1246912ed71467b008749057c798877fbf6fcee63eb056c5cc4b0beace17"
+      }
+    },
+    "critical_identities": {
+      "1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8": {
+        "CMakeLists.txt": "7694e6f8bc46e17e25a5357913fb9a370fb92042",
+        "cmake": "471bf85f3af7c43e24316cb3b3737137aa6fdebb",
+        "csrc": "e81aa562488e8de68de5f8b81ad704f276254e17",
+        "pyproject.toml": "138569bd9ddafd11fd135662167e614a63098a80",
+        "rust": "ddeea738760bf40f98ecd384ca3d5a5ad6c69d1a",
+        "setup.py": "ae9f72e4cf3a983e84a3c78a09ff2f45120c9999",
+        "vllm/_custom_ops.py": "d56f825304aed8f22041e179583a367d6b2c6fae"
+      },
+      "255431b5ed8777b7524c65e9d3dfadeb2319abfc": {
+        "CMakeLists.txt": "7694e6f8bc46e17e25a5357913fb9a370fb92042",
+        "cmake": "471bf85f3af7c43e24316cb3b3737137aa6fdebb",
+        "csrc": "e81aa562488e8de68de5f8b81ad704f276254e17",
+        "pyproject.toml": "138569bd9ddafd11fd135662167e614a63098a80",
+        "rust": "ddeea738760bf40f98ecd384ca3d5a5ad6c69d1a",
+        "setup.py": "ae9f72e4cf3a983e84a3c78a09ff2f45120c9999",
+        "vllm/_custom_ops.py": "d56f825304aed8f22041e179583a367d6b2c6fae"
+      }
+    },
+    "revision": "255431b5ed8777b7524c65e9d3dfadeb2319abfc",
+    "wheel": {
+      "bytes": 343467183,
+      "metadata_version": "0.33.0rc1.dev306+g255431b5e",
+      "sha256": "05b30f638a52ed960a3bc4cb5549c7d41d011d1960aa1a61bb1201bced14c4e6",
+      "url": "https://wheels.vllm.ai/255431b5ed8777b7524c65e9d3dfadeb2319abfc/vllm-0.33.0rc1.dev306%2Bg255431b5e-cp38-abi3-manylinux_2_28_x86_64.whl"
+    }
+  },
+  "environment": {
+    "cuda_base_linux_amd64": "nvidia/cuda@sha256:7d56ebe2b7cd864a60dca3c8b2d0a39f8fc110417e8253e32505c3387f59119c",
+    "cuda_base_tag": "nvidia/cuda:13.0.3-devel-ubuntu24.04",
+    "cuda_major": 13,
+    "cuda_toolkit": "13.0.3",
+    "native_transport_profile": {
+      "module": "nixl_cu13._api",
+      "name": "same-host-ucx-no-peer-handler",
+      "nixl_api_sha256": "79ac70eed826672f09a21df7e71c8646654e761961c9783ecd8e145c0a7149a7",
+      "parameters": {
+        "ucx_error_handling_mode": "none"
+      },
+      "scope": "Explicit same-host profile. Peer failure detection disabled. Native checksum and lease settings unchanged. CUDA IPC, peer-failure recovery and cross-host correctness unknown until independently observed.",
+      "ucx_member": "libucp-b39b3ed9.so.0.0.0",
+      "ucx_revision": "65e342a82dd2609a28c8c2b8c45ed7fe2cb33fa0",
+      "ucx_sha256": "0770acf18bb7617b5084ae29186dba097dce51f04a774bba0a2e75a5586a37bf"
+    },
+    "nixl": "1.5.0",
+    "nixl_artifacts": {
+      "nixl": {
+        "bytes": 11804,
+        "sha256": "1be21929dcf331b7637e4daafd538169c70467b0dfb9445621b4036e4831fb38",
+        "url": "https://files.pythonhosted.org/packages/90/6d/ab1e2ef610d6242b864c4fd8a4adb8caaf8386d2bdd4b8740edbba3e3abd/nixl-1.5.0-py3-none-any.whl"
+      },
+      "nixl-cu13": {
+        "bytes": 58770022,
+        "sha256": "5d8d2d56439bdc91ed415098c05a74e4f577621104f940269bdcbf5411690d2b",
+        "url": "https://files.pythonhosted.org/packages/1d/6f/0d2920d5e138ce94ba9106f97e82555d43f4c89cef9ca77fec2e9ef08cb7/nixl_cu13-1.5.0-cp312-cp312-manylinux_2_28_x86_64.whl"
+      }
+    },
+    "nixl_backend_inventory_scope": "Only selected UCX/CUDA static closure; optional backends not mandatory",
+    "nixl_declared_dependencies": [
+      "nixl-cu12==1.5.0",
+      "nixl-cu13==1.5.0"
+    ],
+    "nixl_namespace": "nixl._api must resolve to nixl_cu13._api with this CUDA stack",
+    "nixl_selected_ucx_cuda_external_sonames": [
+      "ld-linux-x86-64.so.2",
+      "libc.so.6",
+      "libcrypto.so.3",
+      "libcuda.so.1",
+      "libcudart.so.13",
+      "libdl.so.2",
+      "libgcc_s.so.1",
+      "libm.so.6",
+      "libnvidia-ml.so.1",
+      "libpthread.so.0",
+      "librt.so.1",
+      "libssl.so.3",
+      "libstdc++.so.6",
+      "libz.so.1"
+    ],
+    "platform": "linux/amd64",
+    "python": "3.12",
+    "python_requires": ">=3.11,<3.15",
+    "python_setup": "Ubuntu python3.12, python3.12-dev and python3.12-venv; isolated /opt/sdcguard-python on PATH before platform runtime setup",
+    "torch": "2.14.0",
+    "torch_index": "https://pypi.org/simple",
+    "triton_requirement": "~=3.8.0"
+  },
+  "image_build_run": false,
+  "limits": [
+    "Source and archive compatibility evidence only; no library load or runtime qualification",
+    "No complete lease-plus-checksum build is included",
+    "Actual GPU driver, model execution, source loading and telemetry behavior require owner validation",
+    "Same-host transport profile disables UCX peer error handling explicitly. CPU endpoint success does not qualify CUDA IPC, engine startup, native checksum coverage or cross-host correctness."
+  ],
+  "official_install": {
+    "archive_identity": "exact official URL, 343467183 bytes, SHA256 05b30f638a52ed960a3bc4cb5549c7d41d011d1960aa1a61bb1201bced14c4e6, verified before installation",
+    "command": [
+      "uv",
+      "-v",
+      "pip",
+      "install",
+      "--python",
+      "<sys.executable>",
+      "--editable",
+      ".",
+      "--torch-backend=cu130"
+    ],
+    "environment": {
+      "VLLM_PRECOMPILED_WHEEL_LOCATION": "owned absolute local path, set only after exact archive length and SHA256 verification",
+      "VLLM_TARGET_DEVICE": "cuda",
+      "VLLM_USE_PRECOMPILED": "1"
+    },
+    "forbidden_environment": [
+      "VLLM_PRECOMPILED_WHEEL_LOCATION",
+      "VLLM_PRECOMPILED_WHEEL_COMMIT",
+      "VLLM_PRECOMPILED_WHEEL_VARIANT",
+      "VLLM_DOCKER_BUILD_CONTEXT"
+    ],
+    "forbidden_native_log_evidence": "Using the nightly wheel, scanned over the complete build log",
+    "interpreter_target": "Every uv install explicitly targets the actual sys.executable inside /opt/sdcguard-python; pip uses that executable with -m pip",
+    "mode": "deterministic verified local wheel extraction with an independent exact pinned-source compatibility guard",
+    "payload_inventory": "artifacts/PRECOMPILED_PAYLOAD.json",
+    "pre_gpu_requirements": [
+      "Fresh image-specific pinned source and installed artifact checks; no prior CPU packet is a witness",
+      "Exact target source and pinned-base critical identities",
+      "Exact verified local archive identity and native use proof without nightly fallback",
+      "Complete installed 2158-member extraction payload and all binary pins",
+      "CPython 3.12 in an isolated Ubuntu venv, matching development headers, launcher binding and pip check",
+      "Actual ordinary CPU cleanup capability probe, including pidfd signal zero",
+      "No engine startup or runtime approval before the owner GPU invocation"
+    ],
+    "replacement_guard": "exact pinned target HEAD, exact pinned base ancestry, and all seven HEAD/base critical Git object identities checked before download or installer",
+    "required_native_log_proof": [
+      "Using user-specified precompiled wheel location: <verified absolute local path>",
+      "Using existing wheel at <verified absolute local path>"
+    ],
+    "upstream_automatic_guard": "replaced, not preserved; the supported local-location branch returns before automatic base discovery and wheel compatibility selection"
+  },
+  "owner": "Hari Krishna Kancharla",
+  "process_context": {
+    "environment": {
+      "VLLM_USE_RUST_FRONTEND": "0",
+      "VLLM_WORKER_MULTIPROC_METHOD": "spawn"
+    },
+    "required_runtime_observation": "fresh per-process plugin receipt and matching owner PID; inherited state unsupported",
+    "required_transport_observation": "Per-process UCX constructor attempts, native returns, accepted parameter maps and source identity in both roles and both observer arms.",
+    "source": "vllm/utils/system_utils.py:188-203 and vllm/v1/engine/utils.py:247-261"
+  },
+  "reference_lock_sha256": "87f64a9c8e8dc4eae9102a5e6ee620c3156a832f901bfea07ec23ab2a8545503",
+  "runtime_qualified": false,
+  "schema": "sdcguard.checksum-engine-build-lock.v1",
+  "sdk_or_gpu_run": false,
+  "server_contract": {
+    "api_server_count": 1,
+    "artificial_block_limit": false,
+    "backends": [
+      "UCX"
+    ],
+    "chunked_prefill": true,
+    "connector": "NixlConnector",
+    "consumer_request": "same token IDs and producer response kv_transfer_params, forwarded unchanged",
+    "effective_mode": "pull",
+    "enable_kv_checksum": true,
+    "enable_on_both_roles": true,
+    "model_runner_v2": true,
+    "multiprocess_method": "spawn",
+    "n": 1,
+    "parallel": {
+      "dcp": 1,
+      "dp": 1,
+      "pcp": 1,
+      "pp": 1,
+      "tp": 1
+    },
+    "prefix_caching": true,
+    "producer_request": {
+      "kv_transfer_params": {
+        "do_remote_decode": true
+      }
+    },
+    "prompt_form": "single list of nonnegative token IDs",
+    "request_id_randomization": "enabled",
+    "rust_frontend": false,
+    "speculative_decoding": false,
+    "stream": false,
+    "ucx_backend_params": {
+      "ucx_error_handling_mode": "none"
+    }
+  },
+  "sources": {
+    "docker/Dockerfile": {
+      "git_blob_sha": "e35206808333f462745ebaf0e13548041a6a1e1d",
+      "sha256": "7d84e2f674943ff673f6ed974ea897f8d9e38a0b9738ff691ee6a2b7f4bcd06e",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/docker/Dockerfile"
+    },
+    "docs/getting_started/installation/gpu.cuda.inc.md": {
+      "git_blob_sha": "19a2432442fe23e711feefd064d75a00fb8827e2",
+      "sha256": "ac35e2dc56ee937833ef152fdd6d3967a626b6c77f2776ce13fa425359f30332",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/docs/getting_started/installation/gpu.cuda.inc.md"
+    },
+    "pyproject.toml": {
+      "git_blob_sha": "138569bd9ddafd11fd135662167e614a63098a80",
+      "sha256": "cdd2d202a4fad072453ac67154f46ca17cf33130d5f7168400e4379ba0dfe70a",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/pyproject.toml"
+    },
+    "requirements/build/cuda.txt": {
+      "git_blob_sha": "6e6fa61892f8fab3439580c015f390b919970b6a",
+      "sha256": "2b2d207d44b03d409a6c09eee0df5bc01782d93ccf1f48deb9af361cef6d9aa1",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/requirements/build/cuda.txt"
+    },
+    "requirements/common.txt": {
+      "git_blob_sha": "5eefba70624feff861c32b02c72c98758c2a45ee",
+      "sha256": "7e9c5788cea749fe74265e9bd6c34a8ab11174877c53afc8548631844bf16081",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/requirements/common.txt"
+    },
+    "requirements/cuda.txt": {
+      "git_blob_sha": "12545f8047c70a6df1846cd9ca17347576b3d88b",
+      "sha256": "cadeb1370ece7a87009f47a19aa7bda8f60446e505506072eae9d9551784e072",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/requirements/cuda.txt"
+    },
+    "requirements/kv_connectors.txt": {
+      "git_blob_sha": "aff67fce2ea14579b9d00d514df8d46e2f82b03e",
+      "sha256": "535916b403e2ae2030335eaba6ec3e7bfdef9fddcc81b9d61e658f8b3e8940e9",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/requirements/kv_connectors.txt"
+    },
+    "setup.py": {
+      "git_blob_sha": "ae9f72e4cf3a983e84a3c78a09ff2f45120c9999",
+      "sha256": "83846cb202b73248a92e194fdd66e35c31f27825fa6d476695ad30b95006d365",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/setup.py"
+    },
+    "vllm/config/cache.py": {
+      "git_blob_sha": "626825dba8c74d066f591b6071811a0419ed892f",
+      "sha256": "55f26e023dc568f510a5d256dab638d3ca38114c2f634ba68b558d8ac25f8385",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/config/cache.py"
+    },
+    "vllm/config/kv_transfer.py": {
+      "git_blob_sha": "5543f8b60952cae7df8050d37bf071d8030b8fce",
+      "sha256": "34d2806339ef1605ce10a557c6700aa1f15850e0713907343c5bc3d8164c150b",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/config/kv_transfer.py"
+    },
+    "vllm/config/vllm.py": {
+      "git_blob_sha": "3683fd5af7b7f0374f1ca16ce2ccd259b70e550b",
+      "sha256": "8ba37d8690acbdc0cfcab3ede8773eae17ef0a0ed871dee6a27c4044da633615",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/config/vllm.py"
+    },
+    "vllm/distributed/kv_transfer/kv_checksum/checksum.py": {
+      "git_blob_sha": "2d3376b55fdc80c93f69d3d8ee0838501b5d6e66",
+      "sha256": "90f5f350e85f0f8dab6b4fb54ddd8ec0718aad6437c1a8240bd0eadff266b7d8",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_checksum/checksum.py"
+    },
+    "vllm/distributed/kv_transfer/kv_checksum/scheduler.py": {
+      "git_blob_sha": "3947e3e6fbfc240c27f3bba9a2b56fb284b06af8",
+      "sha256": "00825d3750d856ad75095f5877375385129f56d263629d438dfa16888550b42f",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_checksum/scheduler.py"
+    },
+    "vllm/distributed/kv_transfer/kv_checksum/worker.py": {
+      "git_blob_sha": "3b4324a9df30b414cf82619877d73a49fd28e228",
+      "sha256": "690eec2fb26259cca2246455a817e7c5fdcc7462bee68a0b6413e129e0495f50",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_checksum/worker.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py": {
+      "git_blob_sha": "ae5ba16371872e3ae01de29c58a811e914127509",
+      "sha256": "e6edbd6b2860f1fac689e715c0a37488976c4c4449de2526e9773b9c0f6d7dac",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py": {
+      "git_blob_sha": "41f4e7a99d39332a1e1fb74feb487660bc009c7d",
+      "sha256": "9bd114c3d7dbf4ee5a82636d10ccbfa8d27c150f33a29f23ce54887d2889873d",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py": {
+      "git_blob_sha": "fecbf462d9920c0fa55e7eba9f3bd1e453cbb90c",
+      "sha256": "36dbc6a182ba753caf06fb40d40baa3b218371c62323f3ade29f8dd50514bd8a",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py": {
+      "git_blob_sha": "f18d39b7f9c7b9a925aef3ff68d0e19c4ea7d0fa",
+      "sha256": "cec0b5688e63a8d39151f9563810529544cb43f80dab1a07ecf87f874f26635c",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py": {
+      "git_blob_sha": "f59e319472f320193b903fb7a8bb7f95191e8a59",
+      "sha256": "4c8df5c9342850b892bbdb4d34e51c54e544143b7bd4d62eec00451388c9ebba",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py"
+    },
+    "vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py": {
+      "git_blob_sha": "6c436f892866f271cc65ccb5aaa369c30e894b86",
+      "sha256": "9fec5faaca6080d00e4292f3a2f7cb55b084c56f60f732785fded6800302d53a",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py"
+    },
+    "vllm/entrypoints/cli/serve.py": {
+      "git_blob_sha": "40f116514d3a32a16f333a9e925c9e5ddc210036",
+      "sha256": "91fb2e78cbe1973dfbacdf8fd87eaa68ac0019e2c3138f999ba6da3957f1ee96",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/entrypoints/cli/serve.py"
+    },
+    "vllm/entrypoints/openai/completion/serving.py": {
+      "git_blob_sha": "04066b6dd651fdca9409d0a58add8fe6238eff69",
+      "sha256": "b2556daa8eb0573bb9d05e8456da1dc7e30c76979705bb3f293230b09be41417",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/entrypoints/openai/completion/serving.py"
+    },
+    "vllm/entrypoints/serve/engine/serving.py": {
+      "git_blob_sha": "15f6adc37744f1e72bb25cc7712074a0ae37c603",
+      "sha256": "e46693a37e9a8b1087c8cee8a1e2cb9a2ce3d052772e3771755ef59de0885cf4",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/entrypoints/serve/engine/serving.py"
+    },
+    "vllm/envs.py": {
+      "git_blob_sha": "430c30c33a3ed58572a055b5316194d586d3f255",
+      "sha256": "82fd04b191f863c727974d635f93a2ff0ae464537a6b117316e491a206a39f4b",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/envs.py"
+    },
+    "vllm/plugins/__init__.py": {
+      "git_blob_sha": "7bebfdf03e4dfc3932632d62ff0bfd4bd4cedd6a",
+      "sha256": "06942d64e526c2c7407265e1903d625c4d2118d8d7fc39c616b1cc6aa6fc2c8f",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/plugins/__init__.py"
+    },
+    "vllm/utils/system_utils.py": {
+      "git_blob_sha": "cbea3c862d25dae1fa32fcf73e12b64b1443b94a",
+      "sha256": "478cb3eca018bb08c9e327a26fe6992e0ba9fb1718f2e77ef7344e65835b7e8e",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/utils/system_utils.py"
+    },
+    "vllm/v1/core/sched/scheduler.py": {
+      "git_blob_sha": "5434128f4ea806742a203c26674733d410d2db9a",
+      "sha256": "dd7974c012068e8e4726df7729f21e0e5fae5e9c3266866dc854f2c495f27acf",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/core/sched/scheduler.py"
+    },
+    "vllm/v1/engine/async_llm.py": {
+      "git_blob_sha": "b3dbf62e824a9d4a0ac521ab90d2b926259467fb",
+      "sha256": "a1d24edb984d4a9645a82a69746b6a3438d97509d33a75d83327bf126e46b4f5",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/engine/async_llm.py"
+    },
+    "vllm/v1/engine/core.py": {
+      "git_blob_sha": "854388eb5bdcaf4ad4639988f02737f747e0ab0c",
+      "sha256": "3b2e67f1a02759439867daa29f9b60817b66cf4babb94637d99ba860f52b14d8",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/engine/core.py"
+    },
+    "vllm/v1/engine/core_client.py": {
+      "git_blob_sha": "924045c80a3a4cbaad93c8b1e875e535f5ce467a",
+      "sha256": "0baf33f4d0b4cd23122d8f557e55481ae3675ce19e15d08239c537e662909fdf",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/engine/core_client.py"
+    },
+    "vllm/v1/engine/input_processor.py": {
+      "git_blob_sha": "2ddfe5457f937e982d45a4cd95d980b8eba530f0",
+      "sha256": "f90797694a2b74c61f62ac02e2f6d1f708b680276007b92ee4c6168ab4bbca71",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/engine/input_processor.py"
+    },
+    "vllm/v1/engine/utils.py": {
+      "git_blob_sha": "64215836afc7efb7fc3e5fe61b2aae18ae863263",
+      "sha256": "39f98700cfe0e1ef41d7ee53abfac8f18734bdc33d58b115fc7e90ca24589c9e",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/engine/utils.py"
+    },
+    "vllm/v1/kv_cache_interface.py": {
+      "git_blob_sha": "73efc161a369553bfad06a8bb3527119501713e4",
+      "sha256": "ea1ecbbb7f463254cbe49c378261ff095e471a09a0c0d2a9716e8013f5e8fb4a",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/kv_cache_interface.py"
+    },
+    "vllm/v1/metrics/stats.py": {
+      "git_blob_sha": "d30e857fa21b4833971d214c230d50782e571f30",
+      "sha256": "5c925d3c9ba8b81c52eac9cff74a2fe468d14cf710b581ab7eb5ca848450e4a6",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/metrics/stats.py"
+    },
+    "vllm/v1/request.py": {
+      "git_blob_sha": "c27a8c4034f981c9d4f43f3392b8d5679786b416",
+      "sha256": "b17215146cad869df29115d0a1f1d2897b6200ed8d3c358e11326154f00fcf6e",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/request.py"
+    },
+    "vllm/v1/utils.py": {
+      "git_blob_sha": "fc6f3a52a1d614008d7d616d0e88871a21f0a455",
+      "sha256": "53634dbf5600e6a51597cbdd0ea7a3945f82beb1c7405c9cd94661b8320b728d",
+      "url": "https://github.com/sawsa307/vllm/blob/1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8/vllm/v1/utils.py"
+    }
+  },
+  "target": {
+    "repository": "https://github.com/sawsa307/vllm.git",
+    "revision": "1a0c6954a9d881c81f85fc1a6cbf51c76f3fcba8",
+    "scope": "checksum-only Python source profile; no lease patch added"
+  }
+}

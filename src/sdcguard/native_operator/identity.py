@@ -12,6 +12,7 @@ import sys
 
 from .config import ENGINE_ROOT, REVISION
 from .common import checkpoint, digest, regular_bytes
+from .. import checksum_profiles as profiles
 
 CRITICAL_PATHS = {"csrc", "cmake", "CMakeLists.txt", "pyproject.toml", "vllm/_custom_ops.py", "rust", "setup.py"}
 def git(root, *arguments):
@@ -21,7 +22,7 @@ def git(root, *arguments):
 
 def validate_pinned_source(root, lock):
     target, base = lock["target"]["revision"], lock["base"]["revision"]
-    if target != REVISION or git(root, "rev-parse", "HEAD") != target:
+    if not profiles.supported(target) or git(root, "rev-parse", "HEAD") != target:
         raise ValueError("pinned source HEAD differs from the reviewed target")
     if git(root, "status", "--porcelain", "--untracked-files=no"):
         raise ValueError("pinned tracked source is dirty before installation")
@@ -83,7 +84,7 @@ def installed_identity(bundle, *, engine_root=Path(ENGINE_ROOT)):
         raise ValueError("the engine is not the source-supported editable installation")
     from .python_runtime import require_interpreter
     python_identity = require_interpreter()
-    return dict(schema="sdcguard.owner-checksum-installed.v1", source_revision=REVISION,
+    return dict(schema="sdcguard.owner-checksum-installed.v1", source_revision=lock["target"]["revision"],
         source_files=source_files, compiled_members=binaries, versions=versions,
         precompiled_payload=payload, direct_url=direct, runtime_qualified=False,
         python_identity=python_identity,

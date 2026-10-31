@@ -82,8 +82,12 @@ def prompt_group(encode, group, target):
     return values
 
 
-def build_plan(encode, *, run_id, packet_sha256, engine_sessions):
+def build_plan(encode, *, run_id, packet_sha256, engine_sessions, revision=REVISION, gpu_blocks=None):
     """Build an independent client inventory; cache hits are measured later."""
+    from ..checksum_profiles import get
+    get(revision)
+    if gpu_blocks is not None and (type(gpu_blocks) is not int or gpu_blocks != 8192):
+        raise ValueError("only the 8192-block paired capacity is supported")
     _identity(run_id, r"[0-9a-f]{32}", "run_id")
     _identity(packet_sha256, r"[0-9a-f]{64}", "packet_sha256")
     if type(engine_sessions) is not dict or set(engine_sessions) != {x[0] for x in ARMS}:
@@ -115,10 +119,12 @@ def build_plan(encode, *, run_id, packet_sha256, engine_sessions):
         arms.append(dict(arm_id=arm_id, engine_session_id=engine_sessions[arm_id],
             observer_enabled=enabled, requests=requests))
     plan = dict(schema="sdcguard.checksum-request-plan.v1", run_id=run_id,
-        packet_sha256=packet_sha256, source_revision=REVISION, model=MODEL,
+        packet_sha256=packet_sha256, source_revision=revision, model=MODEL,
         prefix_caching=True, workload=WORKLOAD, chat_template=False,
         cache_state_basis="recorded per-request cache events, never group position",
         phases=[dict(phase_id="c" + str(value), concurrency=value) for value in CONCURRENCIES], arms=arms)
+    if gpu_blocks is not None:
+        plan["gpu_blocks_override"] = gpu_blocks
     validate_payloads(plan, payloads)
     return plan, payloads
 
@@ -140,6 +146,13 @@ def summarize_recipe():
 def validate_payloads(plan, payloads):
     from ..checksum_client import _planned
     rows, _, _ = _planned(plan)
+    if "gpu_blocks_override" in plan:
+        # Bound the entire finite plan without assuming any shared cache hit.
+        # Reserve one extra block per request and one pool sentinel block.
+        bound = 1 + sum((row['prompt_tokens'] + row['max_tokens'] + BLOCK_SIZE - 1) // BLOCK_SIZE + 1
+                        for row in rows)
+        if bound > plan['gpu_blocks_override']:
+            raise ValueError('ordinary plan exceeds the pinned no-sharing cache capacity')
     if (type(payloads) is not dict or set(payloads) != {r['client_request_id'] for r in rows}
             or plan.get('prefix_caching') is not True or plan.get('model') != MODEL
             or plan.get('workload') != WORKLOAD or plan.get('chat_template') is not False

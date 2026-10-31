@@ -23,14 +23,16 @@ MAX_SEQS = 16
 MIN_GPU_BLOCKS = 1568
 
 
-def server_command(role):
+def server_command(role, *, gpu_blocks=None):
     if role not in PORTS:
         raise ValueError("unsupported ordinary engine role")
+    if gpu_blocks is not None and (type(gpu_blocks) is not int or gpu_blocks != 8192):
+        raise ValueError("only the 8192-block paired capacity is supported")
     transfer = dict(kv_connector="NixlConnector", engine_id=role,
         kv_role="kv_producer" if role == "prefill" else "kv_consumer",
         enable_kv_checksum=True, kv_load_failure_policy="fail",
         kv_connector_extra_config=dict(bidirectional_kv_xfer=False, backends=["UCX"]))
-    return ["vllm", "serve", SNAPSHOT, "--tokenizer", SNAPSHOT,
+    command = ["vllm", "serve", SNAPSHOT, "--tokenizer", SNAPSHOT,
         "--served-model-name", MODEL, "--revision", MODEL_REVISION,
         "--tokenizer-revision", MODEL_REVISION, "--host", "127.0.0.1",
         "--port", str(PORTS[role]), "--dtype", "bfloat16", "--enforce-eager",
@@ -43,12 +45,17 @@ def server_command(role):
         "--gpu-memory-utilization", "0.2", "--kv-cache-dtype", "auto",
         "--enable-prefix-caching", "--enable-chunked-prefill", "--no-async-scheduling",
         "--kv-transfer-config", json.dumps(transfer, sort_keys=True, separators=(",", ":"))]
+    if gpu_blocks is not None:
+        command.extend(["--num-gpu-blocks-override", str(gpu_blocks)])
+    return command
 
 
-def environment(parent, *, out, run_id, packet_sha256, arm_id, engine_session_id, role, enabled):
+def environment(parent, *, out, run_id, packet_sha256, arm_id, engine_session_id, role, enabled, revision=REVISION):
     if role not in PORTS or type(enabled) is not bool:
         raise ValueError("unsupported observer role or mode")
     from .transport import clean_environment
+    from ..checksum_profiles import get
+    get(revision)
     clean = {name: value for name, value in clean_environment(parent).items()
         if not name.startswith(("VLLM_", "SDCGUARD", "OWNER_", "HF_", "HUGGINGFACE_", "TRANSFORMERS_"))
         and name not in ("PYTHONPATH", "PYTHONHOME")}
@@ -62,6 +69,7 @@ def environment(parent, *, out, run_id, packet_sha256, arm_id, engine_session_id
         OWNER_CHECKSUM_PACKET_SHA256=packet_sha256, OWNER_CHECKSUM_ARM=arm_id,
         OWNER_CHECKSUM_ENGINE_SESSION=engine_session_id, OWNER_CHECKSUM_ROLE=role,
         SDCGUARD_OPERATOR_SNAPSHOT=SNAPSHOT,
+        SDCGUARD_OPERATOR_REVISION=revision,
         OWNER_CHECKSUM_ENABLED="1" if enabled else "0",
         VLLM_NIXL_SIDE_CHANNEL_PORT="5559" if role == "prefill" else "5659",
         VLLM_PORT="8300" if role == "prefill" else "8400")

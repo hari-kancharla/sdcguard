@@ -20,8 +20,8 @@ LIMITS = [
     "Only matching workloads and recorded configuration can support coverage preservation.",
     "Missing evidence is UNVERIFIABLE; REGRESSED requires a recorded native mismatch after a verified baseline.",
     "Identical inputs, different paths, run IDs or packet hashes do not prove independent builds.",
-    "Only one engine revision is qualified by the installed transfer checker.",
-    "No changed-build transition is qualified; the upgrade decision remains HOLD.",
+    "Only the two exact recorded checksum source profiles are supported.",
+    "Transfer preservation is separate from the full-prompt release decision, which remains HOLD.",
     "Input hashes establish local consistency, not execution or recorder authenticity.",
     "Full-prompt release decisions are recomputed unchanged. Cached tokens remain outside transfer scope.",
 ]
@@ -144,13 +144,22 @@ def _contracts(files, preflight):
             startup = value["startup"]
             if not _REQUIRED_CONFIG <= startup.keys():
                 raise io.EvidenceError("recorded comparison configuration is incomplete")
-            configs.append(dict(arm_id=capture["arm_id"], role=role,
-                                config=_without(startup, _STARTUP_VOLATILE)))
+            config = _without(startup, _STARTUP_VOLATILE)
+            from .checksum_profiles import BASELINE
+            if (plan["source_revision"] == BASELINE
+                    and config.get("defer_async_loads") == "not_in_source_profile"):
+                # The old pinned scheduler has no deferred-load branch. This
+                # normalizes an explicit source-capability observation only.
+                config["defer_async_loads"] = False
+            configs.append(dict(arm_id=capture["arm_id"], role=role, config=config))
     model = preflight["model_cache"]
     if not all(model.get(k) for k in ("model", "revision", "files")):
         raise io.EvidenceError("model and tokenizer file identities are missing")
-    configuration = dict(engines=configs, model={k: model[k] for k in ("model", "revision", "files")},
-                         runtime=_runtime_identity(preflight))
+    runtime = _runtime_identity(preflight)
+    # The exact engine version is validated by each source profile and compared
+    # as build identity. Dependency and interpreter versions must still agree.
+    runtime["versions"].pop("vllm")
+    configuration = dict(engines=configs, model={k: model[k] for k in ("model", "revision", "files")}, runtime=runtime)
     return dict(workload_sha256=_hash(workload), config_sha256=_hash(configuration),
                 slots=slots, sessions=sorted(sessions), run_id=plan["run_id"])
 
@@ -271,11 +280,19 @@ def evaluate(baseline_raw, candidate_raw):
             holds.append(label + "_transfer_check_held")
         if assessment is None or assessment["release_decision"] != "PASS":
             holds.append(label + "_full_prompt_policy_held")
-    # There is no reviewed second revision or independent build witness in the
-    # supported profile. A different digest must not manufacture that authority.
-    holds.append("changed_build_transition_not_qualified")
+    from .checksum_profiles import BASELINE, CANDIDATE
+    pair = tuple(side["assessment"]["engine"].get("source_revision") if side["assessment"] else None
+                 for side in (baseline, candidate))
+    transition = pair == (BASELINE, CANDIDATE) and comparable
+    transfer_preserved = (transition and relation == "distinct_recorded_sessions"
+        and build_relation == "different_recorded_build" and rows and counts["PRESERVED"] == len(rows)
+        and all(side["assessment"]["transfer_decision"] == "PASS" for side in (baseline,candidate)))
+    if not transition:
+        holds.append("changed_build_transition_not_qualified")
     return dict(schema=SCHEMA, owner="Hari Krishna Kancharla", policy=POLICY,
-        scope=transfer.SCOPE, upgrade_decision="HOLD", runtime_upgrade_witness="not established",
+        scope=transfer.SCOPE, upgrade_decision="HOLD",
+        transfer_preservation_decision="PASS" if transfer_preserved else "HOLD",
+        runtime_upgrade_witness="distinct source-bound recordings" if transfer_preserved else "not established",
         comparison_status="COMPARABLE" if comparable else "UNVERIFIABLE",
         build_relation=build_relation, recording_relation=relation,
         summary=dict(compared_slots=len(rows), preserved=counts["PRESERVED"], regressed=counts["REGRESSED"], unverifiable=counts["UNVERIFIABLE"],
@@ -302,6 +319,7 @@ def inspect(baseline, candidate):
 
 def render(answer):
     lines = ["Offline upgrade comparison: " + answer["upgrade_decision"]]
+    lines.append("Transfer preservation: " + answer.get("transfer_preservation_decision", "HOLD"))
     if "summary" in answer:
         s = answer["summary"]
         lines.extend(["Recorded builds: " + answer["build_relation"], "Recordings: " + answer["recording_relation"],
@@ -336,4 +354,4 @@ def main(argv=None):
         answer = dict(schema=SCHEMA, upgrade_decision="HOLD", hold_reasons=["evidence_unverifiable:" + str(error)], limits=LIMITS)
         output = io.json_bytes(answer).decode() if args.json else render(answer)
     print(output, end="")
-    return 2  # No qualified changed-build transition is supported yet.
+    return 2  # Transfer preservation does not override the full-prompt HOLD policy.

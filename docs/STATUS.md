@@ -1,6 +1,7 @@
-# Where each part of sdcguard stands
+# Earlier GPU arithmetic checks: where each part stood
 
-As of October 26, 2026. Four kinds of status, kept apart:
+This page covers sdcguard's earlier GPU arithmetic-check work, as of October 26, 2026, and is kept as history.
+The current tool is the KV checksum coverage gate in the [README](../README.md). Four kinds of status, kept apart:
 
 - **GPU-validated**: met criteria written before the run, on a real GPU. The run is in `results/` and its
   criteria and outcome are in [METHOD.md](METHOD.md).

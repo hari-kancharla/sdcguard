@@ -1,0 +1,106 @@
+{
+  "sdcguard/checksum_client.py": {
+    "bytes": 46923,
+    "sha256": "d7f5c91b445f5986bb0b967706e4cc8aa391d077ca96191b29fe01aa1fb91252"
+  },
+  "sdcguard/checksum_observer_report.py": {
+    "bytes": 18047,
+    "sha256": "8aaf252f8eb01bbe664e9a91e27d2a338a34b83a8b38bacde573c3922191aa7b"
+  },
+  "sdcguard/kv_checksum_observer.py": {
+    "bytes": 54937,
+    "sha256": "79e97118b1ad6555cd2405fb3d6ecab1a7a399c81334f3daa9ea883ff171498d"
+  },
+  "sdcguard/native_operator/__init__.py": {
+    "bytes": 69,
+    "sha256": "ae08d6040d614cb8a6e89e0342bbb68b4fd8caf56c1bd699d5432de42c4c8eaf"
+  },
+  "sdcguard/native_operator/cleanup.py": {
+    "bytes": 23835,
+    "sha256": "53e205f27d544394f8d3b43f3ee400d23044f2e7e46d9e56639a9e284f876765"
+  },
+  "sdcguard/native_operator/cleanup_preflight.py": {
+    "bytes": 16462,
+    "sha256": "f8e18f84245c2fb594696bc0e6236257c6747b3fc49f568d31a9bc418fcd9515"
+  },
+  "sdcguard/native_operator/client.py": {
+    "bytes": 13254,
+    "sha256": "223d19ba3ce34e74724bb6332c40d0f794d008408eb08f80dda89e0ae12b7627"
+  },
+  "sdcguard/native_operator/command.py": {
+    "bytes": 3273,
+    "sha256": "66d0f8a1eaae81b03c0c60f380c975013884bc737490db43c5479cbd8ec48e90"
+  },
+  "sdcguard/native_operator/common.py": {
+    "bytes": 2775,
+    "sha256": "42f5289ce32fce4623aa57fbcc0726db762d1279b775efa2ecabdda325268691"
+  },
+  "sdcguard/native_operator/config.py": {
+    "bytes": 3574,
+    "sha256": "05b932fff734295f43f1817b982a582a5053c656c476df5b055f1dc1f559d1b0"
+  },
+  "sdcguard/native_operator/identity.py": {
+    "bytes": 5451,
+    "sha256": "47385cb068676afebc4c13b22d1f76c0e7dc39b166d2f94153823b4450306739"
+  },
+  "sdcguard/native_operator/installed.py": {
+    "bytes": 8693,
+    "sha256": "01743700eb2d955c6a32781a84118130e61eb7f8c95b0d0e249ae8eb8ce31131"
+  },
+  "sdcguard/native_operator/listeners.py": {
+    "bytes": 3150,
+    "sha256": "dbf95fc8760be82a0cee44b10d661c7e394e013d562678cd805fa22657051527"
+  },
+  "sdcguard/native_operator/payload.py": {
+    "bytes": 3800,
+    "sha256": "3fee0216f42245bc1581b017da3f84969939b9543b40f0b2df051852d5cb0dc5"
+  },
+  "sdcguard/native_operator/plugin.py": {
+    "bytes": 16401,
+    "sha256": "b9cbaeeb519695569d1482a918040305fd2372514bb03d24affd6ae7a56c0713"
+  },
+  "sdcguard/native_operator/preflight.py": {
+    "bytes": 5379,
+    "sha256": "5cb9c70a73cffef9ebe4ad96e10a0f4167c3f5d1d82c188fcbf0aa70ed75ed81"
+  },
+  "sdcguard/native_operator/profile_data/artifacts/ENGINE_BUILD_LOCK.json": {
+    "bytes": 23277,
+    "sha256": "d03509f7c8387b0354aa0c945c6fd33941c2434d344ae68854422700cee5e431"
+  },
+  "sdcguard/native_operator/profile_data/artifacts/MODEL_PIN.json": {
+    "bytes": 1003,
+    "sha256": "773a13fe7f55622feb7322e4431b44c1ed34f1b5b06f825db95114a66ae30981"
+  },
+  "sdcguard/native_operator/profile_data/artifacts/PRECOMPILED_PAYLOAD.json": {
+    "bytes": 435088,
+    "sha256": "18338f27f570bf375596d53fbd2434f325b7f447c6d70a246475e9ef69ed217f"
+  },
+  "sdcguard/native_operator/python_runtime.py": {
+    "bytes": 13297,
+    "sha256": "7a0ad17d283b6de591f7f1a5bb679a4d3d822e14073f9d434683ba136944dfd0"
+  },
+  "sdcguard/native_operator/runtime.py": {
+    "bytes": 21350,
+    "sha256": "79ceb641f8c05472225a28c75525317ec0346aaa848d9e2ef019a2317803ee51"
+  },
+  "sdcguard/native_operator/supervisor.py": {
+    "bytes": 11127,
+    "sha256": "f970d58d7d9a368cc6ceb4aaa39ee312c7b874a462b841355c3e437a14098b0f"
+  },
+  "sdcguard/native_operator/transport.py": {
+    "bytes": 17481,
+    "sha256": "4eda57d81e76a902c8745c38e266ddb1680bd990b42bbdde2c1acf2e676ffb82"
+  },
+  "sdcguard/native_operator/workload.py": {
+    "bytes": 10453,
+    "sha256": "9aa9890f36841f3ec2c2f8ff9f463d91cc0514e020d335e094a85b232a908aa7"
+  },
+  "sdcguard/prefix_cache_coverage.py": {
+    "bytes": 7466,
+    "sha256": "1cadf0a0a0577d054220ea8a876844c92484190f6364a3f773f83c9939a00d5b"
+  },
+  "sdcguard/prefix_cache_observer.py": {
+    "bytes": 18016,
+    "sha256": "4e27f90630aae5a611b96ab6f2016cac76d845ffafbfda813bb3f7bab9a23b44"
+  }
+}

@@ -19,6 +19,7 @@ import threading
 import types
 import sys
 import weakref
+from . import checksum_profiles as profiles
 
 SCHEMA = "sdcguard.checksum-observer.v1"
 PROFILE = "vllm-checksum-62211-full-load-tp1-pp1.v1"
@@ -61,13 +62,13 @@ def _plain(value):
     return json.loads(json.dumps(value, sort_keys=True, allow_nan=False))
 
 
-def source_pins():
-    return json.loads(files("sdcguard").joinpath("case_data/checksum-observer-pins.json").read_bytes())
+def source_pins(revision=REVISION):
+    return profiles.get(revision)["checksum_pins"]
 
 
-def source_profile():
-    pins = source_pins()
-    return {"profile": PROFILE, "revision": REVISION,
+def source_profile(revision=REVISION):
+    pins = source_pins(revision)
+    return {"profile": PROFILE, "revision": revision,
             "files": {name: receipt["sha256"] for name, receipt in pins["files"].items()}}
 
 
@@ -351,7 +352,8 @@ def _fn(value):
 class ChecksumObserver:
     """Bounded metadata collector. Native callbacks always delegate once."""
 
-    def __init__(self, *, max_records=4096, max_units=65536, max_bytes=8 * 1024 * 1024):
+    def __init__(self, *, max_records=4096, max_units=65536, max_bytes=8 * 1024 * 1024, revision=REVISION):
+        self.revision = profiles.get(revision)["revision"]
         if (not _integer(max_records, 1) or max_records > 65536 or not _integer(max_units, 1)
                 or max_units > 1048576 or not _integer(max_bytes, 65536) or max_bytes > 64 * 1024 * 1024):
             raise ValueError("observer budgets exceed supported bounds")
@@ -369,7 +371,7 @@ class ChecksumObserver:
         self._closed, self._close_active = False, False
         self._installed = False
         self._class, self._originals, self._wrappers, self._tracked = None, {}, {}, []
-        self._source = dict(revision=REVISION, files={}, supported=False, reason="not_installed")
+        self._source = dict(revision=self.revision, files={}, supported=False, reason="not_installed")
         self._qualification = "not_installed"
 
     def _safe(self, action, default=None):
@@ -481,7 +483,7 @@ class ChecksumObserver:
             raise UnsupportedSource("native verifier is unavailable")
         actual_path = Path(verify.__code__.co_filename).resolve()
         root = Path(source_root).resolve() if source_root is not None else actual_path.parents[4]
-        pins = source_pins()
+        pins = source_pins(self.revision)
         contents, compiled = {}, {}
         for name, receipt in pins["files"].items():
             path = root.joinpath(*name.split("/"))
@@ -553,7 +555,7 @@ class ChecksumObserver:
              "KVChecksumBlocks", "KVChecksumGroup", "KVChecksumRecord", "MambaSpec", "_Unverified")]
         if not cpu and cls.__module__ != "vllm.distributed.kv_transfer.kv_checksum.scheduler":
             raise UnsupportedSource("runtime scheduler module is unsupported")
-        self._source = dict(revision=REVISION, files=contents, supported=True,
+        self._source = dict(revision=self.revision, files=contents, supported=True,
                             reason="named_source_files_and_loaded_callbacks_match")
         self._qualification = "cpu_source_functions" if cpu else "source_bound_candidate"
 

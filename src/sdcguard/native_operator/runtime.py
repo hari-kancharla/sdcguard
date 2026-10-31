@@ -48,10 +48,12 @@ def owned_transport(role_processes, stop):
 
 def startup_valid(record, *, plan, arm, role):
     from sdcguard.checksum_client import source_profile
+    from ..checksum_profiles import startup_supported
     if (type(record) is not dict or any(record.get(key) != value for key, value in
             dict(run_id=plan["run_id"], packet_sha256=plan["packet_sha256"], arm_id=arm["arm_id"],
-                 engine_session_id=arm["engine_session_id"], role=role, source_revision=REVISION).items())
-            or record.get("source_profile") != source_profile()
+                 engine_session_id=arm["engine_session_id"], role=role, source_revision=plan["source_revision"]).items())
+            or record.get("source_profile") != source_profile(plan["source_revision"])
+            or not startup_supported(record, plan["source_revision"])
             or type(record.get("process_id")) is not int or record["process_id"] <= 0
             or record.get("checksum_enabled") is not True
             or record.get("request_id_randomization_enabled") is not True
@@ -73,6 +75,8 @@ def startup_valid(record, *, plan, arm, role):
         return False
     if (any(type(record.get(k)) is not int for k in ("gpu_blocks", "block_size", "max_model_len", "max_num_seqs"))
             or record["gpu_blocks"] < MIN_GPU_BLOCKS or record["block_size"] != BLOCK_SIZE
+            or ("gpu_blocks_override" in plan and (type(plan["gpu_blocks_override"]) is not int
+                or plan["gpu_blocks_override"] != 8192 or record["gpu_blocks"] != plan["gpu_blocks_override"]))
             or record["max_model_len"] != MAX_MODEL_LEN or record["max_num_seqs"] != MAX_SEQS):
         return False
     specs = record.get("group_specs")
@@ -184,7 +188,7 @@ def closed_capture(directory, *, plan, arm, startup, role):
         errors.append("native prefill accounting close receipt missing")
     if not bindings:
         errors.append("native API request-binding close receipt missing")
-    return dict(arm_id=arm["arm_id"], engine_session_id=arm["engine_session_id"], source_revision=REVISION,
+    return dict(arm_id=arm["arm_id"], engine_session_id=arm["engine_session_id"], source_revision=plan["source_revision"],
         capture_complete=not errors, startup=startup, startup_sha256=digest(encoded(startup)),
         checksum_snapshots=snapshots, binding_snapshots=bindings, cache_snapshots=cache, capture_errors=errors)
 
@@ -217,6 +221,8 @@ def execute(evidence_root, *, plan_raw, payloads_raw, preflight, commit):
     if len(plan_raw) + len(payloads_raw) > 8 * 1024 * 1024:
         raise ValueError("operator input exceeds its bound")
     plan, payloads = json.loads(plan_raw), json.loads(payloads_raw)
+    from ..checksum_profiles import directory
+    bundle = directory(plan["source_revision"])
     from .workload import validate_payloads
     validate_payloads(plan, payloads)
     if encoded(plan) != plan_raw or plan.get("packet_sha256") != packet_sha256 or not validate(preflight, plan, plan_raw):
@@ -237,10 +243,10 @@ def execute(evidence_root, *, plan_raw, payloads_raw, preflight, commit):
         python_identity = require_interpreter()
         checkpoint(out / "PYTHON_IDENTITY.json", python_identity)
         if (product_identity() != preflight["product"]
-                or installed_identity(BUNDLE) != preflight["installed_engine"]
-                or validate_pinned_source(Path(ENGINE_ROOT), profile("ENGINE_BUILD_LOCK.json")) != preflight["pinned_source_guard"]
+                or installed_identity(bundle) != preflight["installed_engine"]
+                or validate_pinned_source(Path(ENGINE_ROOT), profile("ENGINE_BUILD_LOCK.json", plan["source_revision"])) != preflight["pinned_source_guard"]
                 or python_identity != preflight["installed_engine"]["python_identity"]
-                or model_cache(BUNDLE) != preflight["model_cache"]):
+                or model_cache(bundle) != preflight["model_cache"]):
             raise ValueError("installed runtime changed after CPU preflight")
         checkpoint(out / "BUILD_WITNESS.json", dict(witness=preflight["build_witness"], sha256=preflight["build_witness_sha256"]))
         import torch
@@ -252,7 +258,7 @@ def execute(evidence_root, *, plan_raw, payloads_raw, preflight, commit):
             raise ValueError("NIXL did not select the reviewed CUDA13 backend")
         checkpoint(out / "GPU_PROFILE.json", dict(name=torch.cuda.get_device_name(0),
             capability=list(torch.cuda.get_device_capability(0)), cuda=torch.version.cuda,
-            nixl_api_file=str(nixl_api.__file__), source_revision=REVISION))
+            nixl_api_file=str(nixl_api.__file__), source_revision=plan["source_revision"]))
         subreaper()
         before = baseline()
         client = ClientCapture(plan, payloads, out / "client")
@@ -286,8 +292,10 @@ def execute(evidence_root, *, plan_raw, payloads_raw, preflight, commit):
                     streams.append(stream)
                     env = environment(os.environ, out=directory, run_id=plan["run_id"],
                         packet_sha256=packet_sha256, arm_id=arm["arm_id"],
-                        engine_session_id=arm["engine_session_id"], role=role, enabled=arm["observer_enabled"])
-                    process = launch(server_command(role), env=env, stdout=stream,
+                        engine_session_id=arm["engine_session_id"], role=role, enabled=arm["observer_enabled"],
+                        revision=plan["source_revision"])
+                    capacity = dict(gpu_blocks=plan["gpu_blocks_override"]) if "gpu_blocks_override" in plan else {}
+                    process = launch(server_command(role, **capacity), env=env, stdout=stream,
                                      directory=directory, label=role)
                     owned.append(process)
                     role_processes[role] = process

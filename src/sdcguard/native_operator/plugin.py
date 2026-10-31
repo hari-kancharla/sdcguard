@@ -56,10 +56,11 @@ def _guard(cls, name, root, path, pins):
 
 class State:
     def __init__(self):
-        from .config import BUNDLE, REVISION
+        from ..checksum_profiles import directory, get, BASELINE
         from .common import checkpoint
         self.checkpoint = checkpoint
-        self.bundle = Path(BUNDLE)
+        self.revision = get(os.environ.get("SDCGUARD_OPERATOR_REVISION", BASELINE))["revision"]
+        self.bundle = directory(self.revision)
         self.context = dict(run_id=os.environ["OWNER_CHECKSUM_RUN_ID"],
             packet_sha256=os.environ["OWNER_CHECKSUM_PACKET_SHA256"], arm_id=os.environ["OWNER_CHECKSUM_ARM"],
             engine_session_id=os.environ["OWNER_CHECKSUM_ENGINE_SESSION"], process_id=os.getpid())
@@ -75,7 +76,6 @@ class State:
         if not self.out.is_absolute():
             raise ValueError("startup output must be absolute")
         self.out.mkdir(parents=True, exist_ok=True)
-        self.revision = REVISION
         self.errors = []
         self.written = set()
         self.checksums = self.bindings = self.cache = None
@@ -153,7 +153,7 @@ class State:
                 non_causal=getattr(group.kv_cache_spec, "non_causal", "unrecorded")) for group in groups]
             observed = dict(**self.context, role=self.role, source_revision=self.revision,
                 model=MODEL, model_revision=MODEL_REVISION, actual_model=cfg.model_config.model,
-                actual_tokenizer=cfg.model_config.tokenizer, snapshot=SNAPSHOT, source_profile=source_profile(),
+                actual_tokenizer=cfg.model_config.tokenizer, snapshot=SNAPSHOT, source_profile=source_profile(self.revision),
                 checksum_enabled=transfer.enable_kv_checksum,
                 request_id_randomization_enabled=envs.VLLM_DISABLE_REQUEST_ID_RANDOMIZATION is False,
                 flashinfer_sampler_enabled=envs.VLLM_USE_FLASHINFER_SAMPLER,
@@ -172,6 +172,10 @@ class State:
                 transfer_extra=transfer.kv_connector_extra_config,
                 transport_profile=self.transport_policy,
                 source_identity="exact pinned local source and loaded callback code; no execution attestation")
+            from ..checksum_profiles import CANDIDATE
+            observed["hisparse_host_num_blocks"] = getattr(scheduler.kv_cache_config, "hisparse_host_num_blocks", "unrecorded")
+            observed["defer_async_loads"] = (getattr(scheduler, "defer_async_loads", "unrecorded")
+                if self.revision == CANDIDATE else "not_in_source_profile")
             self.once("startup", observed)
         except Exception as error:
             self.problem(error)
@@ -278,14 +282,14 @@ def register():
             from vllm.distributed.kv_transfer.kv_checksum.scheduler import KVChecksumScheduler
             from vllm.v1.engine.input_processor import InputProcessor
             if state.role == "decode":
-                state.checksums = ChecksumObserver()
+                state.checksums = ChecksumObserver(revision=state.revision)
                 state.checksums.install(KVChecksumScheduler, source_root=root)
             context = {k: v for k, v in state.context.items() if k != "process_id"}
-            state.bindings = RequestBindingObserver(**context)
+            state.bindings = RequestBindingObserver(**context, revision=state.revision)
             state.bindings.install(InputProcessor, source_root=root)
             from sdcguard.prefix_cache_observer import PrefillCacheObserver
             from vllm.v1.request import Request
-            state.cache = PrefillCacheObserver(**context, role=state.role)
+            state.cache = PrefillCacheObserver(**context, role=state.role, revision=state.revision)
             state.cache.install(Request, Scheduler, source_root=root)
 
         @functools.wraps(original_init)

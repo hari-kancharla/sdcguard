@@ -1,4 +1,4 @@
-"""sdcguard: catch GPUs that silently compute wrong answers, in training, in serving and before use.
+"""sdcguard: per-request coverage of vLLM's KV-transfer checksum, plus the earlier GPU arithmetic checks below.
 
 Training:
   SDCGuard        checksums on matrix multiplies (forward and backward); protect(model) = fast mode

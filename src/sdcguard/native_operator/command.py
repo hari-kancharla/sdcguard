@@ -15,6 +15,11 @@ def main(argv=None):
     parser.add_argument("--require", action="append", choices=("checksum", "lease"), required=True)
     parser.add_argument("--model-cache", help="existing pinned Qwen3-0.6B snapshot directory")
     parser.add_argument("--preflight-only", action="store_true", help="CPU checks only; no server or GPU action")
+    from ..checksum_profiles import REVISIONS, BASELINE
+    parser.add_argument("--engine-revision", choices=REVISIONS, default=BASELINE,
+                        help="exact supported engine source revision")
+    parser.add_argument("--gpu-blocks", type=int, choices=(8192,),
+                        help="pin the paired comparison cache capacity on both engine roles")
     args = parser.parse_args(argv)
     required = list(dict.fromkeys(args.require))
     if required != ["checksum"]:
@@ -38,7 +43,10 @@ def main(argv=None):
     from .common import checkpoint, encoded
     try:
         from .preflight import execute as preflight
-        receipt, plan, payloads = preflight()
+        options = dict(revision=args.engine_revision)
+        if args.gpu_blocks is not None:
+            options["gpu_blocks"] = args.gpu_blocks
+        receipt, plan, payloads = preflight(**options)
         checkpoint(out / "CPU_PREFLIGHT.json", receipt)
         if receipt["status"] != "PASS":
             print("HOLD: CPU preflight did not pass: " + str(receipt.get("failure")))

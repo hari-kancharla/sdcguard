@@ -39,13 +39,15 @@ MAX_BYTES = 8 * 1024 * 1024
 FIXED_BYTES = 8192
 
 
-def source_profile():
-    return dict(profile=PROFILE, revision=REVISION, files=dict(SOURCE_FILES))
+def source_profile(revision=REVISION):
+    profile = checksum.profiles.get(revision)
+    return dict(profile=profile["prefix_profile"], revision=revision, files=profile["prefix_files"])
 
 
 class PrefillCacheObserver:
     def __init__(self, *, run_id, packet_sha256, arm_id, engine_session_id, role,
-                 max_records=MAX_RECORDS, max_bytes=MAX_BYTES):
+                 max_records=MAX_RECORDS, max_bytes=MAX_BYTES, revision=REVISION):
+        self.profile = source_profile(revision)
         context = dict(run_id=run_id, packet_sha256=packet_sha256, arm_id=arm_id,
                        engine_session_id=engine_session_id)
         if not _context(context) or role not in ("prefill", "decode"):
@@ -57,7 +59,7 @@ class PrefillCacheObserver:
         self._lock = threading.RLock()
         self._records, self._bytes, self._sequence = [], 0, 0
         self._health = dict(errors=0, dropped_records=0, late_calls=0, active_calls=0, budget_exhausted=False)
-        self._source = dict(source_profile(), supported=False)
+        self._source = dict(self.profile, supported=False)
         self._qualification = "unknown"
         self._closed = self._close_active = self._installed = False
         self._guards = []
@@ -76,7 +78,7 @@ class PrefillCacheObserver:
                 raise ValueError("prefill observer is already installed or closed")
             root = Path(source_root).resolve()
             compiled = {}
-            for name, digest in SOURCE_FILES.items():
+            for name, digest in self.profile["files"].items():
                 path = root / name
                 if not path.is_file() or path.is_symlink() or path.stat().st_size > 1024 * 1024:
                     raise checksum.UnsupportedSource("prefill source is absent or oversized: " + name)
@@ -241,7 +243,7 @@ class PrefillCacheObserver:
                     retained_records=len(self._records), retained_bytes=self._bytes, fixed_bytes=FIXED_BYTES))))
 
 
-def evaluate_snapshot(snapshot, context, role):
+def evaluate_snapshot(snapshot, context, role, revision=REVISION):
     """Validate observations before any request join. Missing data is never zero."""
     reasons = []
     if (type(snapshot) is not dict or snapshot.get("schema") != SCHEMA
@@ -250,7 +252,7 @@ def evaluate_snapshot(snapshot, context, role):
             or snapshot.get("qualification") not in ("source_bound_candidate", "cpu_source_functions")
             or any(snapshot.get(k) != v for k, v in context.items())
             or type(snapshot.get("source")) is not dict or snapshot["source"].get("supported") is not True
-            or snapshot.get("source") != dict(source_profile(), supported=True)):
+            or snapshot.get("source") != dict(source_profile(revision), supported=True)):
         return [], ["native_cache_accounting_identity_unverified"]
     health, limits, records = snapshot.get("health"), snapshot.get("budgets"), snapshot.get("records")
     if (type(health) is not dict or health.get("complete") is not True

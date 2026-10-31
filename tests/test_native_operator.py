@@ -18,6 +18,13 @@ def plan():
         run_id="a"*32, packet_sha256="b"*64, engine_sessions={"observer-on":"c"*32})
 
 
+def preflight_return(*values):
+    def checked(*, revision):
+        assert revision == workload.REVISION
+        return values
+    return checked
+
+
 def test_plan_has_one_complete_denominator_and_shared_prefix():
     value, payloads = plan()
     assert value["prefix_caching"] is True
@@ -55,7 +62,7 @@ def test_unsupported_combined_profile_never_enters_preflight(tmp_path, monkeypat
 
 
 def test_failed_cpu_preflight_never_starts_runtime(tmp_path, monkeypatch):
-    monkeypatch.setattr(preflight,"execute",lambda:(dict(status="UNKNOWN",failure="synthetic unavailable profile"),None,None))
+    monkeypatch.setattr(preflight,"execute",preflight_return(dict(status="UNKNOWN",failure="synthetic unavailable profile"),None,None))
     monkeypatch.setattr(runtime,"execute",lambda *a,**k:pytest.fail("runtime must not run"))
     assert cli.main(["operator","run","--out",str(tmp_path/"out"),"--require","checksum"]) == 2
     assert (tmp_path/"out/CPU_PREFLIGHT.json").is_file()
@@ -63,7 +70,7 @@ def test_failed_cpu_preflight_never_starts_runtime(tmp_path, monkeypatch):
 
 def test_cpu_only_command_has_no_server_path(tmp_path, monkeypatch):
     value,payloads=plan()
-    monkeypatch.setattr(preflight,"execute",lambda:(dict(status="PASS"),value,payloads))
+    monkeypatch.setattr(preflight,"execute",preflight_return(dict(status="PASS"),value,payloads))
     monkeypatch.setattr(runtime,"execute",lambda *a,**k:pytest.fail("runtime must not run"))
     assert cli.main(["operator","run","--out",str(tmp_path/"out"),"--require","checksum","--preflight-only"]) == 0
     assert (tmp_path/"out/REQUEST_PLAN.json").is_file()
@@ -76,7 +83,7 @@ def test_command_saves_raw_inputs_then_runs_the_existing_gate(tmp_path, monkeypa
     archive=(data/'ordinary-evidence.zip').read_bytes()
     receipt=json.loads((data/'CPU_PREFLIGHT.json').read_bytes())
     value,payloads=plan()
-    monkeypatch.setattr(preflight,"execute",lambda:(receipt,value,payloads))
+    monkeypatch.setattr(preflight,"execute",preflight_return(receipt,value,payloads))
     monkeypatch.setattr(runtime,"execute",lambda *a,**k:dict(deepcopy(observed),archive=archive))
     out=tmp_path/'out'
     assert cli.main(['operator','run','--out',str(out),'--require','checksum']) == 2

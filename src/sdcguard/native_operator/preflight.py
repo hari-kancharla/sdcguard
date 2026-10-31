@@ -47,21 +47,23 @@ def model_cache(bundle, snapshot=SNAPSHOT):
                 scope="local cached bytes before execution; no loaded-weight or device attestation")
 
 
-def execute(*, run_id=None, expected_identity=None):
+def execute(*, run_id=None, expected_identity=None, revision=REVISION, gpu_blocks=None):
     """Check the local CPU runtime only. Never starts a server or requests a GPU."""
     from . import installed, python_runtime, cleanup_preflight, transport
     from .identity import installed_identity, validate_pinned_source
+    from ..checksum_profiles import directory
+    bundle = directory(revision)
     run_id = run_id or uuid.uuid4().hex
     product = installed.product_identity()
     packet = product["sha256"]
     value = dict(schema=installed.SCHEMA, owner="Hari Krishna Kancharla", run_id=run_id,
-        packet_sha256=packet, source_revision=REVISION, status="UNKNOWN", failure=None,
+        packet_sha256=packet, source_revision=revision, status="UNKNOWN", failure=None,
         cpu_only=True, gpu_submitted=False, runtime_qualified=False, product=product)
     stage = "installed_engine"
     plan = payloads = None
     try:
-        value["installed_engine"] = installed_identity(BUNDLE)
-        value["pinned_source_guard"] = validate_pinned_source(Path(ENGINE_ROOT), installed.profile("ENGINE_BUILD_LOCK.json"))
+        value["installed_engine"] = installed_identity(bundle)
+        value["pinned_source_guard"] = validate_pinned_source(Path(ENGINE_ROOT), installed.profile("ENGINE_BUILD_LOCK.json", revision))
         stage = "python_runtime"
         value[stage] = python_runtime.probe(run_id, packet)
         if not python_runtime.validate(value[stage], run_id, packet):
@@ -75,13 +77,14 @@ def execute(*, run_id=None, expected_identity=None):
         if not transport.validate(value[stage], run_id, packet):
             raise ValueError("same-host native transport preflight did not pass")
         stage = "model_cache"
-        value[stage] = model_cache(BUNDLE)
+        value[stage] = model_cache(bundle)
         stage = "tokenizer"
         from transformers import AutoTokenizer
         tokenizer = AutoTokenizer.from_pretrained(SNAPSHOT, local_files_only=True, trust_remote_code=False)
         sessions = {arm: uuid.uuid4().hex for arm, _ in ARMS}
         plan, payloads = build_plan(tokenizer.encode, run_id=run_id,
-                                    packet_sha256=packet, engine_sessions=sessions)
+                                    packet_sha256=packet, engine_sessions=sessions, revision=revision,
+                                    gpu_blocks=gpu_blocks)
         value["plan_sha256"] = digest(encoded(plan))
         if not any(row["prompt_tokens"] % 16 for arm in plan["arms"] for row in arm["requests"]):
             raise ValueError("ordinary tokenizer workload lacks a partial final block")

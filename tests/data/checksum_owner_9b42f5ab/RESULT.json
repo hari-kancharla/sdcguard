@@ -1,0 +1,40 @@
+{
+  "archive_sha256": "f7832b800801b64fe765a63c7013badbc9d6ec684f91e2c4b78be2f8afbadef2",
+  "build_witness_sha256": "feee1d90092d4fc8701166772d859a0138e1cb8c0fbd63290007f567ac9e3db1",
+  "packet_sha256": "4e7e0dabe2616deae2a171410ea7d402f7d61fd53edacf2e080a8758ca2f07db",
+  "report": {
+    "cleanup_complete": true,
+    "client_inventory_complete": true,
+    "complete": true,
+    "coverage_summary": {
+      "binding_records": 153,
+      "checksum_calls": 153,
+      "complete_client_requests": 153,
+      "declared_requests": 153,
+      "engine_pass_not_covered": {
+        "cached prefix not covered by checksum": 144
+      },
+      "joined_checksum_calls": 153,
+      "joined_requests": 153,
+      "native_pass_requests": 153,
+      "native_results": {
+        "passed": 153
+      },
+      "off_requests": 0,
+      "on_requests": 153,
+      "on_unverified_requests": 144,
+      "unexpected_binding_records": 0,
+      "unexpected_checksum_calls": 0,
+      "verified_on_requests": 9
+    },
+    "failure": null,
+    "native_transport_complete": true,
+    "owner": "Hari Krishna Kancharla",
+    "packet_sha256": "4e7e0dabe2616deae2a171410ea7d402f7d61fd53edacf2e080a8758ca2f07db",
+    "run_id": "9b42f5ab3e9048efba9384f2c9d1daed",
+    "runtime_qualified": false,
+    "scope": "ordinary same-host checksum observation and client reconciliation only",
+    "stage": "complete"
+  },
+  "run_id": "9b42f5ab3e9048efba9384f2c9d1daed"
+}

@@ -1,6 +1,6 @@
 # Method
 
-How the numbers in the README were measured. Raw output is in [results/](../results/); runs since October 19
+How the numbers in the earlier GPU arithmetic-check docs (STATUS.md and EVIDENCE.md) were measured. Raw output is in [results/](../results/); runs since October 19
 record the code fingerprint they ran, and runs from Run 1 on (October 26) also the SHA-256 of this file as it was
 when they ran (each STATUS.json's source.criteria), so a result carries the criteria it was judged by.
 Unless noted: NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1 (CUDA 13.0), Triton 3.8.0.

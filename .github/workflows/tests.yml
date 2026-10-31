@@ -29,8 +29,8 @@ jobs:
           python -m pip install -e ".[dev,experiments]" triton==3.8.0 transformers==5.20.1 accelerate==1.15.0
       - name: Tests
         run: python -m pytest -q -rs tests
-  # The oldest Python and PyTorch the package says it supports (pyproject.toml and the README: Python 3.10+,
-  # PyTorch 2.8+), next to the versions above. No Triton here: its interpreter tests run in the job above.
+  # The oldest Python and PyTorch the package supports (pyproject.toml: Python 3.10+, PyTorch 2.8+), next to the
+  # versions above. No Triton here: its interpreter tests run in the job above.
   cpu-minimum:
     runs-on: ubuntu-latest
     timeout-minutes: 120

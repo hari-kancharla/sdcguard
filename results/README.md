@@ -1,6 +1,6 @@
 # Results
 
-Raw output of the GPU runs behind the numbers in the README, copied unchanged, so paths inside the
+Raw output of the earlier GPU arithmetic-check runs (see docs/STATUS.md), copied unchanged, so paths inside the
 files refer to the original run folders (`calibration/ts-gpt2/CALIBRATION.md` is
 `false_alarms_and_slowdown_gpt2/CALIBRATION.md` here). NVIDIA H100 80GB HBM3 on Modal, PyTorch 2.14.1
 (CUDA 13.0), October 14-15, 2026, except `round3_oct18/` and the October 19-22 folders at the end of the table,

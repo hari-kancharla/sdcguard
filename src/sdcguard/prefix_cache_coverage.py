@@ -15,14 +15,15 @@ def capture_facts(capture, plan, arm):
         if (type(startup) is not dict or startup.get("role") != role
                 or any(startup.get(k) != v for k, v in context.items())
                 or startup.get("prefix_caching") is not True or startup.get("checksum_enabled") is not True
-                or startup.get("source_revision") != client.REVISION):
+                or startup.get("source_revision") != plan["source_revision"]
+                or not client.profiles.startup_supported(startup, plan["source_revision"])):
             issues.append("native_cache_startup_unverified:" + role)
         snapshots = envelope.get("cache_snapshots")
         if type(snapshots) is not list or len(snapshots) != 1:
             issues.append("native_cache_snapshot_missing_or_ambiguous:" + role)
         else:
             snapshot = snapshots[0]
-            records, errors = observer.evaluate_snapshot(snapshot, context, role)
+            records, errors = observer.evaluate_snapshot(snapshot, context, role, plan["source_revision"])
             issues.extend(errors)
             if type(snapshot) is not dict or snapshot.get("process_id") != startup.get("process_id"):
                 issues.append("native_cache_process_binding_unverified:" + role)
@@ -32,7 +33,7 @@ def capture_facts(capture, plan, arm):
         else:
             active = 0
             for snapshot in binding_snapshots:
-                rows, errors, domain = client._bindings(snapshot, context)
+                rows, errors, domain = client._bindings(snapshot, context, plan["source_revision"])
                 issues.extend(errors)
                 active += bool(rows)
                 bindings.extend(rows)

@@ -40,7 +40,8 @@ def evaluator_hashes():
     root = resources("sdcguard")
     names = ("checksum_observer_report.py", "kv_checksum_observer.py", "evidence_io.py",
              "evidence_envelope.py", "evidence_native_io.py", "evidence_json_budget.py",
-             "config_inputs.py", "case_data/checksum-observer-pins.json")
+             "config_inputs.py", "case_data/checksum-observer-pins.json", "checksum_profiles.py",
+             "case_data/checksum-builds.json")
     return {name: io.digest(root.joinpath(*name.split("/")).read_bytes()) for name in names}
 
 
@@ -66,7 +67,7 @@ def _planned_scope_matches(plan, proof):
         and _same(a[key], b[key]) for key in group_keys) for a, b in zip(original, observed))
 
 
-def evaluate(raw):
+def evaluate(raw, *, revision=None):
     """Recompute conditional chunk scope, retaining all native outcomes."""
     value = io.parse_json(raw)
     if type(value) is not dict or value.get("schema") != observer.SCHEMA:
@@ -83,7 +84,12 @@ def evaluate(raw):
     if value.get("runtime_qualified") is not False or value.get("release_qualifying") is not False:
         issues.append("unsupported_runtime_or_release_claim")
     source = value.get("source")
-    profile = observer.source_profile()
+    observed_revision = source.get("revision") if type(source) is dict else None
+    selected = revision if revision is not None else observed_revision
+    if not observer.profiles.supported(selected):
+        issues.append("unsupported_source_revision")
+        selected = observer.REVISION
+    profile = observer.source_profile(selected)
     if (type(source) is not dict or source.get("supported") is not True
             or source.get("revision") != profile["revision"]
             or not _same(source.get("files"), profile["files"])):
@@ -279,7 +285,10 @@ def capture(snapshot, output):
     report, derived = _derived(raw)
     if raw != io.read_file(path.parent, path.name):
         raise io.EvidenceError("checksum snapshot changed during capture")
-    saved = {"inputs/snapshot.json": raw, "source-profile.json": io.json_bytes(observer.source_profile()),
+    selected = report["source"].get("revision") if type(report["source"]) is dict else None
+    if not observer.profiles.supported(selected):
+        selected = observer.REVISION
+    saved = {"inputs/snapshot.json": raw, "source-profile.json": io.json_bytes(observer.source_profile(selected)),
              "evaluators.json": io.json_bytes(evaluator_hashes()), **derived}
     envelope.complete(output, saved, envelope.directories_for(saved), schema=SCHEMA, profile=observer.PROFILE)
     return report
@@ -291,10 +300,15 @@ def verify(packet):
         raise io.EvidenceError("unsupported checksum observation packet")
     expected = {"inputs/snapshot.json", "source-profile.json", "evaluators.json",
                 "report.json", "report.txt", "report.html", "manifest.json"}
+    selected = io.parse_json(files["source-profile.json"]).get("revision")
     if (set(files) != expected or not _same(io.parse_json(files["evaluators.json"]), evaluator_hashes())
-            or not _same(io.parse_json(files["source-profile.json"]), observer.source_profile())):
+            or not _same(io.parse_json(files["source-profile.json"]), observer.source_profile(selected))):
         raise io.EvidenceError("checksum packet inventory or evaluator identity differs")
     report, derived = _derived(files["inputs/snapshot.json"])
+    recorded = report["source"].get("revision") if type(report["source"]) is dict else None
+    expected_revision = recorded if observer.profiles.supported(recorded) else observer.REVISION
+    if expected_revision != selected:
+        raise io.EvidenceError("checksum packet mixes source revisions")
     if any(files[name] != raw for name, raw in derived.items()):
         raise io.EvidenceError("retained checksum reports disagree with recomputed observations")
     bounded.recheck_snapshot(packet, files, directories)

@@ -15,6 +15,7 @@ import zlib
 
 from . import checksum_client as checksum, native_checks as lease, evidence_io as io
 from . import evidence_json_budget as budget
+from . import checksum_profiles as profiles
 
 CHECKS = ("lease", "checksum")
 CHECKSUM_VERSION = "0.33.0rc1.dev205+g29d2f4e03.precompiled"
@@ -155,8 +156,9 @@ def _cleanup_valid(value):
 def _startup(value, plan, arm, role):
     context = dict(run_id=plan["run_id"], packet_sha256=plan["packet_sha256"],
                    arm_id=arm["arm_id"], engine_session_id=arm["engine_session_id"])
-    expected = dict(context, role=role, source_revision=checksum.REVISION,
-        source_profile=checksum.source_profile(), checksum_enabled=True,
+    revision = plan["source_revision"]
+    expected = dict(context, role=role, source_revision=revision,
+        source_profile=checksum.source_profile(revision), checksum_enabled=True,
         request_id_randomization_enabled=True, flashinfer_sampler_enabled=False,
         model_runner_v2=True, multiprocess_method="spawn", prefix_caching=plan.get("prefix_caching", False), chunked_prefill=True,
         async_scheduling=False, speculative_disabled=True, kv_dtype="auto", connector="NixlConnector",
@@ -165,7 +167,10 @@ def _startup(value, plan, arm, role):
         parallel=dict(tp=1, pp=1, dp=1, dcp=1, pcp=1),
         group_specs=[dict(type="FullAttentionSpec", block_size=16, sliding_window=None,
                           attention_chunk_size=None, non_causal=False)])
-    return (all(same(value.get(k), v) for k, v in expected.items())
+    if "gpu_blocks_override" in plan:
+        expected["gpu_blocks"] = plan["gpu_blocks_override"]
+    return (profiles.startup_supported(value, revision)
+            and all(same(value.get(k), v) for k, v in expected.items())
             and type(value.get("process_id")) is int and value["process_id"] > 0
             and value.get("model") == plan["model"] == "Qwen/Qwen3-0.6B"
             and value.get("model_revision") == "c1899de289a04d12100db370d81485cdf75e47ca"
@@ -343,8 +348,9 @@ def checksum_gate(result_raw, archive_raw, preflight_raw, required, arm=None):
         recorded_revision = installed.get("source_revision", "unknown")
         witness = object_at(files, "BUILD_WITNESS.json")
         payload = witness.get("witness", {})
-        if (version != CHECKSUM_VERSION or installed.get("source_revision") != checksum.REVISION
-                or preflight.get("source_revision") != checksum.REVISION):
+        revision = plan["source_revision"]
+        if (version != profiles.get(revision)["version"] or installed.get("source_revision") != revision
+                or preflight.get("source_revision") != revision):
             issues.append("unsupported_recorded_engine_version")
         if preflight.get("schema") == "sdcguard.installed-checksum-preflight.v1":
             from .native_operator.installed import validate, WITNESS
@@ -362,6 +368,8 @@ def checksum_gate(result_raw, archive_raw, preflight_raw, required, arm=None):
                     if (len(starts) != 1 or type(snapshot_path) is not str
                             or any(starts[0].get(k) != snapshot_path for k in ("actual_model", "actual_tokenizer", "snapshot"))):
                         issues.append("installed_model_startup_binding_unverified:" + planned_arm["arm_id"] + ":" + role)
+        elif revision != profiles.BASELINE:
+            issues.append("candidate_requires_installed_runtime_preflight")
         elif (witness.get("sha256") != io.digest(io.json_bytes(payload))
                 or result.get("build_witness_sha256") != witness.get("sha256")
                 or payload.get("schema") != "sdcguard.owner-checksum-build-witness.v1"
@@ -401,7 +409,7 @@ def checksum_gate(result_raw, archive_raw, preflight_raw, required, arm=None):
         issues.append("selected_arm_not_in_plan")
     answer = decide(rows, required, issues, total=len(report["requests"]),
                     engine=dict(name="vllm", version=version, source_revision=recorded_revision,
-                                supported_source_revision=checksum.REVISION), arm=arm)
+                                supported_source_revision=plan["source_revision"]), arm=arm)
     if coverage_hold in report["hold_reasons"]:
         answer["decision"] = "HOLD"
         answer["hold_reasons"].insert(0, coverage_hold)

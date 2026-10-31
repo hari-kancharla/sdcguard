@@ -16,9 +16,9 @@ DATA = Path(__file__).parent / "data/prefix_cache_functions/PRIMARY.json"
 CONTEXT = dict(run_id="a"*32, packet_sha256="b"*64, arm_id="observer-on", engine_session_id="c"*32)
 
 
-def classes(root):
+def classes(root, primary=DATA):
     """Unchanged function code; stand-in containers do not qualify a runtime."""
-    source = json.loads(DATA.read_bytes())
+    source = json.loads(primary.read_bytes())
     code = {}
     for row in source["sources"]:
         raw = row["content"].encode()

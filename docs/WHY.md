@@ -1,4 +1,7 @@
-# Why sdcguard
+# Why the earlier GPU arithmetic checks
+
+This page is about sdcguard's earlier GPU arithmetic-check work and is kept as history. The current tool is the KV
+checksum coverage gate in the [README](../README.md).
 
 Every source below was opened between October 19 and 24, 2026, and says what its row says. These sources show
 the problem is real. They don't show how often sdcguard catches it: sdcguard's own measurements, negative ones

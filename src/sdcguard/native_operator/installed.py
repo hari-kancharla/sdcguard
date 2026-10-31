@@ -10,14 +10,15 @@ from pathlib import Path
 from .common import digest, encoded, regular_bytes, file_inventory
 from .config import BUNDLE, ENGINE_ROOT
 from .workload import REVISION, MODEL, MODEL_REVISION
+from .. import checksum_profiles as profiles
 
 SCHEMA = "sdcguard.installed-checksum-preflight.v1"
 WITNESS = "sdcguard.installed-checksum-witness.v1"
 VERSION = "0.33.0rc1.dev205+g29d2f4e03.precompiled"
 
 
-def profile(name):
-    return json.loads(regular_bytes(Path(BUNDLE) / "artifacts" / name, 2 * 1024 * 1024))
+def profile(name, revision=REVISION):
+    return json.loads(regular_bytes(profiles.directory(revision) / "artifacts" / name, 2 * 1024 * 1024))
 
 
 def product_identity():
@@ -72,9 +73,19 @@ def observer_files():
     paths = list((root / "native_operator").rglob("*.py"))
     paths += list((root / "native_operator/profile_data").rglob("*.json"))
     paths += [root/name for name in ("kv_checksum_observer.py", "checksum_client.py", "prefix_cache_observer.py",
-                                      "prefix_cache_coverage.py", "checksum_observer_report.py")]
+                                      "prefix_cache_coverage.py", "checksum_observer_report.py", "checksum_profiles.py",
+                                      "case_data/checksum-builds.json", "case_data/checksum-legacy-recorder.json")]
     return {"sdcguard/"+p.relative_to(root).as_posix():dict(bytes=p.stat().st_size,
             sha256=digest(regular_bytes(p, 8*1024*1024))) for p in paths}
+
+
+def recorder_matches(product, revision):
+    inventories = [observer_files()]
+    if revision == profiles.BASELINE:
+        root = Path(__file__).resolve().parent.parent
+        inventories.append(json.loads(regular_bytes(root / "case_data/checksum-legacy-recorder.json", 256*1024)))
+    return any(all(encoded(product["files"].get(name)) == encoded(row) for name,row in inventory.items())
+               for inventory in inventories)
 
 
 def validate(value, plan, plan_raw):
@@ -82,23 +93,25 @@ def validate(value, plan, plan_raw):
     from .. import evidence_io as io
     from . import python_runtime, cleanup_preflight, transport
     try:
+        revision = plan["source_revision"]
+        selected = profiles.get(revision)
         if (type(value) is not dict or value.get("schema") != SCHEMA or value.get("status") != "PASS"
                 or value.get("failure") is not None or value.get("cpu_only") is not True
                 or value.get("gpu_submitted") is not False or value.get("runtime_qualified") is not False
                 or value.get("run_id") != plan["run_id"] or value.get("packet_sha256") != plan["packet_sha256"]
-                or value.get("plan_sha256") != digest(plan_raw) or value.get("source_revision") != REVISION):
+                or value.get("plan_sha256") != digest(plan_raw) or value.get("source_revision") != revision):
             return False
         product, engine = value["product"], value["installed_engine"]
-        lock, payload, model = (profile(n) for n in ("ENGINE_BUILD_LOCK.json", "PRECOMPILED_PAYLOAD.json", "MODEL_PIN.json"))
+        lock, payload, model = (profile(n, revision) for n in ("ENGINE_BUILD_LOCK.json", "PRECOMPILED_PAYLOAD.json", "MODEL_PIN.json"))
         if (product.get("distribution") != "sdcguard"
                 or product.get("entrypoint") != "sdcguard.native_operator.plugin:register"
                 or not file_inventory(product.get("files")) or not 1 <= len(product["files"]) <= 1024
-                or any(encoded(product["files"].get(n)) != encoded(v) for n,v in observer_files().items())
+                or not recorder_matches(product, revision)
                 or product.get("sha256") != digest(encoded(product["files"]))
                 or product["sha256"] != plan["packet_sha256"]
                 or engine.get("schema") != "sdcguard.owner-checksum-installed.v1"
-                or engine.get("source_revision") != REVISION or engine.get("runtime_qualified") is not False
-                or engine["versions"]["vllm"] != VERSION
+                or engine.get("source_revision") != revision or engine.get("runtime_qualified") is not False
+                or engine["versions"]["vllm"] != selected["version"]
                 or engine["versions"]["torch"].split("+")[0] != lock["environment"]["torch"]
                 or any(engine["versions"][n] != lock["environment"]["nixl"] for n in ("nixl", "nixl-cu12", "nixl-cu13"))
                 or not all(file_inventory(rows) for rows in (engine["compiled_members"], engine["source_files"],
@@ -110,11 +123,11 @@ def validate(value, plan, plan_raw):
                 or encoded(engine["direct_url"]) != encoded({"dir_info": {"editable": True}, "url": Path(ENGINE_ROOT).as_uri()})):
             return False
         source = value["pinned_source_guard"]
-        if (source.get("head") != REVISION or source.get("tracked_status") != ""
+        if (source.get("head") != revision or source.get("tracked_status") != ""
                 or source.get("pinned_base") != lock["base"]["revision"] or source.get("ancestry") != lock["base"]["revision"]
-                or set(source["critical_identities"]) != set(lock["base"]["critical_identities"][REVISION])
+                or set(source["critical_identities"]) != set(lock["base"]["critical_identities"][revision])
                 or any(row != dict(expected=expected, head=expected, base=expected) for name,expected in
-                       lock["base"]["critical_identities"][REVISION].items() for row in [source["critical_identities"][name]])):
+                       lock["base"]["critical_identities"][revision].items() for row in [source["critical_identities"][name]])):
             return False
         identity = value["model_cache"]
         if (identity.get("model") != MODEL or identity.get("revision") != MODEL_REVISION

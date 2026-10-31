@@ -1,6 +1,12 @@
 """The sdcguard command.
 
-Scoped inference-state workflow (see README for exact supported configuration):
+KV checksum coverage (see README):
+    sdcguard gate DIR --require checksum       per-request checksum coverage of a saved recording
+    sdcguard transfer-check DIR                was each recorded transfer fully compared?
+    sdcguard transfer-compare BASE CAND        transfer coverage across two recorded vLLM builds
+    sdcguard operator run --require checksum --out NEWDIR   record a run on the pinned H100 profile
+
+Earlier scoped inference-state workflow (docs/EARLIER_WORKFLOWS.md):
     sdcguard config-safety CONFIG --out NEWDIR   static contracts from config and saved startup logs
     sdcguard evidence collect ... --out NEWDIR  portable scoped inputs and named findings
     sdcguard evidence verify PACKET            re-judge captured facts offline

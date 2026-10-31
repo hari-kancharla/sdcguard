@@ -98,7 +98,7 @@ def capture(plan, inventory, captures, output):
     if raws != _read_inputs(paths):
         raise io.EvidenceError("client checksum inputs changed during capture")
     saved = {"inputs/" + name: raw for name, raw in zip(INPUTS, raws)}
-    saved.update({"source-profile.json": io.json_bytes(client.source_profile()),
+    saved.update({"source-profile.json": io.json_bytes(client.source_profile(report["source_revision"])),
                   "evaluators.json": io.json_bytes(evaluator_hashes()), **derived})
     envelope.complete(output, saved, envelope.directories_for(saved), schema=SCHEMA, profile=PROFILE)
     return report
@@ -110,7 +110,8 @@ def verify(packet):
         raise io.EvidenceError("unsupported client checksum packet")
     expected = {*("inputs/" + n for n in INPUTS), "source-profile.json", "evaluators.json",
                 "report.json", "report.txt", "report.html", "manifest.json"}
-    if (set(files) != expected or not _same(io.parse_json(files["source-profile.json"]), client.source_profile())
+    revision = io.parse_json(files["inputs/" + INPUTS[0]]).get("source_revision")
+    if (set(files) != expected or not _same(io.parse_json(files["source-profile.json"]), client.source_profile(revision))
             or not _same(io.parse_json(files["evaluators.json"]), evaluator_hashes())):
         raise io.EvidenceError("client checksum packet inventory or evaluator identity differs")
     report, derived = _derived(tuple(files["inputs/" + name] for name in INPUTS))

@@ -1,0 +1,20 @@
+{
+  "files": {
+    "CPU_PREFLIGHT.json": {
+      "bytes": 542137,
+      "sha256": "06e310fe1df437aaa8f7ece838ea09996fa01f707547ee88d7fe31b8b8e14919"
+    },
+    "RESULT.json": {
+      "bytes": 1426,
+      "sha256": "1fd0eae48179548eeef260cc37409229ac6bae7a22a48ad22a033d128ccab13e"
+    },
+    "ordinary-evidence.zip": {
+      "bytes": 558727,
+      "sha256": "f7832b800801b64fe765a63c7013badbc9d6ec684f91e2c4b78be2f8afbadef2"
+    }
+  },
+  "owner": "Hari Krishna Kancharla",
+  "run_id": "9b42f5ab3e9048efba9384f2c9d1daed",
+  "scope": "Ordinary same-host owner recording on engine build 29d2f4e, the baseline of the Oct 31 two-build comparison. Prefix caching on, checksum only, 8192 GPU blocks. Offline replay; no new engine execution.",
+  "source": "H100-owner-result from run 9b42f5ab"
+}
