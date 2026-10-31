@@ -94,6 +94,8 @@ def _fsdp_worker(rank, world, port, out, copy):
                        "errors": g.stats.get("evidence_errors", 0)}, f)
     finally:
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT)
+    os._exit(0)
 
 
 @pytest.mark.parametrize("copy", [False, True])

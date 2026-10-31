@@ -61,6 +61,8 @@ def _worker(rank, world, port, out, mode, faulty):
             json.dump({"stats": {k: v for k, v in g.stats.items() if isinstance(v, int)}, "grads_same": same}, f)
     finally:
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT)
+    os._exit(0)
 
 
 def _run(tmp_path, mode, faulty):
@@ -195,6 +197,8 @@ def _compiled_worker(rank, world, port, out, precise, faulty):
                        "alert_steps": [e.step for e in g.log.events]}, fh)
     finally:
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT)
+    os._exit(0)
 
 
 def _spawn_compiled(tmp_path, world, precise=False, faulty=False):
@@ -255,6 +259,8 @@ def _fp32_worker(rank, world, port, out):
             json.dump({k: v for k, v in g.stats.items() if isinstance(v, int)}, f)
     finally:
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT)
+    os._exit(0)
 
 
 def test_checked_dtensor_counts_only_matmuls_that_were_checked(tmp_path):
@@ -311,6 +317,8 @@ def _gate_worker(rank, world, port, out, mode):
             json.dump({"seen": seen, "stats": {k: v for k, v in g.stats.items() if isinstance(v, int)}}, f)
     finally:
         dist.destroy_process_group()
+    # Skip interpreter teardown: gloo threads can still abort a finished worker there (SIGABRT)
+    os._exit(0)
 
 
 @pytest.mark.parametrize("mode", ["fast", "default"])
