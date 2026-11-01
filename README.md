@@ -1,22 +1,30 @@
 # sdcguard
 
-A release test for LLM servers. It shows, per request, whether the engine's own KV-cache checksum covered the
-prompt, and holds the release if it didn't.
+An open-source release test for LLM inference servers. It records what the engine's own integrity checks verified
+for each request, and whether that still holds after an engine upgrade.
 
-Large deployments split each request across two servers: a prefill instance builds the prompt's working memory
-(the KV cache) and sends it to a decode instance. When that handoff goes wrong, a user can get another
-customer's data in a normal response. Cloudflare
-[reported 155 such responses](https://blog.cloudflare.com/kv-cache-exposure-remediation/) from its SGLang
-deployment on Oct 26, 2026.
+An inference server can read the wrong cached data and still return a normal HTTP 200.
 
-vLLM's [proposed checksum](https://github.com/vllm-project/vllm/pull/62211) for the handoff compares only the
-blocks that were transferred. Prompt blocks the decode instance reuses from its own prefix cache aren't part of
-that request's check. That's by design, as the PR's commit notes explain, and SGLang's checksum leaves out the
-decode's cached prefix the same way ([#46423](https://github.com/sgl-project/sglang/pull/46423)). So a passing
-check doesn't say how much of a request it covered.
-An open vLLM issue, [#61160](https://github.com/vllm-project/vllm/issues/61160), reports split serving with
-prefix caching returning other requests' content. It stopped when prefix caching was turned off, and the cause
-isn't known yet.
+## Results
+
+**A wrong answer that came back as a success.** On an H100, I reproduced vLLM bug
+[#61229](https://github.com/vllm-project/vllm/issues/61229), where the decode server reads KV blocks the prefill
+server has already freed and reused. I forced the timing with a delay. The prompt asked the model to repeat the
+secret word PLUM. All 8 unfixed runs returned a wrong answer as a normal HTTP 200. One of them was
+"M. Repeat the secret word. Repeat the secret word...".
+
+An earlier sdcguard recorder flagged the stale read in all 8 runs. With the proposed fix
+([PR #62065](https://github.com/vllm-project/vllm/pull/62065)) backported, all 5 replays gave the right answer
+([saved results](results/61229_saved)).
+
+**What a passing checksum covered.** vLLM has a proposed checksum on the KV data that prefill sends to decode
+([PR #62211](https://github.com/vllm-project/vllm/pull/62211), not merged). On Oct 30, 2026, on one H100, it passed
+all 153 requests in my test. Only 9 of them had their whole prompt compared during the request.
+
+The test was built around reuse. It sends 9 groups of 17 requests, and the requests in a group share most of their
+prompt. The first request in each group was fully compared. The other 144 reused the shared prefix from the decode
+server's cache, which was compared once when it first arrived and not again. That's how the PR is designed, and
+SGLang's checksum leaves out the cached prefix the same way ([#46423](https://github.com/sgl-project/sglang/pull/46423)).
 
 | Oct 30, 2026: one H100, vLLM checksum PR #62211, prefix caching on | Result |
 | --- | --- |
@@ -24,6 +32,17 @@ isn't known yet.
 | Requests whose whole prompt was compared | 9 of 153 |
 | Prompt tokens compared, summed over requests | 9,822 of 109,790 (9%) |
 | Prompt tokens reused from the decode cache, outside that request's check | 99,968 (91%) |
+
+This measures coverage. It doesn't show that any data went bad. I got the same numbers on two vLLM builds on
+Oct 31. In a separate control run with different prompts and prefix caching off, all 90 recorded requests were fully
+compared. These checksum runs replay on a laptop without a GPU.
+
+**Why it matters.** On Oct 26, 2026, Cloudflare
+[reported 155 responses](https://blog.cloudflare.com/kv-cache-exposure-remediation/) from its SGLang split-serving
+deployment that contained other customers' data. A vLLM issue,
+[#61160](https://github.com/vllm-project/vllm/issues/61160), reported split serving with prefix caching returning
+other requests' content on vLLM 0.31.0, and the reporter says it stopped after upgrading to 0.32.0. sdcguard didn't
+find either one, and as built it wouldn't have caught Cloudflare's, which ran on SGLang. Those are the failures I'm building it to catch before a release ships.
 
 ## Replay it on a laptop
 
@@ -33,7 +52,7 @@ python3 -m venv .venv && . .venv/bin/activate && pip install --no-deps .
 sdcguard gate tests/data/checksum_owner_3a2ad847 --require checksum
 ```
 
-This replays the table's run offline, without a GPU. It needs Python 3.10 or newer (many Macs ship 3.9), and
+This replays the Oct 30 run offline, without a GPU. It needs Python 3.10 or newer (many Macs ship 3.9), and
 CI runs the tests on Python 3.10 and 3.12. Output:
 
 ```
@@ -112,6 +131,7 @@ included yet. A CPU preflight checks the host first. The profile and commands ar
 - One vLLM profile: PR #62211 (not merged yet) at two pinned commits, two instances on one host over NIXL, eager
   mode, Qwen3-0.6B.
 - SGLang isn't supported yet.
+- It's early: no outside users yet.
 - No faults have been injected on the checksum build.
 - The build comparison uses one recording per build.
 - Checksum values aren't kept, so the transfer check confirms only that the comparison was complete.
@@ -126,18 +146,19 @@ Full limits are in [docs/CHECKSUM_GATE.md](docs/CHECKSUM_GATE.md#limits).
   of holding every request with unchecked reuse.
 - SGLang and a CI gate.
 
-## Earlier work
+## Earlier work: GPU math checker
 
-On vLLM issue [#61229](https://github.com/vllm-project/vllm/issues/61229), a decode instance can read KV blocks
-the prefill instance already freed and reused. On the unfixed build (vLLM 0.32.0), with a forced delay to hit the
-race, an earlier sdcguard recorder flagged the stale read in all 8 runs, each a wrong answer in a normal 200
-response. With the proposed
-lease fix ([PR #62065](https://github.com/vllm-project/vllm/pull/62065)), vLLM rejected the stale read in all 5
-H100 replays and the client got the right answer ([saved results](results/61229_saved),
-[later fixed-build replay](docs/H100_OBSERVER_RESULT.md)).
+sdcguard started as a GPU math checker. On Oct 20, 2026, on a rented H200 split with NVIDIA MPS, it flagged wrong
+results from a known cuBLAS bug (NVIDIA known issue 6862950) at 3 MPS shares. NVIDIA DCGM and gpu-burn passed at the
+same shares, because their tests never ran the broken code path
+([head-to-head](results/h2h/h200_20261020_060928.md)). I didn't discover the bug.
 
-`pip install sdcguard` installs the older 0.4.0 GPU math checker
-([v0.4.0 tag](https://github.com/hari-kancharla/sdcguard/tree/v0.4.0)). The checksum gate installs from a clone.
+That checker is what `pip install sdcguard` installs (0.4.0, [tag](https://github.com/hari-kancharla/sdcguard/tree/v0.4.0)).
+The checksum gate above installs from a clone.
+
+## More
+
+The #61229 runs: [saved results](results/61229_saved) and a [later fixed-build replay](docs/H100_OBSERVER_RESULT.md).
 
 ---
 
