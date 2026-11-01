@@ -62,8 +62,7 @@ included, are in [EVIDENCE.md](EVIDENCE.md) and [METHOD.md](METHOD.md).
 
 ## What sdcguard adds
 
-Searched October 24, 2026 (56 web searches, 32 arXiv queries since April 2025, 11 repositories read, and YC's
-company pages and job posts for every batch, complete from W25 through Spring 2026): no tool found does these.
+As of October 24, 2026, I couldn't find a tool that does these.
 
 - **One decision per change to a serving stack**, with its questions kept apart: is the arithmetic right against
   float64 (and what checked it), does one request's answer depend on another's, is the change in the model's

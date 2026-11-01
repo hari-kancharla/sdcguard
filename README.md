@@ -12,6 +12,9 @@ deployment on Oct 26, 2026.
 vLLM's [proposed checksum](https://github.com/vllm-project/vllm/pull/62211) for the handoff compares only the
 blocks that were transferred. Prompt blocks the decode instance reuses from its own prefix cache aren't part of
 that request's check.
+An open vLLM issue, [#61160](https://github.com/vllm-project/vllm/issues/61160), reports split serving with
+prefix caching returning other requests' content. It stopped when prefix caching was turned off, and the cause
+isn't known yet.
 
 | Oct 30, 2026: one H100, vLLM checksum PR #62211, prefix caching on | Result |
 | --- | --- |
