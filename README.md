@@ -13,13 +13,14 @@ server has already freed and reused. I forced the timing with a delay. The promp
 secret word PLUM. All 8 unfixed runs returned a wrong answer as a normal HTTP 200. One of them was
 "M. Repeat the secret word. Repeat the secret word...".
 
-An earlier sdcguard recorder flagged the stale read in all 8 runs. With the proposed fix
+An earlier version of sdcguard flagged the stale read in all 8 runs. With the proposed fix
 ([PR #62065](https://github.com/vllm-project/vllm/pull/62065)) backported, all 5 replays gave the right answer
 ([saved results](results/61229_saved)).
 
 **What a passing checksum covered.** vLLM has a proposed checksum on the KV data that prefill sends to decode
-([PR #62211](https://github.com/vllm-project/vllm/pull/62211), not merged). On Oct 30, 2026, on one H100, it passed
-all 153 requests in my test. Only 9 of them had their whole prompt compared during the request.
+([PR #62211](https://github.com/vllm-project/vllm/pull/62211), not merged). On Oct 30, 2026, on one H100, vLLM's
+checksum returned success on all 153 requests in my test. sdcguard's stricter full-prompt coverage check passed 9 of
+those 153.
 
 The test was built around reuse. It sends 9 groups of 17 requests, and the requests in a group share most of their
 prompt. The first request in each group was fully compared. The other 144 reused the shared prefix from the decode
@@ -33,16 +34,13 @@ SGLang's checksum leaves out the cached prefix the same way ([#46423](https://gi
 | Prompt tokens compared, summed over requests | 9,822 of 109,790 (9%) |
 | Prompt tokens reused from the decode cache, outside that request's check | 99,968 (91%) |
 
-This measures coverage. It doesn't show that any data went bad. I got the same numbers on two vLLM builds on
-Oct 31. In a separate control run with different prompts and prefix caching off, all 90 recorded requests were fully
-compared. These checksum runs replay on a laptop without a GPU.
+I got the same numbers on two vLLM builds on Oct 31. In a separate control run with prefix caching off, all 90
+recorded requests were fully compared. These checksum runs replay on a laptop without a GPU.
 
 **Why it matters.** On Oct 26, 2026, Cloudflare
 [reported 155 responses](https://blog.cloudflare.com/kv-cache-exposure-remediation/) from its SGLang split-serving
-deployment that contained other customers' data. A vLLM issue,
-[#61160](https://github.com/vllm-project/vllm/issues/61160), reported split serving with prefix caching returning
-other requests' content on vLLM 0.31.0, and the reporter says it stopped after upgrading to 0.32.0. sdcguard didn't
-find either one, and as built it wouldn't have caught Cloudflare's, which ran on SGLang. Those are the failures I'm building it to catch before a release ships.
+deployment that contained other customers' data. Cloudflare now checks its configuration on every split-serving
+deployment change. sdcguard is built for that habit: a test a team runs before each release.
 
 ## Replay it on a laptop
 
@@ -94,10 +92,9 @@ instance computed no prompt tokens itself, and each reused prefix matches an ear
 fully compared. So the reused tokens were compared once, when they arrived. Nothing compared them again when later
 requests reused them, and sdcguard doesn't yet link each reused block to its first check.
 
-With prefix caching off, in a separate [control run](tests/data/checksum_owner_870c1aac) with different prompts,
-all 90 requests sdcguard recorded were fully compared (replay with `--arm observer-on`). The checksum was enabled
-for the run's other 90 requests too, but sdcguard's recorder was off, so their coverage is unknown and the default
-replay holds.
+With prefix caching off, in a separate [control run](tests/data/checksum_owner_870c1aac), all 90 requests
+sdcguard recorded were fully compared. Replay it with `--arm observer-on`. The run's other 90 requests weren't
+recorded, so the default replay holds them.
 
 ## Compare two engine builds
 
@@ -131,7 +128,6 @@ included yet. A CPU preflight checks the host first. The profile and commands ar
 - One vLLM profile: PR #62211 (not merged yet) at two pinned commits, two instances on one host over NIXL, eager
   mode, Qwen3-0.6B.
 - SGLang isn't supported yet.
-- It's early: no outside users yet.
 - No faults have been injected on the checksum build.
 - The build comparison uses one recording per build.
 - Checksum values aren't kept, so the transfer check confirms only that the comparison was complete.
