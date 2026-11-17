@@ -7,15 +7,15 @@ integrity checks covered for each request, so you can see it before you ship an 
 
 ## What I found
 
-I reproduced vLLM bug [#61229](https://github.com/vllm-project/vllm/issues/61229) on an H100. The decode server
+I reproduced vLLM issue [#61229](https://github.com/vllm-project/vllm/issues/61229) on an H100. The decode server
 reads KV blocks the prefill server already freed and reused, and I forced the timing with a delay. Asked to repeat
 the secret word PLUM, one run answered "M. Repeat the secret word..." with a 200. All 8 unfixed runs came back
 wrong, and sdcguard flagged the stale read in every one. With the proposed fix
 ([#62065](https://github.com/vllm-project/vllm/pull/62065)) backported, all 5 replays were right.
 [Saved results](results/61229_saved).
 
-Then I tested vLLM's proposed KV checksum ([#62211](https://github.com/vllm-project/vllm/pull/62211), not merged
-yet). In a test where requests share most of their prompt, the checksum passed on all 153 requests, but only 9 had
+Then I tested the KV checksum proposed in vLLM pull request
+[#62211](https://github.com/vllm-project/vllm/pull/62211). In a test where requests share most of their prompt, the checksum passed on all 153 requests, but only 9 had
 their whole prompt compared. The rest reused cache that was checked once, when it first arrived. That's by design,
 and SGLang does the same. But it means a pass doesn't tell you how much of the prompt was checked. I
 got the same result on two builds of the PR and posted the numbers there.

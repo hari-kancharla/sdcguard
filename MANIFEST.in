@@ -17,11 +17,9 @@ include docs/ASSIGNMENT_RECORDING.md
 include docs/FORWARD_BRIDGE.md
 include docs/SUPPORT_61229.md
 include docs/LIFETIME_RULES.md
-include docs/OWNER_ACTIONS.md
 include docs/OVERLAP.md
 include docs/H100_OBSERVER_RESULT.md
 include docs/H100_OBSERVER_RESULT.json
-include docs/PRODUCT_REVIEW.md
 include docs/result-61229.html
 include results/61229_saved/stock_RESULT.json
 include results/61229_saved/stock_STATUS.json
