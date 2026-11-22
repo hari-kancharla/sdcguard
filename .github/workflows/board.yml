@@ -42,8 +42,9 @@ jobs:
         run: python src/sdcguard/board.py --issues "$GITHUB_REPOSITORY" --dir docs/board/seed --out docs/board --ack
       - name: Commit
         run: |
-          git config user.name "sdcguard board"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Board commits carry the maintainer's identity so no bot account shows up as a contributor
+          git config user.name "Hari Krishna Kancharla"
+          git config user.email "162476937+hari-kancharla@users.noreply.github.com"
           git add docs/board
           if git diff --cached --quiet -- docs/board/results.json docs/board/seed; then
             echo "no new results"
