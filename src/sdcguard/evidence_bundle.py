@@ -1,6 +1,5 @@
 """Portable captured inputs with offline re-evaluation of the named contracts.
 
-Owner: Hari Krishna Kancharla.
 No serving engine, readiness request, owner replay or caller-supplied source is
 executed. The optional component profile uses the existing trusted CPU checks.
 """

@@ -1,6 +1,5 @@
 """Installed setup files and bounded offline preflight of supplied local inputs.
 
-Owner: Hari Krishna Kancharla.
 No serving process, request, readiness fetch or device work is started.
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Finite journal CPU controls. Owner: Hari Krishna Kancharla."""
+"""Finite journal CPU controls."""
 from copy import deepcopy
 import json
 import errno

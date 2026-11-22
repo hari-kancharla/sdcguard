@@ -1,6 +1,5 @@
 """Evidence representation bounds remain separate from deployment input bounds.
 
-Owner: Hari Krishna Kancharla.
 Synthetic reports below test capacity and shape only, not runtime behavior.
 """
 from copy import deepcopy

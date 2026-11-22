@@ -1,6 +1,5 @@
 """Explicit source and observed-profile inputs for passive mapping assembly.
 
-Owner: Hari Krishna Kancharla.
 Importing this module loads no engine or device library. Source hashes and
 canonical class references establish local consistency, not runtime attestation.
 """

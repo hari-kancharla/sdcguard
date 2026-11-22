@@ -1,6 +1,5 @@
 """Inert portable recipient inventory and single-export controls.
 
-Owner: Hari Krishna Kancharla.
 These controls use ordinary metadata fixtures. No engine body, inference
 request, scheduling condition, server, device or transfer is executed.
 """

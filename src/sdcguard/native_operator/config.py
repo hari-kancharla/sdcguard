@@ -1,4 +1,4 @@
-"""One checksum source profile. Owner: Hari Krishna Kancharla."""
+"""One checksum source profile."""
 from __future__ import annotations
 
 import json

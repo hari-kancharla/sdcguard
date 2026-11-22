@@ -1,6 +1,5 @@
 """Admit raw structured bytes under one shared lexical node allowance.
 
-Owner: Hari Krishna Kancharla.
 This scan builds no JSON tree and supplies no semantic validity or verdict.
 Strict supported JSON has one node per container, string including object key,
 and primitive. Malformed or duplicate-key input is counted lexically and still

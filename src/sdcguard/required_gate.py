@@ -1,6 +1,5 @@
 """Required native-check coverage for retained client requests.
 
-Owner: Hari Krishna Kancharla.
 PASS applies to the selected recorded check and scope, not deployment safety.
 No engine, SDK, traffic or device work is started by this command.
 """

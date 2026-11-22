@@ -1,6 +1,5 @@
 """Check bounded eager attention metadata without claiming device reads.
 
-Owner: Hari Krishna Kancharla.
 The input is a recording, not authenticated runtime evidence. Physical reads,
 ownership, content correctness and GPU completion are deliberately not inferred.
 """

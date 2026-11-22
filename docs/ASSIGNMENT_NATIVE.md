@@ -1,7 +1,5 @@
 # Passive native mapping collector
 
-Owner: Hari Krishna Kancharla.
-
 This assembler connects the existing forward metadata observer, initialization observer and bounded assignment journal. Importing it starts no engine, device work or network operation. Explicit passive activation is available through the existing plugin. Native runtime compatibility, GPU validation and overhead measurements remain pending.
 
 Set SDCGUARD_ASSIGNMENT_DIR and SDCGUARD_FORWARD_DIR to separate dedicated directories before the supported engine starts. The former requests mapping facts in addition to the existing forward stream. Neither setting enables the arithmetic checks. The plugin supplies one stable mapping factory to the existing forward installation. It does not add another model hook or runner wrapper. Installing the package or importing mapping_activation alone activates nothing.

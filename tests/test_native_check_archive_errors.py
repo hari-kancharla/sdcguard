@@ -1,4 +1,4 @@
-"""Archive read errors remain inconclusive. Owner: Hari Krishna Kancharla."""
+"""Archive read errors remain inconclusive."""
 from io import BytesIO
 from pathlib import Path
 import zipfile

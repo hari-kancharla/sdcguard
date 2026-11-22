@@ -1,4 +1,4 @@
-"""Pinned native metadata functions on CPU only. Owner: Hari Krishna Kancharla."""
+"""Pinned native metadata functions on CPU only."""
 from copy import deepcopy
 from enum import IntEnum
 import hashlib

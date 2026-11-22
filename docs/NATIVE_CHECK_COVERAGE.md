@@ -1,7 +1,5 @@
 # Engine pass vs actually covered
 
-Owner: Hari Krishna Kancharla.
-
 This offline command asks which native checks have a recorded result and complete eligible comparison scope for each declared request. A configured flag, an empty error log, checksum production, scheduler admission or a rising counter does not establish that a request was compared. A native result is retained separately from coverage. Missing evidence holds the release policy. It does not establish engine corruption.
 
 The first runtime adapter reads an existing owner-result directory directly. It supports the recorded vLLM 0.32.0 NIXL pull lease backport with one cache group and TP, PP, DP, DCP and PCP all one. It uses exact descriptor identities to join the independently recorded ordinary client batch to the consumer's explicit native `lease_check` events. It checks the named source fingerprints, recorded transfer operations, expected and observed remote ranks, consumer stream, causal sequence and healthy lossless recording prefix. It does not require a new ownership proof. An old lifetime invariant can be satisfied by producer retention without any native check, so that invariant alone cannot supply a passing native result.

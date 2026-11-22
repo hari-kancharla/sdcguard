@@ -1,4 +1,4 @@
-"""Ordinary engine lifecycle for GPU runs. Owner: Hari Krishna Kancharla."""
+"""Ordinary engine lifecycle for GPU runs."""
 from __future__ import annotations
 
 import hashlib

@@ -1,6 +1,5 @@
 """Portable, offline inspection of recorded forward inputs.
 
-Owner: Hari Krishna Kancharla.
 No engine, request, device work or ownership inference is performed here.
 """
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Offline reports retain scope gaps. Owner: Hari Krishna Kancharla."""
+"""Offline reports retain scope gaps."""
 from copy import deepcopy
 import json
 

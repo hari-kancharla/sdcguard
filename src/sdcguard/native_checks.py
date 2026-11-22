@@ -1,4 +1,4 @@
-"""Offline native-check execution coverage. Owner: Hari Krishna Kancharla.
+"""Offline native-check execution coverage.
 
 A recorded native outcome and a complete comparison scope are different facts.
 This module starts no SDK, engine, serving request or device work.

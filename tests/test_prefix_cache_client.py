@@ -1,4 +1,4 @@
-"""Client reconciliation of native CPU observations. Owner: Hari Krishna Kancharla."""
+"""Client reconciliation of native CPU observations."""
 from copy import deepcopy
 
 import pytest

@@ -1,7 +1,5 @@
 # Optional forward callback bridge
 
-Owner: Hari Krishna Kancharla.
-
 This is an internal callback interface. It does not supply a native assignment adapter, record allocator events, prove initialization, or change an isolation verdict. The existing forward metadata observer still reports physical reads and ownership as unknown.
 
 `vllm_forward.install(assignment_factory=None)` keeps the ordinary path. When the forward recorder is disabled, it returns before importing the bridge or calling a factory. There is no new environment switch, CLI command or automatic adapter activation.

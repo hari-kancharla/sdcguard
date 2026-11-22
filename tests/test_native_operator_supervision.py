@@ -1,4 +1,4 @@
-"""Ordinary stdlib process supervision controls. Owner: Hari Krishna Kancharla."""
+"""Ordinary stdlib process supervision controls."""
 from __future__ import annotations
 
 from copy import deepcopy

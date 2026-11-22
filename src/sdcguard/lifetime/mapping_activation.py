@@ -1,6 +1,5 @@
 """Explicit passive mapping activation through the existing forward bridge.
 
-Owner: Hari Krishna Kancharla.
 Importing this module starts no engine, device work or recording interval.
 """
 from __future__ import annotations

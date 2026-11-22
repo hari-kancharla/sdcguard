@@ -1,4 +1,4 @@
-"""Installed flow controls with no engine or GPU. Owner: Hari Krishna Kancharla."""
+"""Installed flow controls with no engine or GPU."""
 from copy import deepcopy
 import json
 import os

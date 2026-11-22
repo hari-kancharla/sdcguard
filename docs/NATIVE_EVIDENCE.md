@@ -1,7 +1,5 @@
 # Native mapping evidence in one report
 
-Owner: Hari Krishna Kancharla.
-
 This workflow reads local configuration, saved startup facts and completed packets. It starts no engine or request. A native mapping result concerns the allocator-to-model-entry relation recorded in that packet. Ownership, read rights, content identity and physical GPU reads remain unknown.
 
 ## Collect and verify

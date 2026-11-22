@@ -1,6 +1,5 @@
 """Offline client-to-checksum evidence packets.
 
-Owner: Hari Krishna Kancharla.
 """
 from __future__ import annotations
 

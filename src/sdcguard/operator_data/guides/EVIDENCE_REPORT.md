@@ -1,7 +1,5 @@
 # Portable evidence report
 
-Owner: Hari Krishna Kancharla.
-
 The evidence packet puts the existing named rules into one inspectable format. It preserves each rule's source, subject, scope, resource kind and native verdict. It does not combine separate evidence into a stronger isolation claim.
 
 ## Collect and verify

@@ -1,7 +1,5 @@
 # Passive initialization component
 
-Owner: Hari Krishna Kancharla.
-
 `sdcguard.lifetime.assignment_init` implements the initialization part of a future native mapping observer. It has no plugin, command or automatic activation. It does not start a server, import an engine or device library, inspect model contents, acquire a GPU, add a model hook or wrap any runner method.
 
 The component observes the pinned vLLM 0.32.0 same-process UniProc startup chain. A future assembler must explicitly provide already imported native classes/modules, the source root, the existing forward bridge, a shared health object and a bounded sink. The complete allocation/frame assembler is absent. These initialization facts alone cannot produce a complete mapping verdict, ownership verdict, physical-read claim or runtime-isolation claim.

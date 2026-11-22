@@ -1,6 +1,5 @@
 """Pure comparison tests using existing static evaluators and canonical fixtures.
 
-Owner: Hari Krishna Kancharla.
 Synthetic fixtures are policy inputs, not runtime execution evidence.
 """
 from copy import deepcopy

@@ -1,6 +1,5 @@
 """Reconcile a declared client batch with recorded transfer attempts, offline.
 
-Owner: Hari Krishna Kancharla.
 An exact join establishes recorded coverage of the supplied batch. It does not
 establish all server traffic, authentic identities, or request isolation.
 """

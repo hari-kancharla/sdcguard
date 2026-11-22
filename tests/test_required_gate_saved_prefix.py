@@ -1,4 +1,4 @@
-"""Replay retained ordinary traffic only. Owner: Hari Krishna Kancharla."""
+"""Replay retained ordinary traffic only."""
 from collections import Counter
 from io import BytesIO
 import json

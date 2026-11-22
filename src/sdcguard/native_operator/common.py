@@ -1,4 +1,4 @@
-"""Local packet records. Owner: Hari Krishna Kancharla."""
+"""Local packet records."""
 from __future__ import annotations
 
 import hashlib

@@ -1,6 +1,5 @@
 """Optional callback transport for one existing forward observer.
 
-Owner: Hari Krishna Kancharla.
 This bridge emits no allocator or initialization evidence and starts no engine.
 The supplied observer must establish its own native associations and accounting.
 """

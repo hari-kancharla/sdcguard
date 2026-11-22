@@ -1,4 +1,4 @@
-"""Offline retained-record comparisons. Owner: Hari Krishna Kancharla.
+"""Offline retained-record comparisons.
 
 Edited copies are synthetic evidence controls, never independent engine runs.
 """

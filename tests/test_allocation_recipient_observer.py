@@ -1,6 +1,5 @@
 """Ordinary CPU allocation fragments and passive recorder controls.
 
-Owner: Hari Krishna Kancharla.
 No serving process, device, transfer, failure schedule or ownership stimulus runs.
 """
 from copy import deepcopy

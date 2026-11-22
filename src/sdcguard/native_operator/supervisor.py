@@ -1,4 +1,4 @@
-"""Keep a bound session anchor until cleanup. Owner: Hari Krishna Kancharla."""
+"""Keep a bound session anchor until cleanup."""
 from __future__ import annotations
 
 import json

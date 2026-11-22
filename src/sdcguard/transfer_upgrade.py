@@ -1,6 +1,5 @@
 """Compare saved transfer coverage without changing either release policy.
 
-Owner: Hari Krishna Kancharla.
 This command performs no engine execution and qualifies no new engine build.
 """
 from __future__ import annotations

@@ -1,6 +1,5 @@
 """Copy reviewed setup resources into the installed package.
 
-Owner: Hari Krishna Kancharla.
 This development helper reads local source files and starts no runtime work.
 """
 from pathlib import Path
@@ -88,8 +87,6 @@ def build():
         "engine_release_transitions": "unreviewed releases remain inconclusive",
         "runtime_isolation": "not established", "physical_write_safety": "unknown"})
     payload["README.md"] = b"""# Installed operator setup
-
-Owner: Hari Krishna Kancharla.
 
 These files are input shapes and current scope notes. They are not deployment recipes or evidence that a server is safe. The root static template deliberately omits unresolved identities and settings. The recording template keeps its unresolved revision null. The four profile examples are synthetic controls, not measurements. Do not label a setting complete unless it was captured from the relevant deployment.
 

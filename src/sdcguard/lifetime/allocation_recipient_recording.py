@@ -1,6 +1,5 @@
 """Explicit finite recipient export and offline local consistency checking.
 
-Owner: Hari Krishna Kancharla.
 Collection is bounded host metadata in memory. A crash before export supplies no
 capture. Export requires actual mapping raw/settled-receipt bytes and starts no
 engine, traffic, SDK, device operation or current H100-packet integration.

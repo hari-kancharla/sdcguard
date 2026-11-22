@@ -1,6 +1,5 @@
 """Ordinary offline receipt fixtures and missing-evidence controls.
 
-Owner: Hari Krishna Kancharla.
 These are inert metadata examples, not native recordings or engine workloads.
 """
 from copy import deepcopy

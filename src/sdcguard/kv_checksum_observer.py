@@ -1,7 +1,5 @@
 """Passive observations of the pinned checksum scheduler.
 
-Owner: Hari Krishna Kancharla.
-
 This module imports no engine or device library. Installation is explicit. A
 completed native comparison and its source-bound chunk scope are separate
 observations. Neither is an ownership, byte-read or release certificate.

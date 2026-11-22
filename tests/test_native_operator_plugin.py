@@ -1,4 +1,4 @@
-"""Plugin wiring with explicit CPU stand-ins. Owner: Hari Krishna Kancharla."""
+"""Plugin wiring with explicit CPU stand-ins."""
 import json
 import os
 import sys

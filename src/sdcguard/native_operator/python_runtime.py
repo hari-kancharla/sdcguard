@@ -1,4 +1,4 @@
-"""Exact interpreter and host header checks. Owner: Hari Krishna Kancharla."""
+"""Exact interpreter and host header checks."""
 from __future__ import annotations
 
 import json

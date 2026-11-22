@@ -1,6 +1,5 @@
 """Bridge saved recording packets through the existing offline assessment.
 
-Owner: Hari Krishna Kancharla.
 Only local captured bytes are read. A private temporary copy isolates the
 existing verifier from changes to the supplied packet. Engine source members
 are inspected as bytes, never imported or executed. No readiness endpoint is

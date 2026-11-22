@@ -1,4 +1,4 @@
-"""Required-check policies over saved data only. Owner: Hari Krishna Kancharla."""
+"""Required-check policies over saved data only."""
 from copy import deepcopy
 from io import BytesIO
 import json

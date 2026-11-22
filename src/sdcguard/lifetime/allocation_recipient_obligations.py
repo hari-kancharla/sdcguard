@@ -1,6 +1,5 @@
 """Replay completed positive local allocation-recipient observations.
 
-Owner: Hari Krishna Kancharla.
 This pure contract checks local captured metadata. It establishes no read
 rights, exclusive ownership, lease validity, content provenance or device load.
 """

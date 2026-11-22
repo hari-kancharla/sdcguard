@@ -1,6 +1,5 @@
 """Passive initialization facts for the pinned single-process mapping adapter.
 
-Owner: Hari Krishna Kancharla.
 This component is inactive until an assembler explicitly supplies native bindings,
 the existing runner bridge and a bounded sink. It starts no engine and supplies no
 allocation, frame, ownership, device-read or runtime-isolation verdict.

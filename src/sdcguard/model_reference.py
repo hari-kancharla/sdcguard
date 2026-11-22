@@ -1,6 +1,5 @@
 """Bind one observed local model reference to stable pinned files.
 
-Owner: Hari Krishna Kancharla.
 The producer hashes local files before engine startup. Recorded receipts are
 local consistency evidence, not proof of loaded weights or deployment identity.
 """

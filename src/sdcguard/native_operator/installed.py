@@ -1,4 +1,4 @@
-"""Pinned installed-runtime receipt. Owner: Hari Krishna Kancharla."""
+"""Pinned installed-runtime receipt."""
 from __future__ import annotations
 
 import base64

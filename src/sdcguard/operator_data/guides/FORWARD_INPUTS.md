@@ -1,7 +1,5 @@
 # Recorded forward inputs
 
-Owner: Hari Krishna Kancharla.
-
 This observation records an attention input plan on a narrowly supported eager vLLM path. It does not observe physical GPU loads, prove block ownership, or establish that an answer used particular bytes. Runtime validation of this recorder is pending a separate GPU check. The earlier H100 result validated different lifetime hooks.
 
 ## Inspect saved observations

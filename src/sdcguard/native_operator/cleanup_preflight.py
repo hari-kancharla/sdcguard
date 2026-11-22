@@ -1,4 +1,4 @@
-"""Bounded ordinary process lifecycle capability check. Owner: Hari Krishna Kancharla."""
+"""Bounded ordinary process lifecycle capability check."""
 import errno
 import contextlib
 import hashlib

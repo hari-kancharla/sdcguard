@@ -1,7 +1,5 @@
 # Passive allocation-recipient facts
 
-Owner: Hari Krishna Kancharla.
-
 This component records which actual local Request received concrete allocation returns in the pinned ordinary vLLM path. It is the first part of a read-rights join. It does not establish attention permission, a still-live exclusive grant, transfer admission, lease validity, content provenance, tenant authorization or physical device loads. Those outputs remain unknown. The saved #61229 events do not contain this new evidence and remain unknown under this contract.
 
 The mode is off by default. An internal caller must explicitly pass `recipient_factory=AllocationRecipientObserver` to the existing `mapping_factory` or `MappingObserver`. No environment switch, serving command or current H100 packet enables it. The existing assignment schema is unchanged. The broader operator/common-evidence workflow does not yet ingest these captures, and the full feature is unfinished.

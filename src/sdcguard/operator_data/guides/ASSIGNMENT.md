@@ -1,7 +1,5 @@
 # Allocator-to-model mapping
 
-Owner: Hari Krishna Kancharla.
-
 This experimental offline rule asks one question: does a request's positive, current allocator assignment match the attention block table recorded for that request at model entry? The rule is `allocator_to_model_entry_mapping_consistency`. It is a mapping relation, not a complete ownership proof.
 
 The passive native adapter is implemented for one pinned profile. Its [activation and closure guide](ASSIGNMENT_NATIVE.md) describes the observed call chain and unsupported paths. CPU examples and source checks do not establish that a real engine emitted these records. Native GPU validation remains pending. The older saved #61229 and H100 recordings lack the necessary initialization and model-entry facts. Their existing lifetime results remain separate.

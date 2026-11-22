@@ -1,7 +1,5 @@
 # Installed operator setup
 
-Owner: Hari Krishna Kancharla.
-
 These files are input shapes and current scope notes. They are not deployment recipes or evidence that a server is safe. The root static template deliberately omits unresolved identities and settings. The recording template keeps its unresolved revision null. The four profile examples are synthetic controls, not measurements. Do not label a setting complete unless it was captured from the relevant deployment.
 
 1. Copy static-deployment.example.json to a new file and supply the actual normalized source, model, settings and bound saved startup facts. See guides/CONFIG_SAFETY.md. Do not relabel an old log to fit a new build.

@@ -1,6 +1,5 @@
 """Recompute closed native mapping packets for a portable evidence section.
 
-Owner: Hari Krishna Kancharla.
 Captured files are data. The installed mapping evaluator supplies the verdict.
 This module does not activate an engine or establish read permission.
 """

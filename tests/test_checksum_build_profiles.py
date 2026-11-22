@@ -1,6 +1,5 @@
 """Explicit build selection and synthetic evidence controls.
 
-Owner: Hari Krishna Kancharla.
 Edited evidence below is a CPU contract fixture, never a new engine run.
 """
 from concurrent.futures import ThreadPoolExecutor

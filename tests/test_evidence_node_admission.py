@@ -1,4 +1,4 @@
-"""Small shared node-admission controls. Owner: Hari Krishna Kancharla."""
+"""Small shared node-admission controls."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest

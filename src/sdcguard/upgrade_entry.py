@@ -1,4 +1,4 @@
-"""Route additive native upgrade envelopes. Owner: Hari Krishna Kancharla."""
+"""Route additive native upgrade envelopes."""
 import argparse
 import json
 from pathlib import Path

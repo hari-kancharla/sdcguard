@@ -1,4 +1,4 @@
-"""Passive native prefill accounting. Owner: Hari Krishna Kancharla.
+"""Passive native prefill accounting.
 
 Only CPU metadata is copied. The native callback retains its return object,
 state changes and exceptions. These records do not establish cache integrity.

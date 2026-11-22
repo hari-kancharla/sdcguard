@@ -1,7 +1,5 @@
 # Compare the same named contracts
 
-Owner: Hari Krishna Kancharla.
-
 The upgrade gate compares two portable evidence packets. It verifies captured inputs, recomputes both reports with the installed rules, and refreshes the existing CPU component checks when selected. It does not start a server or run a serving workload.
 
 ```

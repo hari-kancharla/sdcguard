@@ -1,4 +1,4 @@
-"""Installed ordinary capture and verification. Owner: Hari Krishna Kancharla."""
+"""Installed ordinary capture and verification."""
 from __future__ import annotations
 
 import argparse

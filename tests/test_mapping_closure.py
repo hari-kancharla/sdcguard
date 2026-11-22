@@ -1,6 +1,5 @@
 """Exact local closure pairs and failure controls, never an engine run.
 
-Owner: Hari Krishna Kancharla.
 """
 from copy import deepcopy
 import hashlib

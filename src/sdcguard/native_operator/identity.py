@@ -1,4 +1,4 @@
-"""Read pinned installed engine identity. Owner: Hari Krishna Kancharla."""
+"""Read pinned installed engine identity."""
 from __future__ import annotations
 
 import hashlib

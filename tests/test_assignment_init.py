@@ -1,4 +1,4 @@
-"""CPU source-fragment and host lifecycle tests. Owner: Hari Krishna Kancharla."""
+"""CPU source-fragment and host lifecycle tests."""
 import ast
 from concurrent.futures import Future
 from contextlib import nullcontext

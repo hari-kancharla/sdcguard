@@ -1,4 +1,4 @@
-"""Request-bound checksum evidence. Owner: Hari Krishna Kancharla."""
+"""Request-bound checksum evidence."""
 from __future__ import annotations
 
 from collections import Counter

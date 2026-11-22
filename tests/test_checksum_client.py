@@ -1,4 +1,4 @@
-"""CPU bookkeeping controls. Owner: Hari Krishna Kancharla."""
+"""CPU bookkeeping controls."""
 from copy import deepcopy
 import hashlib
 import json

@@ -1,6 +1,5 @@
 """Bounded JSONL storage for one finite assignment observation interval.
 
-Owner: Hari Krishna Kancharla.
 This module starts no engine and establishes no native association or verdict.
 Producers and shared health must be quiescent before close. Late calls are outside
 the sealed file; callers must inspect close/status before accepting a packet.
