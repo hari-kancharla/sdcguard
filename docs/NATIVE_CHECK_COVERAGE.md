@@ -35,7 +35,7 @@ A passing lease summary is insufficient by itself. The supported single-rank pat
 
 The retained October 29 R3 owner result contains 19 logical ordinary prefill/decode requests, 38 client stages and 19 uniquely joined explicit passing native lease checks. Its archive SHA256 is `edb494c39cc5cf8bfa333d0294b390c0bc9455c5ca2dae5343f2ccb9e8a25b6b`. All 19 checksum results are unverified because no checksum observation was recorded. Zero of 19 requests are verified by both checks.
 
-That owner run remains incomplete because its capture teardown evidence was missing. This is independent of the recorded lease positives. Even a lease-only policy holds that run. Its original result and status are retained unchanged. This command does not promote the run to a successful release or claim it recorded all later measurement traffic. There were no completed measurement segments in that result. The supported denominator is the declared `ordinary/ordinary-capture` client batch.
+That H100 run remains incomplete because its capture teardown evidence was missing. This is independent of the recorded lease positives. Even a lease-only policy holds that run. Its original result and status are retained unchanged. This command does not promote the run to a successful release or claim it recorded all later measurement traffic. There were no completed measurement segments in that result. The supported denominator is the declared `ordinary/ordinary-capture` client batch.
 
 ## Source basis and limits
 

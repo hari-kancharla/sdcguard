@@ -37,4 +37,4 @@ Shutdown retires the selected runner before native teardown and calls `runner_cl
 
 After fork, the bridge does not touch inherited observer locks, files or callbacks and does not call the factory again. The child may lazily establish the existing forward-only metadata recording. Assignment remains unavailable until a fresh process installation can observe the required initialization. Spawn and forkserver need their own explicit registration and complete initialization chain.
 
-The CPU controls use structural stand-ins and one retained native initialization fragment. They test this transport and its error paths. They are not evidence of a running engine or GPU compatibility. Native initialization binding, allocator/mutation observation and a reviewed owner run remain separate work.
+The CPU controls use structural stand-ins and one retained native initialization fragment. They test this transport and its error paths. They are not evidence of a running engine or GPU compatibility. Native initialization binding, allocator/mutation observation and a reviewed GPU run remain separate work.

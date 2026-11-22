@@ -54,4 +54,4 @@ All references use commit `5df63a7203cdb9328d824a27b682e77c7b9928be`:
 
 The tests retain the verified 35 primary files in a small compressed fixture and execute selected pinned Python method fragments with ordinary host dependencies. They run no inference engine, device kernel or server. Negative cases are observer/profile/lifecycle controls. Fixture SHA-256 and Git blob checks establish source identity; these CPU tests do not establish native deployment compatibility or overhead. Existing saved transfer evidence cannot be upgraded to initialization/mapping evidence.
 
-Mapping-only fix status stays unknown. Fix presence remains the separate complete nine-file source classifier. Full assembler review, complete CPU suites, packaging and an owner-run proposal remain required before activation or native support claims.
+Mapping-only fix status stays unknown. Fix presence remains the separate complete nine-file source classifier. Full assembler review, complete CPU suites, packaging and a GPU run proposal remain required before activation or native support claims.

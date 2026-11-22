@@ -1,4 +1,4 @@
-"""Owner-only ordinary engine lifecycle. Owner: Hari Krishna Kancharla."""
+"""Ordinary engine lifecycle for GPU runs. Owner: Hari Krishna Kancharla."""
 from __future__ import annotations
 
 import hashlib
@@ -125,7 +125,7 @@ def wait_ready(process, directory, *, plan, arm, role, deadline, stop_event=None
     directory = Path(directory)
     while time.monotonic() < until:
         if stop_event is not None and stop_event.is_set():
-            raise ValueError("the ordinary owner run reached its deadline or retained-log bound")
+            raise ValueError("the ordinary GPU run reached its deadline or retained-log bound")
         code = poll_engine(process)
         if code is not None:
             raise ValueError("ordinary " + role + " server exited before readiness with status " + str(code))

@@ -569,7 +569,7 @@ def render_text(report):
     lines = [TITLE, "Release: " + report["release_decision"], report["scope"],
              str(summary["both_lease_and_checksum_passed"]) + " of " + str(summary["declared_requests"])
              + " requests verified by both lease and checksum checks.",
-             "Owner run complete: " + str(report["run_complete"]).lower(),
+             "GPU run complete: " + str(report["run_complete"]).lower(),
              "Required checks: " + ", ".join(report["policy"]["required_checks"]),
              "Required request outcome: " + report["policy"]["required_request_outcome"]]
     for name in report["policy"]["required_checks"]:

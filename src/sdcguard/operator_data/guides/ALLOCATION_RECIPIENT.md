@@ -4,7 +4,7 @@ Owner: Hari Krishna Kancharla.
 
 This component records which actual local Request received concrete allocation returns in the pinned ordinary vLLM path. It is the first part of a read-rights join. It does not establish attention permission, a still-live exclusive grant, transfer admission, lease validity, content provenance, tenant authorization or physical device loads. Those outputs remain unknown. The saved #61229 events do not contain this new evidence and remain unknown under this contract.
 
-The mode is off by default. An internal caller must explicitly pass `recipient_factory=AllocationRecipientObserver` to the existing `mapping_factory` or `MappingObserver`. No environment switch, serving command or current owner packet enables it. The existing assignment schema is unchanged. The broader operator/common-evidence workflow does not yet ingest these captures, and the full feature is unfinished.
+The mode is off by default. An internal caller must explicitly pass `recipient_factory=AllocationRecipientObserver` to the existing `mapping_factory` or `MappingObserver`. No environment switch, serving command or current H100 packet enables it. The existing assignment schema is unchanged. The broader operator/common-evidence workflow does not yet ingest these captures, and the full feature is unfinished.
 
 The source profile is exact vLLM 0.32 at 5df63a7203cdb9328d824a27b682e77c7b9928be. It retains the existing 36 source pins, Qwen3 dense full-attention model profile, immutable observed model revision, single pool/group, prefix caching off, eager V2 and UniProc topology. It additionally requires the actual synchronous Scheduler, async_scheduling=False, no custom scheduler, no deferred block free, ordinary n=1 Request and no sharing, unpin, CoW, offload, replay, preemption or unresolved frame/call overlap. Missing or unsupported facts are unknown. Synchronous scheduling can still initiate an async KV load; destination capacity allocation is not successful load admission.
 
@@ -26,7 +26,7 @@ The observer admits one export attempt under its bookkeeping lock. A failed atte
 
 The external packet inventory consumes names one at a time through directory descriptors and visits only the declared root and optional mapping directory. Unknown names, links and nonregular files refuse before content reads or descent. Only the strict listed files are read, with a remaining aggregate byte allowance. Exact file and directory names are compared again before and after the final byte recheck.
 
-Fresh implementation review, final unchanged CPU suites, operator collection/export integration, revised source-derived live budgets and owner validation remain required before the full read-rights feature can be called complete. The activated 42-file owner packet and accepted product stay unchanged.
+Fresh implementation review, final unchanged CPU suites, operator collection/export integration, revised source-derived live budgets and GPU validation remain required before the full read-rights feature can be called complete. The activated 42-file H100 packet and accepted product stay unchanged.
 
 ## Primary source anchors
 

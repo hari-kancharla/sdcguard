@@ -22,4 +22,4 @@ Footer invalidation and naming cleanup remain best effort if every available des
 
 The assembler must retire and quiesce producers and shared-health callbacks before closing, account for every positive dispatch, and mark open mutations or frames unhealthy. It must check `close()` and `status` before accepting a packet. Rejections during the open/closing interval affect its health. Later callback attempts are outside the successfully sealed historical file; they return false and increment a separate late-call observation without reopening or rewriting that file. They must not be presented as covered observations.
 
-This is an inactive storage component. The complete native assembler, independent component review, combined CPU suites, package checks and owner-run validation remain separate gates.
+This is an inactive storage component. The complete native assembler, independent component review, combined CPU suites, package checks and GPU validation remain separate gates.

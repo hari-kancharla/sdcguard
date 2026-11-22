@@ -18,7 +18,7 @@ Earlier scoped inference-state workflow (docs/EARLIER_WORKFLOWS.md):
     sdcguard report-verify PACKET               verify an assessment offline; integrity is not a verdict
     sdcguard regression export NEWDIR           export the packaged saved case without a checkout
     sdcguard regression verify PACKET           verify its pinned files without executing a replay
-    sdcguard overhead prepare ...               bind local identity before owner-run measurements
+    sdcguard overhead prepare ...               bind local identity before GPU measurements
 
 The arithmetic and fleet commands below have separate scopes and evidence:
 
