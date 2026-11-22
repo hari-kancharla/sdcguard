@@ -1,4 +1,4 @@
-"""An ordinary finite prompt mix.
+"""An ordinary finite prompt mix. Owner: Hari Krishna Kancharla.
 
 Tokenization is supplied by the caller. Importing this file performs no model,
 SDK, HTTP or device work.

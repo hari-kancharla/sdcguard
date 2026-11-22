@@ -1,4 +1,4 @@
-"""Explicit checksum source profiles.
+"""Explicit checksum source profiles. Owner: Hari Krishna Kancharla.
 
 Offline selection depends only on recorded source identity. Runtime selection
 is passed to each observer; no import-time environment selects a verifier.

@@ -1,4 +1,4 @@
-"""Finite ordinary client receipts.
+"""Finite ordinary client receipts. Owner: Hari Krishna Kancharla.
 
 Only the explicitly called transport sends HTTP. No retry, replacement request,
 server, SDK or device action occurs on import.

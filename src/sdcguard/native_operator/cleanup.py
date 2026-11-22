@@ -1,4 +1,4 @@
-"""Stop recorded Linux process incarnations."""
+"""Stop recorded Linux process incarnations. Owner: Hari Krishna Kancharla."""
 from __future__ import annotations
 
 import ctypes

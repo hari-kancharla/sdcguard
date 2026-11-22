@@ -1,4 +1,4 @@
-"""CPU-only installed-profile prerequisites."""
+"""CPU-only installed-profile prerequisites. Owner: Hari Krishna Kancharla."""
 from __future__ import annotations
 
 import hashlib

@@ -1,4 +1,4 @@
-"""Passive ordinary startup and close records."""
+"""Passive ordinary startup and close records. Owner: Hari Krishna Kancharla."""
 from __future__ import annotations
 
 import functools

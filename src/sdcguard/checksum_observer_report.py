@@ -1,5 +1,6 @@
 """Offline inspection of candidate checksum observations.
 
+Owner: Hari Krishna Kancharla.
 """
 from __future__ import annotations
 

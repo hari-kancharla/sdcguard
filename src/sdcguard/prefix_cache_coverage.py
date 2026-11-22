@@ -1,4 +1,4 @@
-"""Join native cache accounting to both client stages."""
+"""Join native cache accounting to both client stages. Owner: Hari Krishna Kancharla."""
 from . import checksum_client as client, prefix_cache_observer as observer
 from .kv_checksum_observer import CACHED_PREFIX_REASON
 
