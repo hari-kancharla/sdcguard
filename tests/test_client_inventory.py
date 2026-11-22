@@ -1,4 +1,4 @@
-"""Offline coverage controls. Owner: Hari Krishna Kancharla."""
+"""Offline coverage controls."""
 from copy import deepcopy
 import json
 

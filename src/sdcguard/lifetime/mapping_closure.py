@@ -1,6 +1,5 @@
 """One post-close local bookkeeping receipt and strict owner capture.
 
-Owner: Hari Krishna Kancharla.
 This is not a native event, signature, ownership proof or runtime attestation.
 """
 from __future__ import annotations

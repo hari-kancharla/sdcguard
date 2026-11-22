@@ -1,6 +1,5 @@
 """Internal passive assembly of recorded allocator-to-model mapping facts.
 
-Owner: Hari Krishna Kancharla.
 Nothing in this module activates an engine, a plugin or a device operation.
 """
 from __future__ import annotations

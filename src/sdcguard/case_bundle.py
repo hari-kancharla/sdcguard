@@ -10,8 +10,8 @@ from pathlib import Path
 import re
 
 SCHEMA = "sdcguard.case-bundle/1"
-SCOPE = "Pinned historical #61229 artifacts and owner-run wrapper; no GPU execution or minimality proof"
-RUNNER = '''"""Owner-run replay; no search arguments are accepted."""
+SCOPE = "Pinned historical #61229 artifacts and GPU replay wrapper; no GPU execution or minimality proof"
+RUNNER = '''"""GPU replay; no search arguments are accepted."""
 from pathlib import Path
 import sys
 from sdcguard.regression import main
@@ -27,7 +27,7 @@ file. Verify this packet, including after moving it, with:
 Verification checks local file integrity against the installed package's pinned
 case. It neither executes the runner nor authenticates a remote deployment.
 
-The GPU replay is owner-run. Install this same reviewed package in the engine
+The GPU replay runs on your own GPU. Install this same reviewed package in the engine
 environment, then run:
 
     python -I -B /path/to/packet/run.py --variant fixed --engine-root /path/to/site-packages --model-snapshot /path/to/COMMIT --out /new/output
@@ -96,7 +96,7 @@ def _case():
 def _resources(case, checkout=None):
     base = files("sdcguard").joinpath("case_data")
     pin = json.loads(base.joinpath("61229_resources.json").read_text())
-    required = {"existing_case.py", "SUPPORT.md", "OVERLAP.md", "RESULT.html", "MODEL_PIN.json", "MODEL_PROVENANCE.json", "PRODUCT_REVIEW.md", "LIFETIME_RULES.md", "OWNER_ACTIONS.md", "deployment.example.json", *case["artifacts"]}
+    required = {"existing_case.py", "SUPPORT.md", "OVERLAP.md", "RESULT.html", "MODEL_PIN.json", "MODEL_PROVENANCE.json", "LIFETIME_RULES.md", "deployment.example.json", *case["artifacts"]}
     if not isinstance(pin, dict) or set(pin) != required:
         raise ValueError("complete packaged case resource pin required")
     result = {}

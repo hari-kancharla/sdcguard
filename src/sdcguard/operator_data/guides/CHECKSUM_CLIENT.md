@@ -1,7 +1,5 @@
 # Client checksum reconciliation
 
-Owner: Hari Krishna Kancharla.
-
 This candidate joins an independently written client plan to ordinary HTTP receipts, actual frontend request-ID assignments and the checksum scheduler's recorded callbacks. It does not attest a deployment or qualify a release. Every result remains HOLD until the separate runtime and release requirements are met.
 
 ## Input contract

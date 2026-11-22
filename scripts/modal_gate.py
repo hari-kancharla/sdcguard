@@ -8,8 +8,8 @@ One H200 with the MPS daemon running; every step is `sdcguard gate`, each run of
   2. again     the same stack at 40%: expected UNCHANGED, still wrong (the gate's control)
   3. full      the same stack at 100%: expected INCONCLUSIVE although every output is right (other conditions:
                a clean rerun somewhere else proves nothing)
-  4. newest    PyTorch 2.14.1 with the newest cuBLAS wheel (nvidia-cublas 13.8.1.7) at 40%: NVIDIA lists 6862950 as
-               not fixed yet, so expected UNCHANGED (still wrong, or avoided if the heuristic now picks another kernel)
+  4. newest    PyTorch 2.14.1 with the newest cuBLAS wheel (nvidia-cublas 13.8.1.7) at 40%: that wheel predates
+               the fix (cuBLAS 13.10.0, CUDA 13.5), so expected UNCHANGED (still wrong, or avoided if the heuristic now picks another kernel)
   5. pin       `gate pin`: a TunableOp file forcing algorithm 66 with a 1x1x1 cluster (NVIDIA's workaround), then
                `gate workaround` with it: expected WORKS, with the log showing that kernel on every call
   6. not pinned the same TunableOp switches with a file that doesn't exist: expected DOESN'T WORK (the default kernel

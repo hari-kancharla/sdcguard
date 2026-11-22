@@ -1,6 +1,5 @@
 """Compare captured evidence under one installed preservation policy.
 
-Owner: Hari Krishna Kancharla.
 This command reads local packets and runs the existing ordinary CPU checks.
 It never starts an inference server or submits serving traffic.
 """

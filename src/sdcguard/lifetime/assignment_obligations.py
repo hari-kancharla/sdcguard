@@ -1,6 +1,5 @@
 """Re-derive a recorded allocator-to-model-entry mapping relation.
 
-Owner: Hari Krishna Kancharla.
 This is an offline evidence contract. No native adapter or runtime protection is
 established by accepting a structural record. Read rights and physical reads are
 not inferred from assignments, allocation ordinals or reference counts.

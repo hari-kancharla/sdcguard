@@ -1,6 +1,5 @@
 """Opt-in plugin controls on host objects, not an engine run.
 
-Owner: Hari Krishna Kancharla.
 """
 import ast
 from copy import deepcopy

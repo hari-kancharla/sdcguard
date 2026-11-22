@@ -1,4 +1,4 @@
-"""Route additive native evidence options. Owner: Hari Krishna Kancharla."""
+"""Route additive native evidence options."""
 import argparse
 import json
 from pathlib import Path

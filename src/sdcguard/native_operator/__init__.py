@@ -1,1 +1,1 @@
-"""Installed native-check capture. Owner: Hari Krishna Kancharla."""
+"""Installed native-check capture."""

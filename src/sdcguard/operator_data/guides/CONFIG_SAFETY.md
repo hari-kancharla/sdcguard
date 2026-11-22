@@ -1,7 +1,5 @@
 # Static deployment contracts
 
-Owner: Hari Krishna Kancharla.
-
 `sdcguard config-safety` reads a normalized deployment JSON and optional saved startup logs. It does not import an engine, start a server, call an endpoint, allocate a device or download a model. It writes a compact HTML page and a detailed JSON report, including the supplied config and saved log text. Keep the packet local until its contents have been reviewed for sharing. This check concerns configuration contracts. It does not establish request isolation.
 
 ```sh

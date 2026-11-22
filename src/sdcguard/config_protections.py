@@ -1,6 +1,5 @@
 """Pinned static safeguard inventory, without importing or contacting an engine.
 
-Owner: Hari Krishna Kancharla.
 A satisfied rule establishes only its named configuration or source contract.
 It does not establish request isolation, build authenticity or runtime execution.
 """

@@ -1,7 +1,5 @@
 # Passive checksum observations
 
-Owner: Hari Krishna Kancharla.
-
 This candidate observes the consumer checksum scheduler in vLLM checksum PR #62211 at `29d2f4e03740acb14439ce22d24b06d8095d17d3`. It does not backport an engine change or combine that branch with the older lease build. Installation is explicit and must occur before constructing the scheduler. No plugin activates it automatically.
 
 The observer delegates each original callback once, with the original arguments, result and exception behavior. It adds no checksum calculation, engine comparison, device copy, device synchronization, transport action or request ordering control. It retains bounded host metadata and original native comparison outcomes. CPU source-function validation and actual deployment validation are separate.

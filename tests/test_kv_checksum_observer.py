@@ -1,4 +1,4 @@
-"""Original native callbacks with synthetic CPU metadata. Owner: Hari Krishna Kancharla.
+"""Original native callbacks with synthetic CPU metadata.
 
 No server, worker, device checksum or real request is run. These controls cannot
 qualify a deployment. The producer payload is assembled as CPU metadata, so its

@@ -1,6 +1,5 @@
 """Stream bounded native packet inventories before copying external inputs.
 
-Owner: Hari Krishna Kancharla.
 Repeated byte checks establish local consistency, not an atomic capture or
 authenticated runtime identity. Older packet IO remains a separate contract.
 """

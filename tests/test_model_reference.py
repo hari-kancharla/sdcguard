@@ -1,4 +1,4 @@
-"""Local file and host-metadata controls. Owner: Hari Krishna Kancharla.
+"""Local file and host-metadata controls.
 
 Small file fixtures are not model weights or a GPU execution witness.
 """

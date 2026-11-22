@@ -1,4 +1,4 @@
-"""Small raw node-admission controls. Owner: Hari Krishna Kancharla."""
+"""Small raw node-admission controls."""
 from collections import UserDict
 import json
 import unittest

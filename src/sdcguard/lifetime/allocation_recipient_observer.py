@@ -1,6 +1,5 @@
 """Passive positive allocation-recipient facts for one explicit mapping interval.
 
-Owner: Hari Krishna Kancharla.
 No engine, traffic, device copy or permission check is activated by this module.
 A separate settled mapping capture is mandatory before these facts can be judged.
 """

@@ -1,4 +1,4 @@
-"""Bind loopback readiness to the owned server. Owner: Hari Krishna Kancharla."""
+"""Bind loopback readiness to the owned server."""
 from pathlib import Path
 import os
 import socket

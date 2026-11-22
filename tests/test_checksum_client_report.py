@@ -1,4 +1,4 @@
-"""Portable checksum client evidence. Owner: Hari Krishna Kancharla."""
+"""Portable checksum client evidence."""
 from copy import deepcopy
 import json
 from pathlib import Path

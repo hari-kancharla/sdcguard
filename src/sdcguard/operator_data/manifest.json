@@ -1,80 +1,76 @@
 {
   "files": {
     "README.md": {
-      "bytes": 7079,
-      "sha256": "38535daf5aa52663c0fcc5065ac9cfba6d91223eb536244a65fadfa19998a174"
+      "bytes": 6944,
+      "sha256": "a2ff680a6aa47091b54330af567ecb35d6a0dfb4aee3536808796588b2d30fe8"
     },
     "SUPPORT.json": {
       "bytes": 4794,
       "sha256": "ea9fd3bd262d6204dc559cf16b0f6479b7190e3ceadeb6eec5c57fd427d811fc"
     },
     "guides/ALLOCATION_RECIPIENT.md": {
-      "bytes": 7916,
-      "sha256": "ed1e761a80ec14f4213610cedd6c810efbaa68543834a754f75d280fd122f4dd"
+      "bytes": 7880,
+      "sha256": "19dc80c1877a830e09aac7176cf1e40eff28151b3140e2c5e8c31f30b901e69d"
     },
     "guides/ASSIGNMENT.md": {
-      "bytes": 7033,
-      "sha256": "ba188221ca184a891aacf57c677ed4e56f2c3423213ee3c658831b3dbfe3ae2f"
+      "bytes": 6995,
+      "sha256": "53816c9d07fc3a785688e176d5a38fcbfa179ddf3d27ea708434b07aaf4ba317"
     },
     "guides/ASSIGNMENT_NATIVE.md": {
-      "bytes": 9951,
-      "sha256": "c77c242d2700b32f6000ac2609f1d72dbe9bdbba321bfcc75aae10ffdbc7a3be"
+      "bytes": 9910,
+      "sha256": "616d1765dd315d4645e0d3c6a4779e6f84d5a160f8819c4abf8a424d01b2613e"
     },
     "guides/CHECKSUM_CLIENT.md": {
-      "bytes": 8163,
-      "sha256": "ced49e27731aa7e71df63bceb77e070067e51002f6a75f09c1f95b89448ccc5b"
+      "bytes": 8131,
+      "sha256": "8288ff5e34c41bab2fbf10931ede9f4cc69a4354f9a0e1ea41b801229b0f28d2"
     },
     "guides/CHECKSUM_OBSERVER.md": {
-      "bytes": 10688,
-      "sha256": "caef4e3cc1d76fb36e90ee1e8dc15ab168a5bf6147a96325addbe33561ef7d62"
+      "bytes": 10656,
+      "sha256": "b5941f002b84d04e948353b43462d11c7ec4b1bfbfa5b6e1d45d931b62a0c263"
     },
     "guides/CONFIG_SAFETY.md": {
-      "bytes": 11196,
-      "sha256": "afe3f3c99853c666dd84b7bc4d9fd7f9aa245014151d4a8cc9a73d3d1242ae66"
+      "bytes": 11164,
+      "sha256": "936c86ce25de98c1a9aab306e0e0df96167c0a8516ddb58391f4142e5e8d0ee3"
     },
     "guides/EVIDENCE_REPORT.md": {
-      "bytes": 8510,
-      "sha256": "f8736e5fe5216a78406ecdc999aa98478442aa3cc504688dea88d860d3de86e6"
+      "bytes": 8462,
+      "sha256": "1975f35bedaee9d12ebd9102f8a2fcf5be640d492f84d64ff8470b569a3eb1d5"
     },
     "guides/FORWARD_INPUTS.md": {
-      "bytes": 8968,
-      "sha256": "b0c1fcea3d5eb20ab9e51c56c3b747d2f8a12542692e7e582c966f280b23bc49"
+      "bytes": 8943,
+      "sha256": "527b5b06b620672cceaa44ff69091f192cc5ffc7c5a6d67639ba838549ab10eb"
     },
     "guides/H100_OBSERVER_RESULT.json": {
       "bytes": 13629,
       "sha256": "f5c1f7329783d8bbbeab12c64c63d8452940bc87bbeb48bd7be1d0faf7b3a0f2"
     },
     "guides/H100_OBSERVER_RESULT.md": {
-      "bytes": 5481,
-      "sha256": "2295fc88f8e0f9cf197fc76981719d88382f8e3a5faa5cd67f9ff257840a2a83"
+      "bytes": 5436,
+      "sha256": "9940e02c6d45b9caf9d7ff23c2944ef29b5709c5170645ace4a05f9fc178e785"
     },
     "guides/LIFETIME_RULES.md": {
       "bytes": 5777,
       "sha256": "6d469715105936c16835c7d38a8581ce6e1f8adbcf4ccbc6da6175cfe20a066c"
     },
     "guides/NATIVE_CHECK_COVERAGE.md": {
-      "bytes": 7161,
-      "sha256": "f1be7e1c4c0236e6050cb3b86ff7e1954721383a89b9027ce0f486cae7e75cba"
+      "bytes": 7128,
+      "sha256": "26989bf17a5010b9005d7b05661a90125535301eca21074adc817ba501d0dc22"
     },
     "guides/NATIVE_EVIDENCE.md": {
-      "bytes": 6409,
-      "sha256": "7842f6ee69d378f84ef646a8c30395239bdf707e9e683cd8211423eacc7133ce"
+      "bytes": 6377,
+      "sha256": "3f5f1086166c983fa311300d0b440832ebd4f8dfa0f2bc86d7a836c42534fb45"
     },
     "guides/OVERLAP.md": {
       "bytes": 8580,
       "sha256": "b435b059523a11e194c2cd06eff9b337cb62e3c30b4da5f6ad03ff1252c498bd"
     },
-    "guides/OWNER_ACTIONS.md": {
-      "bytes": 2815,
-      "sha256": "2f723c1a04b844bd0d86d4d7221980ef0296159c82ca32501eb5b7eeeba7bcdb"
-    },
     "guides/SUPPORT_61229.md": {
-      "bytes": 5771,
-      "sha256": "4b42fb272a69c02d4004c8f7dc4a1520e9baa189525178960bc5721e2a7889aa"
+      "bytes": 5752,
+      "sha256": "a0a0828f127ad089ac40311a696e6277f1a36240076245f644038c7d9880daa7"
     },
     "guides/UPGRADE_GATE.md": {
-      "bytes": 5068,
-      "sha256": "c22c263eaf093b3b35977b45cf9a81aec04a26ee986e7e13632e080ce685b7bc"
+      "bytes": 5036,
+      "sha256": "132a198e33118ab2ae2df67fde7338916d226be8e8742f851bd14fc3b4d49f48"
     },
     "profiles/ascend-declared-capacity.json": {
       "bytes": 2697,
@@ -111,35 +107,35 @@
   "schema": "sdcguard.operator-setup.v1",
   "source_inputs": {
     "guides/ALLOCATION_RECIPIENT.md": {
-      "sha256": "ed1e761a80ec14f4213610cedd6c810efbaa68543834a754f75d280fd122f4dd",
+      "sha256": "19dc80c1877a830e09aac7176cf1e40eff28151b3140e2c5e8c31f30b901e69d",
       "source": "docs/ALLOCATION_RECIPIENT.md"
     },
     "guides/ASSIGNMENT.md": {
-      "sha256": "ba188221ca184a891aacf57c677ed4e56f2c3423213ee3c658831b3dbfe3ae2f",
+      "sha256": "53816c9d07fc3a785688e176d5a38fcbfa179ddf3d27ea708434b07aaf4ba317",
       "source": "docs/ASSIGNMENT.md"
     },
     "guides/ASSIGNMENT_NATIVE.md": {
-      "sha256": "c77c242d2700b32f6000ac2609f1d72dbe9bdbba321bfcc75aae10ffdbc7a3be",
+      "sha256": "616d1765dd315d4645e0d3c6a4779e6f84d5a160f8819c4abf8a424d01b2613e",
       "source": "docs/ASSIGNMENT_NATIVE.md"
     },
     "guides/CHECKSUM_CLIENT.md": {
-      "sha256": "ced49e27731aa7e71df63bceb77e070067e51002f6a75f09c1f95b89448ccc5b",
+      "sha256": "8288ff5e34c41bab2fbf10931ede9f4cc69a4354f9a0e1ea41b801229b0f28d2",
       "source": "docs/CHECKSUM_CLIENT.md"
     },
     "guides/CHECKSUM_OBSERVER.md": {
-      "sha256": "caef4e3cc1d76fb36e90ee1e8dc15ab168a5bf6147a96325addbe33561ef7d62",
+      "sha256": "b5941f002b84d04e948353b43462d11c7ec4b1bfbfa5b6e1d45d931b62a0c263",
       "source": "docs/CHECKSUM_OBSERVER.md"
     },
     "guides/CONFIG_SAFETY.md": {
-      "sha256": "afe3f3c99853c666dd84b7bc4d9fd7f9aa245014151d4a8cc9a73d3d1242ae66",
+      "sha256": "936c86ce25de98c1a9aab306e0e0df96167c0a8516ddb58391f4142e5e8d0ee3",
       "source": "docs/CONFIG_SAFETY.md"
     },
     "guides/EVIDENCE_REPORT.md": {
-      "sha256": "f8736e5fe5216a78406ecdc999aa98478442aa3cc504688dea88d860d3de86e6",
+      "sha256": "1975f35bedaee9d12ebd9102f8a2fcf5be640d492f84d64ff8470b569a3eb1d5",
       "source": "docs/EVIDENCE_REPORT.md"
     },
     "guides/FORWARD_INPUTS.md": {
-      "sha256": "b0c1fcea3d5eb20ab9e51c56c3b747d2f8a12542692e7e582c966f280b23bc49",
+      "sha256": "527b5b06b620672cceaa44ff69091f192cc5ffc7c5a6d67639ba838549ab10eb",
       "source": "docs/FORWARD_INPUTS.md"
     },
     "guides/H100_OBSERVER_RESULT.json": {
@@ -147,7 +143,7 @@
       "source": "docs/H100_OBSERVER_RESULT.json"
     },
     "guides/H100_OBSERVER_RESULT.md": {
-      "sha256": "2295fc88f8e0f9cf197fc76981719d88382f8e3a5faa5cd67f9ff257840a2a83",
+      "sha256": "9940e02c6d45b9caf9d7ff23c2944ef29b5709c5170645ace4a05f9fc178e785",
       "source": "docs/H100_OBSERVER_RESULT.md"
     },
     "guides/LIFETIME_RULES.md": {
@@ -155,27 +151,23 @@
       "source": "docs/LIFETIME_RULES.md"
     },
     "guides/NATIVE_CHECK_COVERAGE.md": {
-      "sha256": "f1be7e1c4c0236e6050cb3b86ff7e1954721383a89b9027ce0f486cae7e75cba",
+      "sha256": "26989bf17a5010b9005d7b05661a90125535301eca21074adc817ba501d0dc22",
       "source": "docs/NATIVE_CHECK_COVERAGE.md"
     },
     "guides/NATIVE_EVIDENCE.md": {
-      "sha256": "7842f6ee69d378f84ef646a8c30395239bdf707e9e683cd8211423eacc7133ce",
+      "sha256": "3f5f1086166c983fa311300d0b440832ebd4f8dfa0f2bc86d7a836c42534fb45",
       "source": "docs/NATIVE_EVIDENCE.md"
     },
     "guides/OVERLAP.md": {
       "sha256": "b435b059523a11e194c2cd06eff9b337cb62e3c30b4da5f6ad03ff1252c498bd",
       "source": "docs/OVERLAP.md"
     },
-    "guides/OWNER_ACTIONS.md": {
-      "sha256": "2f723c1a04b844bd0d86d4d7221980ef0296159c82ca32501eb5b7eeeba7bcdb",
-      "source": "docs/OWNER_ACTIONS.md"
-    },
     "guides/SUPPORT_61229.md": {
-      "sha256": "4b42fb272a69c02d4004c8f7dc4a1520e9baa189525178960bc5721e2a7889aa",
+      "sha256": "a0a0828f127ad089ac40311a696e6277f1a36240076245f644038c7d9880daa7",
       "source": "docs/SUPPORT_61229.md"
     },
     "guides/UPGRADE_GATE.md": {
-      "sha256": "c22c263eaf093b3b35977b45cf9a81aec04a26ee986e7e13632e080ce685b7bc",
+      "sha256": "132a198e33118ab2ae2df67fde7338916d226be8e8742f851bd14fc3b4d49f48",
       "source": "docs/UPGRADE_GATE.md"
     },
     "profiles/ascend-declared-capacity.json": {

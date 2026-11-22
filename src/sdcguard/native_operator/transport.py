@@ -1,4 +1,4 @@
-"""Explicit same-host native transport profile. Owner: Hari Krishna Kancharla."""
+"""Explicit same-host native transport profile."""
 from __future__ import annotations
 
 import ctypes

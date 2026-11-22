@@ -1,4 +1,4 @@
-"""Check complete installed extraction bytes. Owner: Hari Krishna Kancharla."""
+"""Check complete installed extraction bytes."""
 from __future__ import annotations
 
 import hashlib

@@ -1,6 +1,5 @@
 """Bounded local packet IO. Hashes establish consistency, not authenticity.
 
-Owner: Hari Krishna Kancharla.
 """
 from __future__ import annotations
 

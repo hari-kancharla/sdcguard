@@ -1,4 +1,4 @@
-"""Pinned native functions with synthetic CPU inputs. Owner: Hari Krishna Kancharla.
+"""Pinned native functions with synthetic CPU inputs.
 
 These controls execute extracted functions, not full engines or serving traffic.
 They establish native return and counter semantics, not runtime integration.

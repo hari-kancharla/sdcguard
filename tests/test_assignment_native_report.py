@@ -1,6 +1,5 @@
 """Retained native close receipts must gate portable mapping results.
 
-Owner: Hari Krishna Kancharla.
 These are host recorder and local file controls, not a running engine.
 """
 import json

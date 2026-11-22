@@ -1,6 +1,5 @@
 """Offline coverage of recorded native transfer comparisons.
 
-Owner: Hari Krishna Kancharla.
 This is a separate obligation. It never relaxes the full-prompt release gate.
 """
 from __future__ import annotations

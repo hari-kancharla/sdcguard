@@ -1,8 +1,8 @@
 # H100 observer validation
 
-Owner: Hari Krishna Kancharla. Run date: October 27, 2026 in the owner's local time; server logs use October 28 UTC.
+Run date: October 27, 2026 in my local time; server logs use October 28 UTC.
 
-The owner-run packet passed its saved-condition and ordinary-traffic checks. An offline recomputation reproduced the measurements and lifecycle judgments from the retained raw records on Python 3.10 and 3.13. This supports the revised source-lifetime and scheduler-admission hooks on the stack below. It does not establish whole-deployment isolation.
+The H100 packet passed its saved-condition and ordinary-traffic checks. An offline recomputation reproduced the measurements and lifecycle judgments from the retained raw records on Python 3.10 and 3.13. This supports the revised source-lifetime and scheduler-admission hooks on the stack below. It does not establish whole-deployment isolation.
 
 ## Tested stack
 

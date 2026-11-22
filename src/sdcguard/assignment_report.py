@@ -1,6 +1,5 @@
 """Portable inspection of the recorded allocator-to-model mapping relation.
 
-Owner: Hari Krishna Kancharla.
 This command reads completed local records. It starts no engine or request.
 """
 from __future__ import annotations

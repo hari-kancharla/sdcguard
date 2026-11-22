@@ -1,6 +1,5 @@
 """Saved ordinary recordings and offline evidence controls only.
 
-Owner: Hari Krishna Kancharla.
 Edited copies are synthetic missing/contradictory evidence, not engine runs.
 """
 from collections import Counter

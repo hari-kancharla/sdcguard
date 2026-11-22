@@ -16,9 +16,9 @@ Portable evidence: `sdcguard evidence collect --config static-deployment.json --
 
 Upgrade gate: `sdcguard upgrade compare baseline-packet candidate-packet --out new-comparison` verifies both packets and checks the same named contracts under a fixed installed policy. It blocks known failures, lost coverage and unreviewed changes. The [comparison guide](UPGRADE_GATE.md) explains permitted capacity changes, distinct outcomes, attribution and limits. A scoped pass does not establish that a candidate deployment executed an upgrade test.
 
-Forward inputs: `sdcguard forward-inputs inspect /path/forward-recording --out new-forward-packet` captures and checks recorded attention metadata offline. `sdcguard forward-inputs verify new-forward-packet` recomputes the report. This experimental recorder has not had an owner-run GPU validation. The [forward-input guide](FORWARD_INPUTS.md) distinguishes the observed input plan from physical reads and ownership, which remain unknown. Saved admission traces cannot acquire forward observations through replay.
+Forward inputs: `sdcguard forward-inputs inspect /path/forward-recording --out new-forward-packet` captures and checks recorded attention metadata offline. `sdcguard forward-inputs verify new-forward-packet` recomputes the report. This experimental recorder has not had a GPU validation run. The [forward-input guide](FORWARD_INPUTS.md) distinguishes the observed input plan from physical reads and ownership, which remain unknown. Saved admission traces cannot acquire forward observations through replay.
 
-**Engine pass vs actually covered.** `sdcguard native-checks capture --owner-result /path/H100-owner-result --out /new/check-coverage` reconciles the saved ordinary client batch with explicitly recorded native checks. `sdcguard native-checks verify /new/check-coverage` recomputes the retained JSON, text and HTML reports. The first adapter covers the narrow vLLM 0.32.0 lease-backport recording. Missing checksum observations remain unverified, and an incomplete owner run holds every release policy. See the [native-check coverage guide](NATIVE_CHECK_COVERAGE.md).
+**Engine pass vs actually covered.** `sdcguard native-checks capture --owner-result /path/H100-owner-result --out /new/check-coverage` reconciles the saved ordinary client batch with explicitly recorded native checks. `sdcguard native-checks verify /new/check-coverage` recomputes the retained JSON, text and HTML reports. The first adapter covers the narrow vLLM 0.32.0 lease-backport recording. Missing checksum observations remain unverified, and an incomplete GPU run holds every release policy. See the [native-check coverage guide](NATIVE_CHECK_COVERAGE.md).
 
 Passive checksum candidate: the separate, explicitly installed observer watches the pinned checksum scheduler's original callbacks and retains their native results and conditional chunk scope. `sdcguard checksum-observer capture --snapshot /path/snapshot.json --out /new/checksum-packet` retains an offline report; `sdcguard checksum-observer verify /new/checksum-packet` recomputes it. This candidate always holds release. It has no runtime qualification or independent client completeness claim and cannot borrow the older build's lease positives. See the [checksum observer guide](CHECKSUM_OBSERVER.md).
 
@@ -29,7 +29,7 @@ Mapping relation: `sdcguard assignment capture /path/completed-native-mapping --
 
 Named native evidence: `sdcguard evidence collect --native-packet decode=new-mapping-packet --out new-evidence` retains and rechecks a closed mapping packet in the report workflow. Add `--require-native prefill` when that slot is required but its input is not available. Missing slots stay unknown. The [native evidence guide](NATIVE_EVIDENCE.md) explains aliases, separate contracts and upgrade comparison. Retained native evidence does not approve a candidate runtime execution.
 
-Allocation-recipient facts: the separate [capacity attribution component](ALLOCATION_RECIPIENT.md) checks actual Request objects, native allocation returns and the paired mapping journal. It is off by default and requires explicit internal activation. It does not yet establish read rights, ownership, lease validity or physical reads, and is not enabled by the current owner packet.
+Allocation-recipient facts: the separate [capacity attribution component](ALLOCATION_RECIPIENT.md) checks actual Request objects, native allocation returns and the paired mapping journal. It is off by default and requires explicit internal activation. It does not yet establish read rights, ownership, lease validity or physical reads, and is not enabled by the current H100 packet.
 
 An inference engine can compute every matrix multiply correctly while using KV state that belongs to another request. sdcguard is building a vendor-independent acceptance and regression workflow for that serving-state boundary: inspect the exact deployment, collect passive observations, evaluate bounded rules, and preserve an independently inspectable packet.
 
@@ -41,7 +41,7 @@ The [vLLM issue](https://github.com/vllm-project/vllm/issues/61229) is open. [PR
 
 [Cloudflare's incident report](https://blog.cloudflare.com/kv-cache-exposure-remediation/) describes GLM-5.3 on Workers AI returning 155 affected responses between August 27 and September 9, 2026, with disaggregated SGLang/Mooncake and HTTP 200 responses. This is a real-world reason to check serving-state correctness. It is not evidence that this package detected that incident.
 
-Our [historical result](result-61229.html) preserves the original JSONs: the stock arm returned wrong answers in 5/5 replays; the backport recovered in 5/5, with clean controls. The saved case did not demonstrate cross-request text disclosure. A [fresh owner-run H100 validation](H100_OBSERVER_RESULT.md) independently confirmed the revised source-lifetime hooks on five fixed-arm replays and clean ordinary traffic. Actual attention consumption, terminal refusal and verified minimality remain unproved.
+Our [historical result](result-61229.html) preserves the original JSONs: the stock arm returned wrong answers in 5/5 replays; the backport recovered in 5/5, with clean controls. The saved case did not demonstrate cross-request text disclosure. A [fresh H100 validation run](H100_OBSERVER_RESULT.md) independently confirmed the revised source-lifetime hooks on five fixed-arm replays and clean ordinary traffic. Actual attention consumption, terminal refusal and verified minimality remain unproved.
 
 ## Install and inspect the packet without a source checkout
 
@@ -58,7 +58,7 @@ The wheel carries the reviewed harness, exact saved artifacts, model pin, result
 
 The replay model/tokenizer is pinned to `c1899de289a04d12100db370d81485cdf75e47ca`. A read-only CPU audit recovered the sole snapshot from the persistent Modal cache and verified all ten files against immutable upstream identities, including actual weight bytes. `MODEL_PIN.json` and `MODEL_PROVENANCE.json` preserve that evidence. The original run artifacts remain unchanged and record `main`; the subsequent cache recovery corroborates their model association without inventing an original run manifest.
 
-The GPU replay is owner-run. The packet's README gives the exact command. It checks the local snapshot against the external packet pin, so the original cache can stay read-only. Pass/fail/inconclusive criteria are explicit in `CRITERIA.md`. No new failure ordering, retry/reused-ID case or transfer mechanism is added.
+The GPU replay is run by hand on your own GPU. The packet's README gives the exact command. It checks the local snapshot against the external packet pin, so the original cache can stay read-only. Pass/fail/inconclusive criteria are explicit in `CRITERIA.md`. No new failure ordering, retry/reused-ID case or transfer mechanism is added.
 
 ## Run the shared-rule CPU demonstration
 
@@ -93,7 +93,7 @@ FINE covers the complete recorded source-lifetime/admission obligation. It does 
 
 ## Bind performance measurements without editing result JSON
 
-Preparation is offline and reads existing local files; the measurements below are owner-run against an existing supported endpoint.
+Preparation is offline and reads existing local files; the measurements below were run against an existing supported endpoint.
 
 ```sh
 sdcguard overhead prepare /path/deployment.json --model-snapshot /path/to/COMMIT --model-pin /new/case/MODEL_PIN.json --gpu-uuid "$DEPLOYMENT_GPU_UUID" --out /new/performance-identity.json
@@ -112,10 +112,8 @@ The separate short [H100 measurement](H100_OBSERVER_RESULT.md) used the same fix
 
 - [Pinned support and evidence matrix](SUPPORT_61229.md)
 - [Fresh H100 observer result and measurement limits](H100_OBSERVER_RESULT.md)
-- [Product assessment, evidence gates and next work](PRODUCT_REVIEW.md)
 - [Direct and adjacent prior-art overlap](OVERLAP.md)
 - [Rule semantics](LIFETIME_RULES.md)
-- [Owner-only validation actions](OWNER_ACTIONS.md)
 
 GRIEF is direct serving-fuzzer/forensics overlap. ResidentClaim already checks shared obligations and anchored cross-engine evidence. Metria implements qualified runtime-upgrade verification, and KVSentry implements independent static cross-engine auditing. AEGIS, OpGuard and Vosti have adjacent integrity/determinism scopes. The intended focus here is maintained KV transfer/config-contract mappings for a declared stack. Shared rules, unknowns, replay, reports and CI gates alone do not establish novelty. See the [source-read overlap table](OVERLAP.md); deployed generality and comparative benefit remain unproven.
 

@@ -163,7 +163,7 @@ def _model_files(snapshot):
 
 
 def run_export(a):
-    """Owner-run only. Execute the original harness with the one saved spec."""
+    """Run by hand on a GPU only. Execute the original harness with the one saved spec."""
     from importlib.metadata import distribution
     import os
     from .assessment import inspect_engine

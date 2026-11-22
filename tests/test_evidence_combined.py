@@ -1,4 +1,4 @@
-"""Passive evidence composition controls. Owner: Hari Krishna Kancharla.
+"""Passive evidence composition controls.
 
 The retained native fixture is an ordinary CPU recording. Metadata-only
 grouping controls construct no engine execution or native failure trace.

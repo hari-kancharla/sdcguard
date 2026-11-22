@@ -1,7 +1,5 @@
 # Bounded assignment journal
 
-Owner: Hari Krishna Kancharla.
-
 `sdcguard.lifetime.assignment_recording.AssignmentRecorder` stores one finite assignment observation interval. It has no engine/device import, activation, native call or model hook. It does not establish source authenticity, allocator associations, complete read rights or physical reads. The offline assignment evaluator remains the authority for semantic verdicts.
 
 Construct it with a recording directory and the actual supported adapter, source SHA map, effective profile, complete coverage names, dependency observations and a process-incarnation UUID. The header is validated against the installed assignment contract and copied into ordinary bounded JSON before creating a directory or file. Caller mutation cannot change stored bytes. Optional shared health supplies `snapshot()` with a boolean `healthy` and nonnegative integer `errors`.
@@ -22,4 +20,4 @@ Footer invalidation and naming cleanup remain best effort if every available des
 
 The assembler must retire and quiesce producers and shared-health callbacks before closing, account for every positive dispatch, and mark open mutations or frames unhealthy. It must check `close()` and `status` before accepting a packet. Rejections during the open/closing interval affect its health. Later callback attempts are outside the successfully sealed historical file; they return false and increment a separate late-call observation without reopening or rewriting that file. They must not be presented as covered observations.
 
-This is an inactive storage component. The complete native assembler, independent component review, combined CPU suites, package checks and owner-run validation remain separate gates.
+This is an inactive storage component. The complete native assembler, independent component review, combined CPU suites, package checks and GPU validation remain separate gates.

@@ -1,4 +1,4 @@
-"""Pinned native originals before attachment. Owner: Hari Krishna Kancharla.
+"""Pinned native originals before attachment.
 
 Complete primary modules are compiled only into code objects. Fresh local
 classes receive FunctionType objects with actual defining-class cells. No

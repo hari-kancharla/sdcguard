@@ -1,8 +1,6 @@
 # Passive native mapping collector
 
-Owner: Hari Krishna Kancharla.
-
-This assembler connects the existing forward metadata observer, initialization observer and bounded assignment journal. Importing it starts no engine, device work or network operation. Explicit passive activation is available through the existing plugin. Native runtime compatibility, owner-run validation and overhead measurements remain pending.
+This assembler connects the existing forward metadata observer, initialization observer and bounded assignment journal. Importing it starts no engine, device work or network operation. Explicit passive activation is available through the existing plugin. Native runtime compatibility, GPU validation and overhead measurements remain pending.
 
 Set SDCGUARD_ASSIGNMENT_DIR and SDCGUARD_FORWARD_DIR to separate dedicated directories before the supported engine starts. The former requests mapping facts in addition to the existing forward stream. Neither setting enables the arithmetic checks. The plugin supplies one stable mapping factory to the existing forward installation. It does not add another model hook or runner wrapper. Installing the package or importing mapping_activation alone activates nothing.
 
@@ -48,4 +46,4 @@ The result covers the recorded mapping relation. Matching maps can share an erro
 
 The older saved #61229 and H100 recordings contain no new initialization, assignment or model-entry facts. Their existing lifetime results remain separate. This collector adds no new failure ordering, retry or reused-ID mechanism, and drives no live leak condition.
 
-CPU checks use ordinary host objects and retained primary Python method bodies. They are not a running engine or GPU compatibility result. Fresh independent combined review, full native CPU suites, packaging and an owner run are required before this candidate is ready.
+CPU checks use ordinary host objects and retained primary Python method bodies. They are not a running engine or GPU compatibility result. Fresh independent combined review, full native CPU suites, packaging and a GPU run are required before this candidate is ready.

@@ -1,4 +1,4 @@
-"""Assessment packet boundaries only. Owner: Hari Krishna Kancharla.
+"""Assessment packet boundaries only.
 
 Use the existing clean CPU metadata fixture. No engine source is executed.
 """

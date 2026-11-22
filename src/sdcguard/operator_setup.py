@@ -1,6 +1,5 @@
 """Installed setup files and bounded offline preflight of supplied local inputs.
 
-Owner: Hari Krishna Kancharla.
 No serving process, request, readiness fetch or device work is started.
 """
 from __future__ import annotations
@@ -25,7 +24,7 @@ _RESOURCE_NAMES = (
     "profiles/vllm-capacity-shortfall.json", "profiles/sglang-unobserved-capacity.json",
     "profiles/ascend-declared-capacity.json", "profiles/lmcache-unverified-layout.json",
     "guides/CONFIG_SAFETY.md", "guides/EVIDENCE_REPORT.md", "guides/UPGRADE_GATE.md",
-    "guides/SUPPORT_61229.md", "guides/LIFETIME_RULES.md", "guides/OWNER_ACTIONS.md", "guides/OVERLAP.md",
+    "guides/SUPPORT_61229.md", "guides/LIFETIME_RULES.md", "guides/OVERLAP.md",
     "guides/H100_OBSERVER_RESULT.md", "guides/H100_OBSERVER_RESULT.json",
     "guides/FORWARD_INPUTS.md", "guides/ASSIGNMENT.md", "guides/ASSIGNMENT_NATIVE.md",
     "guides/NATIVE_EVIDENCE.md",

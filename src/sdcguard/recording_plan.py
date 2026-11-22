@@ -180,7 +180,7 @@ def prepare_recording_plan(config: dict, destination: Path, *, base: Path = Path
                 "The declared model revision is not proof of loaded weights. Source matching is local file "
                 "inspection, not remote attestation. A prepared plan is not a readiness or correctness verdict. "
                 "Actual recordings must contain the evaluator's required identity and health receipts.\n\n"
-                "After the owner-run observation is complete and recorders have flushed, assess the recording:\n"
+                "After the GPU observation is complete and recorders have flushed, assess the recording:\n"
                 "sdcguard assess " + shlex.quote(str(destination / "deployment.json"))
                 + " --out " + shlex.quote(str(destination / "assessment")) + " --json\n"
                 + "sdcguard report-verify " + shlex.quote(str(destination / "assessment")) + "\n"

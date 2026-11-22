@@ -1,6 +1,5 @@
 """One envelope for distinct, existing evidence contracts.
 
-Owner: Hari Krishna Kancharla.
 Combining evidence sections never extends one section's scope into another.
 """
 from __future__ import annotations

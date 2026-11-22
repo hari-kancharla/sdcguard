@@ -1,4 +1,4 @@
-"""Bounded versioned envelope storage. Owner: Hari Krishna Kancharla."""
+"""Bounded versioned envelope storage."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 

@@ -1,7 +1,5 @@
 # Static input examples
 
-Owner: Hari Krishna Kancharla.
-
 These files are synthetic input shapes and arithmetic examples. The placeholder model revision is not a measured stack. Do not run them as serving configurations. The checker reads them only.
 
 - `vllm-capacity-shortfall.json`: 64 blocks include one null block, so 16-token blocks leave 1008 usable tokens for a declared 1024-token context. It violates that named capacity contract. Stock NIXL pull also lacks the proposed post-read lease guard.

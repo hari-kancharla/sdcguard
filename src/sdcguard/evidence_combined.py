@@ -1,6 +1,5 @@
 """Reverify named native mapping slots alongside existing evidence packets.
 
-Owner: Hari Krishna Kancharla.
 Each section retains its own contract. No engine or serving traffic is started.
 """
 from copy import deepcopy

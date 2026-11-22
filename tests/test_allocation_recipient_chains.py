@@ -1,4 +1,4 @@
-"""Exact passive wrapper-chain bookkeeping. Owner: Hari Krishna Kancharla.
+"""Exact passive wrapper-chain bookkeeping.
 
 Detached controls never invoke a changed callback. The ordinary source control
 allocates before the metadata-only change and restores code before shutdown.

@@ -1,4 +1,4 @@
-"""Ordinary grouped traffic controls. Owner: Hari Krishna Kancharla."""
+"""Ordinary grouped traffic controls."""
 from copy import deepcopy
 import threading
 import time

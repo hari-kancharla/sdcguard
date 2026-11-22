@@ -1,6 +1,5 @@
 """Preserve retained native facts without approving a runtime upgrade.
 
-Owner: Hari Krishna Kancharla.
 Inputs are independently reverified under their installed packet contracts.
 No engine, request or candidate execution is started by this module.
 """

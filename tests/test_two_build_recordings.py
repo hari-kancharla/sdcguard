@@ -1,4 +1,4 @@
-"""Two real H100 recordings, one on each supported engine build. Owner: Hari Krishna Kancharla.
+"""Two real H100 recordings, one on each supported engine build.
 
 Both were recorded on Oct 31, 2026 with the same workload, model and effective startup settings, including
 --gpu-blocks 8192. These tests replay them offline; nothing here starts an engine.

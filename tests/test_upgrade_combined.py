@@ -1,4 +1,4 @@
-"""Passive upgrade envelope controls. Owner: Hari Krishna Kancharla.
+"""Passive upgrade envelope controls.
 
 The native input is a retained ordinary host-recorder CPU fixture. Metadata
 classification tests do not construct an engine execution or failure trace.

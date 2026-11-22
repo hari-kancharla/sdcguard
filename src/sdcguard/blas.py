@@ -3,7 +3,7 @@
 PyTorch runs a matmul with whichever cuBLASLt algorithm the library's heuristic picks for that shape, data type,
 GPU and setting (for example the share of the GPU an MPS client gets). A library defect can sit in one of the
 other algorithms and show up only when the heuristic switches to it: cuBLAS known issue 6862950 (CUDA 13.4
-Update 1 and 2 release notes; since cuBLAS 12.6.3) gives wrong FP16, BF16 and FP8 results on Hopper under MPS below
+Update 1 and 2 release notes; since cuBLAS 12.6.3, fixed in cuBLAS 13.10.0 with CUDA 13.5) gives wrong FP16, BF16 and FP8 results on Hopper under MPS below
 100% with algorithm 66 and clusters of 4 or more CTAs only. A test that runs one GEMM, the way DCGM's diagnostic and gpu-burn do, sees
 whichever algorithm it happens to get (docs/METHOD.md, head-to-head).
 

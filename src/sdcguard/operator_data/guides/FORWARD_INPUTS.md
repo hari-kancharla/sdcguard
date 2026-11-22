@@ -1,8 +1,6 @@
 # Recorded forward inputs
 
-Owner: Hari Krishna Kancharla.
-
-This observation records an attention input plan on a narrowly supported eager vLLM path. It does not observe physical GPU loads, prove block ownership, or establish that an answer used particular bytes. Runtime validation of this recorder is pending a separate owner-run check. The earlier H100 result validated different lifetime hooks.
+This observation records an attention input plan on a narrowly supported eager vLLM path. It does not observe physical GPU loads, prove block ownership, or establish that an answer used particular bytes. Runtime validation of this recorder is pending a separate GPU check. The earlier H100 result validated different lifetime hooks.
 
 ## Inspect saved observations
 
@@ -37,13 +35,13 @@ The [pinned engine requires Python >=3.11 and <3.15](https://github.com/vllm-pro
 
 The opt-in recorder is separate from the lifetime recorder and arithmetic checks. Recording metadata never enables failure scheduling, holds, retries or request mutation. Ordinary observer errors become recording gaps. Original engine exceptions retain their behavior. Recovery from device faults is not promised.
 
-The activation setting is `SDCGUARD_FORWARD_DIR`, pointing to a dedicated recording directory before the supported engine starts. GPU validation is owner-run. The setting enables the source-gated forward observer; the separate lifetime observer uses `SDCGUARD_LIFETIME_DIR`.
+The activation setting is `SDCGUARD_FORWARD_DIR`, pointing to a dedicated recording directory before the supported engine starts. GPU validation is a separate run on a real GPU. The setting enables the source-gated forward observer; the separate lifetime observer uses `SDCGUARD_LIFETIME_DIR`.
 
 Normal native model-runner shutdown closes that runner's observer, removes its hook and attempts a bounded writer flush. It preserves the engine's return value or exception. A shutdown error or an overlapping capture makes the recording incomplete. Abrupt termination, lost output or a missing footer remains unknown. A closed observer session does not establish per-forward device completion.
 
 HF offline mode can replace the requested repository ID with a local model and tokenizer snapshot path in the [pinned argument normalization](https://github.com/vllm-project/vllm/blob/5df63a7203cdb9328d824a27b682e77c7b9928be/vllm/engine/arg_utils.py#L907-L931). The optional `sdcguard.observed-model-reference.v1` profile extension retains that actual path in `profile.model`. Its separate `model_reference.reference.model` is the canonical repository ID. A served-model alias or a matching directory basename is not sufficient.
 
-For this local-path case, the owner preflight must produce a `sdcguard.model-reference.v1` capsule once in the actual GPU pod, before engine startup, by hashing all ten files against the installed `MODEL_PIN.json`. It records the configured and resolved snapshot paths, exact model revision, pin digest, per-file digests and stat receipts, owner run ID and packet digest. CPU preflight stat values from another pod or mount cannot substitute. The per-role environment must supply `SDCGUARD_MODEL_REFERENCE_FILE` as the exact canonical capsule file path, `SDCGUARD_MODEL_REFERENCE_RUN_ID` and `SDCGUARD_MODEL_REFERENCE_PACKET_SHA256`.
+For this local-path case, the owner preflight must produce a `sdcguard.model-reference.v1` capsule once in the actual GPU pod, before engine startup, by hashing all ten files against the installed `MODEL_PIN.json`. It records the configured and resolved snapshot paths, exact model revision, pin digest, per-file digests and stat receipts, run ID and packet digest. CPU preflight stat values from another pod or mount cannot substitute. The per-role environment must supply `SDCGUARD_MODEL_REFERENCE_FILE` as the exact canonical capsule file path, `SDCGUARD_MODEL_REFERENCE_RUN_ID` and `SDCGUARD_MODEL_REFERENCE_PACKET_SHA256`.
 
 Each process binds the capsule to the actual model-config object and its observed model/tokenizer paths and revisions. Setup checks the local file receipt associations. Later observations check the same config fields, environment and capsule file identity without rehashing the weights or rereading all model files on every forward. Missing, changed or conflicting proof produces a gap. This is file consistency at setup and recorded local provenance, not continuous file monitoring, loaded-weight attestation, read permission or ownership proof. The existing exact repository-ID branch and old raw profile shape remain supported. Completed packets still require their exact recorded evaluator identity; this extension does not waive old packet hashes.
 

@@ -1,7 +1,5 @@
 # Optional forward callback bridge
 
-Owner: Hari Krishna Kancharla.
-
 This is an internal callback interface. It does not supply a native assignment adapter, record allocator events, prove initialization, or change an isolation verdict. The existing forward metadata observer still reports physical reads and ownership as unknown.
 
 `vllm_forward.install(assignment_factory=None)` keeps the ordinary path. When the forward recorder is disabled, it returns before importing the bridge or calling a factory. There is no new environment switch, CLI command or automatic adapter activation.
@@ -37,4 +35,4 @@ Shutdown retires the selected runner before native teardown and calls `runner_cl
 
 After fork, the bridge does not touch inherited observer locks, files or callbacks and does not call the factory again. The child may lazily establish the existing forward-only metadata recording. Assignment remains unavailable until a fresh process installation can observe the required initialization. Spawn and forkserver need their own explicit registration and complete initialization chain.
 
-The CPU controls use structural stand-ins and one retained native initialization fragment. They test this transport and its error paths. They are not evidence of a running engine or GPU compatibility. Native initialization binding, allocator/mutation observation and a reviewed owner run remain separate work.
+The CPU controls use structural stand-ins and one retained native initialization fragment. They test this transport and its error paths. They are not evidence of a running engine or GPU compatibility. Native initialization binding, allocator/mutation observation and a reviewed GPU run remain separate work.

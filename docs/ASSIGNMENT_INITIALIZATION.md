@@ -1,7 +1,5 @@
 # Passive initialization component
 
-Owner: Hari Krishna Kancharla.
-
 `sdcguard.lifetime.assignment_init` implements the initialization part of a future native mapping observer. It has no plugin, command or automatic activation. It does not start a server, import an engine or device library, inspect model contents, acquire a GPU, add a model hook or wrap any runner method.
 
 The component observes the pinned vLLM 0.32.0 same-process UniProc startup chain. A future assembler must explicitly provide already imported native classes/modules, the source root, the existing forward bridge, a shared health object and a bounded sink. The complete allocation/frame assembler is absent. These initialization facts alone cannot produce a complete mapping verdict, ownership verdict, physical-read claim or runtime-isolation claim.
@@ -54,4 +52,4 @@ All references use commit `5df63a7203cdb9328d824a27b682e77c7b9928be`:
 
 The tests retain the verified 35 primary files in a small compressed fixture and execute selected pinned Python method fragments with ordinary host dependencies. They run no inference engine, device kernel or server. Negative cases are observer/profile/lifecycle controls. Fixture SHA-256 and Git blob checks establish source identity; these CPU tests do not establish native deployment compatibility or overhead. Existing saved transfer evidence cannot be upgraded to initialization/mapping evidence.
 
-Mapping-only fix status stays unknown. Fix presence remains the separate complete nine-file source classifier. Full assembler review, complete CPU suites, packaging and an owner-run proposal remain required before activation or native support claims.
+Mapping-only fix status stays unknown. Fix presence remains the separate complete nine-file source classifier. Full assembler review, complete CPU suites, packaging and a GPU run proposal remain required before activation or native support claims.

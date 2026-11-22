@@ -97,7 +97,7 @@ Use the prepared host's Python environment. The output directories must not exis
 # CPU preflight only. No server or GPU work.
 sdcguard operator run --require checksum --out checksum-preflight --preflight-only
 
-# Owner-run GPU capture: starts both engines, records ordinary traffic and verifies it.
+# GPU capture: starts both engines, records ordinary traffic and verifies it.
 sdcguard operator run --require checksum --out checksum-run
 ```
 

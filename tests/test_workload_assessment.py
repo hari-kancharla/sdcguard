@@ -1,4 +1,4 @@
-"""Offline declared-workload coverage. Owner: Hari Krishna Kancharla.
+"""Offline declared-workload coverage.
 
 These controls remove or change metadata only. They execute no engine.
 """

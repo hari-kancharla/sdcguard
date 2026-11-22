@@ -1,4 +1,4 @@
-"""Portable native evidence checks. Owner: Hari Krishna Kancharla.
+"""Portable native evidence checks.
 
 The retained fixture is an ordinary host-recorder CPU control. These tests
 start no engine and construct no engine failure or request ordering.

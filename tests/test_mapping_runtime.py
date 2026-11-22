@@ -1,4 +1,4 @@
-"""Host-only source and observed-header controls. Owner: Hari Krishna Kancharla."""
+"""Host-only source and observed-header controls."""
 from dataclasses import FrozenInstanceError
 from enum import Enum
 import hashlib

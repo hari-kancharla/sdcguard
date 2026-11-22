@@ -1,6 +1,5 @@
 """Host assembly and retained primary fragments, never engine or GPU runs.
 
-Owner: Hari Krishna Kancharla.
 """
 import ast
 from collections import defaultdict, deque

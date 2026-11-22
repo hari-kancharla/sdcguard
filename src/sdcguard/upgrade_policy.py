@@ -1,6 +1,5 @@
 """Pure preservation policy for already recomputed canonical evidence reports.
 
-Owner: Hari Krishna Kancharla.
 The caller must verify and snapshot both packets first. This module performs no
 I/O, authenticates no receipt, and never establishes a runtime upgrade witness.
 """

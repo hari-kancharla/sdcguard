@@ -1,4 +1,4 @@
-"""Inert transport policy controls. Owner: Hari Krishna Kancharla.
+"""Inert transport policy controls.
 
 These controls use explicit native stand-ins and do not qualify UCX,
 the cloud runtime, CUDA, a model, or serving traffic.

@@ -1,4 +1,4 @@
-"""Small packet IO controls. Owner: Hari Krishna Kancharla."""
+"""Small packet IO controls."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
