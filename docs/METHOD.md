@@ -531,7 +531,8 @@ The question: when NVIDIA's own GEMM library silently computes wrong results on 
 The bug is cuBLAS known issue 6862950 (CUDA 13.4 Update 2 release notes, October 12, 2026): on Hopper, FP16, BF16
 and FP8 GEMMs can leave part of the output unwritten when the process is an MPS client with
 `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE` below 100. It is deterministic and reproducible, so every tool faces the same
-wrong math. sdcguard reproduced it on a Modal H200 on October 19 ([results](../results/mps_bug)).
+wrong math. sdcguard reproduced it on a Modal H200 on October 19 ([results](../results/mps_bug)). NVIDIA fixed it in
+CUDA 13.5 (cuBLAS 13.10.0); the runs here used earlier versions.
 
 **Setup** ([scripts/modal_h2h.py](../scripts/modal_h2h.py), [experiments/h2h_run.py](../experiments/h2h_run.py)):
 one H200 on Modal, one container, everything in sequence. MPS shares 100 (control), 40, 75 and 14, then a short 100

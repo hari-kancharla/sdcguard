@@ -14,8 +14,8 @@ compute capability and whether the process is an MPS client below 100%, and says
     sdcguard issues            # this machine
     sdcguard issues --json
 
-The table follows NVIDIA's release notes from CUDA 12.6 Update 2 to 13.4 Update 2 and the cuBLAS patch notes (read
-Oct 20, 2026). A version outside a listed range isn't proof of safety, and an issue NVIDIA hasn't listed can't be
+The table follows NVIDIA's release notes from CUDA 12.6 Update 2 to 13.5 and the cuBLAS patch notes (read
+Nov 22, 2026). A version outside a listed range isn't proof of safety, and an issue NVIDIA hasn't listed can't be
 matched. `sdcguard blas` tests the actual algorithms for a shape.
 """
 from __future__ import annotations
@@ -33,16 +33,16 @@ PATCHES = "https://docs.nvidia.com/cuda/cublas-patch-release-notes/"
 #   introduced  first affected version as NVIDIA states it (None: NVIDIA doesn't say)
 #   fixed       every version from this one on is fixed (None: not fixed in any toolkit yet)
 #   branches    {(major, minor): first fixed version on that branch}
-# Sources: the CUDA release notes from 12.6 Update 2 to 13.4 Update 2 (each release's component table gives its
-# cuBLAS version) and the cuBLAS patch notes, read Oct 20, 2026.
+# Sources: the CUDA release notes from 12.6 Update 2 to 13.5 (each release's component table gives its cuBLAS
+# version; CUDA 13.5 ships cuBLAS 13.10.0.20) and the cuBLAS patch notes, read Nov 22, 2026.
 _BR = {(12, 8): (12, 8, 5), (12, 9): (12, 9, 2), (13, 1): (13, 1, 1), (13, 2): (13, 2, 2)}
 ISSUES = [
     {"id": "6862950", "what": "GEMM kernels can produce incorrect results on Hopper GPUs for FP16, BF16 and FP8 when "
                               "the process runs as an MPS client with CUDA_MPS_ACTIVE_THREAD_PERCENTAGE below 100 "
                               "(cuBLASLt algorithm 66, clusters of 4 or more CTAs)",
-     "introduced": (12, 6, 3), "fixed": None, "branches": {}, "cc": ["9.0"], "needs": "mps_partial",
-     "workaround": "use cluster configurations with 1 or 2 CTAs in affected processes (NVIDIA), or run at 100% "
-                   "of the SMs", "when": "the process runs under MPS with less than 100% of the SMs"},
+     "introduced": (12, 6, 3), "fixed": (13, 10, 0), "branches": {}, "cc": ["9.0"], "needs": "mps_partial",
+     "workaround": "upgrade to CUDA 13.5 (cuBLAS 13.10.0), use cluster configurations with 1 or 2 CTAs in "
+                   "affected processes (NVIDIA), or run at 100% of the SMs", "when": "the process runs under MPS with less than 100% of the SMs"},
     {"id": "6580689", "what": "cublasLtMatmul() can return incorrect output with split-K when SPLITK_NUM doesn't "
                               "divide K and K / SPLITK_NUM is a multiple of the stage size (algorithm 66)",
      "introduced": (12, 6, 3), "fixed": (13, 8, 0), "branches": {}, "cc": ["9.0", "10.*", "11.*"],
@@ -58,8 +58,8 @@ ISSUES = [
      "when": "the job runs NVFP4 grouped GEMMs"},
     {"id": "6798616", "what": "cuBLASLt grouped GEMM operations can lead to incorrect results on Blackwell and Rubin "
                               "GPUs",
-     "introduced": (13, 7, 0), "fixed": None, "branches": {(13, 8): (13, 8, 1)}, "cc": ["10.*", "11.*", "12.*"],
-     "workaround": "cuBLAS patch 13.8.1", "when": "the job runs cuBLASLt grouped GEMMs (MoE)"},
+     "introduced": (13, 7, 0), "fixed": (13, 10, 0), "branches": {(13, 8): (13, 8, 1)}, "cc": ["10.*", "11.*", "12.*"],
+     "workaround": "cuBLAS patch 13.8.1, or CUDA 13.5 (cuBLAS 13.10.0)", "when": "the job runs cuBLASLt grouped GEMMs (MoE)"},
     {"id": "CUB-10573", "what": "cublasLtMatmul() can produce incorrect results on B300 and Rubin with NVFP4 inputs "
                                 "(algorithm 66, CUBLASLT_MATMUL_STAGES_768xAUTO)",
      "introduced": (13, 5, 1), "fixed": (13, 8, 0), "branches": {(13, 6): (13, 6, 2)}, "cc": ["10.3", "10.7"],
@@ -91,7 +91,7 @@ ISSUES = [
                                "corrupt data when run concurrently with third-party kernels that allocate Tensor "
                                "Memory",
      "introduced": (13, 1, 0), "introduced_note": "NVIDIA gives no first version; FP64 emulation arrived in "
-                                                  "cuBLAS 13.1.0", "fixed": None, "branches": {},
+                                                  "cuBLAS 13.1.0", "fixed": (13, 10, 0), "branches": {(13, 8): (13, 8, 2)},
      "cc": ["10.*", "11.*", "12.*"],
      "when": "FP64 emulation is on and other Tensor Memory kernels run at the same time"},
     {"id": "CUB-10066", "what": "cublasLtMatmul() with INT8 inputs and scale type CUDA_R_32I allowed non-default "
@@ -315,7 +315,7 @@ def match(env: Optional[dict] = None, issues: Optional[list] = None) -> list:
 def report(device=None) -> dict:
     env = environment(device)
     return {"environment": env, "matches": match(env),
-            "table_from": f"{NOTES} and {PATCHES} (read Oct 20, 2026)"}
+            "table_from": f"{NOTES} and {PATCHES} (read Nov 22, 2026)"}
 
 
 def log_once(device=None, logger=None) -> list:
